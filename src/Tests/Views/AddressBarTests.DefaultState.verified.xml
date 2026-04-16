@@ -1,0 +1,8 @@
+﻿<AddressBar
+  xmlns="clr-namespace:Meridian.Views;assembly=Meridian"
+  xmlns:av="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <av:TextBox
+    VerticalContentAlignment="Center"
+    Name="PathBox"
+    xml:space="preserve"></av:TextBox>
+</AddressBar>
