@@ -32,7 +32,7 @@ public partial class MainWindow : Window
     {
         base.OnClosing(e);
 
-        if (DataContext is MainViewModel { Tabs.Count: 0 } vm && ShellRegistration.IsRunningAsShell())
+        if (DataContext is MainViewModel { Tabs.Count: 0 } vm && ShellRegistration.IsRegisteredAsShell())
         {
             e.Cancel = true;
             vm.NewTab();

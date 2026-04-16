@@ -69,7 +69,7 @@ class MainViewModel : ViewModelBase
 
         if (Tabs.Count == 0)
         {
-            if (ShellRegistration.IsRunningAsShell())
+            if (ShellRegistration.IsRegisteredAsShell())
             {
                 NewTab();
             }

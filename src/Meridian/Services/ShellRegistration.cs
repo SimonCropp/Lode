@@ -6,46 +6,54 @@ static class ShellRegistration
 {
     const string winlogonKey = @"Software\Microsoft\Windows NT\CurrentVersion\Winlogon";
     const string shellValue = "Shell";
+    const string defaultShell = "explorer.exe";
 
     internal static void RegisterAsShell(bool perUser = true)
     {
         var exePath = Environment.ProcessPath!;
         using var key = perUser
             ? Registry.CurrentUser.CreateSubKey(winlogonKey)
-            : Registry.LocalMachine.OpenSubKey(winlogonKey, true)!;
+            : Registry.LocalMachine.CreateSubKey(winlogonKey);
         key.SetValue(shellValue, exePath);
     }
 
     internal static void UnregisterAsShell(bool perUser = true)
     {
-        using var key = perUser
-            ? Registry.CurrentUser.OpenSubKey(winlogonKey, true)
-            : Registry.LocalMachine.OpenSubKey(winlogonKey, true);
-        key?.DeleteValue(shellValue, false);
+        if (perUser)
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(winlogonKey, true);
+            key?.DeleteValue(shellValue, false);
+        }
+        else
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(winlogonKey, true);
+            key?.SetValue(shellValue, defaultShell);
+        }
     }
 
     internal static bool IsRegisteredAsShell()
     {
-        using var key = Registry.CurrentUser.OpenSubKey(winlogonKey);
-        if (key?.GetValue(shellValue) is string shell)
+        var processPath = Environment.ProcessPath;
+
+        using var hkcuKey = Registry.CurrentUser.OpenSubKey(winlogonKey);
+        if (hkcuKey?.GetValue(shellValue) is string hkcuShell)
         {
             return string.Equals(
-                Path.GetFullPath(shell),
-                Environment.ProcessPath,
+                Path.GetFullPath(hkcuShell),
+                processPath,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        using var hklmKey = Registry.LocalMachine.OpenSubKey(winlogonKey);
+        if (hklmKey?.GetValue(shellValue) is string hklmShell)
+        {
+            return string.Equals(
+                Path.GetFullPath(hklmShell),
+                processPath,
                 StringComparison.OrdinalIgnoreCase);
         }
 
         return false;
-    }
-
-    internal static bool IsRunningAsShell()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(winlogonKey);
-        return key?.GetValue(shellValue) is string shell &&
-               string.Equals(
-                   Path.GetFullPath(shell),
-                   Environment.ProcessPath,
-                   StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool IsElevated() =>
