@@ -1,8 +1,6 @@
-using System.Windows.Input;
-
 namespace Meridian.ViewModels;
 
-class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
+public class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
 {
     public event EventHandler? CanExecuteChanged
     {

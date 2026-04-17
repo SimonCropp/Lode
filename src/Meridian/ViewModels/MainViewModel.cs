@@ -1,14 +1,12 @@
 using System.Collections.ObjectModel;
-using System.Windows.Input;
 using Meridian.Services;
 
 namespace Meridian.ViewModels;
 
-class MainViewModel : ViewModelBase
+public class MainViewModel : ViewModelBase
 {
     readonly IconCache iconCache = new();
     readonly string defaultPath;
-    TabViewModel? activeTab;
 
     public MainViewModel(string? startPath = null)
     {
@@ -26,10 +24,10 @@ class MainViewModel : ViewModelBase
 
     public TabViewModel? ActiveTab
     {
-        get => activeTab;
+        get;
         set
         {
-            if (SetProperty(ref activeTab, value))
+            if (SetProperty(ref field, value))
             {
                 OnPropertyChanged(nameof(CurrentPath));
                 OnPropertyChanged(nameof(StatusText));

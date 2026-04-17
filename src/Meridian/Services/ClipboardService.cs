@@ -1,9 +1,6 @@
-using System.Collections.Specialized;
-using System.Windows;
-
 namespace Meridian.Services;
 
-static class ClipboardService
+public static class ClipboardService
 {
     static readonly byte[] moveEffect = [2, 0, 0, 0];
     static readonly byte[] copyEffect = [5, 0, 0, 0];
@@ -14,7 +11,7 @@ static class ClipboardService
         var files = new StringCollection();
         files.AddRange(paths);
         data.SetFileDropList(files);
-        data.SetData("Preferred DropEffect", new System.IO.MemoryStream(copyEffect));
+        data.SetData("Preferred DropEffect", new MemoryStream(copyEffect));
         Clipboard.SetDataObject(data, true);
     }
 
@@ -24,7 +21,7 @@ static class ClipboardService
         var files = new StringCollection();
         files.AddRange(paths);
         data.SetFileDropList(files);
-        data.SetData("Preferred DropEffect", new System.IO.MemoryStream(moveEffect));
+        data.SetData("Preferred DropEffect", new MemoryStream(moveEffect));
         Clipboard.SetDataObject(data, true);
     }
 
@@ -70,7 +67,7 @@ static class ClipboardService
     static bool IsClipboardCut()
     {
         var data = Clipboard.GetDataObject();
-        if (data?.GetData("Preferred DropEffect") is System.IO.MemoryStream stream)
+        if (data?.GetData("Preferred DropEffect") is MemoryStream stream)
         {
             var bytes = new byte[4];
             var read = stream.Read(bytes, 0, 4);

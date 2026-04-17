@@ -2,7 +2,7 @@ using Microsoft.Win32;
 
 namespace Meridian.Services;
 
-static class ShellRegistration
+public static class ShellRegistration
 {
     const string winlogonKey = @"Software\Microsoft\Windows NT\CurrentVersion\Winlogon";
     const string shellValue = "Shell";

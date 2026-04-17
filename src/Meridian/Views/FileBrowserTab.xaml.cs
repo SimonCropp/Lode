@@ -1,13 +1,9 @@
-using System.Collections.Specialized;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
 using Meridian.Services;
 using Meridian.ViewModels;
 
 namespace Meridian.Views;
 
-public partial class FileBrowserTab : UserControl
+public partial class FileBrowserTab
 {
     Point dragStartPoint;
 
@@ -34,8 +30,7 @@ public partial class FileBrowserTab : UserControl
 
     void ColumnHeader_Click(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is GridViewColumnHeader header &&
-            header.Column?.Header is string columnName &&
+        if (e.OriginalSource is GridViewColumnHeader {Column.Header: string columnName} &&
             DataContext is TabViewModel vm)
         {
             vm.SortBy(columnName);

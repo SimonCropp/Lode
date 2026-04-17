@@ -1,8 +1,3 @@
-using Meridian.Services;
-using Microsoft.Win32;
-
-namespace Tests.Services;
-
 [TestFixture]
 class ShellRegistrationTests
 {

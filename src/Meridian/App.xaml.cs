@@ -1,10 +1,9 @@
-using System.Windows;
 using Meridian.Services;
 using Meridian.Views;
 
 namespace Meridian;
 
-partial class App : Application
+partial class App
 {
     protected override void OnStartup(StartupEventArgs e)
     {

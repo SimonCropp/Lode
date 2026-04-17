@@ -1,7 +1,3 @@
-using Meridian.Services;
-
-namespace Tests.Services;
-
 [TestFixture]
 class FileSystemServiceTests
 {

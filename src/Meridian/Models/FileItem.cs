@@ -1,6 +1,6 @@
 namespace Meridian.Models;
 
-record FileItem(
+public record FileItem(
     string Name,
     string FullPath,
     bool IsDirectory,

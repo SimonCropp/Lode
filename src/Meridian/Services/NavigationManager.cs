@@ -1,6 +1,6 @@
 namespace Meridian.Services;
 
-class NavigationManager
+public class NavigationManager
 {
     readonly Stack<string> backStack = new();
     readonly Stack<string> forwardStack = new();

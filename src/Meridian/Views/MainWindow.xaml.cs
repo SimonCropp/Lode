@@ -1,11 +1,9 @@
-using System.Windows;
-using System.Windows.Input;
 using Meridian.Services;
 using Meridian.ViewModels;
 
 namespace Meridian.Views;
 
-public partial class MainWindow : Window
+public partial class MainWindow
 {
     public MainWindow() : this(null)
     {
@@ -28,7 +26,7 @@ public partial class MainWindow : Window
         }
     }
 
-    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    protected override void OnClosing(CancelEventArgs e)
     {
         base.OnClosing(e);
 

@@ -1,14 +1,11 @@
 using System.Collections.ObjectModel;
-using System.Windows.Media;
 using Meridian.Services;
 
 namespace Meridian.ViewModels;
 
-class FolderNode : ViewModelBase
+public class FolderNode : ViewModelBase
 {
     readonly IconCache iconCache;
-    bool isExpanded;
-    bool isSelected;
     bool isLoaded;
 
     public FolderNode(string path, string name, IconCache iconCache)
@@ -30,10 +27,10 @@ class FolderNode : ViewModelBase
 
     public bool IsExpanded
     {
-        get => isExpanded;
+        get;
         set
         {
-            if (SetProperty(ref isExpanded, value) && value && !isLoaded)
+            if (SetProperty(ref field, value) && value && !isLoaded)
             {
                 LoadChildren();
             }
@@ -42,8 +39,8 @@ class FolderNode : ViewModelBase
 
     public bool IsSelected
     {
-        get => isSelected;
-        set => SetProperty(ref isSelected, value);
+        get;
+        set => SetProperty(ref field, value);
     }
 
     void LoadChildren()

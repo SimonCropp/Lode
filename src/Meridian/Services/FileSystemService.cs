@@ -2,7 +2,7 @@ using Meridian.Models;
 
 namespace Meridian.Services;
 
-class FileSystemService
+public class FileSystemService
 {
     public static IReadOnlyList<FileItem> GetDirectoryContents(string path)
     {

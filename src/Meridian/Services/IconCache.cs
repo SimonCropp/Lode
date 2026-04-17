@@ -1,10 +1,6 @@
-using System.Collections.Concurrent;
-using System.Windows.Media;
-using Meridian.Interop;
-
 namespace Meridian.Services;
 
-class IconCache
+public class IconCache
 {
     readonly ConcurrentDictionary<string, ImageSource?> smallIcons = new(StringComparer.OrdinalIgnoreCase);
     readonly ConcurrentDictionary<string, ImageSource?> largeIcons = new(StringComparer.OrdinalIgnoreCase);

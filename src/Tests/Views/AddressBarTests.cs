@@ -1,7 +1,3 @@
-using Meridian.Views;
-
-namespace Tests.Views;
-
 [TestFixture]
 [Apartment(ApartmentState.STA)]
 class AddressBarTests

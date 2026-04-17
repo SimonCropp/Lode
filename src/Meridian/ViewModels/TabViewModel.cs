@@ -1,17 +1,13 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Windows.Input;
 using System.Windows.Threading;
-using Meridian.Models;
 using Meridian.Services;
 
 namespace Meridian.ViewModels;
 
-class TabViewModel : ViewModelBase
+public class TabViewModel : ViewModelBase
 {
     readonly NavigationManager navigation = new();
     readonly IconCache iconCache;
-    readonly Action<TabViewModel> closeAction;
     FileSystemWatcher? watcher;
     DispatcherTimer? refreshTimer;
     string sortColumn = "Name";
@@ -20,7 +16,6 @@ class TabViewModel : ViewModelBase
     public TabViewModel(string path, IconCache iconCache, Action<TabViewModel> closeAction)
     {
         this.iconCache = iconCache;
-        this.closeAction = closeAction;
 
         BackCommand = new RelayCommand(GoBack, () => navigation.CanGoBack);
         ForwardCommand = new RelayCommand(GoForward, () => navigation.CanGoForward);
@@ -230,7 +225,7 @@ class TabViewModel : ViewModelBase
     }
 
     void OnFileSystemChanged(object sender, FileSystemEventArgs e) =>
-        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() => refreshTimer?.Start());
+        Application.Current?.Dispatcher.InvokeAsync(() => refreshTimer?.Start());
 
     bool HasSelection() =>
         SelectedItems.Length > 0;
