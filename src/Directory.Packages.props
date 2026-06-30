@@ -11,6 +11,6 @@
     <PackageVersion Include="Verify" Version="31.20.0" />
     <PackageVersion Include="Verify.NUnit" Version="31.20.0" />
     <PackageVersion Include="Verify.Xaml" Version="4.2.1" />
-    <PackageVersion Include="Verify.DiffPlex" Version="3.2.0" />
+    <PackageVersion Include="Verify.DiffPlex" Version="3.3.0" />
   </ItemGroup>
 </Project>
