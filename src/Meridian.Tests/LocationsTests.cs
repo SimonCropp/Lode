@@ -9,7 +9,7 @@ public class LocationsTests
         @"C:""",
         @"C:\Windows",
         @"C:\Windows\",
-        @"  ""C:\Program Files\dotnet""  ",
+        """  "C:\Program Files\dotnet"  """,
         @"C:\Windows\System32\..\Fonts",
         "C:/Windows/System32",
         @"\\server\share",

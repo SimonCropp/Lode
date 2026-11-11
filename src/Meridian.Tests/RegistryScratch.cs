@@ -14,7 +14,10 @@ sealed class RegistryScratch : IDisposable
     public RegistryScratch() =>
         Registry.CurrentUser.CreateSubKey(ClassesPath).Dispose();
 
-    public ExplorerReplacement Replacement(string command = @"""C:\Tools\meridian.exe""") =>
+    public ExplorerReplacement Replacement(
+        string command = """
+                         "C:\Tools\meridian.exe"
+                         """) =>
         new(ClassesPath, command);
 
     /// <summary>
@@ -57,7 +60,7 @@ sealed class RegistryScratch : IDisposable
     {
         Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
         using var rootKey = Registry.CurrentUser.OpenSubKey(root);
-        if (rootKey is { SubKeyCount: 0, ValueCount: 0 })
+        if (rootKey is {SubKeyCount: 0, ValueCount: 0})
         {
             rootKey.Close();
             Registry.CurrentUser.DeleteSubKey(root, throwOnMissingSubKey: false);

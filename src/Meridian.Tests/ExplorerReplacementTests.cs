@@ -52,7 +52,10 @@ public class ExplorerReplacementTests
         using var scratch = new RegistryScratch();
         SeedOtherTool(scratch);
         scratch.Replacement().Replace();
-        var again = scratch.Replacement(@"""D:\Other\Meridian.exe""");
+        var again = scratch.Replacement(
+            """
+            "D:\Other\Meridian.exe"
+            """);
         again.Replace();
         var replacedAgain = scratch.Dump();
 
@@ -70,7 +73,12 @@ public class ExplorerReplacementTests
     public async Task RestoreLeavesAnotherToolsWinEAlone()
     {
         using var scratch = new RegistryScratch();
-        scratch.Set(@"CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow\command", null, @"""C:\Other\other.exe""");
+        scratch.Set(
+            @"CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow\command",
+            null,
+            """
+            "C:\Other\other.exe"
+            """);
 
         scratch.Replacement().Restore();
 
@@ -82,7 +90,10 @@ public class ExplorerReplacementTests
     {
         using var scratch = new RegistryScratch();
         var replacement = scratch.Replacement();
-        var anotherCopy = scratch.Replacement(@"""D:\Other\Meridian.exe""");
+        var anotherCopy = scratch.Replacement(
+            """
+            "D:\Other\Meridian.exe"
+            """);
 
         var before = Describe(replacement);
         replacement.Replace();
@@ -112,6 +123,11 @@ public class ExplorerReplacementTests
     static void SeedOtherTool(RegistryScratch scratch)
     {
         scratch.Set(@"Directory\shell", null, displacedDefault);
-        scratch.Set($@"Directory\shell\{displacedDefault}\command", null, @"""C:\Other\other.exe"" ""%1""");
+        scratch.Set(
+            $@"Directory\shell\{displacedDefault}\command",
+            null,
+            """
+            "C:\Other\other.exe" "%1"
+            """);
     }
 }

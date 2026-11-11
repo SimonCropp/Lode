@@ -14,7 +14,7 @@ sealed class SingleInstance : IDisposable
 
     readonly Mutex mutex;
     readonly string pipeName;
-    readonly CancellationTokenSource cancel = new();
+    readonly CancelSource cancel = new();
 
     public bool IsFirst { get; }
 

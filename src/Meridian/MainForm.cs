@@ -365,7 +365,7 @@ class MainForm : Form
 
     // The top-most of this app's controls at a point on the screen, if any.
     static Control? WindowAt(Point screenLocation) =>
-        Control.FromChildHandle(WindowFromPoint(screenLocation));
+        FromChildHandle(WindowFromPoint(screenLocation));
 
     /// <summary>
     /// Moves a tab, with its history, to the end of another window's tabs and shows it there.

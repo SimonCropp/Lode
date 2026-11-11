@@ -28,7 +28,10 @@ public class OptionsFormTests
     public async Task AnotherCopyIsRegistered()
     {
         using var scratch = new RegistryScratch();
-        scratch.Replacement(@"""D:\Old\Meridian.exe""").Replace();
+        scratch.Replacement(
+            """
+            "D:\Old\Meridian.exe"
+            """).Replace();
         using var form = Show(scratch.Replacement());
         var before = Describe(form);
 
@@ -52,7 +55,7 @@ public class OptionsFormTests
         form.SettingsChanged += () => changes++;
         var before = settings.ShowRecent;
 
-        ((CheckBox)form.Controls.Find("showRecent", true)[0]).Checked = false;
+        ((CheckBox) form.Controls.Find("showRecent", true)[0]).Checked = false;
 
         await Verify(
             new
@@ -73,7 +76,7 @@ public class OptionsFormTests
         form.SettingsChanged += () => changes++;
         var before = settings.ShowHidden;
 
-        ((CheckBox)form.Controls.Find("showHidden", true)[0]).Checked = false;
+        ((CheckBox) form.Controls.Find("showHidden", true)[0]).Checked = false;
 
         await Verify(
             new
@@ -122,7 +125,7 @@ public class OptionsFormTests
 
     static void Click(Form form, string name)
     {
-        ((Button)form.Controls.Find(name, true)[0]).PerformClick();
+        ((Button) form.Controls.Find(name, true)[0]).PerformClick();
         Application.DoEvents();
     }
 
