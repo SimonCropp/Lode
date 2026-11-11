@@ -20,6 +20,17 @@ public class QuickMenuTests
         await Verify(Describe(view.ItemCommands([Entry(view, "notes.aleph")])));
     }
 
+    // Text files offer Edit, after Open.
+    [Test]
+    public async Task TextFileMenu()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("todo.txt"), "todo");
+        using var view = await Open(fixture.Root);
+
+        await Verify(Describe(view.ItemCommands([Entry(view, "todo.txt")])));
+    }
+
     [Test]
     public async Task FolderMenu()
     {

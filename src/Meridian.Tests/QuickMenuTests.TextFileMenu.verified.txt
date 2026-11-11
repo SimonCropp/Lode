@@ -1,0 +1,14 @@
+﻿[
+  Open,
+  Edit,
+  ----,
+  Cut,
+  Copy,
+  Rename,
+  Delete,
+  ----,
+  Copy as path,
+  Properties,
+  ----,
+  Show more options
+]

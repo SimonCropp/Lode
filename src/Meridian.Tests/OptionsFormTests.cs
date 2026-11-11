@@ -112,6 +112,85 @@ public class OptionsFormTests
     }
 #endif
 
+    [Test]
+    public async Task ChoosingAnEditorChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var before = Editors(form);
+
+        EditorBox(form).SelectedIndex = 1;
+
+        await Verify(
+            new
+            {
+                before,
+                setting = settings.TextEditor
+            });
+    }
+
+    [Test]
+    public async Task BrowsingAddsTheEditor()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        form.BrowseForEditor = () => @"C:\Tools\MyEditor.exe";
+
+        SelectBrowse(form);
+
+        await Verify(
+            new
+            {
+                after = Editors(form),
+                setting = settings.TextEditor
+            });
+    }
+
+    [Test]
+    public async Task CancellingBrowseKeepsTheEditor()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings { TextEditor = editors[1].Path };
+        using var form = Show(scratch.Replacement(), settings);
+        form.BrowseForEditor = () => null;
+
+        SelectBrowse(form);
+
+        await Verify(
+            new
+            {
+                after = Editors(form),
+                setting = settings.TextEditor
+            });
+    }
+
+    static readonly TextEditors.Editor[] editors =
+    [
+        new("Visual Studio Code", @"C:\Programs\VS Code\Code.exe"),
+        new("Notepad", @"C:\Windows\notepad.exe")
+    ];
+
+    static ComboBox EditorBox(Form form) =>
+        (ComboBox) form.Controls.Find("textEditor", true)[0];
+
+    static void SelectBrowse(Form form)
+    {
+        var box = EditorBox(form);
+        box.SelectedIndex = box.Items.Count - 1;
+    }
+
+    // The list as it reads, the selected entry marked.
+    static List<string> Editors(Form form)
+    {
+        var box = EditorBox(form);
+        return box.Items
+            .Cast<object>()
+            .Select((item, index) => index == box.SelectedIndex ? $"{item}   <- selected" : item.ToString()!)
+            .ToList();
+    }
+
     // Shown, off screen and without taking the focus: buttons only click, and forms only draw,
     // once shown.
     static QuietForm Show(ExplorerReplacement replacement, Settings? settings = null)
@@ -157,7 +236,7 @@ public class OptionsFormTests
         };
 
     sealed class QuietForm(ExplorerReplacement replacement, Settings settings) :
-        OptionsForm(replacement, settings)
+        OptionsForm(replacement, settings, editors)
     {
         protected override bool ShowWithoutActivation => true;
     }

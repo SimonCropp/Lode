@@ -62,16 +62,38 @@ class OptionsForm : Form
     };
 
     readonly Settings settings;
+    readonly IReadOnlyList<TextEditors.Editor> editors;
+
+    // An entry in the text editor list. A null path is "Browse…".
+    sealed record EditorItem(string Text, string? Path)
+    {
+        public override string ToString() => Text;
+    }
+
+    readonly ComboBox textEditor = new()
+    {
+        Name = "textEditor",
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 300
+    };
+
+    int textEditorIndex;
 
     /// <summary>
     /// A setting that changes how windows look was changed.
     /// </summary>
     public event Action? SettingsChanged;
 
-    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings)
+    /// <param name="editors">The text editors installed, Notepad last, from
+    /// <see cref="TextEditors.Find()"/>. Passed in so tests show a fixed list.</param>
+    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings, IReadOnlyList<TextEditors.Editor> editors)
     {
         this.explorerReplacement = explorerReplacement;
         this.settings = settings;
+        this.editors = editors;
+        BrowseForEditor = ShowBrowseDialog;
+        FillTextEditors();
+        textEditor.SelectedIndexChanged += (_, _) => TextEditorChosen();
         browseDefaultDirectory.Click += (_, _) => BrowseDefaultDirectory();
         resetDefaultDirectory.Click += (_, _) => SetDefaultDirectory(null);
         UpdateDefaultDirectory();
@@ -124,6 +146,7 @@ class OptionsForm : Form
         };
         layout.Controls.Add(BuildStartupGroup());
         layout.Controls.Add(BuildViewGroup());
+        layout.Controls.Add(BuildTextEditorGroup());
         layout.Controls.Add(BuildExplorerGroup());
         layout.Controls.Add(closeButton);
         Controls.Add(layout);
@@ -242,6 +265,118 @@ class OptionsForm : Form
         };
         group.Controls.Add(layout);
         return group;
+    }
+
+    GroupBox BuildTextEditorGroup()
+    {
+        var description = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new(420, 0),
+            Margin = new(3, 3, 3, 6),
+            Text = "Edit, on the right-click menu of a text file, opens it in this editor."
+        };
+
+        var layout = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Fill
+        };
+        layout.Controls.Add(description);
+        layout.Controls.Add(textEditor);
+
+        var group = new GroupBox
+        {
+            Text = "Text editor",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new(9, 6, 9, 9)
+        };
+        group.Controls.Add(layout);
+        return group;
+    }
+
+    // The editors found, then one chosen by browsing if that is what is set, then Browse….
+    void FillTextEditors()
+    {
+        textEditor.Items.Clear();
+        foreach (var editor in editors)
+        {
+            textEditor.Items.Add(new EditorItem(editor.Name, editor.Path));
+        }
+
+        var chosen = settings.TextEditor;
+        if (chosen != null &&
+            !editors.Any(_ => string.Equals(_.Path, chosen, StringComparison.OrdinalIgnoreCase)))
+        {
+            textEditor.Items.Add(new EditorItem(Path.GetFileNameWithoutExtension(chosen), chosen));
+        }
+
+        textEditor.Items.Add(new EditorItem("Browse…", null));
+
+        // Nothing chosen yet means the first editor found, as Edit uses.
+        var index = 0;
+        if (chosen != null)
+        {
+            index = textEditor.Items
+                .Cast<EditorItem>()
+                .ToList()
+                .FindIndex(_ => string.Equals(_.Path, chosen, StringComparison.OrdinalIgnoreCase));
+        }
+
+        textEditorIndex = Math.Max(0, index);
+        textEditor.SelectedIndex = textEditorIndex;
+    }
+
+    void TextEditorChosen()
+    {
+        if (textEditor.SelectedIndex == textEditorIndex ||
+            textEditor.SelectedItem is not EditorItem item)
+        {
+            return;
+        }
+
+        if (item.Path != null)
+        {
+            settings.TextEditor = item.Path;
+            textEditorIndex = textEditor.SelectedIndex;
+            return;
+        }
+
+        var browsed = BrowseForEditor();
+        if (browsed == null)
+        {
+            // Cancelled: back to what was chosen before.
+            textEditor.SelectedIndex = textEditorIndex;
+            return;
+        }
+
+        settings.TextEditor = browsed;
+        FillTextEditors();
+    }
+
+    /// <summary>
+    /// Asks for an editor's executable. Replaced in tests, which can't answer a dialog.
+    /// </summary>
+    internal Func<string?> BrowseForEditor;
+
+    string? ShowBrowseDialog()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Choose a text editor",
+            Filter = "Programs (*.exe)|*.exe",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return null;
+        }
+
+        return dialog.FileName;
     }
 
     GroupBox BuildExplorerGroup()

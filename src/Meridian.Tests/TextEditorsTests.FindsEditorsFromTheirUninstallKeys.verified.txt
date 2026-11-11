@@ -1,0 +1,5 @@
+﻿[
+  Visual Studio Code: C:\Users\me\AppData\Local\Programs\Microsoft VS Code\Code.exe,
+  Notepad++: C:\Program Files\Notepad++\notepad++.exe,
+  Notepad
+]

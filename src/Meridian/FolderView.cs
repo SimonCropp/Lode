@@ -792,6 +792,11 @@ sealed class FolderView : UserControl
             commands.Add(new("Open in new tab", () => OpenInNewTabs(selection)));
         }
 
+        if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))
+        {
+            commands.Add(new("Edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
+        }
+
         commands.AddRange(
         [
             null,

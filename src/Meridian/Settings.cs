@@ -19,6 +19,9 @@ sealed class Settings
     // Where a new window opens when it is given nothing else to show. Null for the user folder.
     public string? DefaultDirectory { get; set; }
 
+    // The executable Edit opens text files in. Null for the first editor installed, or Notepad.
+    public string? TextEditor { get; set; }
+
     /// <summary>
     /// <see cref="DefaultDirectory"/> when it is set and still there, otherwise the user folder.
     /// </summary>

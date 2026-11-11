@@ -1,0 +1,9 @@
+﻿{
+  after: [
+    Visual Studio Code,
+    Notepad,
+    MyEditor   <- selected,
+    Browse…
+  ],
+  setting: C:\Tools\MyEditor.exe
+}

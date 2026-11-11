@@ -606,7 +606,7 @@ class MainForm : Form
 
     void ShowOptions()
     {
-        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser(), settings);
+        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser(), settings, TextEditors.Find());
         options.SettingsChanged += ApplySettingsToAllWindows;
         options.ShowDialog(this);
     }

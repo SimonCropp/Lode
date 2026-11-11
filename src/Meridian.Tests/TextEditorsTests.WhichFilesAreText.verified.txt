@@ -1,0 +1,9 @@
+﻿{
+  C:\Makefile: false,
+  C:\notes.txt: true,
+  C:\photo.jpg: false,
+  C:\Program.CS: true,
+  C:\readme.custom: true,
+  C:\settings.json: true,
+  C:\setup.exe: false
+}

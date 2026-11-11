@@ -1,0 +1,8 @@
+﻿{
+  after: [
+    Visual Studio Code,
+    Notepad   <- selected,
+    Browse…
+  ],
+  setting: C:\Windows\notepad.exe
+}
