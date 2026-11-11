@@ -1,5 +1,3 @@
-using System.Drawing.Drawing2D;
-
 /// <summary>
 /// A flat tab strip whose tabs each carry a cross that closes them.
 /// </summary>
@@ -198,7 +196,8 @@ sealed class ClosableTabControl : TabControl
 
         var page = dragging && pressedTab < TabCount ? TabPages[pressedTab] : null;
         EndDrag();
-        if (page != null && !TabRow.Contains(eventArgs.Location))
+        if (page != null &&
+            !TabRow.Contains(eventArgs.Location))
         {
             TabDraggedOff?.Invoke(page, PointToScreen(eventArgs.Location));
         }
@@ -218,7 +217,8 @@ sealed class ClosableTabControl : TabControl
     protected override void OnKeyDown(KeyEventArgs eventArgs)
     {
         base.OnKeyDown(eventArgs);
-        if (dragging && eventArgs.KeyCode == Keys.Escape)
+        if (dragging &&
+            eventArgs.KeyCode == Keys.Escape)
         {
             eventArgs.Handled = true;
             EndDrag();
@@ -268,7 +268,8 @@ sealed class ClosableTabControl : TabControl
         }
 
         var tab = TabAt(eventArgs.Location);
-        var overCross = tab >= 0 && CrossBounds(tab).Contains(eventArgs.Location);
+        var overCross = tab >= 0 &&
+                        CrossBounds(tab).Contains(eventArgs.Location);
         SetHovered(tab, overCross ? tab : -1);
     }
 
@@ -284,7 +285,8 @@ sealed class ClosableTabControl : TabControl
 
     void SetHovered(int tab, int cross)
     {
-        if (tab == hoveredTab && cross == hoveredCross)
+        if (tab == hoveredTab &&
+            cross == hoveredCross)
         {
             return;
         }

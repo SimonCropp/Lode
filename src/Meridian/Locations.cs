@@ -15,7 +15,7 @@ static class Locations
         second != null &&
         Same(first.AsSpan(), second.AsSpan());
 
-    public static bool Same(ReadOnlySpan<char> first, ReadOnlySpan<char> second) =>
+    public static bool Same(CharSpan first, CharSpan second) =>
         Path.TrimEndingDirectorySeparator(first)
             .Equals(Path.TrimEndingDirectorySeparator(second), StringComparison.OrdinalIgnoreCase);
 
@@ -100,10 +100,15 @@ static class Locations
             name = share[(share.LastIndexOf(Path.DirectorySeparatorChar) + 1)..].ToString();
         }
 
-        return name.Length == 0 ? location : name;
+        if (name.Length == 0)
+        {
+            return location;
+        }
+
+        return name;
     }
 
-    public static bool SameRoot(string first, string second) =>
-        Path.GetPathRoot(first.AsSpan())
-            .Equals(Path.GetPathRoot(second.AsSpan()), StringComparison.OrdinalIgnoreCase);
+    public static bool SameRoot(CharSpan first, CharSpan second) =>
+        Path.GetPathRoot(first)
+            .Equals(Path.GetPathRoot(second), StringComparison.OrdinalIgnoreCase);
 }

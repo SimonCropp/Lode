@@ -1,5 +1,3 @@
-using Microsoft.Win32;
-
 /// <summary>
 /// Shows Meridian's tray icon on the taskbar rather than in the overflow behind the ^ arrow.
 /// </summary>

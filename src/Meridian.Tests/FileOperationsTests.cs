@@ -4,7 +4,7 @@ public class FileOperationsTests
     public async Task CopyToAnotherFolder()
     {
         using var fixture = Fixture.Create();
-        string[] sources = [fixture.At("notes.alpha"), fixture.At("report2.beta"), fixture.At("Source")];
+        string[] sources = [fixture.At("notes.aleph"), fixture.At("report2.beta"), fixture.At("Source")];
 
         await FileOperations.Transfer(IntPtr.Zero, sources, fixture.At("Archive"), move: false);
 
@@ -16,7 +16,7 @@ public class FileOperationsTests
     {
         using var fixture = Fixture.Create();
 
-        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("notes.alpha")], fixture.Root, move: false);
+        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("notes.aleph")], fixture.Root, move: false);
 
         await Verify(fixture.Tree());
     }
@@ -25,7 +25,7 @@ public class FileOperationsTests
     public async Task MoveToAnotherFolder()
     {
         using var fixture = Fixture.Create();
-        string[] sources = [fixture.At("notes.alpha"), fixture.At("Docs")];
+        string[] sources = [fixture.At("notes.aleph"), fixture.At("Docs")];
 
         await FileOperations.Transfer(IntPtr.Zero, sources, fixture.At("Archive"), move: true);
 
@@ -37,7 +37,7 @@ public class FileOperationsTests
     {
         using var fixture = Fixture.Create();
 
-        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("notes.alpha")], fixture.Root, move: true);
+        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("notes.aleph")], fixture.Root, move: true);
 
         await Verify(fixture.Tree());
     }
@@ -50,7 +50,7 @@ public class FileOperationsTests
     {
         using var fixture = Fixture.Create();
 
-        var file = FileOperations.Rename(IntPtr.Zero, fixture.At("notes.alpha"), "renamed.alpha");
+        var file = FileOperations.Rename(IntPtr.Zero, fixture.At("notes.aleph"), "renamed.aleph");
         var caseOnly = FileOperations.Rename(IntPtr.Zero, fixture.At("report2.beta"), "REPORT2.BETA");
         var folder = FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "Documents");
 

@@ -1,9 +1,9 @@
 ﻿{
   path: Projects,
   status: 1 item (filtered from 8),
-  filter: *.alpha,
+  filter: *.aleph,
   rows: [
-    file    notes.alpha  12 bytes
+    file    notes.aleph  12 bytes
   ],
   selected: []
 }

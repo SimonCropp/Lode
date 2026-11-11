@@ -29,7 +29,8 @@ static class Program
         }
 
         using var instance = new SingleInstance();
-        if (!instance.IsFirst && instance.TryHandOff(commandLine.Paths))
+        if (!instance.IsFirst &&
+            instance.TryHandOff(commandLine.Paths))
         {
             return 0;
         }

@@ -4,7 +4,7 @@
   filter: ,
   rows: [
     folder  Deep,
-    file    main.alpha  5,000 bytes
+    file    main.aleph  5,000 bytes
   ],
   selected: []
 }

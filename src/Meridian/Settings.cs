@@ -1,8 +1,9 @@
-using System.Text.Json;
-
 sealed class Settings
 {
-    static readonly JsonSerializerOptions serializerOptions = new() { WriteIndented = true };
+    static JsonSerializerOptions serializerOptions = new()
+    {
+        WriteIndented = true
+    };
 
     // Null for settings that live only in memory, which is what tests use.
     string? filePath;
@@ -11,6 +12,24 @@ sealed class Settings
 
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
+
+    // Where a new window opens when it is given nothing else to show. Null for the user folder.
+    public string? DefaultDirectory { get; set; }
+
+    /// <summary>
+    /// <see cref="DefaultDirectory"/> when it is set and still there, otherwise the user folder.
+    /// </summary>
+    public string StartLocation()
+    {
+        if (DefaultDirectory != null &&
+            (Locations.IsThisPC(DefaultDirectory) || Directory.Exists(DefaultDirectory)))
+        {
+            return DefaultDirectory;
+        }
+
+        return Locations.Home;
+    }
+
     public int Left { get; set; }
     public int Top { get; set; }
     public int Width { get; set; }

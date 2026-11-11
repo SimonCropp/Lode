@@ -1,5 +1,3 @@
-using Microsoft.Win32;
-
 /// <summary>
 /// Makes Meridian, rather than File Explorer, what opens folders and drives (double-clicks,
 /// folder shortcuts, other apps asking the shell to open a folder) and what Win+E starts.
@@ -234,6 +232,11 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         }
 
         var path = Path.Combine(home, ".dotnet", "tools", "meridian.exe");
-        return File.Exists(path) ? path : null;
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        return null;
     }
 }

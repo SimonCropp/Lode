@@ -1,4 +1,4 @@
-static class NativeMethods
+static partial class NativeMethods
 {
     public const int WindowMessageContextMenu = 0x007B;
     public const int WindowMessageAppCommand = 0x0319;
@@ -17,18 +17,43 @@ static class NativeMethods
     public const int HeaderFormatSortDown = 0x0200;
     public const int HeaderFormatSortUp = 0x0400;
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    // SHFILEINFOW. The names are fixed buffers of UTF-16 units, as ushort rather than char, so the
+    // struct is blittable without disabling runtime marshalling, which the COM interop needs.
+    [StructLayout(LayoutKind.Sequential)]
     public struct ShellFileInfo
     {
         public IntPtr Icon;
         public int IconIndex;
         public uint Attributes;
+        DisplayNameBuffer displayName;
+        TypeNameBuffer typeName;
 
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string DisplayName;
+        public readonly string DisplayName => Text(displayName);
+        public readonly string TypeName => Text(typeName);
 
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
-        public string TypeName;
+        static string Text(ReadOnlySpan<ushort> raw)
+        {
+            var buffer = MemoryMarshal.Cast<ushort, char>(raw);
+            var end = buffer.IndexOf((char)0);
+            if (end < 0)
+            {
+                return new(buffer);
+            }
+
+            return new(buffer[..end]);
+        }
+
+        [InlineArray(260)]
+        struct DisplayNameBuffer
+        {
+            ushort first;
+        }
+
+        [InlineArray(80)]
+        struct TypeNameBuffer
+        {
+            ushort first;
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -81,65 +106,73 @@ static class NativeMethods
         public int Group;
     }
 
-    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
-    public static extern int StrCmpLogicalW(string first, string second);
+    [LibraryImport("shlwapi.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int StrCmpLogicalW(string first, string second);
 
-    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
-    public static extern int SetWindowTheme(IntPtr window, string? application, string? idList);
+    [LibraryImport("uxtheme.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int SetWindowTheme(IntPtr window, string? application, string? idList);
 
-    [DllImport("user32.dll")]
-    public static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
-    public static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref HeaderItem item);
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref HeaderItem item);
 
-    [DllImport("user32.dll")]
-    public static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref ListViewItemState item);
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref ListViewItemState item);
 
-    [DllImport("user32.dll")]
-    public static extern bool DestroyIcon(IntPtr icon);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyIcon(IntPtr icon);
 
-    [DllImport("comctl32.dll")]
-    public static extern IntPtr ImageList_GetIcon(IntPtr imageList, int index, uint flags);
+    [LibraryImport("comctl32.dll")]
+    public static partial IntPtr ImageList_GetIcon(IntPtr imageList, int index, uint flags);
 
-    [DllImport("comctl32.dll")]
-    public static extern bool ImageList_GetIconSize(IntPtr imageList, out int width, out int height);
+    [LibraryImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ImageList_GetIconSize(IntPtr imageList, out int width, out int height);
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr SHGetFileInfo(string path, uint fileAttributes, ref ShellFileInfo info, uint infoSize, uint flags);
+    [LibraryImport("shell32.dll", EntryPoint = "SHGetFileInfoW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial IntPtr SHGetFileInfo(string path, uint fileAttributes, ref ShellFileInfo info, uint infoSize, uint flags);
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr SHGetFileInfo(IntPtr itemIdList, uint fileAttributes, ref ShellFileInfo info, uint infoSize, uint flags);
+    [LibraryImport("shell32.dll", EntryPoint = "SHGetFileInfoW")]
+    public static partial IntPtr SHGetFileInfo(IntPtr itemIdList, uint fileAttributes, ref ShellFileInfo info, uint infoSize, uint flags);
 
-    [DllImport("shell32.dll")]
-    public static extern int SHGetSpecialFolderLocation(IntPtr window, int folder, out IntPtr itemIdList);
+    [LibraryImport("shell32.dll")]
+    public static partial int SHGetSpecialFolderLocation(IntPtr window, int folder, out IntPtr itemIdList);
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    public static extern int SHFileOperation(ref FileOperationInfo info);
+    [LibraryImport("shell32.dll", EntryPoint = "SHFileOperationW")]
+    public static partial int SHFileOperation(ref FileOperationInfo info);
 
-    [DllImport("user32.dll")]
-    public static extern IntPtr WindowFromPoint(Point point);
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr WindowFromPoint(ScreenPoint point);
 
-    [DllImport("user32.dll")]
-    public static extern bool AllowSetForegroundWindow(int processId);
+    // POINT. System.Drawing.Point lives in another assembly, so LibraryImport can't vouch for its layout.
+    [StructLayout(LayoutKind.Sequential)]
+    public record struct ScreenPoint(int X, int Y);
 
-    [DllImport("shell32.dll")]
-    public static extern int SHGetKnownFolderPath(in Guid folderId, uint flags, IntPtr token, out IntPtr path);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(int processId);
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    public static extern int SHParseDisplayName(string name, IntPtr bindContext, out IntPtr itemIdList, uint attributesIn, out uint attributesOut);
+    [LibraryImport("shell32.dll")]
+    public static partial int SHGetKnownFolderPath(in Guid folderId, uint flags, IntPtr token, out IntPtr path);
+
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int SHParseDisplayName(string name, IntPtr bindContext, out IntPtr itemIdList, uint attributesIn, out uint attributesOut);
 
     public const int ShellChangeAssociationChanged = 0x08000000;
 
-    [DllImport("shell32.dll")]
-    public static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+    [LibraryImport("shell32.dll")]
+    public static partial void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
 
     public const int AttachParentProcess = -1;
     public const int StandardOutputHandle = -11;
 
-    [DllImport("kernel32.dll")]
-    public static extern bool AttachConsole(int processId);
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AttachConsole(int processId);
 
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr GetStdHandle(int handle);
+    [LibraryImport("kernel32.dll")]
+    public static partial IntPtr GetStdHandle(int handle);
 }

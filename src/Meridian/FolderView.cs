@@ -1,6 +1,3 @@
-using System.ComponentModel;
-using System.IO.Enumeration;
-
 /// <summary>
 /// One tab's worth of file browsing: the file list, its navigation history, and the file
 /// operations that act on the selection.
@@ -435,7 +432,7 @@ sealed class FolderView : UserControl
 
         string[] cells =
         [
-            entry.Name,
+            DisplayName(entry),
             entry.Modified.ToString("g"),
             ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory),
             entry.IsDirectory ? "" : Formatting.Kilobytes(entry.Size)
@@ -671,8 +668,32 @@ sealed class FolderView : UserControl
         if (!entry.IsDirectory)
         {
             // Preselect the name but not the extension, so typing keeps the file type.
-            list.SelectEditText(Path.GetFileNameWithoutExtension(entry.Name.AsSpan()).Length);
+            list.SelectEditText(Path.GetFileNameWithoutExtension(DisplayName(entry).AsSpan()).Length);
         }
+    }
+
+    // Shortcut extensions are hidden, matching Explorer's NeverShowExt behaviour.
+    static readonly string[] hiddenExtensions = [".lnk", ".url"];
+
+    static string? HiddenExtension(FileEntry entry)
+    {
+        if (entry.IsDirectory)
+        {
+            return null;
+        }
+
+        return hiddenExtensions.FirstOrDefault(_ => entry.Name.EndsWith(_, StringComparison.OrdinalIgnoreCase) && entry.Name.Length > _.Length);
+    }
+
+    internal static string DisplayName(FileEntry entry)
+    {
+        var extension = HiddenExtension(entry);
+        if (extension == null)
+        {
+            return entry.Name;
+        }
+
+        return entry.Name[..^extension.Length];
     }
 
     void OnAfterLabelEdit(object? sender, LabelEditEventArgs eventArgs)
@@ -681,7 +702,19 @@ sealed class FolderView : UserControl
         var item = list.Items[eventArgs.Item];
         var entry = (FileEntry)item.Tag!;
         var newName = eventArgs.Label?.Trim();
-        if (string.IsNullOrEmpty(newName) || newName == entry.Name)
+        if (string.IsNullOrEmpty(newName) || newName == DisplayName(entry))
+        {
+            eventArgs.CancelEdit = true;
+            return;
+        }
+
+        var hiddenExtension = HiddenExtension(entry);
+        if (hiddenExtension != null)
+        {
+            newName += entry.Name[^hiddenExtension.Length..];
+        }
+
+        if (newName == entry.Name)
         {
             eventArgs.CancelEdit = true;
             return;
@@ -724,16 +757,68 @@ sealed class FolderView : UserControl
             location = list.PointToScreen(anchor);
         }
 
-        using var menu = new ShellContextMenu();
         if (selection.Count > 0)
         {
-            ShowItemMenu(menu, selection, location);
+            ShowQuickItemMenu(selection, location);
         }
         else if (!IsThisPC)
         {
-            ShowBackgroundMenu(menu, location);
+            ShowQuickBackgroundMenu(location);
         }
     }
+
+    void ShowQuickItemMenu(List<FileEntry> selection, Point location)
+    {
+        var allDirectories = selection.All(_ => _.IsDirectory);
+        var anyDrive = selection.Any(_ => _.IsDrive);
+        QuickMenu.Show(
+            location,
+            [
+                new("Open", () => OpenEntries(selection)),
+                allDirectories ? new("Open in new tab", () => OpenInNewTabs(selection)) : null,
+                null,
+                new("Cut", () => Copy(true), !anyDrive),
+                new("Copy", () => Copy(false), !anyDrive),
+                new("Rename", BeginRename, selection.Count == 1 && !anyDrive),
+                new("Delete", () => Delete(false), !anyDrive),
+                null,
+                new("Copy as path", () => CopyAsPath(selection.Select(_ => _.FullPath))),
+                new("Properties", ShowProperties)
+            ],
+            () =>
+            {
+                using var menu = new ShellContextMenu();
+                ShowItemMenu(menu, selection, location);
+            });
+    }
+
+    void ShowQuickBackgroundMenu(Point location) =>
+        QuickMenu.Show(
+            location,
+            [
+                new("Refresh", Reload),
+                new("New folder", CreateFolder),
+                new("Paste", Paste, FileOperations.ReadClipboard() != null),
+                null,
+                new("Copy as path", () => CopyAsPath([CurrentPath])),
+                new("Properties", ShowProperties)
+            ],
+            () =>
+            {
+                using var menu = new ShellContextMenu();
+                ShowBackgroundMenu(menu, location);
+            });
+
+    void OpenInNewTabs(List<FileEntry> selection)
+    {
+        foreach (var entry in selection)
+        {
+            NewTabRequested?.Invoke(entry.FullPath);
+        }
+    }
+
+    internal static void CopyAsPath(IEnumerable<string> paths) =>
+        Clipboard.SetText(string.Join(Environment.NewLine, paths.Select(_ => $"\"{_}\"")));
 
     void ShowItemMenu(ShellContextMenu menu, List<FileEntry> selection, Point location)
     {

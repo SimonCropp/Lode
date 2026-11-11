@@ -5,11 +5,11 @@
 /// </summary>
 sealed class WindowContext : ApplicationContext
 {
-    readonly HashSet<MainForm> windows = [];
-    readonly Settings settings;
-    readonly Places places;
-    readonly NotifyIcon tray;
-    readonly Icon trayIcon = ShellIcons.FolderWindowIcon();
+    HashSet<MainForm> windows = [];
+    Settings settings;
+    Places places;
+    NotifyIcon tray;
+    Icon trayIcon = ShellIcons.FolderWindowIcon();
 
     public WindowContext(MainForm first, Settings settings, Places places, SingleInstance instance)
     {
@@ -20,7 +20,7 @@ sealed class WindowContext : ApplicationContext
         var open = new ToolStripMenuItem("Open Meridian", null, (_, _) => ShowWindows());
         open.Font = new(open.Font, FontStyle.Bold);
         menu.Items.Add(open);
-        menu.Items.Add("New window", null, (_, _) => OpenWindow([Locations.Home]));
+        menu.Items.Add("New window", null, (_, _) => OpenWindow([settings.StartLocation()]));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Exit());
         tray = new()
@@ -85,7 +85,7 @@ sealed class WindowContext : ApplicationContext
             return;
         }
 
-        OpenWindow(paths.Length == 0 ? [Locations.Home] : paths);
+        OpenWindow(paths.Length == 0 ? [settings.StartLocation()] : paths);
     }
 
     void OpenWindow(string[] paths)
@@ -100,7 +100,7 @@ sealed class WindowContext : ApplicationContext
     {
         if (windows.Count == 0)
         {
-            OpenWindow([Locations.Home]);
+            OpenWindow([settings.StartLocation()]);
             return;
         }
 

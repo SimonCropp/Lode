@@ -8,5 +8,6 @@ record FileEntry(
     bool IsDrive = false,
     long FreeSpace = 0)
 {
-    public bool IsHidden => !IsDrive && Attributes.HasFlag(FileAttributes.Hidden);
+    public bool IsHidden => !IsDrive &&
+                            Attributes.HasFlag(FileAttributes.Hidden);
 }

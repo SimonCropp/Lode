@@ -15,15 +15,17 @@ static class ShellIcons
     const int computerFolder = 0x11;
     const uint imageListDrawTransparent = 0x1;
 
-    static readonly uint infoSize = (uint)Marshal.SizeOf<ShellFileInfo>();
+    static uint infoSize = (uint)Marshal.SizeOf<ShellFileInfo>();
     // Concurrent because tests browse folders on several UI threads at once; the app has one.
     // Looked up by span so that a cache hit, which is nearly every call, never allocates the extension.
-    static readonly ConcurrentDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> iconsByExtension =
-        new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
-    static readonly ConcurrentDictionary<string, string>.AlternateLookup<ReadOnlySpan<char>> typesByExtension =
-        new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
+    static ConcurrentDictionary<string, int>.AlternateLookup<CharSpan> iconsByExtension =
+        new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            .GetAlternateLookup<CharSpan>();
+    static ConcurrentDictionary<string, string>.AlternateLookup<CharSpan> typesByExtension =
+        new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            .GetAlternateLookup<CharSpan>();
 
-    static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> perFileIconExtensions =
+    static HashSet<string>.AlternateLookup<CharSpan> perFileIconExtensions =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ".exe",
@@ -34,7 +36,8 @@ static class ShellIcons
             ".url",
             ".scr",
             ".appref-ms"
-        }.GetAlternateLookup<ReadOnlySpan<char>>();
+        }
+            .GetAlternateLookup<CharSpan>();
 
     public static IntPtr SmallImageList { get; }
     public static int FolderIcon { get; }
@@ -126,7 +129,7 @@ static class ShellIcons
     /// </summary>
     public static Bitmap Render(int icon, Size canvas, Point offset)
     {
-        var bitmap = new Bitmap(canvas.Width, canvas.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        var bitmap = new Bitmap(canvas.Width, canvas.Height, PixelFormat.Format32bppArgb);
         var handle = ImageList_GetIcon(SmallImageList, icon, imageListDrawTransparent);
         if (handle == IntPtr.Zero)
         {
@@ -183,44 +186,6 @@ static class ShellIcons
     /// their extension (drives, special folders, executables, shortcuts).
     /// </summary>
     const uint iconHandleFlag = 0x100;
-
-    /// <summary>
-    /// The icon Explorer gives a window showing <paramref name="location"/>: the location's own
-    /// icon, so an ordinary folder gets the plain folder. At the large size, which follows the
-    /// display scale. The caller owns it.
-    /// </summary>
-    public static Icon WindowIcon(string location)
-    {
-        var info = new ShellFileInfo();
-        IntPtr result;
-        if (Locations.IsThisPC(location))
-        {
-            if (SHGetSpecialFolderLocation(IntPtr.Zero, computerFolder, out var itemIdList) != 0)
-            {
-                return FolderWindowIcon();
-            }
-
-            try
-            {
-                result = SHGetFileInfo(itemIdList, 0, ref info, infoSize, itemIdListFlag | iconHandleFlag);
-            }
-            finally
-            {
-                Marshal.FreeCoTaskMem(itemIdList);
-            }
-        }
-        else if (Locations.IsNetwork(location))
-        {
-            // Asking an offline share for its icon can stall, as in the tree.
-            return FolderWindowIcon();
-        }
-        else
-        {
-            result = SHGetFileInfo(location, 0, ref info, infoSize, iconHandleFlag);
-        }
-
-        return result == IntPtr.Zero || info.Icon == IntPtr.Zero ? FolderWindowIcon() : Owned(info.Icon);
-    }
 
     /// <summary>
     /// The shell's plain folder icon, for the tray and for a window before it shows a folder.

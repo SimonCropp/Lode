@@ -164,7 +164,8 @@ sealed class FolderTree : TreeView
     }
 
     static bool NeedsLoading(TreeNode node) =>
-        node.Nodes.Count == 1 && node.Nodes[0].Tag == placeholder;
+        node.Nodes.Count == 1 &&
+        node.Nodes[0].Tag == placeholder;
 
     // A folder's subfolders in display order, or null when the folder can't be read.
     List<DirectoryInfo>? ReadSubfolders(TreeNode node)
@@ -239,23 +240,26 @@ sealed class FolderTree : TreeView
                 child.Remove();
             }
 
+            var nodes = node.Nodes;
             // What is left is in display order already, so new folders slot in around it.
             for (var i = 0; i < directories.Count; i++)
             {
                 var directory = directories[i];
-                if (i < node.Nodes.Count && node.Nodes[i].Tag is string path && Locations.Same(path, directory.FullName))
+                if (i < nodes.Count &&
+                    nodes[i].Tag is string path &&
+                    Locations.Same(path, directory.FullName))
                 {
                     // Renamed to a different case.
-                    if (node.Nodes[i].Text != directory.Name)
+                    if (nodes[i].Text != directory.Name)
                     {
-                        node.Nodes[i].Text = directory.Name;
-                        node.Nodes[i].Tag = directory.FullName;
+                        nodes[i].Text = directory.Name;
+                        nodes[i].Tag = directory.FullName;
                     }
 
                     continue;
                 }
 
-                node.Nodes.Insert(i, CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
+                nodes.Insert(i, CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
             }
         }
         finally
@@ -280,7 +284,8 @@ sealed class FolderTree : TreeView
     // This PC and the section headings aren't folders on disk: their children are managed
     // elsewhere.
     static bool IsFolder(TreeNode node) =>
-        node.Tag is string path && !Locations.IsThisPC(path);
+        node.Tag is string path &&
+        !Locations.IsThisPC(path);
 
     void Watch(TreeNode node)
     {
@@ -481,27 +486,50 @@ sealed class FolderTree : TreeView
             return;
         }
 
+        var owner = FindForm()?.Handle ?? Handle;
+        var location = PointToScreen(eventArgs.Location);
+        var quickAccess = eventArgs.Node.Parent?.Tag is Section;
+        QuickMenu.Show(
+            location,
+            [
+                new("Open", () => PathSelected?.Invoke(path)),
+                new("Open in new tab", () => NewTabRequested?.Invoke(path)),
+                null,
+                new("Copy", () => FileOperations.CopyToClipboard([path], false)),
+                new("Copy as path", () => FolderView.CopyAsPath([path])),
+                new("Properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties"))
+            ],
+            () => ShowShellMenu(owner, path, location, quickAccess));
+    }
+
+    void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
+    {
         ShellContextMenu.CustomCommand[] customCommands =
         [
             new("Open in new tab", () => NewTabRequested?.Invoke(path))
         ];
 
         using var menu = new ShellContextMenu();
-        menu.ShowForItems(
-            FindForm()?.Handle ?? Handle,
-            [path],
-            PointToScreen(eventArgs.Location),
-            customCommands,
-            _ =>
-            {
-                if (!_.Equals("open", StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
 
-                PathSelected?.Invoke(path);
-                return true;
-            });
+        // Pinned and Recent folders are Quick access entries, whose menu offers Unpin.
+        if (quickAccess)
+        {
+            menu.ShowForQuickAccessItem(owner, path, location, customCommands, HandleVerb);
+            return;
+        }
+
+        menu.ShowForItems(owner, [path], location, customCommands, HandleVerb);
+
+        bool HandleVerb(string verb)
+        {
+            if (!verb.Equals("open", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            PathSelected?.Invoke(path);
+            return true;
+        }
     }
 
     string? DropDestination(DragEventArgs eventArgs)

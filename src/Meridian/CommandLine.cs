@@ -1,11 +1,3 @@
-enum CommandKind
-{
-    Open,
-    ReplaceExplorer,
-    RestoreExplorer,
-    Help
-}
-
 /// <summary>
 /// What Meridian was started to do. Arguments that are not switches are folders or files to open.
 /// </summary>

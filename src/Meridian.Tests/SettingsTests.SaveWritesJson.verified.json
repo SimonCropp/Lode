@@ -1,6 +1,7 @@
 ﻿{
   "ShowHidden": true,
   "ShowRecent": true,
+  "DefaultDirectory": null,
   "Left": 10,
   "Top": 20,
   "Width": 1200,

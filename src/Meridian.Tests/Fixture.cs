@@ -50,16 +50,16 @@ sealed class Fixture : IDisposable
         Directory.CreateDirectory(At("Docs"));
         Directory.CreateDirectory(At("Source", "Deep"));
         Write(0, "summary.gamma");
-        Write(12, "notes.alpha");
-        Write(64, "hidden.alpha");
+        Write(12, "notes.aleph");
+        Write(64, "hidden.aleph");
         Write(2_048, "report2.beta");
         Write(300_000, "report10.beta");
         Write(1_500_000, "Report1.beta");
-        Write(900, "Docs", "guide.alpha");
-        Write(5_000, "Source", "main.alpha");
-        Write(40, "Source", "Deep", "leaf.alpha");
+        Write(900, "Docs", "guide.aleph");
+        Write(5_000, "Source", "main.aleph");
+        Write(40, "Source", "Deep", "leaf.aleph");
 
-        File.SetAttributes(At("hidden.alpha"), FileAttributes.Hidden);
+        File.SetAttributes(At("hidden.aleph"), FileAttributes.Hidden);
         File.SetAttributes(At("Cache"), FileAttributes.Directory | FileAttributes.Hidden);
 
         // Last, because creating a child touches its parent's date.

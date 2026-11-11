@@ -1,0 +1,8 @@
+﻿{
+  .lnk (directory: False): .lnk,
+  DbToMermaid.slnx.lnk (directory: False): DbToMermaid.slnx,
+  Folder.lnk (directory: True): Folder.lnk,
+  notes.txt (directory: False): notes.txt,
+  Site.url (directory: False): Site,
+  UPPER.LNK (directory: False): UPPER
+}

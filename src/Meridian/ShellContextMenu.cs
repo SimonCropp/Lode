@@ -2,7 +2,7 @@
 /// Shows the classic Windows shell context menu (the IContextMenu one, with every installed
 /// shell extension) for files, folders, or a folder's background.
 /// </summary>
-sealed class ShellContextMenu : NativeWindow, IDisposable
+sealed partial class ShellContextMenu : NativeWindow, IDisposable
 {
     public record CustomCommand(string Text, Action Action);
 
@@ -62,6 +62,133 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
 
         Show(contextMenu, owner, location, customCommands, customFirst: false, canRenameFlag, handleVerb);
         return true;
+    }
+
+    /// <summary>
+    /// Shows the menu for a folder as Quick access lists it, so the shell offers Unpin for a
+    /// pinned folder rather than Pin, as Explorer does in Home. Falls back to the folder's own
+    /// menu when Quick access no longer lists it.
+    /// </summary>
+    public bool ShowForQuickAccessItem(
+        IntPtr owner,
+        string path,
+        Point location,
+        IReadOnlyList<CustomCommand> customCommands,
+        Func<string, bool> handleVerb)
+    {
+        var contextMenu = CreateForQuickAccessItem(owner, path);
+        if (contextMenu == null)
+        {
+            return ShowForItems(owner, [path], location, customCommands, handleVerb);
+        }
+
+        Show(contextMenu, owner, location, customCommands, customFirst: false, canRenameFlag, handleVerb);
+        return true;
+    }
+
+    // The shell folder behind Explorer's Quick access list.
+    const string quickAccess = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
+    const uint fileSystemPathName = 0x80058000;
+
+    static IContextMenu? CreateForQuickAccessItem(IntPtr owner, string path)
+    {
+        if (SHParseDisplayName(quickAccess, IntPtr.Zero, out var parentId, 0, out _) != 0)
+        {
+            return null;
+        }
+
+        IShellFolder? folder = null;
+        IEnumIdList? enumerator = null;
+        try
+        {
+            var folderId = shellFolderId;
+            if (SHBindToObject(IntPtr.Zero, parentId, IntPtr.Zero, ref folderId, out var folderPointer) != 0)
+            {
+                return null;
+            }
+
+            folder = (IShellFolder)Marshal.GetObjectForIUnknown(folderPointer);
+            Marshal.Release(folderPointer);
+
+            // Folders only; Quick access also lists recent files.
+            const int foldersFlag = 0x20;
+            if (folder.EnumObjects(owner, foldersFlag, out var enumeratorPointer) != 0 ||
+                enumeratorPointer == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            enumerator = (IEnumIdList)Marshal.GetObjectForIUnknown(enumeratorPointer);
+            Marshal.Release(enumeratorPointer);
+            while (enumerator.Next(1, out var child, out var fetched) == 0 && fetched == 1)
+            {
+                try
+                {
+                    if (!Locations.Same(ChildPath(parentId, child), path))
+                    {
+                        continue;
+                    }
+
+                    var menuId = contextMenuId;
+                    var result = folder.GetUIObjectOf(owner, 1, [child], ref menuId, IntPtr.Zero, out var menuPointer);
+                    if (result != 0)
+                    {
+                        return null;
+                    }
+
+                    return Wrap(menuPointer);
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(child);
+                }
+            }
+
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            if (enumerator != null)
+            {
+                Marshal.ReleaseComObject(enumerator);
+            }
+
+            if (folder != null)
+            {
+                Marshal.ReleaseComObject(folder);
+            }
+
+            Marshal.FreeCoTaskMem(parentId);
+        }
+    }
+
+    static string? ChildPath(IntPtr parentId, IntPtr child)
+    {
+        var full = ILCombine(parentId, child);
+        try
+        {
+            if (SHGetNameFromIDList(full, fileSystemPathName, out var name) != 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(name);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(name);
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(full);
+        }
     }
 
     /// <summary>
@@ -131,6 +258,7 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         Func<string, bool> handleVerb)
     {
         Action? customAction = null;
+        var quickAccessChanged = false;
         var menu = CreatePopupMenu();
         try
         {
@@ -165,6 +293,10 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
                 if (verb == null || !handleVerb(verb))
                 {
                     Invoke(contextMenu, owner, offset, location);
+                    if (verb != null && quickAccessVerbs.Contains(verb))
+                    {
+                        quickAccessChanged = true;
+                    }
                 }
             }
             else if (command > 0)
@@ -180,8 +312,24 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
             Marshal.ReleaseComObject(contextMenu);
         }
 
+        if (quickAccessChanged)
+        {
+            QuickAccessChanged?.Invoke();
+        }
+
         customAction?.Invoke();
     }
+
+    /// <summary>
+    /// Raised after a menu pinned a folder to Quick access or unpinned one.
+    /// </summary>
+    public static event Action? QuickAccessChanged;
+
+    static readonly HashSet<string> quickAccessVerbs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "pintohome",
+        "unpinfromhome"
+    };
 
     // Entries left out of every menu, by verb, which unlike the text is the same in every
     // language.
@@ -210,6 +358,20 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
             if (submenu != IntPtr.Zero)
             {
                 remove = Lists(submenu, sendTo) || Lists(submenu, libraries);
+                if (!remove && libraries.Count > 0 && LoneEntry(submenu))
+                {
+                    // Include in library holds only a "Retrieving libraries..." placeholder until
+                    // the shell fills it in, which it does on a message posted back to this
+                    // thread. Pump briefly so it can, then look again.
+                    var stopwatch = Stopwatch.StartNew();
+                    while (LoneEntry(submenu) && stopwatch.ElapsedMilliseconds < 500)
+                    {
+                        Application.DoEvents();
+                        Thread.Sleep(5);
+                    }
+
+                    remove = Lists(submenu, libraries);
+                }
             }
             else
             {
@@ -227,6 +389,9 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
 
         TidySeparators(menu);
     }
+
+    static bool LoneEntry(IntPtr submenu) =>
+        GetMenuItemCount(submenu) == 1;
 
     // Asking the shell for every name took most of the time this class adds to a right-click, so
     // each folder's names are kept, and read again only once the folder has changed.
@@ -285,11 +450,12 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         return texts.Count > 0 && texts.Count(names.Contains) >= Math.Max(1, texts.Count - 1);
     }
 
-    static string MenuText(IntPtr menu, int position)
+    static unsafe string MenuText(IntPtr menu, int position)
     {
-        var text = new StringBuilder(256);
-        GetMenuString(menu, (uint)position, text, text.Capacity, menuByPosition);
-        return text.ToString();
+        const int capacity = 256;
+        var text = stackalloc char[capacity];
+        var length = GetMenuString(menu, (uint)position, text, capacity, menuByPosition);
+        return new(text, 0, Math.Max(0, length));
     }
 
     static bool IsSeparator(IntPtr menu, int position) =>
@@ -359,12 +525,10 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         var entries = new List<MenuEntry>();
         for (var position = 0; position < GetMenuItemCount(menu); position++)
         {
-            var text = new StringBuilder(256);
-            GetMenuString(menu, (uint)position, text, text.Capacity, menuByPosition);
             var id = GetMenuItemID(menu, position);
             var verb = id is >= firstShellCommand and <= lastShellCommand ? GetVerb(contextMenu, id - firstShellCommand) : null;
             var submenu = GetSubMenu(menu, position);
-            entries.Add(new(text.ToString(), verb, submenu == IntPtr.Zero ? [] : DescribeMenu(contextMenu, submenu)));
+            entries.Add(new(MenuText(menu, position), verb, submenu == IntPtr.Zero ? [] : DescribeMenu(contextMenu, submenu)));
         }
 
         return entries;
@@ -674,45 +838,72 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         int HandleMenuMsg2(uint message, IntPtr wParam, IntPtr lParam, out IntPtr result);
     }
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    static extern int SHParseDisplayName(string name, IntPtr bindContext, out IntPtr identifier, uint attributesIn, out uint attributesOut);
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int SHParseDisplayName(string name, IntPtr bindContext, out IntPtr identifier, uint attributesIn, out uint attributesOut);
 
-    [DllImport("shell32.dll")]
-    static extern int SHBindToParent(IntPtr identifier, ref Guid interfaceId, out IntPtr parent, out IntPtr child);
+    [LibraryImport("shell32.dll")]
+    private static partial int SHBindToParent(IntPtr identifier, ref Guid interfaceId, out IntPtr parent, out IntPtr child);
 
-    [DllImport("shell32.dll")]
-    static extern int SHBindToObject(IntPtr parent, IntPtr identifier, IntPtr bindContext, ref Guid interfaceId, out IntPtr result);
+    [LibraryImport("shell32.dll")]
+    private static partial int SHBindToObject(IntPtr parent, IntPtr identifier, IntPtr bindContext, ref Guid interfaceId, out IntPtr result);
 
-    [DllImport("shell32.dll")]
-    static extern IntPtr ILFindLastID(IntPtr identifier);
+    [LibraryImport("shell32.dll")]
+    private static partial IntPtr ILFindLastID(IntPtr identifier);
 
-    [DllImport("user32.dll")]
-    static extern IntPtr CreatePopupMenu();
+    [LibraryImport("shell32.dll")]
+    private static partial IntPtr ILCombine(IntPtr first, IntPtr second);
 
-    [DllImport("user32.dll")]
-    static extern bool DestroyMenu(IntPtr menu);
+    [LibraryImport("shell32.dll")]
+    private static partial int SHGetNameFromIDList(IntPtr identifier, uint form, out IntPtr name);
 
-    [DllImport("user32.dll")]
-    static extern int GetMenuItemCount(IntPtr menu);
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("000214F2-0000-0000-C000-000000000046")]
+    interface IEnumIdList
+    {
+        [PreserveSig]
+        int Next(uint count, out IntPtr identifier, out uint fetched);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    static extern int GetMenuString(IntPtr menu, uint item, StringBuilder? text, int maxCount, uint flags);
+        [PreserveSig]
+        int Skip(uint count);
 
-    [DllImport("user32.dll")]
-    static extern uint GetMenuItemID(IntPtr menu, int position);
+        [PreserveSig]
+        int Reset();
 
-    [DllImport("user32.dll")]
-    static extern IntPtr GetSubMenu(IntPtr menu, int position);
+        [PreserveSig]
+        int Clone(out IntPtr enumerator);
+    }
 
-    [DllImport("user32.dll")]
-    static extern bool DeleteMenu(IntPtr menu, uint position, uint flags);
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr CreatePopupMenu();
 
-    [DllImport("user32.dll")]
-    static extern uint GetMenuState(IntPtr menu, uint item, uint flags);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DestroyMenu(IntPtr menu);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    static extern bool InsertMenu(IntPtr menu, uint position, uint flags, UIntPtr newItemId, string? newItem);
+    [LibraryImport("user32.dll")]
+    private static partial int GetMenuItemCount(IntPtr menu);
 
-    [DllImport("user32.dll")]
-    static extern uint TrackPopupMenuEx(IntPtr menu, uint flags, int left, int top, IntPtr window, IntPtr parameters);
+    [LibraryImport("user32.dll", EntryPoint = "GetMenuStringW")]
+    private static unsafe partial int GetMenuString(IntPtr menu, uint item, char* text, int maxCount, uint flags);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint GetMenuItemID(IntPtr menu, int position);
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetSubMenu(IntPtr menu, int position);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DeleteMenu(IntPtr menu, uint position, uint flags);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint GetMenuState(IntPtr menu, uint item, uint flags);
+
+    [LibraryImport("user32.dll", EntryPoint = "InsertMenuW", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool InsertMenu(IntPtr menu, uint position, uint flags, UIntPtr newItemId, string? newItem);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint TrackPopupMenuEx(IntPtr menu, uint flags, int left, int top, IntPtr window, IntPtr parameters);
 }

@@ -41,6 +41,29 @@ class OptionsForm : Form
         Margin = new(3, 3, 3, 0)
     };
 
+    readonly TextBox defaultDirectory = new()
+    {
+        Name = "defaultDirectory",
+        ReadOnly = true,
+        PlaceholderText = "Your user folder",
+        Width = 300,
+        Margin = new(3, 4, 3, 3)
+    };
+    readonly Button browseDefaultDirectory = new()
+    {
+        Name = "browseDefaultDirectory",
+        Text = "Browse...",
+        AutoSize = true
+    };
+    readonly Button resetDefaultDirectory = new()
+    {
+        Name = "resetDefaultDirectory",
+        Text = "Reset",
+        AutoSize = true
+    };
+
+    readonly Settings settings;
+
     /// <summary>
     /// A setting that changes how windows look was changed.
     /// </summary>
@@ -49,6 +72,10 @@ class OptionsForm : Form
     public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings)
     {
         this.explorerReplacement = explorerReplacement;
+        this.settings = settings;
+        browseDefaultDirectory.Click += (_, _) => BrowseDefaultDirectory();
+        resetDefaultDirectory.Click += (_, _) => SetDefaultDirectory(null);
+        UpdateDefaultDirectory();
         showHidden.Checked = settings.ShowHidden;
         showHidden.CheckedChanged += (_, _) =>
         {
@@ -96,6 +123,7 @@ class OptionsForm : Form
             ColumnCount = 1,
             Location = new(Padding.Left, Padding.Top)
         };
+        layout.Controls.Add(BuildStartupGroup());
         layout.Controls.Add(BuildViewGroup());
         layout.Controls.Add(BuildExplorerGroup());
         layout.Controls.Add(closeButton);
@@ -104,6 +132,76 @@ class OptionsForm : Form
         PerformLayout();
 
         UpdateExplorerState();
+    }
+
+    GroupBox BuildStartupGroup()
+    {
+        var description = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new(420, 0),
+            Margin = new(3, 3, 3, 6),
+            Text = "The folder new tabs open in, and new windows given no folder to show. " +
+                   "Reset goes back to your user folder."
+        };
+
+        var row = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            Margin = Padding.Empty
+        };
+        row.Controls.Add(defaultDirectory);
+        row.Controls.Add(browseDefaultDirectory);
+        row.Controls.Add(resetDefaultDirectory);
+
+        var layout = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Fill
+        };
+        layout.Controls.Add(description);
+        layout.Controls.Add(row);
+
+        var group = new GroupBox
+        {
+            Text = "Default folder",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new(9, 6, 9, 9)
+        };
+        group.Controls.Add(layout);
+        return group;
+    }
+
+    void BrowseDefaultDirectory()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Choose the folder new windows open in",
+            UseDescriptionForTitle = true,
+            InitialDirectory = settings.StartLocation()
+        };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            SetDefaultDirectory(dialog.SelectedPath);
+        }
+    }
+
+    void SetDefaultDirectory(string? path)
+    {
+        settings.DefaultDirectory = path;
+        UpdateDefaultDirectory();
+    }
+
+    void UpdateDefaultDirectory()
+    {
+        defaultDirectory.Text = settings.DefaultDirectory ?? "";
+        resetDefaultDirectory.Enabled = settings.DefaultDirectory != null;
     }
 
     GroupBox BuildViewGroup()

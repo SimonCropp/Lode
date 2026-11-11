@@ -1,6 +1,3 @@
-using System.Collections.Specialized;
-using System.ComponentModel;
-
 /// <summary>
 /// Copy, move, delete and rename through the Windows shell, so the user gets the standard
 /// progress dialog, conflict prompts, Recycle Bin and undo.
@@ -258,7 +255,8 @@ static class FileOperations
         // Explorer's rules: Ctrl copies, Shift moves, otherwise move within a drive and copy across drives.
         var control = (eventArgs.KeyState & controlKeyState) != 0;
         var shift = (eventArgs.KeyState & shiftKeyState) != 0;
-        var move = !control && (shift || Locations.SameRoot(sources[0], destination));
+        var move = !control &&
+                   (shift || Locations.SameRoot(sources[0], destination));
         if (move)
         {
             if (sources.All(_ => Locations.IsChildOf(_, destination)))
@@ -272,7 +270,12 @@ static class FileOperations
             }
         }
 
-        return eventArgs.AllowedEffect.HasFlag(DragDropEffects.Copy) ? DragDropEffects.Copy : DragDropEffects.None;
+        if (eventArgs.AllowedEffect.HasFlag(DragDropEffects.Copy))
+        {
+            return DragDropEffects.Copy;
+        }
+
+        return DragDropEffects.None;
     }
 
     public static void Drop(IntPtr owner, DragEventArgs eventArgs, string? destination)
@@ -289,6 +292,13 @@ static class FileOperations
 
         // We move the files ourselves. Reporting Move back would tell the drag source
         // (Explorer, for one) to delete the originals as well.
-        eventArgs.Effect = effect == DragDropEffects.Move ? DragDropEffects.None : effect;
+        if (effect == DragDropEffects.Move)
+        {
+            eventArgs.Effect = DragDropEffects.None;
+        }
+        else
+        {
+            eventArgs.Effect = effect;
+        }
     }
 }

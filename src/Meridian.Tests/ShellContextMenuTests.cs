@@ -20,9 +20,10 @@ public class ShellContextMenuTests
                 return path;
             });
 
-    static async Task VerifyAbsences(Func<Fixture, string> pathFor)
+    // Takes the caller's name so each test gets its own fixture folder and they can run side by side.
+    static async Task VerifyAbsences(Func<Fixture, string> pathFor, [CallerMemberName] string member = "")
     {
-        using var fixture = Fixture.Create();
+        using var fixture = Fixture.Create(member: member);
         var entries = ShellContextMenu.Describe(IntPtr.Zero, [pathFor(fixture)]);
         var texts = entries.Select(_ => _.Text.Replace("&", "")).ToList();
 

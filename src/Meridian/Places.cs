@@ -12,10 +12,27 @@ sealed record Places(
     // The shell folder behind Explorer's Quick access list.
     const string quickAccess = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
 
+    public IReadOnlyList<string> Pinned { get; private set; } = Pinned;
+    public IReadOnlyList<string> Recent { get; private set; } = Recent;
+
+    /// <summary>
+    /// Raised on the UI thread once <see cref="Pinned"/> and <see cref="Recent"/> have been read
+    /// again, after a folder was pinned or unpinned from one of Meridian's menus.
+    /// </summary>
+    public event Action? Changed;
+
     public static Places ForThisMachine()
     {
         var (pinned, recent) = QuickAccessFolders();
-        return new(pinned, recent, ShowComputer: true, DescribeFreeSpace);
+        var places = new Places(pinned, recent, ShowComputer: true, DescribeFreeSpace);
+        ShellContextMenu.QuickAccessChanged += places.Reread;
+        return places;
+    }
+
+    void Reread()
+    {
+        (Pinned, Recent) = QuickAccessFolders();
+        Changed?.Invoke();
     }
 
     /// <summary>

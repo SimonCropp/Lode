@@ -12,21 +12,28 @@ class MainForm : Form
     const int browserForwardCommand = 2;
     const int maximumTabTextLength = 28;
 
-    readonly Font glyphFont = new("Segoe MDL2 Assets", 10f);
-    readonly ToolTip toolTip = new();
-    readonly TextBox addressBox = new();
-    readonly TextBox filterBox = new();
-    readonly SplitContainer split = new();
-    readonly Settings settings;
-    readonly Places places;
-    readonly FolderTree tree;
-    readonly ClosableTabControl tabs = new();
-    readonly ToolStripStatusLabel statusLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
-    readonly ToolStripStatusLabel spaceLabel = new();
-    readonly ToolStripMenuItem showHiddenItem = new("Show hidden items") { ShortcutKeyDisplayString = "Ctrl+H" };
-    readonly Button backButton;
-    readonly Button forwardButton;
-    readonly Button upButton;
+    Font glyphFont = new("Segoe MDL2 Assets", 10f);
+    ToolTip toolTip = new();
+    TextBox addressBox = new();
+    TextBox filterBox = new();
+    SplitContainer split = new();
+    Settings settings;
+    Places places;
+    FolderTree tree;
+    ClosableTabControl tabs = new();
+    ToolStripStatusLabel statusLabel = new()
+    {
+        Spring = true,
+        TextAlign = ContentAlignment.MiddleLeft
+    };
+    ToolStripStatusLabel spaceLabel = new();
+    ToolStripMenuItem showHiddenItem = new("Show hidden items")
+    {
+        ShortcutKeyDisplayString = "Ctrl+H"
+    };
+    Button backButton;
+    Button forwardButton;
+    Button upButton;
     bool updatingFilter;
 
     // False for a window opened from another: it is placed beside that one rather than where
@@ -65,6 +72,7 @@ class MainForm : Form
         this.settings = settings;
         this.places = places;
         tree = new(settings, places);
+        places.Changed += RebuildTree;
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -206,20 +214,22 @@ class MainForm : Form
         var paths = arguments
             .Select(Locations.Normalize)
             .OfType<string>()
-            .Where(_ => Directory.Exists(_) || File.Exists(_))
+            .Where(_ => Directory.Exists(_) ||
+                        File.Exists(_))
             .ToList();
         var active = paths.Count - 1;
         if (paths.Count == 0)
         {
             paths = settings.Tabs
-                .Where(_ => Locations.IsThisPC(_) || Directory.Exists(_))
+                .Where(_ => Locations.IsThisPC(_) ||
+                            Directory.Exists(_))
                 .ToList();
             active = settings.ActiveTab;
         }
 
         if (paths.Count == 0)
         {
-            paths.Add(Locations.Home);
+            paths.Add(settings.StartLocation());
         }
 
         foreach (var path in paths)
@@ -280,7 +290,11 @@ class MainForm : Form
         // UserClosing is the X, Alt+F4 or the taskbar's Close; None is another program sending
         // WM_CLOSE. Windows shutting down, or Exit (which turns HideLastWindowOnClose off), closes
         // for real.
-        if (HideLastWindowOnClose && lastVisible && eventArgs.CloseReason is CloseReason.UserClosing or CloseReason.None)
+        if (HideLastWindowOnClose &&
+            lastVisible &&
+            eventArgs.CloseReason is
+                CloseReason.UserClosing or
+                CloseReason.None)
         {
             eventArgs.Cancel = true;
             Hide();
@@ -289,8 +303,14 @@ class MainForm : Form
 
     public FolderView AddTab(string path, bool activate)
     {
-        var view = new FolderView(settings, places) { Dock = DockStyle.Fill };
-        var page = new TabPage { Padding = Padding.Empty };
+        var view = new FolderView(settings, places)
+        {
+            Dock = DockStyle.Fill
+        };
+        var page = new TabPage
+        {
+            Padding = Padding.Empty
+        };
         page.Controls.Add(view);
 
         // Handled by whichever window the tab is in at the time, since a tab can be dragged to
@@ -319,7 +339,7 @@ class MainForm : Form
     }
 
     void NewTab() =>
-        AddTab(ActiveView?.CurrentPath ?? Locations.Home, true);
+        AddTab(settings.StartLocation(), true);
 
     void CloseTab(TabPage page)
     {
@@ -365,7 +385,7 @@ class MainForm : Form
 
     // The top-most of this app's controls at a point on the screen, if any.
     static Control? WindowAt(Point screenLocation) =>
-        FromChildHandle(WindowFromPoint(screenLocation));
+        FromChildHandle(WindowFromPoint(new(screenLocation.X, screenLocation.Y)));
 
     /// <summary>
     /// Moves a tab, with its history, to the end of another window's tabs and shows it there.
@@ -461,23 +481,6 @@ class MainForm : Form
         }
     }
 
-    // Like Explorer, the window takes the icon of the folder it shows, which is what the taskbar
-    // and Alt+Tab display.
-    string? iconLocation;
-
-    void UpdateIcon(string location)
-    {
-        if (Locations.Same(iconLocation, location))
-        {
-            return;
-        }
-
-        iconLocation = location;
-        var previous = Icon;
-        Icon = ShellIcons.WindowIcon(location);
-        previous?.Dispose();
-    }
-
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
     // tab is showing.
     void SyncToActiveView()
@@ -493,7 +496,6 @@ class MainForm : Form
         filterBox.Text = view.Filter;
         updatingFilter = false;
         Text = $"{Locations.DisplayName(view.CurrentPath)} - Meridian";
-        UpdateIcon(view.CurrentPath);
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;
@@ -521,7 +523,8 @@ class MainForm : Form
 
     void OpenTerminal()
     {
-        if (ActiveView is { } view && !Locations.IsThisPC(view.CurrentPath))
+        if (ActiveView is { } view &&
+            !Locations.IsThisPC(view.CurrentPath))
         {
             FileOperations.OpenTerminal(view.CurrentPath);
         }
@@ -532,7 +535,7 @@ class MainForm : Form
     {
         var offset = new Size(LogicalToDeviceUnits(30), LogicalToDeviceUnits(30));
         var window = CreateWindow(new(Location + offset, NormalSize));
-        window.AddTab(ActiveView?.CurrentPath ?? Locations.Home, true);
+        window.AddTab(ActiveView?.CurrentPath ?? settings.StartLocation(), true);
         window.Show();
     }
 
@@ -583,8 +586,11 @@ class MainForm : Form
         {
             Caption = "About Meridian",
             Heading = $"Meridian {version}",
-            Text = "A tabbed file manager with the classic Windows context menu.\n\n" +
-                   $"<a href=\"{projectUrl}\">{projectUrl}</a>",
+            Text = $"""
+                    A tabbed file manager with the classic Windows context menu.
+
+                    <a href="{projectUrl}">{projectUrl}</a>
+                    """,
             EnableLinks = true,
             Icon = TaskDialogIcon.Information,
             Buttons = { TaskDialogButton.OK }
@@ -627,7 +633,8 @@ class MainForm : Form
 
     void OnFilterTextChanged(object? sender, EventArgs eventArgs)
     {
-        if (!updatingFilter && ActiveView is { } view)
+        if (!updatingFilter &&
+            ActiveView is { } view)
         {
             view.Filter = filterBox.Text;
         }
@@ -786,6 +793,7 @@ class MainForm : Form
     {
         if (disposing)
         {
+            places.Changed -= RebuildTree;
             glyphFont.Dispose();
             toolTip.Dispose();
         }

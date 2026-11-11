@@ -1,8 +1,15 @@
-// UseWindowsForms would add these two, but it needs a -windows target framework, which a dotnet
-// tool cannot have. See Meridian.csproj.
+global using System.Collections.Specialized;
+global using System.ComponentModel;
 global using System.Drawing;
 global using System.Windows.Forms;
 global using System.Diagnostics;
+global using System.Drawing.Drawing2D;
+global using System.Drawing.Imaging;
+global using System.IO.Enumeration;
+global using System.IO.Pipes;
 global using System.Runtime.InteropServices;
+global using System.Runtime.Versioning;
+global using System.Text.Json;
+global using Microsoft.Win32;
 global using static NativeMethods;
 global using Timer = System.Windows.Forms.Timer;

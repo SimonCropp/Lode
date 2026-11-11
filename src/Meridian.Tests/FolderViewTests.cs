@@ -12,6 +12,24 @@ public class FolderViewTests
     static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
 
     [Test]
+    public Task DisplayNameHidesShortcutExtensions()
+    {
+        (string Name, bool IsDirectory)[] entries =
+        [
+            ("DbToMermaid.slnx.lnk", false),
+            ("Site.url", false),
+            ("UPPER.LNK", false),
+            (".lnk", false),
+            ("notes.txt", false),
+            ("Folder.lnk", true)
+        ];
+        return Verify(entries.ToDictionary(
+            _ => $"{_.Name} (directory: {_.IsDirectory})",
+            _ => FolderView.DisplayName(
+                new(_.Name, $@"C:\{_.Name}", _.IsDirectory, 0, default, _.IsDirectory ? FileAttributes.Directory : FileAttributes.Normal))));
+    }
+
+    [Test]
     public async Task ListsFoldersFirstInNaturalOrder()
     {
         using var fixture = Fixture.Create();
@@ -71,7 +89,7 @@ public class FolderViewTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        view.Filter = "*.alpha";
+        view.Filter = "*.aleph";
 
         await Verify(Describe(view, fixture));
     }
@@ -163,9 +181,9 @@ public class FolderViewTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await File.WriteAllBytesAsync(fixture.At("arrived.alpha"), new byte[3_000]);
+        await File.WriteAllBytesAsync(fixture.At("arrived.aleph"), new byte[3_000]);
         File.Delete(fixture.At("summary.gamma"));
-        await Pump.Until(() => view.Entries.Any(_ => _.Name == "arrived.alpha") && view.Entries.All(_ => _.Name != "summary.gamma"));
+        await Pump.Until(() => view.Entries.Any(_ => _.Name == "arrived.aleph") && view.Entries.All(_ => _.Name != "summary.gamma"));
 
         await Verify(Describe(view, fixture));
     }

@@ -1,5 +1,3 @@
-using System.IO.Pipes;
-
 /// <summary>
 /// One running Meridian per user session. Meridian stays in the tray rather than exiting, so a
 /// later launch (a folder opened from Explorer, Win+E, the command line) hands its folders to
@@ -12,9 +10,9 @@ sealed class SingleInstance : IDisposable
     // started do that.
     const int anyProcess = -1;
 
-    readonly Mutex mutex;
-    readonly string pipeName;
-    readonly CancelSource cancel = new();
+    Mutex mutex;
+    string pipeName;
+    CancelSource cancel = new();
 
     public bool IsFirst { get; }
 
