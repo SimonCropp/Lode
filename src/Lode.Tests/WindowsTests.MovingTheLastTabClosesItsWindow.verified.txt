@@ -1,0 +1,11 @@
+﻿{
+  sourceClosed: true,
+  target: {
+    title: Docs - Lode,
+    tabs: [
+      Projects,
+      Docs
+    ],
+    active: {TempPath}LodeTests\WindowsTests.MovingTheLastTabClosesItsWindow\Projects\Docs
+  }
+}

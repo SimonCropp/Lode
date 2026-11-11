@@ -1,0 +1,16 @@
+<Solution>
+  <Project Path="Lode/Lode.csproj" />
+  <Project Path="Lode.Tests/Lode.Tests.csproj" />
+    <Folder Name="/Solution Items/">
+        <File Path="../.gitignore" />
+        <File Path="../readme.md" />
+        <File Path="nuget.md" />
+        <File Path="../license.txt" />
+        <File Path="../.github/workflows/build.yml" />
+        <File Path="../.editorconfig" />
+        <File Path="../.gitattributes" />
+        <File Path="Directory.Build.props" />
+        <File Path="Directory.Packages.props" />
+        <File Path="../global.json" />
+    </Folder>
+</Solution>

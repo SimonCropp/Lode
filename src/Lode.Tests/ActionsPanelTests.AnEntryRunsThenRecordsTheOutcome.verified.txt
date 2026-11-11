@@ -1,0 +1,16 @@
+﻿{
+  running: [
+    {
+      line: Git pull – Lode: Running…,
+      state: Running,
+      Details: 
+    }
+  ],
+  finished: [
+    {
+      line: Git pull – Lode: 1 of 2 failed,
+      state: Failed,
+      Details: Bad: FAILED
+    }
+  ]
+}

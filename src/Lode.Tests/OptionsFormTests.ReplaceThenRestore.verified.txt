@@ -1,0 +1,17 @@
+﻿{
+  before: {
+    status: Currently File Explorer opens them.,
+    replaceEnabled: true,
+    restoreEnabled: false
+  },
+  replaced: {
+    status: Currently Lode opens them.,
+    replaceEnabled: false,
+    restoreEnabled: true
+  },
+  restored: {
+    status: Currently File Explorer opens them.,
+    replaceEnabled: true,
+    restoreEnabled: false
+  }
+}

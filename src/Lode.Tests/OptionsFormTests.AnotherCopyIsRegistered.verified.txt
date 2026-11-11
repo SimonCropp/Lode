@@ -1,0 +1,12 @@
+﻿{
+  before: {
+    status: Currently another copy of Lode opens them: "D:\Old\Lode.exe",
+    replaceEnabled: true,
+    restoreEnabled: true
+  },
+  replaced: {
+    status: Currently Lode opens them.,
+    replaceEnabled: false,
+    restoreEnabled: true
+  }
+}

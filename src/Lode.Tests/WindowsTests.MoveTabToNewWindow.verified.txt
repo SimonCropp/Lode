@@ -1,0 +1,17 @@
+﻿{
+  source: {
+    title: Source - Lode,
+    tabs: [
+      Source
+    ],
+    active: {TempPath}LodeTests\WindowsTests.MoveTabToNewWindow\Projects\Source
+  },
+  window: {
+    title: Docs - Lode,
+    tabs: [
+      Docs
+    ],
+    active: {TempPath}LodeTests\WindowsTests.MoveTabToNewWindow\Projects\Docs
+  },
+  announced: true
+}

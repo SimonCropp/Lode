@@ -1,0 +1,57 @@
+﻿{
+  replacedAgain: {
+    CLSID\: {
+      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+        shell\: {
+          opennewwindow\: {
+            command\: {
+              (default): "D:\Other\Lode.exe",
+              DelegateExecute: 
+            },
+            CreatedBy: Lode
+          }
+        }
+      }
+    },
+    Directory\: {
+      shell\: {
+        (default): Lode,
+        Lode\: {
+          (default): Open in Lode,
+          command\: {
+            (default): "D:\Other\Lode.exe" "%1"
+          },
+          LodePreviousDefault: openinother
+        },
+        openinother\: {
+          command\: {
+            (default): "C:\Other\other.exe" "%1"
+          }
+        }
+      }
+    },
+    Drive\: {
+      shell\: {
+        (default): Lode,
+        Lode\: {
+          (default): Open in Lode,
+          command\: {
+            (default): "D:\Other\Lode.exe" "%1"
+          }
+        }
+      }
+    }
+  },
+  restored: {
+    Directory\: {
+      shell\: {
+        (default): openinother,
+        openinother\: {
+          command\: {
+            (default): "C:\Other\other.exe" "%1"
+          }
+        }
+      }
+    }
+  }
+}
