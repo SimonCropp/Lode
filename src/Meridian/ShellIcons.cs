@@ -182,6 +182,71 @@ static class ShellIcons
     /// because it touches the disk, so it is reserved for items whose icon is not implied by
     /// their extension (drives, special folders, executables, shortcuts).
     /// </summary>
+    const uint iconHandleFlag = 0x100;
+
+    /// <summary>
+    /// The icon Explorer gives a window showing <paramref name="location"/>: the location's own
+    /// icon, so an ordinary folder gets the plain folder. At the large size, which follows the
+    /// display scale. The caller owns it.
+    /// </summary>
+    public static Icon WindowIcon(string location)
+    {
+        var info = new ShellFileInfo();
+        IntPtr result;
+        if (Locations.IsThisPC(location))
+        {
+            if (SHGetSpecialFolderLocation(IntPtr.Zero, computerFolder, out var itemIdList) != 0)
+            {
+                return FolderWindowIcon();
+            }
+
+            try
+            {
+                result = SHGetFileInfo(itemIdList, 0, ref info, infoSize, itemIdListFlag | iconHandleFlag);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(itemIdList);
+            }
+        }
+        else if (Locations.IsNetwork(location))
+        {
+            // Asking an offline share for its icon can stall, as in the tree.
+            return FolderWindowIcon();
+        }
+        else
+        {
+            result = SHGetFileInfo(location, 0, ref info, infoSize, iconHandleFlag);
+        }
+
+        return result == IntPtr.Zero || info.Icon == IntPtr.Zero ? FolderWindowIcon() : Owned(info.Icon);
+    }
+
+    /// <summary>
+    /// The shell's plain folder icon, for the tray and for a window before it shows a folder.
+    /// The caller owns it.
+    /// </summary>
+    public static Icon FolderWindowIcon()
+    {
+        var info = new ShellFileInfo();
+        SHGetFileInfo("folder", directoryAttribute, ref info, infoSize, iconHandleFlag | useFileAttributesFlag);
+        return Owned(info.Icon);
+    }
+
+    // A managed copy of a shell icon handle, releasing the handle.
+    static Icon Owned(IntPtr handle)
+    {
+        try
+        {
+            using var temporary = Icon.FromHandle(handle);
+            return (Icon)temporary.Clone();
+        }
+        finally
+        {
+            DestroyIcon(handle);
+        }
+    }
+
     public static int GetActualIcon(string path)
     {
         var info = new ShellFileInfo();

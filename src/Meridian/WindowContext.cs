@@ -9,7 +9,7 @@ sealed class WindowContext : ApplicationContext
     readonly Settings settings;
     readonly Places places;
     readonly NotifyIcon tray;
-    readonly Icon trayIcon = AppIcon.Create();
+    readonly Icon trayIcon = ShellIcons.FolderWindowIcon();
 
     public WindowContext(MainForm first, Settings settings, Places places, SingleInstance instance)
     {
@@ -46,6 +46,19 @@ sealed class WindowContext : ApplicationContext
         Track(first);
         first.Show();
         instance.Listen(OnLaunched);
+        WarmUpContextMenu();
+    }
+
+    // Once the first window has drawn and settled, so the work does not hold up opening it.
+    static void WarmUpContextMenu()
+    {
+        var timer = new Timer { Interval = 1500 };
+        timer.Tick += (_, _) =>
+        {
+            timer.Dispose();
+            ShellContextMenu.WarmUp();
+        };
+        timer.Start();
     }
 
     void Track(MainForm window)

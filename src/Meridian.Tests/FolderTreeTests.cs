@@ -107,6 +107,40 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    [Test]
+    public async Task PicksUpFoldersAddedAndRemovedOnDisk()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(new() { ShowHidden = false }, fixture.Root);
+        tree.SelectPath(fixture.At("Docs"));
+        var projects = tree.Nodes[0].Nodes[0];
+        projects.Nodes[2].Expand();
+
+        Directory.Delete(fixture.At("Docs"), true);
+        Directory.CreateDirectory(fixture.At("Build"));
+        await Pump.Until(() => Names(projects).Contains("Build") && !Names(projects).Contains("Docs"));
+
+        await Verify(Dump(tree));
+    }
+
+    [Test]
+    public async Task ExpandingAgainPicksUpChangesMadeWhileCollapsed()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(new() { ShowHidden = false }, fixture.Root);
+        var projects = tree.Nodes[0].Nodes[0];
+        projects.Expand();
+        projects.Collapse();
+
+        Directory.Delete(fixture.At("Archive"), true);
+        projects.Expand();
+
+        await Verify(Dump(tree));
+    }
+
+    static List<string> Names(TreeNode node) =>
+        node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
+
     static FolderTree Create(Settings settings, params string[] pinned) =>
         CreateWithRecent(settings, pinned, []);
 

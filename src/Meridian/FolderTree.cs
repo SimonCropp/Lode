@@ -23,6 +23,17 @@ sealed class FolderTree : TreeView
         SelectedImageIndex = ShellIcons.ComputerIcon
     };
 
+    // The folders whose subfolders are kept up to date: those loaded and still expanded. Each has
+    // a watcher, or null where the location can't be watched. A folder drops out when it is
+    // collapsed, and is brought up to date when it is expanded again.
+    readonly Dictionary<TreeNode, FileSystemWatcher?> watched = [];
+
+    // Folders a watcher has seen change. Watcher events arrive on thread-pool threads and can
+    // come in bursts, so they only land here; the timer syncs each folder once per tick on the
+    // UI thread.
+    readonly ConcurrentDictionary<TreeNode, bool> changed = [];
+    readonly Timer changeTimer = new() { Interval = 300 };
+
     public event Action<string>? PathSelected;
     public event Action<string>? NewTabRequested;
 
@@ -39,6 +50,8 @@ sealed class FolderTree : TreeView
 
         // Explorer's spacing between rows, scaled the same way as the icons.
         ItemHeight = unscaledRowHeight * ShellIcons.SmallIconSize.Height / unscaledIconSize;
+        changeTimer.Tick += (_, _) => SyncChanged();
+        changeTimer.Start();
         Rebuild();
     }
 
@@ -54,6 +67,7 @@ sealed class FolderTree : TreeView
         BeginUpdate();
         try
         {
+            UnwatchAll();
             Nodes.Clear();
             computerNode.Nodes.Clear();
             AddSection("Pinned", ShellIcons.QuickAccessIcon, places.Pinned);
@@ -121,6 +135,11 @@ sealed class FolderTree : TreeView
 
     void LoadDrives()
     {
+        foreach (TreeNode drive in computerNode.Nodes)
+        {
+            UnwatchTree(drive);
+        }
+
         computerNode.Nodes.Clear();
         foreach (var drive in DriveInfo.GetDrives())
         {
@@ -147,9 +166,9 @@ sealed class FolderTree : TreeView
     static bool NeedsLoading(TreeNode node) =>
         node.Nodes.Count == 1 && node.Nodes[0].Tag == placeholder;
 
-    void LoadChildren(TreeNode node)
+    // A folder's subfolders in display order, or null when the folder can't be read.
+    List<DirectoryInfo>? ReadSubfolders(TreeNode node)
     {
-        node.Nodes.Clear();
         try
         {
             var options = new EnumerationOptions
@@ -161,25 +180,216 @@ sealed class FolderTree : TreeView
                 .EnumerateDirectories("*", options)
                 .ToList();
             directories.Sort((first, second) => StrCmpLogicalW(first.Name, second.Name));
-            foreach (var directory in directories)
-            {
-                node.Nodes.Add(CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
-            }
+            return directories;
         }
         catch (Exception)
         {
-            // An unreadable folder simply has no children to show.
+            return null;
+        }
+    }
+
+    void LoadChildren(TreeNode node)
+    {
+        node.Nodes.Clear();
+
+        // An unreadable folder simply has no children to show.
+        foreach (var directory in ReadSubfolders(node) ?? [])
+        {
+            node.Nodes.Add(CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
+        }
+
+        Watch(node);
+    }
+
+    /// <summary>
+    /// Brings a folder's loaded subfolders in line with the disk. The nodes of subfolders still
+    /// there are kept, so whatever is expanded beneath them stays expanded.
+    /// </summary>
+    void SyncChildren(TreeNode node)
+    {
+        // Can't tell what is there; better to leave what is showing than to empty it. If the
+        // folder itself has gone, its parent's sync removes it.
+        var directories = ReadSubfolders(node);
+        if (directories == null)
+        {
+            return;
+        }
+
+        var paths = directories
+            .Select(_ => _.FullName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        BeginUpdate();
+        try
+        {
+            foreach (var child in node.Nodes.Cast<TreeNode>().ToList())
+            {
+                if (child.Tag is string path && paths.Contains(path))
+                {
+                    continue;
+                }
+
+                // Settle the selection on the folder rather than leave the control to pick some
+                // other node. Set from code, so it doesn't navigate.
+                if (SelectedNode != null && IsSelfOrDescendant(SelectedNode, child))
+                {
+                    SelectedNode = node;
+                }
+
+                UnwatchTree(child);
+                child.Remove();
+            }
+
+            // What is left is in display order already, so new folders slot in around it.
+            for (var i = 0; i < directories.Count; i++)
+            {
+                var directory = directories[i];
+                if (i < node.Nodes.Count && node.Nodes[i].Tag is string path && Locations.Same(path, directory.FullName))
+                {
+                    // Renamed to a different case.
+                    if (node.Nodes[i].Text != directory.Name)
+                    {
+                        node.Nodes[i].Text = directory.Name;
+                        node.Nodes[i].Tag = directory.FullName;
+                    }
+
+                    continue;
+                }
+
+                node.Nodes.Insert(i, CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
+            }
+        }
+        finally
+        {
+            EndUpdate();
+        }
+    }
+
+    static bool IsSelfOrDescendant(TreeNode node, TreeNode ancestor)
+    {
+        for (var current = node; current != null; current = current.Parent)
+        {
+            if (current == ancestor)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // This PC and the section headings aren't folders on disk: their children are managed
+    // elsewhere.
+    static bool IsFolder(TreeNode node) =>
+        node.Tag is string path && !Locations.IsThisPC(path);
+
+    void Watch(TreeNode node)
+    {
+        if (watched.ContainsKey(node))
+        {
+            return;
+        }
+
+        FileSystemWatcher? watcher = null;
+        try
+        {
+            watcher = new((string)node.Tag!)
+            {
+                NotifyFilter = NotifyFilters.DirectoryName
+            };
+            watcher.Created += (_, _) => changed[node] = true;
+            watcher.Deleted += (_, _) => changed[node] = true;
+            watcher.Renamed += (_, _) => changed[node] = true;
+
+            // Too many changes at once to keep track of, or the folder itself has gone.
+            // Either way, read it again.
+            watcher.Error += (_, _) => changed[node] = true;
+            watcher.EnableRaisingEvents = true;
+        }
+        catch (Exception)
+        {
+            // Some locations (an offline share, an empty drive) can't be watched. Those are
+            // read again whenever they are expanded.
+            watcher?.Dispose();
+            watcher = null;
+        }
+
+        watched[node] = watcher;
+    }
+
+    void Unwatch(TreeNode node)
+    {
+        if (watched.Remove(node, out var watcher))
+        {
+            watcher?.Dispose();
+        }
+    }
+
+    // For a node leaving the tree: it, and everything beneath it.
+    void UnwatchTree(TreeNode node)
+    {
+        Unwatch(node);
+        foreach (TreeNode child in node.Nodes)
+        {
+            UnwatchTree(child);
+        }
+    }
+
+    void UnwatchAll()
+    {
+        foreach (var watcher in watched.Values)
+        {
+            watcher?.Dispose();
+        }
+
+        watched.Clear();
+        changed.Clear();
+    }
+
+    void SyncChanged()
+    {
+        if (changed.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (var node in changed.Keys)
+        {
+            changed.TryRemove(node, out _);
+
+            // Skips folders collapsed or removed since, including by an earlier sync this tick.
+            if (watched.ContainsKey(node))
+            {
+                SyncChildren(node);
+            }
         }
     }
 
     protected override void OnBeforeExpand(TreeViewCancelEventArgs eventArgs)
     {
-        if (eventArgs.Node is { } node && NeedsLoading(node))
+        if (eventArgs.Node is { } node && IsFolder(node))
         {
-            LoadChildren(node);
+            if (NeedsLoading(node))
+            {
+                LoadChildren(node);
+            }
+            else if (!watched.ContainsKey(node))
+            {
+                // Loaded before, but not watched while collapsed.
+                SyncChildren(node);
+                Watch(node);
+            }
         }
 
         base.OnBeforeExpand(eventArgs);
+    }
+
+    protected override void OnAfterCollapse(TreeViewEventArgs eventArgs)
+    {
+        base.OnAfterCollapse(eventArgs);
+        if (eventArgs.Node is { } node && IsFolder(node))
+        {
+            Unwatch(node);
+        }
     }
 
     protected override void OnAfterSelect(TreeViewEventArgs eventArgs)
@@ -321,5 +531,16 @@ sealed class FolderTree : TreeView
     {
         base.OnDragDrop(eventArgs);
         FileOperations.Drop(FindForm()?.Handle ?? Handle, eventArgs, DropDestination(eventArgs));
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            changeTimer.Dispose();
+            UnwatchAll();
+        }
+
+        base.Dispose(disposing);
     }
 }

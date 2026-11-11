@@ -1,0 +1,6 @@
+﻿- Pinned
+  - Projects   <- selected
+    + Archive
+    + Build
+    - Source
+      + Deep

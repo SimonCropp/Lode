@@ -70,7 +70,7 @@ class MainForm : Form
         AutoScaleDimensions = new(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "Meridian";
-        Icon = AppIcon.Create();
+        Icon = ShellIcons.FolderWindowIcon();
         ClientSize = new(1200, 760);
         MinimumSize = new(520, 320);
 
@@ -461,6 +461,23 @@ class MainForm : Form
         }
     }
 
+    // Like Explorer, the window takes the icon of the folder it shows, which is what the taskbar
+    // and Alt+Tab display.
+    string? iconLocation;
+
+    void UpdateIcon(string location)
+    {
+        if (Locations.Same(iconLocation, location))
+        {
+            return;
+        }
+
+        iconLocation = location;
+        var previous = Icon;
+        Icon = ShellIcons.WindowIcon(location);
+        previous?.Dispose();
+    }
+
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
     // tab is showing.
     void SyncToActiveView()
@@ -476,6 +493,7 @@ class MainForm : Form
         filterBox.Text = view.Filter;
         updatingFilter = false;
         Text = $"{Locations.DisplayName(view.CurrentPath)} - Meridian";
+        UpdateIcon(view.CurrentPath);
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;

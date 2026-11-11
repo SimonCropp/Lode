@@ -228,9 +228,27 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         TidySeparators(menu);
     }
 
+    // Asking the shell for every name took most of the time this class adds to a right-click, so
+    // each folder's names are kept, and read again only once the folder has changed.
+    static readonly ConcurrentDictionary<string, (DateTime Changed, HashSet<string> Names)> namesByFolder =
+        new(StringComparer.OrdinalIgnoreCase);
+
     // What Explorer calls each item in a folder, such as "Mail recipient" for
     // Mail Recipient.MAPIMail.
     static HashSet<string> DisplayNames(string folder)
+    {
+        var changed = Directory.GetLastWriteTimeUtc(folder);
+        if (namesByFolder.TryGetValue(folder, out var cached) && cached.Changed == changed)
+        {
+            return cached.Names;
+        }
+
+        var names = ReadDisplayNames(folder);
+        namesByFolder[folder] = (changed, names);
+        return names;
+    }
+
+    static HashSet<string> ReadDisplayNames(string folder)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
@@ -288,6 +306,24 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
             {
                 DeleteMenu(menu, (uint)position, menuByPosition);
             }
+        }
+    }
+
+    /// <summary>
+    /// Builds and discards the menu for a folder and for a file, so Windows loads the installed
+    /// shell extensions before the first real right-click. Otherwise that click waits a few
+    /// hundred milliseconds for them, where later ones take a few dozen.
+    /// </summary>
+    public static void WarmUp()
+    {
+        try
+        {
+            Describe(IntPtr.Zero, [Locations.Home]);
+            Describe(IntPtr.Zero, [Environment.ProcessPath!]);
+        }
+        catch (Exception)
+        {
+            // Only a head start; the first right-click does the same work if this could not.
         }
     }
 
