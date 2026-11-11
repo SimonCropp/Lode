@@ -108,7 +108,7 @@ static class TextEditors
 
     public static Editor Notepad { get; } = new(
         "Notepad",
-        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "notepad.exe"));
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "notepad.exe"));
 
     /// <summary>
     /// The editors installed on this machine, in the order listed above, then Notepad.
@@ -186,7 +186,7 @@ static class TextEditors
             return null;
         }
 
-        return System.IO.Path.Combine(folder, definition.Executable);
+        return Path.Combine(folder, definition.Executable);
     }
 
     static IReadOnlyDictionary<string, string>? ReadRegistry(RegistryHive hive, string subKey)
@@ -239,7 +239,7 @@ static class TextEditors
             var startInfo = new ProcessStartInfo(EditorPath(settings))
             {
                 UseShellExecute = false,
-                WorkingDirectory = System.IO.Path.GetDirectoryName(paths[0]) ?? ""
+                WorkingDirectory = Path.GetDirectoryName(paths[0]) ?? ""
             };
             foreach (var path in paths)
             {
@@ -274,7 +274,7 @@ static class TextEditors
 
     internal static bool IsText(string path, Func<string, string?> perceivedType)
     {
-        var extension = System.IO.Path.GetExtension(path);
+        var extension = Path.GetExtension(path);
         if (extension.Length == 0)
         {
             return false;
