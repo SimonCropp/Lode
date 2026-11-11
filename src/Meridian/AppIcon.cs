@@ -2,7 +2,29 @@ using System.Drawing.Drawing2D;
 
 static class AppIcon
 {
+    /// <summary>
+    /// File Explorer's own icon, read from explorer.exe on this machine, so Meridian looks like
+    /// the app it stands in for. A drawn globe if that cannot be read.
+    /// </summary>
     public static Icon Create()
+    {
+        var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        try
+        {
+            if (Icon.ExtractIcon(explorer, 0) is { } icon)
+            {
+                return icon;
+            }
+        }
+        catch (Exception)
+        {
+            // Fall back to the globe.
+        }
+
+        return CreateGlobe();
+    }
+
+    static Icon CreateGlobe()
     {
         using var bitmap = new Bitmap(32, 32);
         using (var graphics = Graphics.FromImage(bitmap))

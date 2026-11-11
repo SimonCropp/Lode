@@ -4,6 +4,9 @@ public class LocationsTests
     [
         @"C:\",
         "C:",
+        // A drive opened through the replaced-Explorer command line, "%1" with %1 = C:\. The
+        // backslash escapes the closing quote, so the argument arrives as C:".
+        @"C:""",
         @"C:\Windows",
         @"C:\Windows\",
         @"  ""C:\Program Files\dotnet""  ",

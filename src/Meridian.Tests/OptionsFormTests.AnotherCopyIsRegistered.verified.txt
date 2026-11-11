@@ -1,0 +1,12 @@
+﻿{
+  before: {
+    status: Currently another copy of Meridian opens them: "D:\Old\Meridian.exe",
+    replaceEnabled: true,
+    restoreEnabled: true
+  },
+  replaced: {
+    status: Currently Meridian opens them.,
+    replaceEnabled: false,
+    restoreEnabled: true
+  }
+}

@@ -1,0 +1,46 @@
+﻿{
+  (none): {},
+  [--bogus]: {
+    Kind: Help,
+    Error: Unknown option: --bogus
+  },
+  [--help]: {
+    Kind: Help
+  },
+  [--replace-explorer]: {
+    Kind: ReplaceExplorer
+  },
+  [--replace-explorer] [--restore-explorer]: {
+    Kind: Help,
+    Error: Pass one switch on its own, without folders or files.
+  },
+  [--replace-explorer] [D:\Code]: {
+    Kind: Help,
+    Error: Pass one switch on its own, without folders or files.
+  },
+  [--RESTORE-EXPLORER]: {
+    Kind: RestoreExplorer
+  },
+  [-h]: {
+    Kind: Help
+  },
+  [/?]: {
+    Kind: Help
+  },
+  [/temp]: {
+    Paths: [
+      /temp
+    ]
+  },
+  [D:\Code]: {
+    Paths: [
+      D:\Code
+    ]
+  },
+  [D:\Code] [D:\Code\readme.md]: {
+    Paths: [
+      D:\Code,
+      D:\Code\readme.md
+    ]
+  }
+}

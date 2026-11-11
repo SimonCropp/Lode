@@ -140,6 +140,7 @@ class MainForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open terminal here", null, (_, _) => OpenTerminal());
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Options…", null, (_, _) => ShowOptions());
         menu.Items.Add("About Meridian", null, (_, _) => ShowAbout());
         return menu;
     }
@@ -377,6 +378,12 @@ class MainForm : Form
         }
 
         Process.Start(startInfo)?.Dispose();
+    }
+
+    void ShowOptions()
+    {
+        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser());
+        options.ShowDialog(this);
     }
 
     void ShowAbout() =>

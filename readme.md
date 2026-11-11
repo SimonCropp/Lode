@@ -2,18 +2,43 @@
 
 A tabbed file manager for Windows, built with Windows Forms. An alternative to Windows Explorer that keeps the classic right-click menu.
 
+## Install
+
+Meridian ships as a [dotnet tool](https://learn.microsoft.com/en-us/dotnet/core/tools/global-tools), [MeridianFileManager](https://www.nuget.org/packages/MeridianFileManager). It needs the .NET Desktop Runtime 11 or later.
+
+```
+dotnet tool install -g MeridianFileManager
+```
+
 ## Run
 
 ```
-dotnet run --project src/Meridian
+meridian
+meridian D:\Code
+meridian D:\Code\readme.md
 ```
 
-Pass a folder to open it, or a file to open its folder with that file selected:
+Pass a folder to open it, or a file to open its folder with that file selected. With no arguments the tabs from last time are reopened. `meridian --help` lists the switches.
+
+From source: `dotnet run --project src/Meridian`.
+
+## Replacing File Explorer
 
 ```
-Meridian.exe D:\Code
-Meridian.exe D:\Code\readme.md
+meridian --replace-explorer
+meridian --restore-explorer
 ```
+
+The same two actions are buttons under **Options** in the ⋯ menu. Replacing makes Meridian what opens folders and drives (double-clicks, folder shortcuts, other apps opening a folder) and what Win+E starts. Restoring undoes it, and puts back whichever app was the default for folders before.
+
+ * It writes only to `HKEY_CURRENT_USER\Software\Classes`, so it applies to the current Windows account and needs no administrator rights.
+ * Explorer's own **Open** stays on every folder's right-click menu.
+ * The taskbar's File Explorer button, and apps that start `explorer.exe` themselves or ask it to show a file selected, still open Explorer.
+ * Run `meridian --restore-explorer` before uninstalling the tool. Otherwise folders keep pointing at a Meridian that is no longer there.
+
+## Publish
+
+Pushing a tag builds and publishes that version: tag `1.2.3` (or `v1.2.3`) publishes 1.2.3 to nuget.org through [trusted publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing). The `publish` job in `.github/workflows/build.yml` needs a `nuget` environment on the repository and a trusted publishing policy on nuget.org for this repository and workflow.
 
 ## Build and test
 

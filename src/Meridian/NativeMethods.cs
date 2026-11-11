@@ -116,4 +116,18 @@ static class NativeMethods
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     public static extern int SHFileOperation(ref FileOperationInfo info);
+
+    public const int ShellChangeAssociationChanged = 0x08000000;
+
+    [DllImport("shell32.dll")]
+    public static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+    public const int AttachParentProcess = -1;
+    public const int StandardOutputHandle = -11;
+
+    [DllImport("kernel32.dll")]
+    public static extern bool AttachConsole(int processId);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetStdHandle(int handle);
 }

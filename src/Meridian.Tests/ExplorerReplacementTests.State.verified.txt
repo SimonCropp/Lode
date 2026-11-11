@@ -1,0 +1,22 @@
+﻿{
+  before: {
+    IsActive: false,
+    IsActiveHere: false,
+    RegisteredCommand: (none)
+  },
+  replaced: {
+    IsActive: true,
+    IsActiveHere: true,
+    RegisteredCommand: "C:\Tools\meridian.exe"
+  },
+  seenFromAnotherCopy: {
+    IsActive: true,
+    IsActiveHere: false,
+    RegisteredCommand: "C:\Tools\meridian.exe"
+  },
+  restored: {
+    IsActive: false,
+    IsActiveHere: false,
+    RegisteredCommand: (none)
+  }
+}
