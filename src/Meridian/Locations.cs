@@ -13,10 +13,20 @@ static class Locations
     public static bool Same(string? first, string? second) =>
         first != null &&
         second != null &&
-        string.Equals(
-            Path.TrimEndingDirectorySeparator(first),
-            Path.TrimEndingDirectorySeparator(second),
-            StringComparison.OrdinalIgnoreCase);
+        Same(first.AsSpan(), second.AsSpan());
+
+    public static bool Same(ReadOnlySpan<char> first, ReadOnlySpan<char> second) =>
+        Path.TrimEndingDirectorySeparator(first)
+            .Equals(Path.TrimEndingDirectorySeparator(second), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when <paramref name="path"/> is directly inside <paramref name="folder"/>.
+    /// </summary>
+    public static bool IsChildOf(string path, string folder)
+    {
+        var parent = Path.GetDirectoryName(path.AsSpan());
+        return !parent.IsEmpty && Same(parent, folder);
+    }
 
     /// <summary>
     /// True when <paramref name="path"/> is <paramref name="folder"/> or somewhere beneath it.
@@ -28,8 +38,13 @@ static class Locations
             return true;
         }
 
-        var prefix = Path.EndsInDirectorySeparator(folder) ? folder : folder + Path.DirectorySeparatorChar;
-        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        if (!path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return Path.EndsInDirectorySeparator(folder) ||
+               (path.Length > folder.Length && path[folder.Length] == Path.DirectorySeparatorChar);
     }
 
     public static string? Normalize(string input)
@@ -45,7 +60,7 @@ static class Locations
             return ThisPC;
         }
 
-        if (text.Length == 2 && text[1] == ':')
+        if (text is [_, ':'])
         {
             text += Path.DirectorySeparatorChar;
         }
@@ -81,12 +96,14 @@ static class Locations
         if (name.Length == 0 && IsNetwork(location))
         {
             // A share is the root of its path, so it has no file name; show the share's name.
-            name = location.TrimEnd(Path.DirectorySeparatorChar).Split(Path.DirectorySeparatorChar)[^1];
+            var share = location.AsSpan().TrimEnd(Path.DirectorySeparatorChar);
+            name = share[(share.LastIndexOf(Path.DirectorySeparatorChar) + 1)..].ToString();
         }
 
         return name.Length == 0 ? location : name;
     }
 
     public static bool SameRoot(string first, string second) =>
-        string.Equals(Path.GetPathRoot(first), Path.GetPathRoot(second), StringComparison.OrdinalIgnoreCase);
+        Path.GetPathRoot(first.AsSpan())
+            .Equals(Path.GetPathRoot(second.AsSpan()), StringComparison.OrdinalIgnoreCase);
 }

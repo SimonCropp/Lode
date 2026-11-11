@@ -64,7 +64,7 @@ class MainForm : Form
         var newTabButton = CreateButton(addGlyph, "New tab (Ctrl+T)", NewTab);
         var menuButton = CreateButton(moreGlyph, "More", () => { });
         var menu = BuildMenu();
-        menuButton.Click += (_, _) => menu.Show(menuButton, new Point(0, menuButton.Height));
+        menuButton.Click += (_, _) => menu.Show(menuButton, new(0, menuButton.Height));
 
         addressBox.Name = "address";
         addressBox.AccessibleName = "Address";
@@ -302,7 +302,7 @@ class MainForm : Form
     void OnViewPathChanged(FolderView view, TabPage page)
     {
         var name = Locations.DisplayName(view.CurrentPath);
-        page.Text = name.Length > maximumTabTextLength ? name[..maximumTabTextLength] + "…" : name;
+        page.Text = name.Length > maximumTabTextLength ? string.Concat(name.AsSpan(0, maximumTabTextLength), "…") : name;
         page.ToolTipText = view.CurrentPath;
         if (view == ActiveView)
         {
@@ -553,7 +553,7 @@ class MainForm : Form
     // under the pointer.
     protected override void WndProc(ref Message message)
     {
-        if (message.Msg == NativeMethods.WindowMessageAppCommand)
+        if (message.Msg == WindowMessageAppCommand)
         {
             var command = (int)((message.LParam.ToInt64() >> 16) & 0xFFF);
             if (command is browserBackwardCommand or browserForwardCommand)

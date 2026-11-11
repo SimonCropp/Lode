@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-
 /// <summary>
 /// Tests have no message loop. This stands in for one while waiting on the app's background
 /// work: it dispatches window messages (timers, posted callbacks) and yields so awaited

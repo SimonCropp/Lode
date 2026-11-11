@@ -98,12 +98,7 @@ sealed class ClosableTabControl : TabControl
             graphics.FillRectangle(SystemBrushes.Window, body);
             graphics.DrawLines(
                 border,
-                [
-                    new(body.Left, body.Bottom - 1),
-                    new(body.Left, body.Top),
-                    new(body.Right - 1, body.Top),
-                    new(body.Right - 1, body.Bottom - 1)
-                ]);
+                new(body.Left, body.Bottom - 1), new(body.Left, body.Top), new(body.Right - 1, body.Top), new(body.Right - 1, body.Bottom - 1));
         }
         else if (index == hoveredTab)
         {

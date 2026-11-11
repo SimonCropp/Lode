@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using static NativeMethods;
-
 /// <summary>
 /// Icons, type names and display names from the Windows shell. Icons are indexes into the
 /// system image list.
@@ -20,20 +17,24 @@ static class ShellIcons
 
     static readonly uint infoSize = (uint)Marshal.SizeOf<ShellFileInfo>();
     // Concurrent because tests browse folders on several UI threads at once; the app has one.
-    static readonly ConcurrentDictionary<string, int> iconsByExtension = new(StringComparer.OrdinalIgnoreCase);
-    static readonly ConcurrentDictionary<string, string> typesByExtension = new(StringComparer.OrdinalIgnoreCase);
+    // Looked up by span so that a cache hit, which is nearly every call, never allocates the extension.
+    static readonly ConcurrentDictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> iconsByExtension =
+        new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
+    static readonly ConcurrentDictionary<string, string>.AlternateLookup<ReadOnlySpan<char>> typesByExtension =
+        new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
 
-    static readonly HashSet<string> perFileIconExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".exe",
-        ".lnk",
-        ".ico",
-        ".cur",
-        ".ani",
-        ".url",
-        ".scr",
-        ".appref-ms"
-    };
+    static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> perFileIconExtensions =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe",
+            ".lnk",
+            ".ico",
+            ".cur",
+            ".ani",
+            ".url",
+            ".scr",
+            ".appref-ms"
+        }.GetAlternateLookup<ReadOnlySpan<char>>();
 
     public static IntPtr SmallImageList { get; }
     public static int FolderIcon { get; }
@@ -121,7 +122,7 @@ static class ShellIcons
             return FolderIcon;
         }
 
-        var extension = Path.GetExtension(path);
+        var extension = Path.GetExtension(path.AsSpan());
         if (perFileIconExtensions.Contains(extension))
         {
             return GetActualIcon(path);
@@ -134,7 +135,7 @@ static class ShellIcons
 
         var info = new ShellFileInfo();
         SHGetFileInfo(
-            "file" + extension,
+            string.Concat("file", extension),
             normalAttribute,
             ref info,
             infoSize,
@@ -162,14 +163,14 @@ static class ShellIcons
             return FolderTypeName;
         }
 
-        var extension = Path.GetExtension(path);
+        var extension = Path.GetExtension(path.AsSpan());
         if (typesByExtension.TryGetValue(extension, out var cached))
         {
             return cached;
         }
 
         var info = new ShellFileInfo();
-        SHGetFileInfo("file" + extension, normalAttribute, ref info, infoSize, typeNameFlag | useFileAttributesFlag);
+        SHGetFileInfo(string.Concat("file", extension),normalAttribute, ref info, infoSize, typeNameFlag | useFileAttributesFlag);
         var typeName = string.IsNullOrEmpty(info.TypeName) ? "File" : info.TypeName;
         typesByExtension[extension] = typeName;
         return typeName;

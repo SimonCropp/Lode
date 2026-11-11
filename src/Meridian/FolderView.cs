@@ -299,7 +299,7 @@ sealed class FolderView : UserControl
 
         // Listing a folder we have no rights to yields nothing rather than throwing when
         // IgnoreInaccessible is set, so probe first to surface a real error message.
-        Directory.EnumerateFileSystemEntries(path).Any();
+        _ = Directory.EnumerateFileSystemEntries(path).Any();
 
         foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos("*", options))
         {
@@ -488,7 +488,7 @@ sealed class FolderView : UserControl
 
         if (result == 0)
         {
-            result = NativeMethods.StrCmpLogicalW(first.Name, second.Name);
+            result = StrCmpLogicalW(first.Name, second.Name);
         }
 
         return sortAscending ? result : -result;
@@ -671,7 +671,7 @@ sealed class FolderView : UserControl
         if (!entry.IsDirectory)
         {
             // Preselect the name but not the extension, so typing keeps the file type.
-            list.SelectEditText(Path.GetFileNameWithoutExtension(entry.Name).Length);
+            list.SelectEditText(Path.GetFileNameWithoutExtension(entry.Name.AsSpan()).Length);
         }
     }
 

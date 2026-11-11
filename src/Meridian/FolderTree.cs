@@ -1,5 +1,3 @@
-using static NativeMethods;
-
 /// <summary>
 /// The navigation pane: the pinned folders followed by This PC and its drives, with
 /// subfolders loaded on demand.
@@ -203,15 +201,21 @@ sealed class FolderTree : TreeView
         }
 
         var currentPath = (string)current.Tag!;
-        var segments = path[currentPath.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var segment in segments)
+        var remainder = path.AsSpan(currentPath.Length);
+        foreach (var range in remainder.Split(Path.DirectorySeparatorChar))
         {
+            var segment = remainder[range];
+            if (segment.IsEmpty)
+            {
+                continue;
+            }
+
             if (NeedsLoading(current))
             {
                 LoadChildren(current);
             }
 
-            currentPath = Path.Combine(currentPath, segment);
+            currentPath = Path.Join(currentPath, segment);
             var child = current.Nodes
                 .Cast<TreeNode>()
                 .FirstOrDefault(_ => Locations.Same(_.Tag as string, currentPath));
@@ -264,8 +268,12 @@ sealed class FolderTree : TreeView
     string? DropDestination(DragEventArgs eventArgs)
     {
         var point = PointToClient(new(eventArgs.X, eventArgs.Y));
-        var path = GetNodeAt(point)?.Tag as string;
-        return path == null || Locations.IsThisPC(path) ? null : path;
+        if (GetNodeAt(point)?.Tag is not string path || Locations.IsThisPC(path))
+        {
+            return null;
+        }
+
+        return path;
     }
 
     protected override void OnDragEnter(DragEventArgs eventArgs)

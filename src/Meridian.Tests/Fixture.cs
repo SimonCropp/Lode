@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-
 /// <summary>
 /// A sample folder with fixed names, sizes, attributes and dates, so that what the app shows
 /// for it is the same on every run. The extensions are made up so no installed program gives

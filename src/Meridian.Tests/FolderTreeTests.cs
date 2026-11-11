@@ -1,5 +1,3 @@
-using System.Text;
-
 [TUnit.Core.Executors.STAThreadExecutor]
 public class FolderTreeTests
 {

@@ -1,5 +1,3 @@
-using static NativeMethods;
-
 /// <summary>
 /// A ListView with the Explorer look, shell icons with Explorer's row spacing, and a
 /// context-menu event that distinguishes mouse from keyboard.
@@ -78,7 +76,7 @@ sealed class ShellListView : ListView
             var fromKeyboard = packed == -1;
             var location = fromKeyboard
                 ? Point.Empty
-                : new Point((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));
+                : new((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));
             ContextMenuRequested?.Invoke(location, fromKeyboard);
             return;
         }

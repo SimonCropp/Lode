@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Runtime.CompilerServices;
-
 public static class ModuleInitializer
 {
     [ModuleInitializer]

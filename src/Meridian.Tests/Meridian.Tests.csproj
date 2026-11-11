@@ -11,5 +11,6 @@
     <PackageReference Include="Verify.TUnit" />
     <PackageReference Include="Verify.WinForms" />
     <ProjectReference Include="..\Meridian\Meridian.csproj" />
+    <PackageReference Include="ProjectDefaults" PrivateAssets="all" />
   </ItemGroup>
 </Project>

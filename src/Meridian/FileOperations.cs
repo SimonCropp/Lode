@@ -1,6 +1,5 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
-using static NativeMethods;
 
 /// <summary>
 /// Copy, move, delete and rename through the Windows shell, so the user gets the standard
@@ -29,7 +28,7 @@ static class FileOperations
     public static Task<bool> Transfer(IntPtr owner, IReadOnlyCollection<string> sources, string destination, bool move)
     {
         var inPlace = sources
-            .Where(_ => Locations.Same(Path.GetDirectoryName(_), destination))
+            .Where(_ => Locations.IsChildOf(_, destination))
             .ToList();
         var flags = allowUndo;
         if (move)
@@ -262,7 +261,7 @@ static class FileOperations
         var move = !control && (shift || Locations.SameRoot(sources[0], destination));
         if (move)
         {
-            if (sources.All(_ => Locations.Same(Path.GetDirectoryName(_), destination)))
+            if (sources.All(_ => Locations.IsChildOf(_, destination)))
             {
                 return DragDropEffects.None;
             }

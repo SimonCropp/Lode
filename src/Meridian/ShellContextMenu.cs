@@ -209,7 +209,7 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         try
         {
             Marshal.WriteInt16(buffer, 0);
-            if (contextMenu.GetCommandString((UIntPtr)offset, commandVerbUnicode, IntPtr.Zero, buffer, 255) != 0)
+            if (contextMenu.GetCommandString(offset, commandVerbUnicode, IntPtr.Zero, buffer, 255) != 0)
             {
                 return null;
             }

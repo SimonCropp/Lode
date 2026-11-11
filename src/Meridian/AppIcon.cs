@@ -25,7 +25,7 @@ static class AppIcon
         }
         finally
         {
-            NativeMethods.DestroyIcon(handle);
+            DestroyIcon(handle);
         }
     }
 }
