@@ -1,0 +1,10 @@
+﻿{
+  C:\: C:\,
+  C:\Program Files\dotnet: dotnet,
+  C:\Windows: Windows,
+  C:\Windows\Fonts: Fonts,
+  C:\Windows\System32: System32,
+  This PC: This PC,
+  \\server\share: share,
+  \\server\share\folder: folder
+}

@@ -1,0 +1,62 @@
+﻿[
+  {
+    step: start,
+    path: Projects,
+    CanGoBack: false,
+    CanGoForward: false
+  },
+  {
+    step: open Source,
+    path: Projects/Source,
+    CanGoBack: true,
+    CanGoForward: false
+  },
+  {
+    step: open Deep,
+    path: Projects/Source/Deep,
+    CanGoBack: true,
+    CanGoForward: false
+  },
+  {
+    step: back,
+    path: Projects/Source,
+    CanGoBack: true,
+    CanGoForward: true
+  },
+  {
+    step: back,
+    path: Projects,
+    CanGoBack: false,
+    CanGoForward: true
+  },
+  {
+    step: back at the start does nothing,
+    path: Projects,
+    CanGoBack: false,
+    CanGoForward: true
+  },
+  {
+    step: forward,
+    path: Projects/Source,
+    CanGoBack: true,
+    CanGoForward: true
+  },
+  {
+    step: open Docs drops the forward history,
+    path: Projects/Docs,
+    CanGoBack: true,
+    CanGoForward: false
+  },
+  {
+    step: forward at the end does nothing,
+    path: Projects/Docs,
+    CanGoBack: true,
+    CanGoForward: false
+  },
+  {
+    step: up,
+    path: Projects,
+    CanGoBack: true,
+    CanGoForward: false
+  }
+]

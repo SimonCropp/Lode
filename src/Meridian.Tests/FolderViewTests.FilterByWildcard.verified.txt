@@ -1,0 +1,9 @@
+﻿{
+  path: Projects,
+  status: 1 item (filtered from 8),
+  filter: *.alpha,
+  rows: [
+    file    notes.alpha  12 bytes
+  ],
+  selected: []
+}

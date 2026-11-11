@@ -1,0 +1,22 @@
+﻿[
+  Projects/Archive/,
+  Projects/Archive/Source/,
+  Projects/Archive/Source/Deep/,
+  Projects/Archive/Source/Deep/leaf.alpha (40 bytes),
+  Projects/Archive/Source/main.alpha (5,000 bytes),
+  Projects/Archive/notes.alpha (12 bytes),
+  Projects/Archive/report2.beta (2,048 bytes),
+  Projects/Cache/,
+  Projects/Docs/,
+  Projects/Docs/guide.alpha (900 bytes),
+  Projects/Report1.beta (1,500,000 bytes),
+  Projects/Source/,
+  Projects/Source/Deep/,
+  Projects/Source/Deep/leaf.alpha (40 bytes),
+  Projects/Source/main.alpha (5,000 bytes),
+  Projects/hidden.alpha (64 bytes),
+  Projects/notes.alpha (12 bytes),
+  Projects/report10.beta (300,000 bytes),
+  Projects/report2.beta (2,048 bytes),
+  Projects/summary.gamma (0 bytes)
+]

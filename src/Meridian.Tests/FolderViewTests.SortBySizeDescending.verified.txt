@@ -1,0 +1,16 @@
+﻿{
+  path: Projects,
+  status: 8 items,
+  filter: ,
+  rows: [
+    folder  Source,
+    folder  Docs,
+    folder  Archive,
+    file    Report1.beta  1,500,000 bytes,
+    file    report10.beta  300,000 bytes,
+    file    report2.beta  2,048 bytes,
+    file    notes.alpha  12 bytes,
+    file    summary.gamma  0 bytes
+  ],
+  selected: []
+}

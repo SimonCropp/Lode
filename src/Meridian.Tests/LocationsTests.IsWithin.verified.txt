@@ -1,0 +1,10 @@
+﻿{
+  C:\Code in C:\: true,
+  C:\Code in C:\Code: true,
+  C:\Code in C:\Code\Meridian: false,
+  C:\CodeReview in C:\Code: false,
+  C:\Code\ in C:\Code: true,
+  C:\Code\Meridian in C:\Code: true,
+  c:\code\meridian in C:\Code: true,
+  D:\Code in C:\: false
+}

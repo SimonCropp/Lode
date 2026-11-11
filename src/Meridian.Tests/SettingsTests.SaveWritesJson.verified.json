@@ -1,0 +1,14 @@
+﻿{
+  "ShowHidden": true,
+  "Left": 10,
+  "Top": 20,
+  "Width": 1200,
+  "Height": 800,
+  "Maximized": false,
+  "SplitterDistance": 250,
+  "Tabs": [
+    "C:\\Code",
+    "This PC"
+  ],
+  "ActiveTab": 1
+}

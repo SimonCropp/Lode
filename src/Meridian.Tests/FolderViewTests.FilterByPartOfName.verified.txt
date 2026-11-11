@@ -1,0 +1,11 @@
+﻿{
+  path: Projects,
+  status: 3 items (filtered from 8),
+  filter: REPORT,
+  rows: [
+    file    Report1.beta  1,500,000 bytes,
+    file    report2.beta  2,048 bytes,
+    file    report10.beta  300,000 bytes
+  ],
+  selected: []
+}

@@ -1,0 +1,12 @@
+﻿{
+  path: Projects/Archive,
+  status: 2 items    1 item selected,
+  filter: ,
+  rows: [
+    folder  New folder,
+    folder  New folder (2)
+  ],
+  selected: [
+    New folder (2)
+  ]
+}

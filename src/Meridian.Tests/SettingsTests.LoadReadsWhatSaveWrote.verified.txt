@@ -1,0 +1,7 @@
+﻿{
+  ShowHidden: false,
+  Maximized: true,
+  Tabs: [
+    D:\Work
+  ]
+}

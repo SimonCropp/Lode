@@ -1,0 +1,4 @@
+﻿{
+  ShowHidden: false,
+  Maximized: false
+}

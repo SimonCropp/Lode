@@ -1,0 +1,5 @@
+﻿[
+  Projects/New folder,
+  Projects/New folder (2),
+  Projects/New folder (3)
+]

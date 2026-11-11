@@ -1,0 +1,15 @@
+﻿{
+  [   ]: (rejected),
+  [  "C:\Program Files\dotnet"  ]: C:\Program Files\dotnet,
+  [C:/Windows/System32]: C:\Windows\System32,
+  [C:\Windows\System32\..\Fonts]: C:\Windows\Fonts,
+  [C:\Windows\]: C:\Windows,
+  [C:\Windows]: C:\Windows,
+  [C:\]: C:\,
+  [C:]: C:\,
+  [This PC]: This PC,
+  [this pc]: This PC,
+  [\\server\share\folder\]: \\server\share\folder,
+  [\\server\share]: \\server\share,
+  []: (rejected)
+}

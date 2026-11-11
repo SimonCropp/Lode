@@ -1,0 +1,98 @@
+#if DEBUG
+/// <summary>
+/// The whole window, drawn. Pixels depend on the Windows version, theme and fonts of the
+/// machine that captured them, so these only run in Debug builds, on a developer's machine.
+/// </summary>
+[TUnit.Core.Executors.STAThreadExecutor]
+[NotInParallel]
+public class MainFormTests
+{
+    const int sizeColumn = 3;
+
+    [Test]
+    public Task Default() =>
+        Capture();
+
+    // Two levels down: the tree expanded to the folder, and back and up available.
+    [Test]
+    public Task Subfolder() =>
+        Capture(
+            (form, fixture) =>
+            {
+                form.ActiveView!.Navigate(fixture.At("Source"));
+                form.ActiveView.Navigate(fixture.At("Source", "Deep"));
+            });
+
+    [Test]
+    public Task Tabs() =>
+        Capture(
+            (form, fixture) =>
+            {
+                form.AddTab(fixture.At("Source"), false);
+                form.AddTab(fixture.At("Docs"), true);
+            });
+
+    [Test]
+    public Task Filtered() =>
+        Capture((form, _) => form.Controls.Find("filter", true)[0].Text = "report");
+
+    [Test]
+    public Task SortedBySizeDescending() =>
+        Capture(
+            (form, _) =>
+            {
+                form.ActiveView!.SortBy(sizeColumn);
+                form.ActiveView.SortBy(sizeColumn);
+            });
+
+    // Hidden items are listed, dimmed.
+    [Test]
+    public Task HiddenItems() =>
+        Capture(showHidden: true);
+
+    [Test]
+    public Task Selection() =>
+        Capture((form, fixture) => form.ActiveView!.Reveal(fixture.At("report10.beta")));
+
+    // Too narrow for every column: the address bar gives way and the list scrolls.
+    [Test]
+    public Task Narrow() =>
+        Capture(width: 700);
+
+    static async Task Capture(Action<MainForm, Fixture>? arrange = null, bool showHidden = false, int width = 1200)
+    {
+        using var fixture = Fixture.CreateAtFixedPath();
+        var settings = new Settings { ShowHidden = showHidden };
+        var places = new Places([fixture.Root], ShowComputer: false, _ => "120 GB free of 500 GB");
+        using var form = new QuietForm([fixture.Root], settings, places);
+
+        // Verify.WinForms turns this off before it draws. Changing it on a visible form makes
+        // Windows recreate every control's window, which resets which tab page is showing,
+        // so it is already off by the time the form is shown.
+        form.ShowInTaskbar = false;
+
+        // Shown, off screen: DrawToBitmap of a form that was never shown leaves it blank.
+        form.StartPosition = FormStartPosition.Manual;
+        form.Location = new(-20000, -20000);
+        form.Size = new(width, 700);
+        form.Show();
+        await Pump.Loaded(form.ActiveView!);
+
+        if (arrange != null)
+        {
+            arrange(form, fixture);
+            await Pump.Loaded(form.ActiveView!);
+        }
+
+        await Verify(form);
+    }
+
+    // Showing a window normally takes the focus from whatever the developer is doing, and
+    // makes the selection colour depend on whether Windows allowed that.
+    sealed class QuietForm(string[] arguments, Settings settings, Places places) :
+        MainForm(arguments, settings, places)
+    {
+        protected override bool ShowWithoutActivation => true;
+    }
+}
+#endif

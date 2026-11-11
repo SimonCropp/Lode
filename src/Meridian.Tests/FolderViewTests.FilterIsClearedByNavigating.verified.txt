@@ -1,0 +1,10 @@
+﻿{
+  path: Projects/Source,
+  status: 2 items,
+  filter: ,
+  rows: [
+    folder  Deep,
+    file    main.alpha  5,000 bytes
+  ],
+  selected: []
+}

@@ -1,0 +1,21 @@
+﻿{
+  file: true,
+  caseOnly: true,
+  folder: true,
+  tree: [
+    Projects/Archive/,
+    Projects/Cache/,
+    Projects/Documents/,
+    Projects/Documents/guide.alpha (900 bytes),
+    Projects/REPORT2.BETA (2,048 bytes),
+    Projects/Report1.beta (1,500,000 bytes),
+    Projects/Source/,
+    Projects/Source/Deep/,
+    Projects/Source/Deep/leaf.alpha (40 bytes),
+    Projects/Source/main.alpha (5,000 bytes),
+    Projects/hidden.alpha (64 bytes),
+    Projects/renamed.alpha (12 bytes),
+    Projects/report10.beta (300,000 bytes),
+    Projects/summary.gamma (0 bytes)
+  ]
+}
