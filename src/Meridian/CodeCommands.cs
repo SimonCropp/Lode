@@ -142,28 +142,44 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// What happened, for a message box: how many succeeded, and the first line of what went
-    /// wrong in each that failed.
+    /// What happened: a line saying how many repositories it worked for, then what git said in
+    /// each, failures first.
     /// </summary>
-    public static string Summarize(string action, string folder, IReadOnlyList<RepoResult> results)
+    public static ActionLog.Outcome GitOutcome(IReadOnlyList<RepoResult> results)
     {
         if (results.Count == 0)
         {
-            return $"No git repositories in {folder}.";
+            return new(true, "No git repositories", "");
         }
 
-        var failed = results.Where(_ => !_.Succeeded).ToList();
-        var builder = new StringBuilder();
-        builder.Append($"{action}: {results.Count - failed.Count} of {results.Count} repositories succeeded.");
-        foreach (var result in failed)
+        var failed = results.Count(_ => !_.Succeeded);
+        string summary;
+        if (failed == 0)
         {
-            var reason = result.Output
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .FirstOrDefault() ?? "failed";
-            builder.Append($"\n\n{Path.GetFileName(result.Repo)}: {reason}");
+            summary = results.Count == 1 ? "Done" : $"{results.Count} repositories done";
+        }
+        else
+        {
+            summary = $"{failed} of {results.Count} failed";
         }
 
-        return builder.ToString();
+        var details = new StringBuilder();
+        foreach (var result in results.OrderBy(_ => _.Succeeded))
+        {
+            if (details.Length > 0)
+            {
+                details.AppendLine();
+            }
+
+            var state = result.Succeeded ? "done" : "FAILED";
+            details.AppendLine($"{Path.GetFileName(result.Repo)}: {state}");
+            foreach (var line in result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                details.AppendLine($"  {line}");
+            }
+        }
+
+        return new(failed == 0, summary, details.ToString().TrimEnd());
     }
 
     // PackageUpdateLib writes through Serilog's global logger, so only one update at a time.
@@ -171,10 +187,9 @@ static class CodeCommands
 
     /// <summary>
     /// Updates the NuGet packages and dotnet tools of every solution in the folder, with
-    /// PackageUpdateLib. Only solutions using central package management are updated. Returns
-    /// a summary for a message box.
+    /// PackageUpdateLib. Only solutions using central package management are updated.
     /// </summary>
-    public static async Task<string> UpdateNugets(string folder)
+    public static async Task<ActionLog.Outcome> UpdateNugets(string folder)
     {
         await nugetGate.WaitAsync();
         var sink = new CollectingSink();
@@ -189,7 +204,7 @@ static class CodeCommands
         }
         catch (Exception exception)
         {
-            return $"Update NuGets failed: {exception.Message}";
+            return new(false, "Failed", exception.Message);
         }
         finally
         {
@@ -197,7 +212,61 @@ static class CodeCommands
             nugetGate.Release();
         }
 
-        return sink.Summary(folder);
+        return NugetOutcome(sink.Entries());
+    }
+
+    /// <summary>
+    /// What PackageUpdateLib logged, as an outcome: each package it changed, and anything it
+    /// complained about. A logged error, such as a solution it could not update, is a failure.
+    /// </summary>
+    internal static ActionLog.Outcome NugetOutcome(IReadOnlyList<(LogEventLevel Level, string Template, string Message)> entries)
+    {
+        // "Updated {Package}: {Old} -> {New}", "Updated tool …", "Updated … VersionOverride …",
+        // "Migrated {Old} -> {New} …", "Updated PackageReference {Old} -> {New} in {File}".
+        // Not "    Updated {Props} in {Elapsed}", which is a whole file.
+        var changes = entries
+            .Where(_ => _.Level == LogEventLevel.Information &&
+                        (_.Template.StartsWith("Updated ", StringComparison.Ordinal) ||
+                         _.Template.StartsWith("Migrated ", StringComparison.Ordinal)))
+            .Select(_ => _.Message.Trim())
+            .ToList();
+        var problems = entries
+            .Where(_ => _.Level >= LogEventLevel.Warning)
+            .Select(_ => _.Message.Trim())
+            .ToList();
+
+        var summary = changes.Count switch
+        {
+            0 => "Nothing to update",
+            1 => "1 package updated",
+            _ => $"{changes.Count} packages updated"
+        };
+        if (problems.Count > 0)
+        {
+            summary += problems.Count == 1 ? ", 1 problem" : $", {problems.Count} problems";
+        }
+
+        var details = new StringBuilder();
+        foreach (var change in changes)
+        {
+            details.AppendLine(change);
+        }
+
+        if (problems.Count > 0)
+        {
+            if (details.Length > 0)
+            {
+                details.AppendLine();
+            }
+
+            foreach (var problem in problems)
+            {
+                details.AppendLine(problem);
+            }
+        }
+
+        var succeeded = !entries.Any(_ => _.Level >= LogEventLevel.Error);
+        return new(succeeded, summary, details.ToString().TrimEnd());
     }
 
     sealed class CollectingSink : ILogEventSink
@@ -212,22 +281,14 @@ static class CodeCommands
             }
         }
 
-        public string Summary(string folder)
+        public List<(LogEventLevel, string, string)> Entries()
         {
             lock (events)
             {
-                var updated = events.Count(_ => _.MessageTemplate.Text.StartsWith("    Updated", StringComparison.Ordinal));
-                var problems = events
-                    .Where(_ => _.Level >= LogEventLevel.Warning)
-                    .Select(_ => _.RenderMessage().Trim())
+                return events
+                    // Untrimmed: the indent is what tells a whole file's "    Updated" apart.
+                    .Select(_ => (_.Level, _.MessageTemplate.Text, _.RenderMessage()))
                     .ToList();
-                var builder = new StringBuilder($"Update NuGets in {folder}: {updated} updated.");
-                foreach (var problem in problems)
-                {
-                    builder.Append($"\n\n{problem}");
-                }
-
-                return builder.ToString();
             }
         }
     }

@@ -1,0 +1,15 @@
+﻿{
+  empty: false,
+  whileRunning: {
+    Visible: true,
+    clearEnabled: false
+  },
+  finished: {
+    Visible: true,
+    clearEnabled: true,
+    lines: [
+      Update NuGets – Busy: 5 packages updated
+    ]
+  },
+  afterClear: false
+}

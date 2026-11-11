@@ -1,0 +1,4 @@
+﻿{
+  savedWhileOpen: false,
+  reloaded: false
+}

@@ -1,7 +1,8 @@
 /// <summary>
 /// The right-click entries for a folder under the code folder: git pull, push and discard
-/// across its repositories, and Update NuGets. Each runs out of sight and ends in a message box
-/// saying what happened. Push and discard ask first.
+/// across its repositories, and Update NuGets. Each runs in the background and shows in the
+/// actions panel under the tree, without holding up the rest of Meridian. Push and discard
+/// ask first.
 /// </summary>
 static class CodeMenu
 {
@@ -21,26 +22,35 @@ static class CodeMenu
         return
         [
             null,
-            new("Git pull", () => Pull(owner, folder)),
-            new("Git push…", () => Push(owner, folder)),
-            new("Git discard…", () => Discard(owner, folder)),
-            new("Update NuGets", () => UpdateNugets(owner, folder))
+            QuickMenu.Submenu(
+                "Git",
+                [
+                    new("Pull", () => Pull(folder)),
+                    new("Push…", () => Push(owner, folder)),
+                    new("Discard…", () => Discard(owner, folder))
+                ]),
+            new("Update NuGets", () => UpdateNugets(folder))
         ];
     }
 
-    static async void Pull(Control owner, string folder)
-    {
-        var repos = CodeCommands.FindRepos(folder);
-        var results = await Busy(owner, CodeCommands.Pull(repos));
-        Report(owner, CodeCommands.Summarize("Git pull", folder, results));
-    }
+    // Each runs in the background and shows in the actions panel; Meridian stays usable.
+    static void Pull(string folder) =>
+        _ = ActionLog.Run(
+            "Git pull",
+            folder,
+            async () =>
+            {
+                // Looking for repositories reads folders, so that is off the UI thread too.
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folder));
+                return CodeCommands.GitOutcome(await CodeCommands.Pull(repos));
+            });
 
-    static async void Push(Control owner, string folder)
+    static void Push(Control owner, string folder)
     {
         var repos = CodeCommands.FindRepos(folder);
         if (repos.Count == 0)
         {
-            Report(owner, CodeCommands.Summarize("Git push", folder, []));
+            NoRepos("Git push", folder);
             return;
         }
 
@@ -50,16 +60,18 @@ static class CodeMenu
             return;
         }
 
-        var results = await Busy(owner, CodeCommands.Push(repos, message));
-        Report(owner, CodeCommands.Summarize("Git push", folder, results));
+        _ = ActionLog.Run(
+            "Git push",
+            folder,
+            async () => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message)));
     }
 
-    static async void Discard(Control owner, string folder)
+    static void Discard(Control owner, string folder)
     {
         var repos = CodeCommands.FindRepos(folder);
         if (repos.Count == 0)
         {
-            Report(owner, CodeCommands.Summarize("Git discard", folder, []));
+            NoRepos("Git discard", folder);
             return;
         }
 
@@ -75,15 +87,18 @@ static class CodeMenu
             return;
         }
 
-        var results = await Busy(owner, CodeCommands.Discard(repos));
-        Report(owner, CodeCommands.Summarize("Git discard", folder, results));
+        _ = ActionLog.Run(
+            "Git discard",
+            folder,
+            async () => CodeCommands.GitOutcome(await CodeCommands.Discard(repos)));
     }
 
-    static async void UpdateNugets(Control owner, string folder)
-    {
-        var summary = await Busy(owner, CodeCommands.UpdateNugets(folder));
-        Report(owner, summary);
-    }
+    static void UpdateNugets(string folder) =>
+        _ = ActionLog.Run("Update NuGets", folder, () => CodeCommands.UpdateNugets(folder));
+
+    // Nothing to ask about, but still worth a line in the panel saying so.
+    static void NoRepos(string title, string folder) =>
+        _ = ActionLog.Run(title, folder, () => Task.FromResult(CodeCommands.GitOutcome([])));
 
     // "Meridian", or "12 repositories" with the first few named.
     internal static string Describe(IReadOnlyList<string> repos)
@@ -102,23 +117,6 @@ static class CodeMenu
 
         return $"{repos.Count} repositories ({string.Join(", ", names)}{more})";
     }
-
-    // The wait cursor while the work runs; the window still responds.
-    static async Task<T> Busy<T>(Control owner, Task<T> task)
-    {
-        owner.UseWaitCursor = true;
-        try
-        {
-            return await task;
-        }
-        finally
-        {
-            owner.UseWaitCursor = false;
-        }
-    }
-
-    static void Report(Control owner, string summary) =>
-        MessageBox.Show(owner, summary, "Meridian", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
     // Asks for the commit message, which doubles as the confirmation. Null when cancelled.
     static string? AskCommitMessage(Control owner, IReadOnlyList<string> repos)

@@ -1,0 +1,11 @@
+﻿{
+  Succeeded: false,
+  Summary: 1 of 2 failed,
+  Details:
+Bad: FAILED
+  fatal: unable to access 'https://example.com/': Could not resolve host
+  more
+
+Good: done
+  Already up to date.
+}

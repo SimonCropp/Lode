@@ -5,7 +5,23 @@
 /// </summary>
 static class QuickMenu
 {
-    public record Command(string Text, Action Action, bool Enabled = true);
+    public record Command(string Text, Action Action, bool Enabled = true)
+    {
+        /// <summary>
+        /// Entries shown in a submenu of this one, in which case <see cref="Action"/> is unused.
+        /// A null entry is a separator.
+        /// </summary>
+        public IReadOnlyList<Command?>? Children { get; init; }
+    }
+
+    /// <summary>
+    /// An entry that opens a submenu of <paramref name="children"/>.
+    /// </summary>
+    public static Command Submenu(string text, IReadOnlyList<Command?> children) =>
+        new(text, () => { })
+        {
+            Children = children
+        };
 
     // A null entry is a separator.
     public static void Show(Point location, IReadOnlyList<Command?> commands, Action showMore)
@@ -37,11 +53,22 @@ static class QuickMenu
     internal static ContextMenuStrip Build(IReadOnlyList<Command?> commands, Action showMore, Action<Action> choose)
     {
         var strip = new ContextMenuStrip();
+        AddItems(strip.Items, commands, choose);
+
+        strip.Items.Add(new ToolStripSeparator());
+        var more = new ToolStripMenuItem("Show more options");
+        more.Click += (_, _) => choose(showMore);
+        strip.Items.Add(more);
+        return strip;
+    }
+
+    static void AddItems(ToolStripItemCollection items, IReadOnlyList<Command?> commands, Action<Action> choose)
+    {
         foreach (var command in commands)
         {
             if (command == null)
             {
-                strip.Items.Add(new ToolStripSeparator());
+                items.Add(new ToolStripSeparator());
                 continue;
             }
 
@@ -49,14 +76,17 @@ static class QuickMenu
             {
                 Enabled = command.Enabled
             };
-            item.Click += (_, _) => choose(command.Action);
-            strip.Items.Add(item);
-        }
+            if (command.Children == null)
+            {
+                item.Click += (_, _) => choose(command.Action);
+            }
+            else
+            {
+                // Clicking a submenu's own entry only opens it.
+                AddItems(item.DropDownItems, command.Children, choose);
+            }
 
-        strip.Items.Add(new ToolStripSeparator());
-        var more = new ToolStripMenuItem("Show more options");
-        more.Click += (_, _) => choose(showMore);
-        strip.Items.Add(more);
-        return strip;
+            items.Add(item);
+        }
     }
 }

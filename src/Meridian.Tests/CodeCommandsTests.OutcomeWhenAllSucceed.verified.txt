@@ -1,0 +1,10 @@
+﻿{
+  Succeeded: true,
+  Summary: 2 repositories done,
+  Details:
+One: done
+  Already up to date.
+
+Two: done
+  Fast-forward
+}

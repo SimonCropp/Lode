@@ -1,3 +1,0 @@
-﻿Git pull: 1 of 2 repositories succeeded.
-
-Bad: fatal: unable to access 'https://example.com/': Could not resolve host

@@ -69,6 +69,34 @@ public class OptionsFormTests
             });
     }
 
+    // Saved as the dialog closes, not only when the last window does.
+    [Test]
+    public async Task ClosingSavesTheSettings()
+    {
+        using var scratch = new RegistryScratch();
+        var path = Path.Combine(Path.GetTempPath(), "MeridianTests", $"settings.{Guid.NewGuid():N}.json");
+        try
+        {
+            var settings = Settings.Load(path);
+            using var form = Show(scratch.Replacement(), settings);
+            ((CheckBox) form.Controls.Find("showHidden", true)[0]).Checked = false;
+            var savedWhileOpen = File.Exists(path);
+
+            form.Close();
+
+            await Verify(
+                new
+                {
+                    savedWhileOpen,
+                    reloaded = Settings.Load(path).ShowHidden
+                });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Test]
     public async Task UntickingShowHiddenChangesTheSetting()
     {

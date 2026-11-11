@@ -20,6 +20,7 @@ class MainForm : Form
     Settings settings;
     Places places;
     FolderTree tree;
+    readonly ActionsPanel actionsPanel = new();
     ClosableTabControl tabs = new();
     ToolStripStatusLabel statusLabel = new()
     {
@@ -207,7 +208,9 @@ class MainForm : Form
 
         split.Dock = DockStyle.Fill;
         split.FixedPanel = FixedPanel.Panel1;
+        // Added after the tree so it is docked first, and the tree fills what is left above it.
         split.Panel1.Controls.Add(tree);
+        split.Panel1.Controls.Add(actionsPanel);
         split.Panel2.Controls.Add(tabs);
         return split;
     }

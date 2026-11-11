@@ -61,6 +61,26 @@ public class MainFormTests
     public Task Narrow() =>
         Capture(width: 700);
 
+    // The actions panel under the tree: one command running, one done, one failed.
+    [Test]
+    public async Task Actions()
+    {
+        var running = new TaskCompletionSource<ActionLog.Outcome>();
+        try
+        {
+            await ActionLog.Run("Git pull", @"C:\Code\Meridian", () => Task.FromResult(new ActionLog.Outcome(true, "Done", "")));
+            await ActionLog.Run("Git push", @"C:\Code", () => Task.FromResult(new ActionLog.Outcome(false, "1 of 12 failed", "")));
+            _ = ActionLog.Run("Update NuGets", @"C:\Code\CountryData", () => running.Task);
+
+            await Capture();
+        }
+        finally
+        {
+            running.SetResult(new(true, "Done", ""));
+            ActionLog.Reset();
+        }
+    }
+
     static async Task Capture(Action<MainForm, Fixture>? arrange = null, bool showHidden = false, int width = 1200)
     {
         using var fixture = Fixture.CreateAtFixedPath();

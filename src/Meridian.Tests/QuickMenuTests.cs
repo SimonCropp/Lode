@@ -93,6 +93,28 @@ public class QuickMenuTests
         await Verify(Describe(tree.NodeCommands(fixture.At("Docs"))));
     }
 
+    // Clicking a submenu's own entry only opens it; clicking an entry inside it chooses that.
+    [Test]
+    public async Task ClickingInASubmenuHandsOverTheChoice()
+    {
+        var chosen = new List<string>();
+        Action pull = () => chosen.Add("pull");
+        Action? handed = null;
+        using var strip = QuickMenu.Build(
+            [QuickMenu.Submenu("Git", [new("Pull", pull)])],
+            () => { },
+            _ => handed = _);
+        var git = (ToolStripMenuItem) strip.Items[0];
+
+        git.PerformClick();
+        var handedByParent = handed != null;
+        git.DropDownItems[0].PerformClick();
+        handed!();
+
+        await Assert.That(handedByParent).IsFalse();
+        await Assert.That(chosen).IsEquivalentTo(["pull"]);
+    }
+
     [Test]
     public async Task ClickingHandsOverTheChoice()
     {
@@ -242,10 +264,22 @@ public class QuickMenuTests
     static List<string> Describe(IReadOnlyList<QuickMenu.Command?> commands)
     {
         using var strip = QuickMenu.Build(commands, () => { }, _ => { });
-        return strip.Items
-            .Cast<ToolStripItem>()
-            .Select(Describe)
-            .ToList();
+        var lines = new List<string>();
+        Describe(strip.Items, "", lines);
+        return lines;
+    }
+
+    // A submenu's entries follow it, indented.
+    static void Describe(ToolStripItemCollection items, string indent, List<string> lines)
+    {
+        foreach (ToolStripItem item in items)
+        {
+            lines.Add(indent + Describe(item));
+            if (item is ToolStripMenuItem { HasDropDownItems: true } parent)
+            {
+                Describe(parent.DropDownItems, indent + "  ", lines);
+            }
+        }
     }
 
     static string Describe(ToolStripItem item)

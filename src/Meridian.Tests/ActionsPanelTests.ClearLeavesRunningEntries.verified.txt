@@ -1,0 +1,7 @@
+﻿[
+  {
+    line: Update NuGets – Busy: Running…,
+    state: Running,
+    Details: 
+  }
+]

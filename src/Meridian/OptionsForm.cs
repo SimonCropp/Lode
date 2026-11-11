@@ -310,8 +310,8 @@ class OptionsForm : Form
             AutoSize = true,
             MaximumSize = new(420, 0),
             Margin = new(3, 3, 3, 6),
-            Text = "The folder your git repositories are in. Folders in it get Git pull, Git push, " +
-                   "Git discard and Update NuGets on their right-click menu."
+            Text = "The folder your git repositories are in. Folders in it get a Git menu (pull, " +
+                   "push, discard) and Update NuGets on their right-click menu."
         };
 
         // Centred on the row's middle, as the Default folder row is.
@@ -535,6 +535,14 @@ class OptionsForm : Form
         };
         group.Controls.Add(layout);
         return group;
+    }
+
+    // Written straight away rather than when the last window closes, so a change made here
+    // survives Meridian ending some other way.
+    protected override void OnFormClosed(FormClosedEventArgs eventArgs)
+    {
+        base.OnFormClosed(eventArgs);
+        settings.Save();
     }
 
     void Change(Action change)

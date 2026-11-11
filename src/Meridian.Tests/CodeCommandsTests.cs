@@ -1,3 +1,5 @@
+using Serilog.Events;
+
 /// <summary>
 /// The git commands, run for real against throwaway repositories in the temp folder. A bare
 /// repository stands in for origin, so nothing leaves the machine.
@@ -13,7 +15,7 @@ public class CodeCommandsTests
         Directory.CreateDirectory(code.At("Group", "Deeper", "Three", ".git"));
         Directory.CreateDirectory(code.At("NotARepo"));
         Directory.CreateDirectory(code.At("Worktree"));
-        File.WriteAllText(code.At("Worktree", ".git"), "gitdir: elsewhere");
+        await File.WriteAllTextAsync(code.At("Worktree", ".git"), "gitdir: elsewhere");
 
         var repos = CodeCommands.FindRepos(code.Root);
 
@@ -37,13 +39,13 @@ public class CodeCommandsTests
     {
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
-        File.WriteAllText(Path.Combine(repo, "untracked.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "new");
 
         var results = await CodeCommands.Discard([repo]);
 
         await Assert.That(results.Single().Succeeded).IsTrue();
-        await Assert.That(File.ReadAllText(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
         await Assert.That(File.Exists(Path.Combine(repo, "untracked.txt"))).IsFalse();
     }
 
@@ -52,7 +54,7 @@ public class CodeCommandsTests
     {
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
 
         var results = await CodeCommands.Push([repo], "Tidy up");
 
@@ -66,7 +68,7 @@ public class CodeCommandsTests
     {
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
         Scratch.Git(repo, "commit", "-am", "Earlier");
 
         var results = await CodeCommands.Push([repo], "Unused");
@@ -81,30 +83,56 @@ public class CodeCommandsTests
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
         var other = code.Clone("Repo", "Other");
-        File.WriteAllText(Path.Combine(other, "tracked.txt"), "from elsewhere");
+        await File.WriteAllTextAsync(Path.Combine(other, "tracked.txt"), "from elsewhere");
         Scratch.Git(other, "commit", "-am", "Elsewhere");
         Scratch.Git(other, "push", "origin");
 
         var results = await CodeCommands.Pull([repo]);
 
         await Assert.That(results.Single().Succeeded).IsTrue();
-        await Assert.That(File.ReadAllText(Path.Combine(repo, "tracked.txt"))).IsEqualTo("from elsewhere");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("from elsewhere");
     }
 
     [Test]
-    public Task SummaryNamesFailures() =>
+    public Task OutcomePutsFailuresFirst() =>
         Verify(
-            CodeCommands.Summarize(
-                "Git pull",
-                @"C:\Code",
+            CodeCommands.GitOutcome(
                 [
                     new(@"C:\Code\Good", true, "Already up to date."),
                     new(@"C:\Code\Bad", false, "\nfatal: unable to access 'https://example.com/': Could not resolve host\nmore")
                 ]));
 
     [Test]
-    public Task SummaryWithNoRepos() =>
-        Verify(CodeCommands.Summarize("Git pull", @"C:\Code\Empty", []));
+    public Task OutcomeWhenAllSucceed() =>
+        Verify(
+            CodeCommands.GitOutcome(
+                [
+                    new(@"C:\Code\One", true, "Already up to date."),
+                    new(@"C:\Code\Two", true, "Fast-forward")
+                ]));
+
+    [Test]
+    public Task OutcomeWithNoRepos() =>
+        Verify(CodeCommands.GitOutcome([]));
+
+    // As PackageUpdateLib logged a real run: each package it changed is listed, the whole-file
+    // "Updated" line is not, and an error makes it a failure.
+    [Test]
+    public Task NugetOutcomeListsEachPackage() =>
+        Verify(
+            CodeCommands.NugetOutcome(
+                [
+                    (LogEventLevel.Information, "TargetDirectory: {TargetDirectory}", "TargetDirectory: C:\\Code\\CountryData"),
+                    (LogEventLevel.Information, "Updated {Package}: {NuGetVersion} -> {LatestVersion}", "Updated MarkdownSnippets.MsBuild: 28.5.1 -> 29.0.0"),
+                    (LogEventLevel.Information, "Updated {Package}: {NuGetVersion} -> {LatestVersion}", "Updated xunit.v3: 4.0.2 -> 4.0.3"),
+                    (LogEventLevel.Information, "Updated tool {Package}: {NuGetVersion} -> {LatestVersion}", "Updated tool dotnet-ef: 9.0.0 -> 10.0.0"),
+                    (LogEventLevel.Information, "    Updated {Props} in {Elapsed}", "    Updated C:\\Code\\CountryData\\src\\Directory.Packages.props in 2.1s"),
+                    (LogEventLevel.Error, "    Only central packages supported. Skipping: {Solution}", "    Only central packages supported. Skipping: C:\\Code\\Old\\Old.sln")
+                ]));
+
+    [Test]
+    public Task NugetOutcomeWithNothingToDo() =>
+        Verify(CodeCommands.NugetOutcome([(LogEventLevel.Information, "Completed in {Elapsed}", "Completed in 1s")]));
 
     [Test]
     public Task DescribeNamesTheRepos() =>
@@ -122,9 +150,9 @@ public class CodeCommandsTests
     {
         using var code = new Scratch();
 
-        var summary = await CodeCommands.UpdateNugets(code.Root);
+        var outcome = await CodeCommands.UpdateNugets(code.Root);
 
-        await Assert.That(summary).IsEqualTo($"Update NuGets in {code.Root}: 0 updated.");
+        await Assert.That(outcome).IsEqualTo(new ActionLog.Outcome(true, "Nothing to update", ""));
     }
 
     sealed class Scratch : IDisposable

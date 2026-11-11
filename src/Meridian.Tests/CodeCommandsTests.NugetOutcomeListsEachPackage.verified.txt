@@ -1,0 +1,10 @@
+﻿{
+  Succeeded: false,
+  Summary: 3 packages updated, 1 problem,
+  Details:
+Updated MarkdownSnippets.MsBuild: 28.5.1 -> 29.0.0
+Updated xunit.v3: 4.0.2 -> 4.0.3
+Updated tool dotnet-ef: 9.0.0 -> 10.0.0
+
+Only central packages supported. Skipping: C:\Code\Old\Old.sln
+}

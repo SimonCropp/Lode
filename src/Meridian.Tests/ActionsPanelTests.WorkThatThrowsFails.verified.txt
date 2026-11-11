@@ -1,0 +1,7 @@
+﻿[
+  {
+    line: Update NuGets – Meridian: Failed,
+    state: Failed,
+    Details: No network
+  }
+]
