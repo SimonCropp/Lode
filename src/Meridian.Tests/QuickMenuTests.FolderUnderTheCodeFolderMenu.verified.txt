@@ -1,0 +1,48 @@
+﻿{
+  folder: [
+    Open,
+    Open in new tab,
+    ----,
+    Cut,
+    Copy,
+    Rename,
+    Delete,
+    ----,
+    Copy as path,
+    Properties,
+    ----,
+    Git pull,
+    Git push…,
+    Git discard…,
+    Update NuGets,
+    ----,
+    Show more options
+  ],
+  file: [
+    Open,
+    ----,
+    Cut,
+    Copy,
+    Rename,
+    Delete,
+    ----,
+    Copy as path,
+    Properties,
+    ----,
+    Show more options
+  ],
+  background: [
+    New folder,
+    Paste (disabled),
+    ----,
+    Copy as path,
+    Properties,
+    ----,
+    Git pull,
+    Git push…,
+    Git discard…,
+    Update NuGets,
+    ----,
+    Show more options
+  ]
+}

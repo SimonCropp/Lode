@@ -166,6 +166,35 @@ public class OptionsFormTests
             });
     }
 
+    [Test]
+    public async Task ChoosingAndClearingTheCodeFolder()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        form.BrowseForCodeDirectory = () => @"C:\Code";
+
+        Click(form, "browseCodeDirectory");
+        var chosen = new
+        {
+            setting = settings.CodeDirectory,
+            shown = form.Controls.Find("codeDirectory", true)[0].Text,
+            clearEnabled = form.Controls.Find("clearCodeDirectory", true)[0].Enabled
+        };
+        Click(form, "clearCodeDirectory");
+
+        await Verify(
+            new
+            {
+                chosen,
+                cleared = new
+                {
+                    setting = settings.CodeDirectory,
+                    clearEnabled = form.Controls.Find("clearCodeDirectory", true)[0].Enabled
+                }
+            });
+    }
+
     static readonly TextEditors.Editor[] editors =
     [
         new("Visual Studio Code", @"C:\Programs\VS Code\Code.exe"),

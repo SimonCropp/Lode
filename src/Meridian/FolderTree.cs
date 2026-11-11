@@ -556,7 +556,8 @@ sealed class FolderTree : TreeView
         null,
         new("Copy", () => FileOperations.CopyToClipboard([path], false)),
         new("Copy as path", () => FolderView.CopyAsPath([path])),
-        new("Properties", () => ShellContextMenu.InvokeVerb(FindForm()?.Handle ?? Handle, [path], "properties"))
+        new("Properties", () => ShellContextMenu.InvokeVerb(FindForm()?.Handle ?? Handle, [path], "properties")),
+        .. CodeMenu.Commands(this, settings, path)
     ];
 
     /// <summary>

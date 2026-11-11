@@ -808,6 +808,11 @@ sealed class FolderView : UserControl
             new("Copy as path", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             new("Properties", ShowProperties)
         ]);
+        if (selection is [{ IsDirectory: true } folder])
+        {
+            commands.AddRange(CodeMenu.Commands(this, settings, folder.FullPath));
+        }
+
         return commands;
     }
 
@@ -830,7 +835,8 @@ sealed class FolderView : UserControl
         new("Paste", Paste, canPaste),
         null,
         new("Copy as path", () => CopyAsPath([CurrentPath])),
-        new("Properties", ShowProperties)
+        new("Properties", ShowProperties),
+        .. CodeMenu.Commands(this, settings, CurrentPath)
     ];
 
     void OpenInNewTabs(List<FileEntry> selection)

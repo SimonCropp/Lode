@@ -255,7 +255,7 @@ static class TextEditors
     }
 
     // Common text formats whose type Windows may not know as text.
-    static readonly HashSet<string> textExtensions = new(StringComparer.OrdinalIgnoreCase)
+    static HashSet<string> textExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt", ".md", ".markdown", ".log", ".csv", ".tsv",
         ".json", ".jsonc", ".xml", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf", ".config", ".env",

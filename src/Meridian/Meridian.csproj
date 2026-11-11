@@ -23,5 +23,6 @@
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <InternalsVisibleTo Include="Meridian.Tests" />
     <PackageReference Include="ProjectDefaults" PrivateAssets="all" />
+    <PackageReference Include="PackageUpdateLib" />
   </ItemGroup>
 </Project>

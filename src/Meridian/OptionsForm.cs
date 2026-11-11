@@ -61,6 +61,31 @@ class OptionsForm : Form
         AutoSize = true
     };
 
+    readonly TextBox codeDirectory = new()
+    {
+        Name = "codeDirectory",
+        ReadOnly = true,
+        PlaceholderText = "None",
+        Width = 300
+    };
+    readonly Button browseCodeDirectory = new()
+    {
+        Name = "browseCodeDirectory",
+        Text = "Browse...",
+        AutoSize = true
+    };
+    readonly Button clearCodeDirectory = new()
+    {
+        Name = "clearCodeDirectory",
+        Text = "Clear",
+        AutoSize = true
+    };
+
+    /// <summary>
+    /// Asks for the code folder. Replaced in tests, which can't answer a dialog.
+    /// </summary>
+    internal Func<string?> BrowseForCodeDirectory;
+
     readonly Settings settings;
     readonly IReadOnlyList<TextEditors.Editor> editors;
 
@@ -92,6 +117,16 @@ class OptionsForm : Form
         this.settings = settings;
         this.editors = editors;
         BrowseForEditor = ShowBrowseDialog;
+        BrowseForCodeDirectory = ShowCodeDirectoryDialog;
+        browseCodeDirectory.Click += (_, _) =>
+        {
+            if (BrowseForCodeDirectory() is { } chosen)
+            {
+                SetCodeDirectory(chosen);
+            }
+        };
+        clearCodeDirectory.Click += (_, _) => SetCodeDirectory(null);
+        UpdateCodeDirectory();
         FillTextEditors();
         textEditor.SelectedIndexChanged += (_, _) => TextEditorChosen();
         browseDefaultDirectory.Click += (_, _) => BrowseDefaultDirectory();
@@ -147,6 +182,7 @@ class OptionsForm : Form
         layout.Controls.Add(BuildStartupGroup());
         layout.Controls.Add(BuildViewGroup());
         layout.Controls.Add(BuildTextEditorGroup());
+        layout.Controls.Add(BuildCodeGroup());
         layout.Controls.Add(BuildExplorerGroup());
         layout.Controls.Add(closeButton);
         Controls.Add(layout);
@@ -265,6 +301,83 @@ class OptionsForm : Form
         };
         group.Controls.Add(layout);
         return group;
+    }
+
+    GroupBox BuildCodeGroup()
+    {
+        var description = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new(420, 0),
+            Margin = new(3, 3, 3, 6),
+            Text = "The folder your git repositories are in. Folders in it get Git pull, Git push, " +
+                   "Git discard and Update NuGets on their right-click menu."
+        };
+
+        // Centred on the row's middle, as the Default folder row is.
+        var row = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = Padding.Empty
+        };
+        codeDirectory.Anchor = AnchorStyles.Left;
+        browseCodeDirectory.Anchor = AnchorStyles.Left;
+        clearCodeDirectory.Anchor = AnchorStyles.Left;
+        row.Controls.Add(codeDirectory, 0, 0);
+        row.Controls.Add(browseCodeDirectory, 1, 0);
+        row.Controls.Add(clearCodeDirectory, 2, 0);
+
+        var layout = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Fill
+        };
+        layout.Controls.Add(description);
+        layout.Controls.Add(row);
+
+        var group = new GroupBox
+        {
+            Text = "Code folder",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new(9, 6, 9, 9)
+        };
+        group.Controls.Add(layout);
+        return group;
+    }
+
+    string? ShowCodeDirectoryDialog()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Choose the folder your git repositories are in",
+            UseDescriptionForTitle = true,
+            InitialDirectory = settings.CodeDirectory ?? Locations.Home
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return null;
+        }
+
+        return dialog.SelectedPath;
+    }
+
+    void SetCodeDirectory(string? path)
+    {
+        settings.CodeDirectory = path;
+        UpdateCodeDirectory();
+    }
+
+    void UpdateCodeDirectory()
+    {
+        codeDirectory.Text = settings.CodeDirectory ?? "";
+        clearCodeDirectory.Enabled = settings.CodeDirectory != null;
     }
 
     GroupBox BuildTextEditorGroup()

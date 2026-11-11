@@ -40,6 +40,22 @@ public class QuickMenuTests
         await Verify(Describe(view.ItemCommands([Entry(view, "Docs")])));
     }
 
+    // A folder under the code folder gets the git and NuGet commands; a file there doesn't.
+    [Test]
+    public async Task FolderUnderTheCodeFolderMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root, new() { ShowHidden = false, CodeDirectory = fixture.Root });
+
+        await Verify(
+            new
+            {
+                folder = Describe(view.ItemCommands([Entry(view, "Docs")])),
+                file = Describe(view.ItemCommands([Entry(view, "notes.aleph")])),
+                background = Describe(view.BackgroundCommands(canPaste: false))
+            });
+    }
+
     // No Open in new tab once a file is in the mix, and Rename needs a single item.
     [Test]
     public async Task MixedSelectionMenu()
@@ -180,9 +196,9 @@ public class QuickMenuTests
         await Assert.That(form.PinMenuText()).IsEqualTo("Pin to Quick access");
     }
 
-    static async Task<FolderView> Open(string path)
+    static async Task<FolderView> Open(string path, Settings? settings = null)
     {
-        var view = new FolderView(new() { ShowHidden = false }, noPlaces);
+        var view = new FolderView(settings ?? new() { ShowHidden = false }, noPlaces);
         view.Navigate(path);
         await Pump.Loaded(view);
         return view;

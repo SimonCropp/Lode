@@ -1,0 +1,10 @@
+﻿{
+  chosen: {
+    setting: C:\Code,
+    shown: C:\Code,
+    clearEnabled: true
+  },
+  cleared: {
+    clearEnabled: false
+  }
+}

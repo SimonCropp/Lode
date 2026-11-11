@@ -22,6 +22,18 @@ sealed class Settings
     // The executable Edit opens text files in. Null for the first editor installed, or Notepad.
     public string? TextEditor { get; set; }
 
+    // The folder holding the user's git repositories. Folders in it get git and NuGet commands
+    // on their right-click menu. Null for none.
+    public string? CodeDirectory { get; set; }
+
+    /// <summary>
+    /// True when <paramref name="folder"/> is the code folder or inside it.
+    /// </summary>
+    public bool IsCode(string folder) =>
+        CodeDirectory != null &&
+        !Locations.IsThisPC(folder) &&
+        Locations.IsWithin(folder, CodeDirectory);
+
     /// <summary>
     /// <see cref="DefaultDirectory"/> when it is set and still there, otherwise the user folder.
     /// </summary>
