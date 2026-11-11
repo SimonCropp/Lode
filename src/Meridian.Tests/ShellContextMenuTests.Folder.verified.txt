@@ -1,0 +1,7 @@
+﻿{
+  sendTo: false,
+  includeInLibrary: false,
+  restorePreviousVersions: false,
+  editInNotepad: false,
+  doubledSeparator: false
+}

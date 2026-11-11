@@ -18,7 +18,18 @@ sealed class ClosableTabControl : TabControl
     int hoveredTab = -1;
     int hoveredCross = -1;
 
+    // The tab under a left button press, and where it was pressed, until the button is
+    // released. Moving far enough with the button down turns the press into a drag.
+    int pressedTab = -1;
+    Point pressedAt;
+    bool dragging;
+
     public event Action<TabPage>? CloseRequested;
+
+    /// <summary>
+    /// A tab was dragged and released away from the row of tabs. The point is on the screen.
+    /// </summary>
+    public event Action<TabPage, Point>? TabDraggedOff;
 
     public ClosableTabControl()
     {
@@ -164,9 +175,98 @@ sealed class ClosableTabControl : TabControl
         Invalidate();
     }
 
+    // The strip the tabs sit in, above the pages.
+    Rectangle TabRow => new(0, 0, Width, DisplayRectangle.Top);
+
+    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    {
+        base.OnMouseDown(eventArgs);
+        if (eventArgs.Button == MouseButtons.Left)
+        {
+            pressedTab = TabAt(eventArgs.Location);
+            pressedAt = eventArgs.Location;
+        }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs eventArgs)
+    {
+        base.OnMouseUp(eventArgs);
+        if (eventArgs.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        var page = dragging && pressedTab < TabCount ? TabPages[pressedTab] : null;
+        EndDrag();
+        if (page != null && !TabRow.Contains(eventArgs.Location))
+        {
+            TabDraggedOff?.Invoke(page, PointToScreen(eventArgs.Location));
+        }
+    }
+
+    protected override void OnMouseCaptureChanged(EventArgs eventArgs)
+    {
+        base.OnMouseCaptureChanged(eventArgs);
+
+        // Another window took the mouse (Alt+Tab, say): give up on the drag.
+        if (dragging && !Capture)
+        {
+            EndDrag();
+        }
+    }
+
+    protected override void OnKeyDown(KeyEventArgs eventArgs)
+    {
+        base.OnKeyDown(eventArgs);
+        if (dragging && eventArgs.KeyCode == Keys.Escape)
+        {
+            eventArgs.Handled = true;
+            EndDrag();
+        }
+    }
+
+    void EndDrag()
+    {
+        var wasDragging = dragging;
+        dragging = false;
+        pressedTab = -1;
+        if (wasDragging)
+        {
+            Capture = false;
+            Cursor = Cursors.Default;
+        }
+    }
+
     protected override void OnMouseMove(MouseEventArgs eventArgs)
     {
         base.OnMouseMove(eventArgs);
+        // A press lasts until its release (see OnMouseUp), or until the pointer leaves before a
+        // drag starts, so the button needs no checking here.
+        if (pressedTab >= 0)
+        {
+            if (!dragging)
+            {
+                var threshold = SystemInformation.DragSize;
+                var still = new Rectangle(
+                    pressedAt.X - threshold.Width / 2,
+                    pressedAt.Y - threshold.Height / 2,
+                    threshold.Width,
+                    threshold.Height);
+                if (still.Contains(eventArgs.Location))
+                {
+                    return;
+                }
+
+                // Captured, so the release arrives here even when it happens over another window.
+                dragging = true;
+                Capture = true;
+                SetHovered(-1, -1);
+            }
+
+            Cursor = TabRow.Contains(eventArgs.Location) ? Cursors.Default : Cursors.SizeAll;
+            return;
+        }
+
         var tab = TabAt(eventArgs.Location);
         var overCross = tab >= 0 && CrossBounds(tab).Contains(eventArgs.Location);
         SetHovered(tab, overCross ? tab : -1);
@@ -176,6 +276,10 @@ sealed class ClosableTabControl : TabControl
     {
         base.OnMouseLeave(eventArgs);
         SetHovered(-1, -1);
+        if (!dragging)
+        {
+            pressedTab = -1;
+        }
     }
 
     void SetHovered(int tab, int cross)

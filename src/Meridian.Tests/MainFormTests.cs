@@ -63,7 +63,7 @@ public class MainFormTests
     {
         using var fixture = Fixture.CreateAtFixedPath();
         var settings = new Settings { ShowHidden = showHidden };
-        var places = new Places([fixture.Root], ShowComputer: false, _ => "120 GB free of 500 GB");
+        var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
         using var form = new QuietForm([fixture.Root], settings, places);
 
         // Verify.WinForms turns this off before it draws. Changing it on a visible form makes

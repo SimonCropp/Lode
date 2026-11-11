@@ -53,6 +53,39 @@ static class ShellIcons
         FolderIcon = info.IconIndex;
         FolderTypeName = info.TypeName;
         ComputerIcon = GetComputerIcon();
+        QuickAccessIcon = GetShellFolderIcon("shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}");
+        RecentIcon = GetShellFolderIcon("shell:::{22877a6d-37a1-461a-91b0-dbda5aaebc99}");
+    }
+
+    /// <summary>
+    /// Quick access's star, for the tree's Pinned section.
+    /// </summary>
+    public static int QuickAccessIcon { get; }
+
+    /// <summary>
+    /// Recent folders' clock, for the tree's Recent section.
+    /// </summary>
+    public static int RecentIcon { get; }
+
+    // The icon of a virtual shell folder, by its parsing name. The plain folder icon if the
+    // shell does not know it.
+    static int GetShellFolderIcon(string parsingName)
+    {
+        if (SHParseDisplayName(parsingName, IntPtr.Zero, out var itemIdList, 0, out _) != 0)
+        {
+            return FolderIcon;
+        }
+
+        try
+        {
+            var info = new ShellFileInfo();
+            SHGetFileInfo(itemIdList, 0, ref info, infoSize, itemIdListFlag | systemIconIndexFlag | smallIconFlag);
+            return info.IconIndex;
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(itemIdList);
+        }
     }
 
     static int GetComputerIcon()

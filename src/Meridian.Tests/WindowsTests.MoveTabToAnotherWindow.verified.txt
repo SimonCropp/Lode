@@ -1,0 +1,17 @@
+﻿{
+  source: {
+    title: Source - Meridian,
+    tabs: [
+      Source
+    ],
+    active: {TempPath}MeridianTests\WindowsTests.MoveTabToAnotherWindow\Projects\Source
+  },
+  target: {
+    title: Deep - Meridian,
+    tabs: [
+      Projects,
+      Deep
+    ],
+    active: {TempPath}MeridianTests\WindowsTests.MoveTabToAnotherWindow\Projects\Source\Deep
+  }
+}

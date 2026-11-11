@@ -9,7 +9,7 @@ public class FolderViewTests
     const int typeColumn = 2;
     const int sizeColumn = 3;
 
-    static readonly Places noPlaces = new([], ShowComputer: false, _ => "");
+    static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
 
     [Test]
     public async Task ListsFoldersFirstInNaturalOrder()
@@ -149,7 +149,7 @@ public class FolderViewTests
     public async Task RevealSelectsTheFile()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new(), noPlaces);
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces);
 
         view.Reveal(fixture.At("report10.beta"));
         await Pump.Loaded(view);
@@ -186,7 +186,8 @@ public class FolderViewTests
 
     static async Task<FolderView> Open(string path, Settings? settings = null)
     {
-        var view = new FolderView(settings ?? new(), noPlaces);
+        // Hidden items off unless a test asks: most tests are about everything else.
+        var view = new FolderView(settings ?? new() { ShowHidden = false }, noPlaces);
         view.Navigate(path);
         await Pump.Loaded(view);
         return view;

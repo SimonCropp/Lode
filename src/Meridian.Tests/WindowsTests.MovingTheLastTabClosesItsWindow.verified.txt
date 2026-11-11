@@ -1,0 +1,11 @@
+﻿{
+  sourceClosed: true,
+  target: {
+    title: Docs - Meridian,
+    tabs: [
+      Projects,
+      Docs
+    ],
+    active: {TempPath}MeridianTests\WindowsTests.MovingTheLastTabClosesItsWindow\Projects\Docs
+  }
+}

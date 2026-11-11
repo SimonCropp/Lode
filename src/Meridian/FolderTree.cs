@@ -1,9 +1,13 @@
 /// <summary>
-/// The navigation pane: the pinned folders followed by This PC and its drives, with
+/// The navigation pane: a Pinned section, a Recent section, then This PC and its drives, with
 /// subfolders loaded on demand.
 /// </summary>
 sealed class FolderTree : TreeView
 {
+    /// <summary>
+    /// The tag of a section heading. Every other node's tag is the folder's path.
+    /// </summary>
+    public sealed record Section(string Name);
     const int unscaledRowHeight = 26;
     const int unscaledIconSize = 16;
 
@@ -52,12 +56,10 @@ sealed class FolderTree : TreeView
         {
             Nodes.Clear();
             computerNode.Nodes.Clear();
-            foreach (var folder in places.Pinned)
+            AddSection("Pinned", ShellIcons.QuickAccessIcon, places.Pinned);
+            if (settings.ShowRecent)
             {
-                // Asking the shell for a network folder's own icon can stall on a share that
-                // is offline, so those get the plain folder icon.
-                var icon = Locations.IsNetwork(folder) ? ShellIcons.FolderIcon : ShellIcons.GetActualIcon(folder);
-                Nodes.Add(CreateNode(folder, Locations.DisplayName(folder), icon));
+                AddSection("Recent", ShellIcons.RecentIcon, places.Recent);
             }
 
             if (places.ShowComputer)
@@ -71,6 +73,32 @@ sealed class FolderTree : TreeView
         {
             EndUpdate();
         }
+    }
+
+    // A heading with the folders beneath it, open. Nothing at all when there are no folders.
+    void AddSection(string name, int icon, IReadOnlyList<string> folders)
+    {
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        var section = new TreeNode(name)
+        {
+            Tag = new Section(name),
+            ImageIndex = icon,
+            SelectedImageIndex = icon
+        };
+        foreach (var folder in folders)
+        {
+            // Asking the shell for a network folder's own icon can stall on a share that
+            // is offline, so those get the plain folder icon.
+            var folderIcon = Locations.IsNetwork(folder) ? ShellIcons.FolderIcon : ShellIcons.GetActualIcon(folder);
+            section.Nodes.Add(CreateNode(folder, Locations.DisplayName(folder), folderIcon));
+        }
+
+        Nodes.Add(section);
+        section.Expand();
     }
 
     /// <summary>
@@ -187,11 +215,12 @@ sealed class FolderTree : TreeView
             return places.ShowComputer ? computerNode : null;
         }
 
-        // Start from the closest root that contains the path: a pinned folder when there is
-        // one, otherwise the drive.
+        // Start from the closest folder at the top of the tree that contains the path: a pinned
+        // or recent folder when there is one, otherwise the drive. On a tie, pinned wins.
         var current = Nodes
             .Cast<TreeNode>()
-            .Where(_ => _ != computerNode)
+            .Where(_ => _.Tag is Section)
+            .SelectMany(_ => _.Nodes.Cast<TreeNode>())
             .Concat(computerNode.Nodes.Cast<TreeNode>())
             .Where(_ => Locations.IsWithin(path, (string)_.Tag!))
             .MaxBy(_ => ((string)_.Tag!).Length);

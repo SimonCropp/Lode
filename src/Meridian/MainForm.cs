@@ -29,9 +29,38 @@ class MainForm : Form
     readonly Button upButton;
     bool updatingFilter;
 
+    // False for a window opened from another: it is placed beside that one rather than where
+    // the last window to close was.
+    bool restoreBounds = true;
+
+    /// <summary>
+    /// A window opened from another one (Ctrl+N, or a tab dragged off), just before it is
+    /// shown. The app runs until every window is closed, so it needs to hear of each.
+    /// </summary>
+    public static event Action<MainForm>? WindowOpened;
+
+    /// <summary>
+    /// Exit was chosen from a window's menu. The app otherwise keeps running in the tray.
+    /// </summary>
+    public static event Action? ExitRequested;
+
+    /// <summary>
+    /// When set, closing the last visible window hides it rather than closing it, so the app
+    /// keeps running in the tray. Set by the app; tests leave it off.
+    /// </summary>
+    public static bool HideLastWindowOnClose { get; set; }
+
     public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
-    public MainForm(string[] arguments, Settings settings, Places places)
+    public IEnumerable<FolderView> Views =>
+        tabs.TabPages.Cast<TabPage>().Select(_ => _.Controls.OfType<FolderView>().First());
+
+    public MainForm(string[] arguments, Settings settings, Places places) :
+        this(settings, places) =>
+        OpenInitialTabs(arguments);
+
+    // A window with no tabs yet.
+    MainForm(Settings settings, Places places)
     {
         this.settings = settings;
         this.places = places;
@@ -54,8 +83,6 @@ class MainForm : Form
         Controls.Add(BuildStatusBar());
         ResumeLayout(false);
         PerformLayout();
-
-        OpenInitialTabs(arguments);
     }
 
     Control BuildNavigationBar()
@@ -142,6 +169,8 @@ class MainForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Options…", null, (_, _) => ShowOptions());
         menu.Items.Add("About Meridian", null, (_, _) => ShowAbout());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit Meridian", null, (_, _) => ExitRequested?.Invoke());
         return menu;
     }
 
@@ -153,6 +182,7 @@ class MainForm : Form
 
         tabs.Dock = DockStyle.Fill;
         tabs.CloseRequested += CloseTab;
+        tabs.TabDraggedOff += OnTabDraggedOff;
         tabs.SelectedIndexChanged += (_, _) => SyncToActiveView();
         tabs.MouseUp += OnTabsMouseUp;
 
@@ -204,16 +234,19 @@ class MainForm : Form
     protected override void OnLoad(EventArgs eventArgs)
     {
         base.OnLoad(eventArgs);
-        var saved = new Rectangle(settings.Left, settings.Top, settings.Width, settings.Height);
-        var onScreen = Screen.AllScreens.Any(_ => _.WorkingArea.IntersectsWith(saved));
-        if (saved is { Width: > 0, Height: > 0 } && onScreen)
+        if (restoreBounds)
         {
-            Bounds = saved;
-        }
+            var saved = new Rectangle(settings.Left, settings.Top, settings.Width, settings.Height);
+            var onScreen = Screen.AllScreens.Any(_ => _.WorkingArea.IntersectsWith(saved));
+            if (saved is { Width: > 0, Height: > 0 } && onScreen)
+            {
+                Bounds = saved;
+            }
 
-        if (settings.Maximized)
-        {
-            WindowState = FormWindowState.Maximized;
+            if (settings.Maximized)
+            {
+                WindowState = FormWindowState.Maximized;
+            }
         }
 
         var distance = settings.SplitterDistance > 0 ? settings.SplitterDistance : LogicalToDeviceUnits(250);
@@ -242,6 +275,16 @@ class MainForm : Form
             .ToList();
         settings.ActiveTab = tabs.SelectedIndex;
         settings.Save();
+
+        var lastVisible = !Application.OpenForms.OfType<MainForm>().Any(_ => _ != this && _.Visible);
+        // UserClosing is the X, Alt+F4 or the taskbar's Close; None is another program sending
+        // WM_CLOSE. Windows shutting down, or Exit (which turns HideLastWindowOnClose off), closes
+        // for real.
+        if (HideLastWindowOnClose && lastVisible && eventArgs.CloseReason is CloseReason.UserClosing or CloseReason.None)
+        {
+            eventArgs.Cancel = true;
+            Hide();
+        }
     }
 
     public FolderView AddTab(string path, bool activate)
@@ -249,15 +292,12 @@ class MainForm : Form
         var view = new FolderView(settings, places) { Dock = DockStyle.Fill };
         var page = new TabPage { Padding = Padding.Empty };
         page.Controls.Add(view);
-        view.PathChanged += () => OnViewPathChanged(view, page);
-        view.StatusChanged += () =>
-        {
-            if (view == ActiveView)
-            {
-                UpdateStatus(view);
-            }
-        };
-        view.NewTabRequested += _ => AddTab(_, false);
+
+        // Handled by whichever window the tab is in at the time, since a tab can be dragged to
+        // another window.
+        view.PathChanged += () => WindowOf(view)?.OnViewPathChanged(view);
+        view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
+        view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false);
         tabs.TabPages.Add(page);
         if (File.Exists(path))
         {
@@ -300,8 +340,118 @@ class MainForm : Form
         }
     }
 
-    void OnViewPathChanged(FolderView view, TabPage page)
+    static MainForm? WindowOf(Control? control) =>
+        control?.FindForm() as MainForm;
+
+    void OnTabDraggedOff(TabPage page, Point screenLocation)
     {
+        var target = WindowOf(WindowAt(screenLocation));
+        if (target == this)
+        {
+            return;
+        }
+
+        if (target != null)
+        {
+            MoveTab(page, target);
+            target.Activate();
+        }
+        else if (tabs.TabCount > 1)
+        {
+            // A lone tab dragged off its own window would only swap one window for another.
+            MoveTabToNewWindow(page, screenLocation);
+        }
+    }
+
+    // The top-most of this app's controls at a point on the screen, if any.
+    static Control? WindowAt(Point screenLocation) =>
+        Control.FromChildHandle(WindowFromPoint(screenLocation));
+
+    /// <summary>
+    /// Moves a tab, with its history, to the end of another window's tabs and shows it there.
+    /// This window closes if that was its last tab.
+    /// </summary>
+    public void MoveTab(TabPage page, MainForm target)
+    {
+        RemoveTab(page);
+        target.AdoptTab(page);
+    }
+
+    /// <summary>
+    /// Moves a tab into a window of its own, placed so the tab lands near the point.
+    /// </summary>
+    public MainForm MoveTabToNewWindow(TabPage page, Point screenLocation)
+    {
+        // Puts the new window's tab under the pointer, as if it had been carried there.
+        var firstTab = tabs.GetTabRect(0);
+        var firstTabOnScreen = tabs.PointToScreen(firstTab.Location);
+        var grab = new Size(
+            firstTabOnScreen.X - Left + firstTab.Width / 2,
+            firstTabOnScreen.Y - Top + firstTab.Height / 2);
+        var window = CreateWindow(new(screenLocation - grab, NormalSize));
+        MoveTab(page, window);
+        window.Show();
+        return window;
+    }
+
+    // A window opened from this one, with no tabs yet. The caller adds them, then shows it.
+    MainForm CreateWindow(Rectangle bounds)
+    {
+        var window = new MainForm(settings, places)
+        {
+            restoreBounds = false,
+            StartPosition = FormStartPosition.Manual,
+            Bounds = bounds
+        };
+        WindowOpened?.Invoke(window);
+        return window;
+    }
+
+    void AdoptTab(TabPage page)
+    {
+        tabs.TabPages.Add(page);
+        tabs.SelectedTab = page;
+        var view = page.Controls.OfType<FolderView>().First();
+        OnViewPathChanged(view);
+        SyncToActiveView();
+        view.FocusList();
+    }
+
+    // Takes a tab out of this window without disposing it, so it can go to another. Closes the
+    // window when it was the last.
+    void RemoveTab(TabPage page)
+    {
+        var index = tabs.TabPages.IndexOf(page);
+        var wasSelected = tabs.SelectedTab == page;
+        tabs.TabPages.Remove(page);
+        if (tabs.TabCount == 0)
+        {
+            Close();
+            return;
+        }
+
+        if (wasSelected)
+        {
+            tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
+            SyncToActiveView();
+        }
+    }
+
+    void OnViewStatusChanged(FolderView view)
+    {
+        if (view == ActiveView)
+        {
+            UpdateStatus(view);
+        }
+    }
+
+    void OnViewPathChanged(FolderView view)
+    {
+        if (view.Parent is not TabPage page)
+        {
+            return;
+        }
+
         var name = Locations.DisplayName(view.CurrentPath);
         page.Text = name.Length > maximumTabTextLength ? string.Concat(name.AsSpan(0, maximumTabTextLength), "…") : name;
         page.ToolTipText = view.CurrentPath;
@@ -348,17 +498,7 @@ class MainForm : Form
     void ToggleHidden()
     {
         settings.ShowHidden = !settings.ShowHidden;
-        showHiddenItem.Checked = settings.ShowHidden;
-        tree.Rebuild();
-        foreach (TabPage page in tabs.TabPages)
-        {
-            page.Controls.OfType<FolderView>().First().Reload();
-        }
-
-        if (ActiveView is { } view)
-        {
-            tree.SelectPath(view.CurrentPath);
-        }
+        ApplySettingsToAllWindows();
     }
 
     void OpenTerminal()
@@ -369,30 +509,72 @@ class MainForm : Form
         }
     }
 
+    // In this process rather than a new one, so tabs can be dragged between the two.
     void NewWindow()
     {
-        var startInfo = new ProcessStartInfo(Environment.ProcessPath!);
-        if (ActiveView is { } view && !Locations.IsThisPC(view.CurrentPath))
-        {
-            startInfo.ArgumentList.Add(view.CurrentPath);
-        }
-
-        Process.Start(startInfo)?.Dispose();
+        var offset = new Size(LogicalToDeviceUnits(30), LogicalToDeviceUnits(30));
+        var window = CreateWindow(new(Location + offset, NormalSize));
+        window.AddTab(ActiveView?.CurrentPath ?? Locations.Home, true);
+        window.Show();
     }
+
+    Size NormalSize => WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
 
     void ShowOptions()
     {
-        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser());
+        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser(), settings);
+        options.SettingsChanged += ApplySettingsToAllWindows;
         options.ShowDialog(this);
     }
 
-    void ShowAbout() =>
-        MessageBox.Show(
-            this,
-            "Meridian\nA tabbed file manager with the classic Windows context menu.",
-            "About Meridian",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+    // Settings are shared by every window, so a change shows in all of them.
+    static void ApplySettingsToAllWindows()
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            window.ApplySettings();
+        }
+    }
+
+    void ApplySettings()
+    {
+        showHiddenItem.Checked = settings.ShowHidden;
+        foreach (var view in Views)
+        {
+            view.Reload();
+        }
+
+        RebuildTree();
+    }
+
+    void RebuildTree()
+    {
+        tree.Rebuild();
+        if (ActiveView is { } view)
+        {
+            tree.SelectPath(view.CurrentPath);
+        }
+    }
+
+    const string projectUrl = "https://github.com/SimonCropp/Meridian";
+
+    void ShowAbout()
+    {
+        var version = typeof(MainForm).Assembly.GetName().Version?.ToString(3);
+        var page = new TaskDialogPage
+        {
+            Caption = "About Meridian",
+            Heading = $"Meridian {version}",
+            Text = "A tabbed file manager with the classic Windows context menu.\n\n" +
+                   $"<a href=\"{projectUrl}\">{projectUrl}</a>",
+            EnableLinks = true,
+            Icon = TaskDialogIcon.Information,
+            Buttons = { TaskDialogButton.OK }
+        };
+        page.LinkClicked += (_, eventArgs) =>
+            Process.Start(new ProcessStartInfo(eventArgs.LinkHref) { UseShellExecute = true })?.Dispose();
+        TaskDialog.ShowDialog(this, page);
+    }
 
     void FocusAddress()
     {

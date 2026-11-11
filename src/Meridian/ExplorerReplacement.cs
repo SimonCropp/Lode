@@ -30,7 +30,7 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     static readonly string[] folderClasses = ["Directory", "Drive"];
 
     public static ExplorerReplacement ForCurrentUser() =>
-        new(@"Software\Classes", CommandForThisProcess(), notifyShell: true);
+        new(@"Software\Classes", PreferredCommand(), notifyShell: true);
 
     /// <summary>
     /// True when folders open in a Meridian, this copy or another.
@@ -70,8 +70,8 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     }
 
     /// <summary>
-    /// True when folders open in this copy of Meridian, rather than in Explorer or in a copy
-    /// installed somewhere else.
+    /// True when folders open in the copy of Meridian that Replace registers (the installed
+    /// tool, or this copy when there is none), rather than in Explorer or some other copy.
     /// </summary>
     public bool IsActiveHere => RegisteredCommand == command;
 
@@ -200,17 +200,40 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         }
     }
 
-    // Quoted, ready for a registry command. Installed as a dotnet tool, this process is the
-    // tool's shim, whose path stays the same across tool updates.
-    static string CommandForThisProcess()
+    // Quoted, ready for a registry command. The installed dotnet tool when there is one, even
+    // when Replace is clicked in a Debug build or other copy: its shim
+    // (%USERPROFILE%\.dotnet\tools\meridian.exe) keeps its path across tool updates, unlike the
+    // versioned copy under tools\.store, and unlike a build folder that gets cleaned or moved.
+    // Only without the tool is this process registered.
+    static string PreferredCommand()
     {
+        if (InstalledToolPath() is { } tool)
+        {
+            return $"\"{tool}\"";
+        }
+
         var processPath = Environment.ProcessPath!;
         if (Path.GetFileNameWithoutExtension(processPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
         {
-            // Started as "dotnet Meridian.dll".
+            // Started as "dotnet Meridian.dll". This path is version specific, but this only
+            // happens when someone starts Meridian through dotnet themselves, never as the tool.
             return $"\"{processPath}\" \"{typeof(ExplorerReplacement).Assembly.Location}\"";
         }
 
         return $"\"{processPath}\"";
+    }
+
+    // Where "dotnet tool install -g" puts the shim: .dotnet\tools under DOTNET_CLI_HOME when that
+    // is set, otherwise under the user profile.
+    static string? InstalledToolPath()
+    {
+        var home = Environment.GetEnvironmentVariable("DOTNET_CLI_HOME");
+        if (string.IsNullOrEmpty(home))
+        {
+            home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        var path = Path.Combine(home, ".dotnet", "tools", "meridian.exe");
+        return File.Exists(path) ? path : null;
     }
 }

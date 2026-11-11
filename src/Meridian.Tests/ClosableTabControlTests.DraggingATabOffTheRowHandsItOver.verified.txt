@@ -1,0 +1,10 @@
+﻿{
+  draggedOff: [
+    Second
+  ],
+  tabs: [
+    First,
+    Second,
+    Third
+  ]
+}

@@ -1,3 +1,4 @@
-﻿+ Projects
-- Source
-  + Deep   <- selected
+﻿- Pinned
+  + Projects
+  - Source
+    + Deep   <- selected

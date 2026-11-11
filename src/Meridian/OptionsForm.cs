@@ -25,9 +25,42 @@ class OptionsForm : Form
         Padding = new(6, 0, 6, 0)
     };
 
-    public OptionsForm(ExplorerReplacement explorerReplacement)
+    readonly CheckBox showHidden = new()
+    {
+        Name = "showHidden",
+        Text = "Show hidden items (Ctrl+H)",
+        AutoSize = true,
+        Margin = new(3, 3, 3, 6)
+    };
+
+    readonly CheckBox showRecent = new()
+    {
+        Name = "showRecent",
+        Text = "Show recent folders in the folder tree",
+        AutoSize = true,
+        Margin = new(3, 3, 3, 0)
+    };
+
+    /// <summary>
+    /// A setting that changes how windows look was changed.
+    /// </summary>
+    public event Action? SettingsChanged;
+
+    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings)
     {
         this.explorerReplacement = explorerReplacement;
+        showHidden.Checked = settings.ShowHidden;
+        showHidden.CheckedChanged += (_, _) =>
+        {
+            settings.ShowHidden = showHidden.Checked;
+            SettingsChanged?.Invoke();
+        };
+        showRecent.Checked = settings.ShowRecent;
+        showRecent.CheckedChanged += (_, _) =>
+        {
+            settings.ShowRecent = showRecent.Checked;
+            SettingsChanged?.Invoke();
+        };
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -63,6 +96,7 @@ class OptionsForm : Form
             ColumnCount = 1,
             Location = new(Padding.Left, Padding.Top)
         };
+        layout.Controls.Add(BuildViewGroup());
         layout.Controls.Add(BuildExplorerGroup());
         layout.Controls.Add(closeButton);
         Controls.Add(layout);
@@ -70,6 +104,41 @@ class OptionsForm : Form
         PerformLayout();
 
         UpdateExplorerState();
+    }
+
+    GroupBox BuildViewGroup()
+    {
+        var recentDescription = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new(420, 0),
+            Margin = new(21, 0, 3, 3),
+            ForeColor = SystemColors.GrayText,
+            Text = "Pinned folders are the ones pinned to Quick access in File Explorer. " +
+                   "Recent folders are the ones Explorer adds there because you use them often."
+        };
+
+        var layout = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Fill
+        };
+        layout.Controls.Add(showHidden);
+        layout.Controls.Add(showRecent);
+        layout.Controls.Add(recentDescription);
+
+        var group = new GroupBox
+        {
+            Text = "View",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new(9, 6, 9, 9)
+        };
+        group.Controls.Add(layout);
+        return group;
     }
 
     GroupBox BuildExplorerGroup()

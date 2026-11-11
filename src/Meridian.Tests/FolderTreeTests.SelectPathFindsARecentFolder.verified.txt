@@ -1,0 +1,5 @@
+﻿- Pinned
+  + Docs
+- Recent
+  - Source
+    + Deep   <- selected

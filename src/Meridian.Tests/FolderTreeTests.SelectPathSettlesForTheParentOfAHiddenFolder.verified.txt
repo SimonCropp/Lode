@@ -1,4 +1,5 @@
-﻿+ Projects   <- selected
-  + Archive
-  + Docs
-  + Source
+﻿- Pinned
+  + Projects   <- selected
+    + Archive
+    + Docs
+    + Source

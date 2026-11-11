@@ -5,7 +5,7 @@ public class FolderTreeTests
     public async Task PinnedFoldersAreTheRoots()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(new(), fixture.At("Docs"), fixture.Root);
+        using var tree = Create(new() { ShowHidden = false }, fixture.At("Docs"), fixture.Root);
 
         await Verify(Dump(tree));
     }
@@ -14,10 +14,10 @@ public class FolderTreeTests
     public async Task ExpandingLoadsSubfolders()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(new(), fixture.Root);
+        using var tree = Create(new() { ShowHidden = false }, fixture.Root);
 
-        tree.Nodes[0].Expand();
-        tree.Nodes[0].Nodes[2].Expand();
+        tree.Nodes[0].Nodes[0].Expand();
+        tree.Nodes[0].Nodes[0].Nodes[2].Expand();
 
         await Verify(Dump(tree));
     }
@@ -28,7 +28,7 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = Create(new() { ShowHidden = true }, fixture.Root);
 
-        tree.Nodes[0].Expand();
+        tree.Nodes[0].Nodes[0].Expand();
 
         await Verify(Dump(tree));
     }
@@ -37,7 +37,7 @@ public class FolderTreeTests
     public async Task SelectPathExpandsDownToTheFolder()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(new(), fixture.Root);
+        using var tree = Create(new() { ShowHidden = false }, fixture.Root);
 
         tree.SelectPath(fixture.At("Source", "Deep"));
 
@@ -48,7 +48,7 @@ public class FolderTreeTests
     public async Task SelectPathStartsFromTheClosestPinnedFolder()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(new(), fixture.Root, fixture.At("Source"));
+        using var tree = Create(new() { ShowHidden = false }, fixture.Root, fixture.At("Source"));
 
         tree.SelectPath(fixture.At("Source", "Deep"));
 
@@ -59,7 +59,7 @@ public class FolderTreeTests
     public async Task SelectPathSettlesForTheParentOfAHiddenFolder()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(new(), fixture.Root);
+        using var tree = Create(new() { ShowHidden = false }, fixture.Root);
 
         tree.SelectPath(fixture.At("Cache"));
 
@@ -70,7 +70,7 @@ public class FolderTreeTests
     public async Task SelectPathOutsideEveryRootSelectsNothing()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(new(), fixture.At("Docs"));
+        using var tree = Create(new() { ShowHidden = false }, fixture.At("Docs"));
         tree.SelectPath(fixture.At("Docs"));
 
         tree.SelectPath(fixture.At("Source"));
@@ -78,9 +78,41 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
-    static FolderTree Create(Settings settings, params string[] pinned)
+    [Test]
+    public async Task PinnedAndRecentAreSeparateSections()
     {
-        var tree = new FolderTree(settings, new(pinned, ShowComputer: false, _ => ""));
+        using var fixture = Fixture.Create();
+        using var tree = CreateWithRecent(new() { ShowHidden = false }, [fixture.At("Docs")], [fixture.At("Source")]);
+
+        await Verify(Dump(tree));
+    }
+
+    [Test]
+    public async Task RecentHiddenWhenTurnedOff()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = CreateWithRecent(new() { ShowHidden = false, ShowRecent = false }, [fixture.At("Docs")], [fixture.At("Source")]);
+
+        await Verify(Dump(tree));
+    }
+
+    [Test]
+    public async Task SelectPathFindsARecentFolder()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = CreateWithRecent(new() { ShowHidden = false }, [fixture.At("Docs")], [fixture.At("Source")]);
+
+        tree.SelectPath(fixture.At("Source", "Deep"));
+
+        await Verify(Dump(tree));
+    }
+
+    static FolderTree Create(Settings settings, params string[] pinned) =>
+        CreateWithRecent(settings, pinned, []);
+
+    static FolderTree CreateWithRecent(Settings settings, string[] pinned, string[] recent)
+    {
+        var tree = new FolderTree(settings, new(pinned, recent, ShowComputer: false, _ => ""));
 
         // Nodes only expand and select for real once the control has a window.
         _ = tree.Handle;
@@ -99,7 +131,7 @@ public class FolderTreeTests
         foreach (TreeNode node in nodes)
         {
             // The stand-in child of a folder that hasn't been expanded yet.
-            if (node.Tag is not string)
+            if (node.Tag is not (string or FolderTree.Section))
             {
                 continue;
             }

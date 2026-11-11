@@ -7,7 +7,10 @@ sealed class Settings
     // Null for settings that live only in memory, which is what tests use.
     string? filePath;
 
-    public bool ShowHidden { get; set; }
+    public bool ShowHidden { get; set; } = true;
+
+    // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
+    public bool ShowRecent { get; set; } = true;
     public int Left { get; set; }
     public int Top { get; set; }
     public int Width { get; set; }

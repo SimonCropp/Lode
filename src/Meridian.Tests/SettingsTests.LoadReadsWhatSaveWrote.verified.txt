@@ -1,5 +1,6 @@
 ﻿{
-  ShowHidden: false,
+  ShowHidden: true,
+  ShowRecent: true,
   Maximized: true,
   Tabs: [
     D:\Work

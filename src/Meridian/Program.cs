@@ -28,8 +28,15 @@ static class Program
                 return 0;
         }
 
+        using var instance = new SingleInstance();
+        if (!instance.IsFirst && instance.TryHandOff(commandLine.Paths))
+        {
+            return 0;
+        }
+
         var settings = Settings.Load(Settings.DefaultPath);
-        Application.Run(new MainForm(commandLine.Paths.ToArray(), settings, Places.ForThisMachine()));
+        var places = Places.ForThisMachine();
+        Application.Run(new WindowContext(new(commandLine.Paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }
 

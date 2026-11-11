@@ -1,5 +1,6 @@
-﻿- Projects
-  + Archive
-  + Docs
-  - Source
-    + Deep   <- selected
+﻿- Pinned
+  - Projects
+    + Archive
+    + Docs
+    - Source
+      + Deep   <- selected

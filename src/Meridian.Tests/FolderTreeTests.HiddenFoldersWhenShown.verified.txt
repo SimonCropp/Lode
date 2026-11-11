@@ -1,5 +1,6 @@
-﻿- Projects
-  + Archive
-  + Cache
-  + Docs
-  + Source
+﻿- Pinned
+  - Projects
+    + Archive
+    + Cache
+    + Docs
+    + Source

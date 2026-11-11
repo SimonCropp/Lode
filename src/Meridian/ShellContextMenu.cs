@@ -144,6 +144,7 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
                 return;
             }
 
+            RemoveUnwanted(contextMenu, menu);
             InsertCustomCommands(menu, customCommands, customFirst);
 
             menu2 = contextMenu as IContextMenu2;
@@ -180,6 +181,157 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
         }
 
         customAction?.Invoke();
+    }
+
+    // Entries left out of every menu, by verb, which unlike the text is the same in every
+    // language.
+    static readonly HashSet<string> removedVerbs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Restore previous versions
+        "PreviousVersions",
+        // Edit in Notepad, added by the Notepad app
+        "{CA6CC9F1-867A-481E-951E-A28C5E4F01EA}"
+    };
+
+    /// <summary>
+    /// Takes out the entries Meridian leaves off: those in <see cref="removedVerbs"/>, plus
+    /// Send to and Include in library. Those two are submenus with no verb, so they are known
+    /// by what they list: the SendTo folder, and the user's libraries.
+    /// </summary>
+    static void RemoveUnwanted(IContextMenu contextMenu, IntPtr menu)
+    {
+        var sendTo = DisplayNames(Environment.GetFolderPath(Environment.SpecialFolder.SendTo));
+        var libraries = DisplayNames(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Windows", "Libraries"));
+        for (var position = GetMenuItemCount(menu) - 1; position >= 0; position--)
+        {
+            var submenu = GetSubMenu(menu, position);
+            bool remove;
+            if (submenu != IntPtr.Zero)
+            {
+                remove = Lists(submenu, sendTo) || Lists(submenu, libraries);
+            }
+            else
+            {
+                var id = GetMenuItemID(menu, position);
+                remove = id is >= firstShellCommand and <= lastShellCommand &&
+                         GetVerb(contextMenu, id - firstShellCommand) is { } verb &&
+                         removedVerbs.Contains(verb);
+            }
+
+            if (remove)
+            {
+                DeleteMenu(menu, (uint)position, menuByPosition);
+            }
+        }
+
+        TidySeparators(menu);
+    }
+
+    // What Explorer calls each item in a folder, such as "Mail recipient" for
+    // Mail Recipient.MAPIMail.
+    static HashSet<string> DisplayNames(string folder)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var path in Directory.EnumerateFileSystemEntries(folder))
+            {
+                if (!File.GetAttributes(path).HasFlag(FileAttributes.Hidden))
+                {
+                    names.Add(ShellIcons.Describe(path).DisplayName);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // No such folder: nothing to recognise a submenu by.
+        }
+
+        return names;
+    }
+
+    // True when a submenu lists those names. One entry may be something else, such as Include
+    // in library's "Create new library".
+    static bool Lists(IntPtr submenu, HashSet<string> names)
+    {
+        if (names.Count == 0)
+        {
+            return false;
+        }
+
+        var texts = Enumerable.Range(0, GetMenuItemCount(submenu))
+            .Select(_ => MenuText(submenu, _).Replace("&", ""))
+            .Where(_ => _.Length > 0)
+            .ToList();
+        return texts.Count > 0 && texts.Count(names.Contains) >= Math.Max(1, texts.Count - 1);
+    }
+
+    static string MenuText(IntPtr menu, int position)
+    {
+        var text = new StringBuilder(256);
+        GetMenuString(menu, (uint)position, text, text.Capacity, menuByPosition);
+        return text.ToString();
+    }
+
+    static bool IsSeparator(IntPtr menu, int position) =>
+        (GetMenuState(menu, (uint)position, menuByPosition) & menuSeparator) != 0;
+
+    // Removes separators left at either end, or next to each other, by removed entries.
+    static void TidySeparators(IntPtr menu)
+    {
+        for (var position = GetMenuItemCount(menu) - 1; position >= 0; position--)
+        {
+            var last = position == GetMenuItemCount(menu) - 1;
+            if (IsSeparator(menu, position) &&
+                (position == 0 || last || IsSeparator(menu, position + 1)))
+            {
+                DeleteMenu(menu, (uint)position, menuByPosition);
+            }
+        }
+    }
+
+    public record MenuEntry(string Text, string? Verb, IReadOnlyList<MenuEntry> Submenu);
+
+    /// <summary>
+    /// The top level of the menu the shell builds for the items, as Meridian would show it.
+    /// </summary>
+    public static List<MenuEntry> Describe(IntPtr owner, IReadOnlyList<string> paths)
+    {
+        var contextMenu = CreateForItems(owner, paths);
+        if (contextMenu == null)
+        {
+            return [];
+        }
+
+        var menu = CreatePopupMenu();
+        try
+        {
+            contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, canRenameFlag);
+            RemoveUnwanted(contextMenu, menu);
+            return DescribeMenu(contextMenu, menu);
+        }
+        finally
+        {
+            DestroyMenu(menu);
+            Marshal.ReleaseComObject(contextMenu);
+        }
+    }
+
+    static List<MenuEntry> DescribeMenu(IContextMenu contextMenu, IntPtr menu)
+    {
+        var entries = new List<MenuEntry>();
+        for (var position = 0; position < GetMenuItemCount(menu); position++)
+        {
+            var text = new StringBuilder(256);
+            GetMenuString(menu, (uint)position, text, text.Capacity, menuByPosition);
+            var id = GetMenuItemID(menu, position);
+            var verb = id is >= firstShellCommand and <= lastShellCommand ? GetVerb(contextMenu, id - firstShellCommand) : null;
+            var submenu = GetSubMenu(menu, position);
+            entries.Add(new(text.ToString(), verb, submenu == IntPtr.Zero ? [] : DescribeMenu(contextMenu, submenu)));
+        }
+
+        return entries;
     }
 
     static void InsertCustomCommands(IntPtr menu, IReadOnlyList<CustomCommand> customCommands, bool customFirst)
@@ -506,6 +658,21 @@ sealed class ShellContextMenu : NativeWindow, IDisposable
 
     [DllImport("user32.dll")]
     static extern int GetMenuItemCount(IntPtr menu);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetMenuString(IntPtr menu, uint item, StringBuilder? text, int maxCount, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern uint GetMenuItemID(IntPtr menu, int position);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetSubMenu(IntPtr menu, int position);
+
+    [DllImport("user32.dll")]
+    static extern bool DeleteMenu(IntPtr menu, uint position, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern uint GetMenuState(IntPtr menu, uint item, uint flags);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern bool InsertMenu(IntPtr menu, uint position, uint flags, UIntPtr newItemId, string? newItem);
