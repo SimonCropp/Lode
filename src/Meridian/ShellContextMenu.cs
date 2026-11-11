@@ -222,6 +222,36 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return;
         }
 
+        InvokeVerb(contextMenu, owner, verb);
+    }
+
+    /// <summary>
+    /// Pins a folder to Quick access, or unpins it, as the shell's own menu entries do.
+    /// Unpin is only offered by the folder's Quick access entry, so it is asked for that.
+    /// </summary>
+    public static void SetPinned(IntPtr owner, string path, bool pin)
+    {
+        IContextMenu? contextMenu;
+        if (pin)
+        {
+            contextMenu = CreateForItems(owner, [path]);
+        }
+        else
+        {
+            contextMenu = CreateForQuickAccessItem(owner, path);
+        }
+
+        if (contextMenu == null)
+        {
+            return;
+        }
+
+        InvokeVerb(contextMenu, owner, pin ? "pintohome" : "unpinfromhome");
+        QuickAccessChanged?.Invoke();
+    }
+
+    static void InvokeVerb(IContextMenu contextMenu, IntPtr owner, string verb)
+    {
         var menu = CreatePopupMenu();
         var verbAnsi = Marshal.StringToHGlobalAnsi(verb);
         var verbUnicode = Marshal.StringToHGlobalUni(verb);

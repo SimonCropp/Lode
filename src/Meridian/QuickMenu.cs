@@ -16,8 +16,27 @@ static class QuickMenu
             return;
         }
 
-        var strip = new ContextMenuStrip();
         Action? chosen = null;
+        var strip = Build(commands, showMore, _ => chosen = _);
+
+        // Run the choice once the strip has closed, so a shell menu or dialog it opens is not
+        // fighting the strip for focus.
+        strip.Closed += (_, _) => strip.BeginInvoke(
+            () =>
+            {
+                strip.Dispose();
+                chosen?.Invoke();
+            });
+        strip.Show(location);
+    }
+
+    /// <summary>
+    /// The strip for the commands, with "Show more options" last. Clicking an item hands its
+    /// action to <paramref name="choose"/> rather than running it.
+    /// </summary>
+    internal static ContextMenuStrip Build(IReadOnlyList<Command?> commands, Action showMore, Action<Action> choose)
+    {
+        var strip = new ContextMenuStrip();
         foreach (var command in commands)
         {
             if (command == null)
@@ -30,23 +49,14 @@ static class QuickMenu
             {
                 Enabled = command.Enabled
             };
-            item.Click += (_, _) => chosen = command.Action;
+            item.Click += (_, _) => choose(command.Action);
             strip.Items.Add(item);
         }
 
         strip.Items.Add(new ToolStripSeparator());
         var more = new ToolStripMenuItem("Show more options");
-        more.Click += (_, _) => chosen = showMore;
+        more.Click += (_, _) => choose(showMore);
         strip.Items.Add(more);
-
-        // Run the choice once the strip has closed, so a shell menu or dialog it opens is not
-        // fighting the strip for focus.
-        strip.Closed += (_, _) => strip.BeginInvoke(
-            () =>
-            {
-                strip.Dispose();
-                chosen?.Invoke();
-            });
-        strip.Show(location);
+        return strip;
     }
 }

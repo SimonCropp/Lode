@@ -767,47 +767,66 @@ sealed class FolderView : UserControl
         }
     }
 
-    void ShowQuickItemMenu(List<FileEntry> selection, Point location)
-    {
-        var allDirectories = selection.All(_ => _.IsDirectory);
-        var anyDrive = selection.Any(_ => _.IsDrive);
+    void ShowQuickItemMenu(List<FileEntry> selection, Point location) =>
         QuickMenu.Show(
             location,
-            [
-                new("Open", () => OpenEntries(selection)),
-                allDirectories ? new("Open in new tab", () => OpenInNewTabs(selection)) : null,
-                null,
-                new("Cut", () => Copy(true), !anyDrive),
-                new("Copy", () => Copy(false), !anyDrive),
-                new("Rename", BeginRename, selection.Count == 1 && !anyDrive),
-                new("Delete", () => Delete(false), !anyDrive),
-                null,
-                new("Copy as path", () => CopyAsPath(selection.Select(_ => _.FullPath))),
-                new("Properties", ShowProperties)
-            ],
+            ItemCommands(selection),
             () =>
             {
                 using var menu = new ShellContextMenu();
                 ShowItemMenu(menu, selection, location);
             });
+
+    /// <summary>
+    /// The fixed right-click menu for selected items. A null entry is a separator.
+    /// </summary>
+    internal List<QuickMenu.Command?> ItemCommands(List<FileEntry> selection)
+    {
+        var anyDrive = selection.Any(_ => _.IsDrive);
+        var commands = new List<QuickMenu.Command?>
+        {
+            new("Open", () => OpenEntries(selection))
+        };
+        if (selection.All(_ => _.IsDirectory))
+        {
+            commands.Add(new("Open in new tab", () => OpenInNewTabs(selection)));
+        }
+
+        commands.AddRange(
+        [
+            null,
+            new("Cut", () => Copy(true), !anyDrive),
+            new("Copy", () => Copy(false), !anyDrive),
+            new("Rename", BeginRename, selection.Count == 1 && !anyDrive),
+            new("Delete", () => Delete(false), !anyDrive),
+            null,
+            new("Copy as path", () => CopyAsPath(selection.Select(_ => _.FullPath))),
+            new("Properties", ShowProperties)
+        ]);
+        return commands;
     }
 
     void ShowQuickBackgroundMenu(Point location) =>
         QuickMenu.Show(
             location,
-            [
-                new("Refresh", Reload),
-                new("New folder", CreateFolder),
-                new("Paste", Paste, FileOperations.ReadClipboard() != null),
-                null,
-                new("Copy as path", () => CopyAsPath([CurrentPath])),
-                new("Properties", ShowProperties)
-            ],
+            BackgroundCommands(FileOperations.ReadClipboard() != null),
             () =>
             {
                 using var menu = new ShellContextMenu();
                 ShowBackgroundMenu(menu, location);
             });
+
+    /// <summary>
+    /// The fixed right-click menu for the empty part of the list. A null entry is a separator.
+    /// </summary>
+    internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste) =>
+    [
+        new("New folder", CreateFolder),
+        new("Paste", Paste, canPaste),
+        null,
+        new("Copy as path", () => CopyAsPath([CurrentPath])),
+        new("Properties", ShowProperties)
+    ];
 
     void OpenInNewTabs(List<FileEntry> selection)
     {
@@ -818,7 +837,11 @@ sealed class FolderView : UserControl
     }
 
     internal static void CopyAsPath(IEnumerable<string> paths) =>
-        Clipboard.SetText(string.Join(Environment.NewLine, paths.Select(_ => $"\"{_}\"")));
+        Clipboard.SetText(PathsText(paths));
+
+    // As Explorer's Copy as path puts them: quoted, one per line.
+    internal static string PathsText(IEnumerable<string> paths) =>
+        string.Join(Environment.NewLine, paths.Select(_ => $"\"{_}\""));
 
     void ShowItemMenu(ShellContextMenu menu, List<FileEntry> selection, Point location)
     {

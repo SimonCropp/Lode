@@ -25,7 +25,8 @@ static class Locations
     public static bool IsChildOf(string path, string folder)
     {
         var parent = Path.GetDirectoryName(path.AsSpan());
-        return !parent.IsEmpty && Same(parent, folder);
+        return !parent.IsEmpty &&
+               Same(parent, folder);
     }
 
     /// <summary>

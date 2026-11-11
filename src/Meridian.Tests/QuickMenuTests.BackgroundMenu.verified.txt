@@ -1,0 +1,9 @@
+﻿[
+  New folder,
+  Paste,
+  ----,
+  Copy as path,
+  Properties,
+  ----,
+  Show more options
+]

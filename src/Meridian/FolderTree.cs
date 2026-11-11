@@ -41,6 +41,7 @@ sealed class FolderTree : TreeView
     {
         this.settings = settings;
         this.places = places;
+        Pin = _ => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, _, true);
         HideSelection = false;
         ShowLines = false;
         FullRowSelect = true;
@@ -491,16 +492,27 @@ sealed class FolderTree : TreeView
         var quickAccess = eventArgs.Node.Parent?.Tag is Section;
         QuickMenu.Show(
             location,
-            [
-                new("Open", () => PathSelected?.Invoke(path)),
-                new("Open in new tab", () => NewTabRequested?.Invoke(path)),
-                null,
-                new("Copy", () => FileOperations.CopyToClipboard([path], false)),
-                new("Copy as path", () => FolderView.CopyAsPath([path])),
-                new("Properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties"))
-            ],
+            NodeCommands(path),
             () => ShowShellMenu(owner, path, location, quickAccess));
     }
+
+    /// <summary>
+    /// The fixed right-click menu for a folder in the tree. A null entry is a separator.
+    /// </summary>
+    internal List<QuickMenu.Command?> NodeCommands(string path) =>
+    [
+        new("Open", () => PathSelected?.Invoke(path)),
+        new("Open in new tab", () => NewTabRequested?.Invoke(path)),
+        null,
+        new("Copy", () => FileOperations.CopyToClipboard([path], false)),
+        new("Copy as path", () => FolderView.CopyAsPath([path])),
+        new("Properties", () => ShellContextMenu.InvokeVerb(FindForm()?.Handle ?? Handle, [path], "properties"))
+    ];
+
+    /// <summary>
+    /// Pins a folder to Quick access. Replaced in tests, which must not change the real list.
+    /// </summary>
+    internal Action<string> Pin;
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
     {
@@ -543,22 +555,94 @@ sealed class FolderTree : TreeView
         return path;
     }
 
+    bool IsPinnedHeader(Point clientLocation) =>
+        GetNodeAt(clientLocation)?.Tag is Section { Name: "Pinned" };
+
+    /// <summary>
+    /// Pins the folder when the screen point is over the Pinned header. True when it was over
+    /// the header, so the caller treats the drop as handled.
+    /// </summary>
+    public bool PinIfOverPinned(Point screenLocation, string path)
+    {
+        if (!IsPinnedHeader(PointToClient(screenLocation)))
+        {
+            return false;
+        }
+
+        foreach (var folder in Pinnable([path]))
+        {
+            Pin(folder);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The paths that can be pinned: existing folders not pinned already.
+    /// </summary>
+    internal string[] Pinnable(IEnumerable<string> paths) =>
+        paths
+            .Where(_ => !Locations.IsThisPC(_) &&
+                        Directory.Exists(_) &&
+                        !places.Pinned.Any(pinned => Locations.Same(pinned, _)))
+            .ToArray();
+
+    // Folders dropped on the Pinned header get pinned to Quick access, as in Explorer.
+    string[]? FoldersToPin(DragEventArgs eventArgs)
+    {
+        var point = PointToClient(new(eventArgs.X, eventArgs.Y));
+        if (!IsPinnedHeader(point) ||
+            eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] paths)
+        {
+            return null;
+        }
+
+        var folders = Pinnable(paths);
+        if (folders.Length == 0)
+        {
+            return null;
+        }
+
+        return folders;
+    }
+
+    DragDropEffects DropEffect(DragEventArgs eventArgs)
+    {
+        if (FoldersToPin(eventArgs) != null)
+        {
+            return DragDropEffects.Link;
+        }
+
+        return FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+    }
+
     protected override void OnDragEnter(DragEventArgs eventArgs)
     {
         base.OnDragEnter(eventArgs);
-        eventArgs.Effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        eventArgs.Effect = DropEffect(eventArgs);
     }
 
     protected override void OnDragOver(DragEventArgs eventArgs)
     {
         base.OnDragOver(eventArgs);
-        eventArgs.Effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        eventArgs.Effect = DropEffect(eventArgs);
     }
 
     protected override void OnDragDrop(DragEventArgs eventArgs)
     {
         base.OnDragDrop(eventArgs);
-        FileOperations.Drop(FindForm()?.Handle ?? Handle, eventArgs, DropDestination(eventArgs));
+        var owner = FindForm()?.Handle ?? Handle;
+        if (FoldersToPin(eventArgs) is { } folders)
+        {
+            foreach (var folder in folders)
+            {
+                Pin(folder);
+            }
+
+            return;
+        }
+
+        FileOperations.Drop(owner, eventArgs, DropDestination(eventArgs));
     }
 
     protected override void Dispose(bool disposing)

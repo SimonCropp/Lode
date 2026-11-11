@@ -1,0 +1,10 @@
+﻿[
+  Open,
+  Open in new tab,
+  ----,
+  Copy,
+  Copy as path,
+  Properties,
+  ----,
+  Show more options
+]

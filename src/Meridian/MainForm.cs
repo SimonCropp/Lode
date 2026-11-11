@@ -174,6 +174,17 @@ class MainForm : Form
         menu.Items.Add(showHiddenItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open terminal here", null, (_, _) => OpenTerminal());
+        var pinItem = new ToolStripMenuItem("Pin to Quick access", null, (_, _) => TogglePinned());
+        menu.Items.Add(pinItem);
+        menu.Opening += (_, _) =>
+        {
+            var path = PinnablePath();
+            pinItem.Visible = path != null;
+            if (path != null)
+            {
+                pinItem.Text = PinMenuText(path);
+            }
+        };
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Options…", null, (_, _) => ShowOptions());
         menu.Items.Add("About Meridian", null, (_, _) => ShowAbout());
@@ -365,6 +376,13 @@ class MainForm : Form
 
     void OnTabDraggedOff(TabPage page, Point screenLocation)
     {
+        // A tab dropped on the Pinned header pins its folder, and stays where it was.
+        if (WindowAt(screenLocation) is FolderTree tree &&
+            tree.PinIfOverPinned(screenLocation, page.Controls.OfType<FolderView>().First().CurrentPath))
+        {
+            return;
+        }
+
         var target = WindowOf(WindowAt(screenLocation));
         if (target == this)
         {
@@ -527,6 +545,51 @@ class MainForm : Form
             !Locations.IsThisPC(view.CurrentPath))
         {
             FileOperations.OpenTerminal(view.CurrentPath);
+        }
+    }
+
+    string? PinnablePath()
+    {
+        if (ActiveView is not { } view ||
+            Locations.IsThisPC(view.CurrentPath))
+        {
+            return null;
+        }
+
+        return view.CurrentPath;
+    }
+
+    /// <summary>
+    /// What the main menu's pin item says for the active folder, or null when it is hidden.
+    /// </summary>
+    internal string? PinMenuText()
+    {
+        if (PinnablePath() is not { } path)
+        {
+            return null;
+        }
+
+        return PinMenuText(path);
+    }
+
+    string PinMenuText(string path)
+    {
+        if (IsPinned(path))
+        {
+            return "Unpin from Quick access";
+        }
+
+        return "Pin to Quick access";
+    }
+
+    bool IsPinned(string path) =>
+        places.Pinned.Any(_ => Locations.Same(_, path));
+
+    void TogglePinned()
+    {
+        if (PinnablePath() is { } path)
+        {
+            ShellContextMenu.SetPinned(Handle, path, !IsPinned(path));
         }
     }
 

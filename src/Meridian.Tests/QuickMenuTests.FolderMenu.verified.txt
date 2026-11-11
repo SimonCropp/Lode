@@ -1,0 +1,14 @@
+﻿[
+  Open,
+  Open in new tab,
+  ----,
+  Cut,
+  Copy,
+  Rename,
+  Delete,
+  ----,
+  Copy as path,
+  Properties,
+  ----,
+  Show more options
+]

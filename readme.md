@@ -37,6 +37,26 @@ The same two actions are buttons under **Options** in the ⋯ menu. Replacing ma
  * The taskbar's File Explorer button, and apps that start `explorer.exe` themselves or ask it to show a file selected, still open Explorer.
  * Run `meridian --restore-explorer` before uninstalling the tool. Otherwise folders keep pointing at a Meridian that is no longer there.
 
+### Going back to File Explorer
+
+Any one of these works:
+
+ * In Meridian, open **Options** from the ⋯ menu and click **Restore File Explorer**.
+ * From a terminal, run `meridian --restore-explorer`.
+ * If Meridian is already uninstalled, or will not start, remove its registry entries by hand:
+
+   ```
+   reg delete "HKCU\Software\Classes\Directory\shell\Meridian" /f
+   reg delete "HKCU\Software\Classes\Drive\shell\Meridian" /f
+   reg delete "HKCU\Software\Classes\Directory\shell" /ve /f
+   reg delete "HKCU\Software\Classes\Drive\shell" /ve /f
+   reg delete "HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}" /f
+   ```
+
+   The first two remove the **Open in Meridian** verb. The next two clear the default folder action, which Meridian set to itself, so Explorer's **Open** takes over again. The last one removes Meridian's Win+E command. Only delete that key if Meridian added it: check that `HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow` has a `CreatedBy` value of `Meridian`. If another app was the default for folders before Meridian, removing the entries by hand does not bring it back, unlike Restore. Its name is in the `MeridianPreviousDefault` value of the `Meridian` key, so read that before deleting the key.
+
+After restoring, folders open in Explorer straight away. If one still opens in Meridian, sign out and back in, or restart Explorer from Task Manager.
+
 ## Publish
 
 Pushing a tag builds and publishes that version: tag `1.2.3` (or `v1.2.3`) publishes 1.2.3 to nuget.org through [trusted publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing). The `publish` job in `.github/workflows/build.yml` needs a `nuget` environment on the repository and a trusted publishing policy on nuget.org for this repository and workflow.
@@ -61,9 +81,9 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
  * Drag a tab off the tab row to open it in a window of its own, or onto another Meridian window to move it there, history and all.
  * Lives in the tray. Closing the last window hides it; click the tray icon (or launch Meridian again) to bring it back, and choose **Exit** from the tray menu or the ⋯ menu to quit. The tray icon is put on the taskbar rather than in the overflow, unless you have moved it there yourself.
  * One copy per Windows account. Launching Meridian again, including a folder opened from Explorer when Meridian replaces it, hands the folders to the running copy, which opens them in a new window. All windows share that one process, so tabs can be dragged between any of them.
- * Folder tree with a **Pinned** section (folders pinned to Quick access in Explorer), a **Recent** section (folders Explorer adds to Quick access because you use them often), then the drives. It follows the active tab. Pin or unpin folders in Explorer to change the list; Meridian reads it when it starts.
+ * Folder tree with a **Pinned** section (folders pinned to Quick access in Explorer), a **Recent** section (folders Explorer adds to Quick access because you use them often), then the drives. It follows the active tab. To pin a folder, drag it (or a tab) onto the **Pinned** heading, or use **Pin to Quick access** in the ⋯ menu, which unpins too. Pins made in Explorer are read when Meridian starts.
  * Details list with shell icons and type names, natural sort order, and click-to-sort columns.
- * The classic Windows context menu on files, folders and the folder background, including installed shell extensions (7-Zip, Open with, and so on), less Send to, Include in library, Restore previous versions and Edit in Notepad. Hold Shift for the extended menu.
+ * A short right-click menu that opens at once: Open, Cut, Copy, Rename, Delete, Copy as path, Properties and so on. **Show more options** at the bottom, or Shift+right-click, opens the classic Windows context menu, with installed shell extensions (7-Zip, Open with, and so on), less Send to, Include in library, Restore previous versions and Edit in Notepad.
  * **Options** in the ⋯ menu: show hidden items (on by default; also Ctrl+H), show the Recent section, and replace or restore File Explorer.
  * Copy, move, delete and rename go through the Windows shell: standard progress dialog, conflict prompts, Recycle Bin and undo.
  * Drag and drop to and from Explorer and other apps.
