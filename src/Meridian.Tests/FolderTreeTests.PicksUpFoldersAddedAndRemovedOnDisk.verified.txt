@@ -1,6 +1,7 @@
-﻿- Pinned
-  - Projects   <- selected
-    + Archive
-    + Build
-    - Source
-      + Deep
+﻿- This PC
+  - FolderTreeTests.PicksUpFoldersAddedAndRemovedOnDisk
+    - Projects   <- selected
+      + Archive
+      + Build
+      - Source
+        + Deep

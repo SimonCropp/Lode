@@ -32,16 +32,72 @@ sealed class ClosableTabControl : TabControl
     public ClosableTabControl()
     {
         // Painted here rather than by Windows, so the cross can be part of each tab. Windows
-        // still lays the tabs out: it sizes each to its text plus this padding, which is what
-        // leaves room for the cross.
+        // still places the tabs, at the size FitTabs gives them.
         SetStyle(
             ControlStyles.UserPaint |
             ControlStyles.AllPaintingInWmPaint |
             ControlStyles.OptimizedDoubleBuffer |
             ControlStyles.ResizeRedraw,
             true);
-        Padding = new(LogicalToDeviceUnits(horizontalPadding), LogicalToDeviceUnits(verticalPadding));
+        ApplyPadding();
+        SizeMode = TabSizeMode.Fixed;
         ShowToolTips = true;
+    }
+
+    // Set again when the screen's scale changes, so the room left for the cross scales with it.
+    void ApplyPadding() =>
+        Padding = new(LogicalToDeviceUnits(horizontalPadding), LogicalToDeviceUnits(verticalPadding));
+
+    // Windows would size each tab from its text, but it measures text its own way, which at
+    // some display scales comes out narrower than the text as drawn here. So every tab gets the
+    // same width, worked out here from the widest name as it is drawn, as browser tabs do.
+    // Depends only on the names, so setting it never makes it need setting again.
+    void FitTabs()
+    {
+        if (!IsHandleCreated || TabCount == 0)
+        {
+            return;
+        }
+
+        var widest = 0;
+        for (var index = 0; index < TabCount; index++)
+        {
+            widest = Math.Max(widest, TextRenderer.MeasureText(TabPages[index].Text, Font, Size.Empty, TextFormatFlags.NoPrefix).Width);
+        }
+
+        var size = new Size(
+            widest + LogicalToDeviceUnits(textMargin * 2 + crossBoxSize + crossMargin),
+            Font.Height + LogicalToDeviceUnits(verticalPadding) * 2);
+        if (ItemSize != size)
+        {
+            ItemSize = size;
+        }
+    }
+
+    // Checked on every paint, since a tab's text changes without a layout. Resizing tabs from
+    // inside a paint is asking for trouble, so that waits until painting is over.
+    bool fitQueued;
+
+    void QueueFit()
+    {
+        if (fitQueued || !IsHandleCreated)
+        {
+            return;
+        }
+
+        fitQueued = true;
+        BeginInvoke(
+            () =>
+            {
+                fitQueued = false;
+                FitTabs();
+            });
+    }
+
+    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    {
+        base.OnDpiChangedAfterParent(eventArgs);
+        ApplyPadding();
     }
 
     Rectangle CrossBounds(int index)
@@ -70,6 +126,7 @@ sealed class ClosableTabControl : TabControl
 
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
+        QueueFit();
         var graphics = eventArgs.Graphics;
         graphics.Clear(SystemColors.Control);
         if (TabCount == 0)

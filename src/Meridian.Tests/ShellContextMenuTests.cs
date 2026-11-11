@@ -4,6 +4,9 @@
 /// Windows; elsewhere they pass without proving anything.
 /// </summary>
 [TUnit.Core.Executors.STAThreadExecutor]
+// WinForms keeps one unlocked table of every window it creates, so windows made on two
+// threads at once can corrupt it. Every test that makes windows takes turns.
+[NotInParallel("windows")]
 public class ShellContextMenuTests
 {
     [Test]

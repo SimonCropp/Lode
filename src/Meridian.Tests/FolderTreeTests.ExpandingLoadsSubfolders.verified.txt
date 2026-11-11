@@ -1,6 +1,7 @@
-﻿- Pinned
-  - Projects
-    + Archive
-    + Docs
-    - Source
-      + Deep
+﻿- This PC
+  - FolderTreeTests.ExpandingLoadsSubfolders
+    - Projects
+      + Archive
+      + Docs
+      - Source
+        + Deep

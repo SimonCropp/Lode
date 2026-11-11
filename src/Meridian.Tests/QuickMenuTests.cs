@@ -4,6 +4,9 @@
 /// access list is never changed.
 /// </summary>
 [TUnit.Core.Executors.STAThreadExecutor]
+// WinForms keeps one unlocked table of every window it creates, so windows made on two
+// threads at once can corrupt it. Every test that makes windows takes turns.
+[NotInParallel("windows")]
 public class QuickMenuTests
 {
     static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
@@ -67,8 +70,8 @@ public class QuickMenuTests
     public async Task ClickingHandsOverTheChoice()
     {
         var chosen = new List<string>();
-        Action open = () => chosen.Add("open");
-        Action showMore = () => chosen.Add("show more");
+        var open = () => chosen.Add("open");
+        var showMore = () => chosen.Add("show more");
         Action? handed = null;
         using var strip = QuickMenu.Build([new("Open", open)], showMore, _ => handed = _);
 

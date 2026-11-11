@@ -1,4 +1,7 @@
 [TUnit.Core.Executors.STAThreadExecutor]
+// WinForms keeps one unlocked table of every window it creates, so windows made on two
+// threads at once can corrupt it. Every test that makes windows takes turns.
+[NotInParallel("windows")]
 public class OptionsFormTests
 {
     [Test]
@@ -120,7 +123,23 @@ public class OptionsFormTests
         };
         form.Show();
         Application.DoEvents();
+
+        // One pass of messages doesn't always get every nested panel created and laid out, and a
+        // capture then misses whole rows. Make sure all of it exists, then lay out and draw.
+        CreateHandles(form);
+        form.PerformLayout();
+        form.Refresh();
+        Application.DoEvents();
         return form;
+    }
+
+    static void CreateHandles(Control control)
+    {
+        _ = control.Handle;
+        foreach (Control child in control.Controls)
+        {
+            CreateHandles(child);
+        }
     }
 
     static void Click(Form form, string name)

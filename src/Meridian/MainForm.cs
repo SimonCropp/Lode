@@ -223,7 +223,7 @@ class MainForm : Form
     void OpenInitialTabs(string[] arguments)
     {
         var paths = arguments
-            .Select(Locations.Normalize)
+            .Select(_ => Locations.Normalize(_))
             .OfType<string>()
             .Where(_ => Directory.Exists(_) ||
                         File.Exists(_))

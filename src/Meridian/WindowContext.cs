@@ -79,7 +79,8 @@ sealed class WindowContext : ApplicationContext
     // opens when none are hidden.
     void OnLaunched(string[] paths)
     {
-        if (paths.Length == 0 && windows.Any(_ => !_.Visible))
+        if (paths.Length == 0 &&
+            windows.Any(_ => !_.Visible))
         {
             ShowWindows();
             return;

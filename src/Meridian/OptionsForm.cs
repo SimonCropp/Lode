@@ -46,8 +46,7 @@ class OptionsForm : Form
         Name = "defaultDirectory",
         ReadOnly = true,
         PlaceholderText = "Your user folder",
-        Width = 300,
-        Margin = new(3, 4, 3, 3)
+        Width = 300
     };
     readonly Button browseDefaultDirectory = new()
     {
@@ -145,16 +144,22 @@ class OptionsForm : Form
                    "Reset goes back to your user folder."
         };
 
-        var row = new FlowLayoutPanel
+        // A table row rather than a flow, so each control is centred on the row's middle and the
+        // text box lines up with the taller buttons.
+        var row = new TableLayoutPanel
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = false,
+            ColumnCount = 3,
+            RowCount = 1,
             Margin = Padding.Empty
         };
-        row.Controls.Add(defaultDirectory);
-        row.Controls.Add(browseDefaultDirectory);
-        row.Controls.Add(resetDefaultDirectory);
+        defaultDirectory.Anchor = AnchorStyles.Left;
+        browseDefaultDirectory.Anchor = AnchorStyles.Left;
+        resetDefaultDirectory.Anchor = AnchorStyles.Left;
+        row.Controls.Add(defaultDirectory, 0, 0);
+        row.Controls.Add(browseDefaultDirectory, 1, 0);
+        row.Controls.Add(resetDefaultDirectory, 2, 0);
 
         var layout = new TableLayoutPanel
         {

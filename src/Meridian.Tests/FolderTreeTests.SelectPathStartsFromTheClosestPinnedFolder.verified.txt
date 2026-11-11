@@ -1,4 +1,0 @@
-﻿- Pinned
-  + Projects
-  - Source
-    + Deep   <- selected

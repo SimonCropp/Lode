@@ -1,5 +1,6 @@
-﻿- Pinned
-  + Projects   <- selected
-    + Archive
-    + Docs
-    + Source
+﻿- This PC
+  - FolderTreeTests.SelectPathSettlesForTheParentOfAHiddenFolder
+    + Projects   <- selected
+      + Archive
+      + Docs
+      + Source

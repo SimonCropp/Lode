@@ -1,5 +1,12 @@
 static class Program
 {
+    /// <summary>
+    /// Every window's text, a step up from Windows' 9pt default. Tests call this too, so
+    /// captures match the app.
+    /// </summary>
+    public static void UseDefaultFont() =>
+        Application.SetDefaultFont(new("Segoe UI", 10.5f));
+
     [STAThread]
     static int Main(string[] arguments)
     {
@@ -8,6 +15,7 @@ static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        UseDefaultFont();
 
         var commandLine = CommandLine.Parse(arguments);
         switch (commandLine.Kind)

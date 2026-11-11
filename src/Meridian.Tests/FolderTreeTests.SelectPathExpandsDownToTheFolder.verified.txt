@@ -1,6 +1,7 @@
-﻿- Pinned
-  - Projects
-    + Archive
-    + Docs
-    - Source
-      + Deep   <- selected
+﻿- This PC
+  - FolderTreeTests.SelectPathExpandsDownToTheFolder
+    - Projects
+      + Archive
+      + Docs
+      - Source
+        + Deep   <- selected

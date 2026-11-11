@@ -7,8 +7,15 @@ sealed record Places(
     IReadOnlyList<string> Pinned,
     IReadOnlyList<string> Recent,
     bool ShowComputer,
-    Func<string, string> FreeSpace)
+    Func<string, string> FreeSpace,
+    IReadOnlyList<string>? Drives = null)
 {
+    /// <summary>
+    /// The roots listed under This PC: the machine's drives, unless a test gave its own.
+    /// </summary>
+    public IReadOnlyList<string> DrivePaths() =>
+        Drives ?? DriveInfo.GetDrives().Select(_ => _.Name).ToList();
+
     // The shell folder behind Explorer's Quick access list.
     const string quickAccess = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
 

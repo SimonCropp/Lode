@@ -109,11 +109,25 @@ sealed class FolderTree : TreeView
             // Asking the shell for a network folder's own icon can stall on a share that
             // is offline, so those get the plain folder icon.
             var folderIcon = Locations.IsNetwork(folder) ? ShellIcons.FolderIcon : ShellIcons.GetActualIcon(folder);
-            section.Nodes.Add(CreateNode(folder, Locations.DisplayName(folder), folderIcon));
+            // Shortcuts, not a second copy of the folder tree: they have no children, and
+            // picking one selects the folder in the tree under This PC.
+            section.Nodes.Add(CreateNode(folder, Locations.DisplayName(folder), folderIcon, expandable: false));
         }
 
         Nodes.Add(section);
-        section.Expand();
+        if (!settings.CollapsedSections.Contains(name))
+        {
+            section.Expand();
+        }
+    }
+
+    protected override void OnAfterExpand(TreeViewEventArgs eventArgs)
+    {
+        base.OnAfterExpand(eventArgs);
+        if (eventArgs.Node?.Tag is Section section)
+        {
+            settings.CollapsedSections.Remove(section.Name);
+        }
     }
 
     /// <summary>
@@ -127,7 +141,7 @@ sealed class FolderTree : TreeView
         }
 
         var current = computerNode.Nodes.Cast<TreeNode>().Select(_ => (string)_.Tag!);
-        var actual = DriveInfo.GetDrives().Select(_ => _.Name);
+        var actual = places.DrivePaths();
         if (!current.SequenceEqual(actual, StringComparer.OrdinalIgnoreCase))
         {
             LoadDrives();
@@ -142,14 +156,14 @@ sealed class FolderTree : TreeView
         }
 
         computerNode.Nodes.Clear();
-        foreach (var drive in DriveInfo.GetDrives())
+        foreach (var drive in places.DrivePaths())
         {
-            var (displayName, _, icon) = ShellIcons.Describe(drive.Name);
-            computerNode.Nodes.Add(CreateNode(drive.Name, displayName, icon));
+            var (displayName, _, icon) = ShellIcons.Describe(drive);
+            computerNode.Nodes.Add(CreateNode(drive, displayName, icon));
         }
     }
 
-    static TreeNode CreateNode(string path, string text, int icon)
+    static TreeNode CreateNode(string path, string text, int icon, bool expandable = true)
     {
         var node = new TreeNode(text)
         {
@@ -160,9 +174,17 @@ sealed class FolderTree : TreeView
 
         // Every folder starts with a placeholder child so it shows an expander without the
         // cost of checking for subfolders. The real children load on first expand.
-        node.Nodes.Add(new TreeNode { Tag = placeholder });
+        if (expandable)
+        {
+            node.Nodes.Add(new TreeNode { Tag = placeholder });
+        }
+
         return node;
     }
+
+    // A Pinned or Recent entry.
+    static bool IsShortcut(TreeNode node) =>
+        node.Parent?.Tag is Section;
 
     static bool NeedsLoading(TreeNode node) =>
         node.Nodes.Count == 1 &&
@@ -283,10 +305,11 @@ sealed class FolderTree : TreeView
     }
 
     // This PC and the section headings aren't folders on disk: their children are managed
-    // elsewhere.
+    // elsewhere. Shortcuts have no children at all.
     static bool IsFolder(TreeNode node) =>
         node.Tag is string path &&
-        !Locations.IsThisPC(path);
+        !Locations.IsThisPC(path) &&
+        !IsShortcut(node);
 
     void Watch(TreeNode node)
     {
@@ -392,6 +415,12 @@ sealed class FolderTree : TreeView
     protected override void OnAfterCollapse(TreeViewEventArgs eventArgs)
     {
         base.OnAfterCollapse(eventArgs);
+        if (eventArgs.Node?.Tag is Section section &&
+            !settings.CollapsedSections.Contains(section.Name))
+        {
+            settings.CollapsedSections.Add(section.Name);
+        }
+
         if (eventArgs.Node is { } node && IsFolder(node))
         {
             Unwatch(node);
@@ -403,10 +432,26 @@ sealed class FolderTree : TreeView
         base.OnAfterSelect(eventArgs);
 
         // Unknown means the selection was set from code (SelectPath), not by the user.
-        if (eventArgs.Action != TreeViewAction.Unknown && eventArgs.Node?.Tag is string path)
+        if (eventArgs.Action != TreeViewAction.Unknown && eventArgs.Node is { Tag: string path } node)
         {
             PathSelected?.Invoke(path);
+
+            // Moved after the click has settled, as changing the selection inside its own
+            // event is ignored.
+            if (IsShortcut(node))
+            {
+                BeginInvoke(() => SelectPath(path));
+            }
         }
+    }
+
+    /// <summary>
+    /// Selects a node as a click would, for tests.
+    /// </summary>
+    internal void SelectByUser(TreeNode node)
+    {
+        SelectedNode = node;
+        OnAfterSelect(new(node, TreeViewAction.ByMouse));
     }
 
     /// <summary>
@@ -414,7 +459,10 @@ sealed class FolderTree : TreeView
     /// </summary>
     public void SelectPath(string path)
     {
-        if (SelectedNode?.Tag is string selected && Locations.Same(selected, path))
+        // A selected shortcut still moves to the folder in the tree below, when there is one.
+        if (SelectedNode is { Tag: string selected } current &&
+            Locations.Same(selected, path) &&
+            !IsShortcut(current))
         {
             return;
         }
@@ -431,18 +479,20 @@ sealed class FolderTree : TreeView
             return places.ShowComputer ? computerNode : null;
         }
 
-        // Start from the closest folder at the top of the tree that contains the path: a pinned
-        // or recent folder when there is one, otherwise the drive. On a tie, pinned wins.
-        var current = Nodes
+        // Walk down from the drive. Only when no drive holds the path (a network share, say)
+        // does a Pinned or Recent entry for the folder itself stand in; those have no
+        // children, so it has to be the folder exactly.
+        var current = computerNode.Nodes
             .Cast<TreeNode>()
-            .Where(_ => _.Tag is Section)
-            .SelectMany(_ => _.Nodes.Cast<TreeNode>())
-            .Concat(computerNode.Nodes.Cast<TreeNode>())
             .Where(_ => Locations.IsWithin(path, (string)_.Tag!))
             .MaxBy(_ => ((string)_.Tag!).Length);
         if (current == null)
         {
-            return null;
+            return Nodes
+                .Cast<TreeNode>()
+                .Where(_ => _.Tag is Section)
+                .SelectMany(_ => _.Nodes.Cast<TreeNode>())
+                .FirstOrDefault(_ => Locations.Same((string)_.Tag!, path));
         }
 
         var currentPath = (string)current.Tag!;

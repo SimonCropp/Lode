@@ -51,7 +51,7 @@ public class LocationsTests
 
     static IEnumerable<string> Normalized() =>
         inputs
-            .Select(Locations.Normalize)
+            .Select(_ => Locations.Normalize(_))
             .OfType<string>()
             .Distinct();
 }

@@ -1,6 +1,7 @@
-﻿- Pinned
-  - Projects
-    + Archive
-    + Cache
-    + Docs
-    + Source
+﻿- This PC
+  - FolderTreeTests.HiddenFoldersWhenShown
+    - Projects
+      + Archive
+      + Cache
+      + Docs
+      + Source

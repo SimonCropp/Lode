@@ -4,7 +4,9 @@
 /// machine that captured them, so these only run in Debug builds, on a developer's machine.
 /// </summary>
 [TUnit.Core.Executors.STAThreadExecutor]
-[NotInParallel]
+// WinForms keeps one unlocked table of every window it creates, so windows made on two
+// threads at once can corrupt it. Every test that makes windows takes turns.
+[NotInParallel("windows")]
 public class MainFormTests
 {
     const int sizeColumn = 3;
@@ -83,6 +85,12 @@ public class MainFormTests
             arrange(form, fixture);
             await Pump.Loaded(form.ActiveView!);
         }
+
+        // Windows can activate this window when another test closes its own, which gives the
+        // list the focus and turns its selection from grey to blue. Take the focus off it, so
+        // the capture is the same either way.
+        form.ActiveControl = null;
+        Application.DoEvents();
 
         await Verify(form);
     }

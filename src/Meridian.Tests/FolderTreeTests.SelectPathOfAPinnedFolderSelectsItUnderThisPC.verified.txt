@@ -1,0 +1,8 @@
+﻿- Pinned
+    Source
+- This PC
+  - FolderTreeTests.SelectPathOfAPinnedFolderSelectsItUnderThisPC
+    - Projects
+      + Archive
+      + Docs
+      + Source   <- selected

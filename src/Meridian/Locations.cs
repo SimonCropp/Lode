@@ -7,7 +7,7 @@ static class Locations
     public static bool IsThisPC(string location) =>
         string.Equals(location, ThisPC, StringComparison.OrdinalIgnoreCase);
 
-    public static bool IsNetwork(string location) =>
+    public static bool IsNetwork(CharSpan location) =>
         location.StartsWith(@"\\", StringComparison.Ordinal);
 
     public static bool Same(string? first, string? second) =>
@@ -22,9 +22,9 @@ static class Locations
     /// <summary>
     /// True when <paramref name="path"/> is directly inside <paramref name="folder"/>.
     /// </summary>
-    public static bool IsChildOf(string path, string folder)
+    public static bool IsChildOf(CharSpan path, CharSpan folder)
     {
-        var parent = Path.GetDirectoryName(path.AsSpan());
+        var parent = Path.GetDirectoryName(path);
         return !parent.IsEmpty &&
                Same(parent, folder);
     }
@@ -32,7 +32,7 @@ static class Locations
     /// <summary>
     /// True when <paramref name="path"/> is <paramref name="folder"/> or somewhere beneath it.
     /// </summary>
-    public static bool IsWithin(string path, string folder)
+    public static bool IsWithin(CharSpan path, CharSpan folder)
     {
         if (Same(path, folder))
         {
@@ -48,9 +48,9 @@ static class Locations
                (path.Length > folder.Length && path[folder.Length] == Path.DirectorySeparatorChar);
     }
 
-    public static string? Normalize(string input)
+    public static string? Normalize(CharSpan input)
     {
-        var text = Environment.ExpandEnvironmentVariables(input.Trim().Trim('"'));
+        var text = Environment.ExpandEnvironmentVariables(input.Trim().Trim('"').ToString());
         if (text.Length == 0)
         {
             return null;

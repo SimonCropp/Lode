@@ -1,0 +1,5 @@
+﻿- Pinned
+    Docs
+    Projects
+- This PC
+  + FolderTreeTests.PinnedFoldersHaveNoChildren

@@ -1,0 +1,6 @@
+﻿+ Pinned
+    Docs
+- Recent
+    Source
+- This PC
+  + FolderTreeTests.CollapsedSectionsStartCollapsed

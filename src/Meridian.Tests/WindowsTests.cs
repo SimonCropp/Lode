@@ -2,8 +2,10 @@
 /// Tabs moving between windows, and into windows of their own.
 /// </summary>
 [TUnit.Core.Executors.STAThreadExecutor]
+// WinForms keeps one unlocked table of every window it creates, so windows made on two
+// threads at once can corrupt it. Every test that makes windows takes turns.
+[NotInParallel("windows")]
 // Shows windows, so not alongside the captures in MainFormTests.
-[NotInParallel]
 public class WindowsTests
 {
     [Test]

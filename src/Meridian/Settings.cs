@@ -13,6 +13,9 @@ sealed class Settings
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
 
+    // The tree's sections (Pinned, Recent) the user collapsed, so they stay that way.
+    public List<string> CollapsedSections { get; set; } = [];
+
     // Where a new window opens when it is given nothing else to show. Null for the user folder.
     public string? DefaultDirectory { get; set; }
 

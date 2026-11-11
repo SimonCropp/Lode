@@ -1,0 +1,15 @@
+﻿{
+  selected: [
+    Projects/Source
+  ],
+  tree:
+- Pinned
+    Source
+- This PC
+  - FolderTreeTests.PickingAPinnedFolderMovesToItUnderThisPC
+    - Projects
+      + Archive
+      + Docs
+      + Source   <- selected
+
+}

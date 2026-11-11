@@ -6,8 +6,10 @@ using Microsoft.Win32;
 /// </summary>
 sealed class RegistryScratch : IDisposable
 {
-    const string root = @"Software\Meridian.Tests";
-    readonly string path = $@"{root}\{Guid.NewGuid():N}";
+    // A key of its own directly under Software, rather than under one shared parent: tests run
+    // side by side, and tidying away a shared parent that looked empty could delete it while
+    // another test was creating its key inside, leaving that test reading nothing.
+    readonly string path = $@"Software\Meridian.Tests.{Guid.NewGuid():N}";
 
     public string ClassesPath => $@"{path}\Classes";
 
@@ -56,14 +58,6 @@ sealed class RegistryScratch : IDisposable
         return result;
     }
 
-    public void Dispose()
-    {
+    public void Dispose() =>
         Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
-        using var rootKey = Registry.CurrentUser.OpenSubKey(root);
-        if (rootKey is {SubKeyCount: 0, ValueCount: 0})
-        {
-            rootKey.Close();
-            Registry.CurrentUser.DeleteSubKey(root, throwOnMissingSubKey: false);
-        }
-    }
 }

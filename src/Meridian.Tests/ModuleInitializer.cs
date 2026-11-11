@@ -17,6 +17,7 @@ public static class ModuleInitializer
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        Program.UseDefaultFont();
 
         // Dates and numbers in the list follow the current culture; pin it.
         var culture = CultureInfo.GetCultureInfo("en-US");

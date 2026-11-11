@@ -20,6 +20,14 @@ public class CommandLineTests
     public Task Parse() =>
         Verify(
             inputs.ToDictionary(
-                _ => _.Length == 0 ? "(none)" : string.Join(' ', _.Select(argument => $"[{argument}]")),
+                _ =>
+                {
+                    if (_.Length == 0)
+                    {
+                        return "(none)";
+                    }
+
+                    return string.Join(' ', _.Select(argument => $"[{argument}]"));
+                },
                 CommandLine.Parse));
 }

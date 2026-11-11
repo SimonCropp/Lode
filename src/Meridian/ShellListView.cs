@@ -81,7 +81,17 @@ sealed class ShellListView : ListView
             return;
         }
 
-        base.WndProc(ref message);
+        try
+        {
+            base.WndProc(ref message);
+        }
+        catch (InvalidOperationException) when (!IsHandleCreated)
+        {
+            // While the window is being torn down, Windows still sends the list notifications
+            // (selection changes as items go), and ListView answers some by posting work back
+            // with BeginInvoke, which throws once WinForms counts the handle as gone. There is
+            // nothing left to update, so the notification is dropped.
+        }
     }
 
     public void SelectAll()
