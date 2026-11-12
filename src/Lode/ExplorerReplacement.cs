@@ -61,9 +61,12 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
                 return null;
             }
 
-            return folderCommand.EndsWith(folderArgument, StringComparison.Ordinal)
-                ? folderCommand[..^folderArgument.Length]
-                : folderCommand;
+            if (folderCommand.EndsWith(folderArgument, StringComparison.Ordinal))
+            {
+                return folderCommand[..^folderArgument.Length];
+            }
+
+            return folderCommand;
         }
     }
 
