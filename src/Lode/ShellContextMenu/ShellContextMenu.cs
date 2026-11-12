@@ -388,11 +388,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             if (submenu != IntPtr.Zero)
             {
                 remove = Lists(submenu, sendTo) || Lists(submenu, libraries);
-                if (!remove && libraries.Count > 0 && LoneEntry(submenu))
+                if (!remove && (sendTo.Count > 0 || libraries.Count > 0) && LoneEntry(submenu))
                 {
                     // Include in library holds only a "Retrieving libraries..." placeholder until
                     // the shell fills it in, which it does on a message posted back to this
-                    // thread. Pump briefly so it can, then look again.
+                    // thread. Send to can be filled in late the same way, which CI hits where a
+                    // local run does not. Pump briefly so the shell can, then look again for both.
                     var stopwatch = Stopwatch.StartNew();
                     while (LoneEntry(submenu) && stopwatch.ElapsedMilliseconds < 500)
                     {
@@ -400,7 +401,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                         Thread.Sleep(5);
                     }
 
-                    remove = Lists(submenu, libraries);
+                    remove = Lists(submenu, sendTo) || Lists(submenu, libraries);
                 }
             }
             else
