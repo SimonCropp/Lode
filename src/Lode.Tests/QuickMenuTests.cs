@@ -98,10 +98,10 @@ public class QuickMenuTests
     public async Task ClickingInASubmenuHandsOverTheChoice()
     {
         var chosen = new List<string>();
-        Action pull = () => chosen.Add("pull");
+        void Pull() => chosen.Add("pull");
         Action? handed = null;
         using var strip = QuickMenu.Build(
-            [QuickMenu.Submenu("Git", [new("Pull", pull)])],
+            [QuickMenu.Submenu("Git", [new("Pull", Pull)])],
             () => { },
             _ => handed = _);
         var git = (ToolStripMenuItem) strip.Items[0];
@@ -119,10 +119,10 @@ public class QuickMenuTests
     public async Task ClickingHandsOverTheChoice()
     {
         var chosen = new List<string>();
-        var open = () => chosen.Add("open");
-        var showMore = () => chosen.Add("show more");
+        void Action() => chosen.Add("open");
+        void ShowMore() => chosen.Add("show more");
         Action? handed = null;
-        using var strip = QuickMenu.Build([new("Open", open)], showMore, _ => handed = _);
+        using var strip = QuickMenu.Build([new("Open", Action)], ShowMore, _ => handed = _);
 
         strip.Items[0].PerformClick();
         handed!();
