@@ -516,7 +516,7 @@ class MainForm : Form
         updatingFilter = true;
         filterBox.Text = view.Filter;
         updatingFilter = false;
-        Text = $"{Locations.DisplayName(view.CurrentPath)} - Lode";
+        Text = Locations.DisplayName(view.CurrentPath);
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;

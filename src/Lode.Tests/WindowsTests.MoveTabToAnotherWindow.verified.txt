@@ -1,13 +1,13 @@
 ﻿{
   source: {
-    title: Source - Lode,
+    title: Source,
     tabs: [
       Source
     ],
     active: {TempPath}LodeTests\WindowsTests.MoveTabToAnotherWindow\Projects\Source
   },
   target: {
-    title: Deep - Lode,
+    title: Deep,
     tabs: [
       Projects,
       Deep
