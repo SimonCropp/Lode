@@ -65,15 +65,16 @@ static class CodeCommands
         return Directory.Exists(git) || File.Exists(git);
     }
 
-    public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos) =>
-        ForEach(repos, repo => Git(repo, "pull"));
+    public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null) =>
+        ForEach(repos, progress, repo => Git(repo, "pull"));
 
     /// <summary>
     /// Commits every tracked change with the message, then pushes to origin.
     /// </summary>
-    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message) =>
+    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null) =>
         ForEach(
             repos,
+            progress,
             repo =>
             {
                 var commit = Git(repo, "commit", "-am", message);
@@ -91,9 +92,10 @@ static class CodeCommands
     /// <summary>
     /// Throws away changes to tracked files and deletes untracked ones. Cannot be undone.
     /// </summary>
-    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos) =>
+    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null) =>
         ForEach(
             repos,
+            progress,
             repo =>
             {
                 var restore = Git(repo, "restore", ".");
@@ -106,8 +108,21 @@ static class CodeCommands
                 return clean with { Output = $"{restore.Output}\n{clean.Output}".Trim() };
             });
 
-    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, Func<string, RepoResult> action) =>
-        Task.Run(() => repos.Select(action).ToList());
+    // With more than one repository, reports which it is on. With one, the entry's folder
+    // already says.
+    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Func<string, RepoResult> action) =>
+        Task.Run(
+            () => repos
+                .Select((repo, index) =>
+                {
+                    if (repos.Count > 1)
+                    {
+                        progress?.Report($"{index + 1} of {repos.Count}: {Path.GetFileName(repo)}");
+                    }
+
+                    return action(repo);
+                })
+                .ToList());
 
     static RepoResult Git(string repo, params string[] arguments)
     {
@@ -189,7 +204,7 @@ static class CodeCommands
     /// Updates the NuGet packages and dotnet tools of every solution in the folder, with
     /// PackageUpdateLib. Only solutions using central package management are updated.
     /// </summary>
-    public static async Task<ActionLog.Outcome> UpdateNugets(string folder)
+    public static async Task<ActionLog.Outcome> UpdateNugets(string folder, IProgress<string>? progress = null)
     {
         await nugetGate.WaitAsync();
         var sink = new CollectingSink();
@@ -200,7 +215,13 @@ static class CodeCommands
             .CreateLogger();
         try
         {
-            await Task.Run(() => PackageUpdater.Run(folder, null, false));
+            IProgress<UpdateProgress>? updateProgress = null;
+            if (progress != null)
+            {
+                updateProgress = new Forward<UpdateProgress>(_ => progress.Report(NugetProgress(_)));
+            }
+
+            await Task.Run(() => PackageUpdater.Run(folder, null, false, updateProgress));
         }
         catch (Exception exception)
         {
@@ -213,6 +234,34 @@ static class CodeCommands
         }
 
         return NugetOutcome(sink.Entries());
+    }
+
+    /// <summary>
+    /// Where an update has got to, for the panel: the solution or tool manifest, then the
+    /// package, which changes fastest and so is last only when there is room.
+    /// </summary>
+    internal static string NugetProgress(UpdateProgress progress)
+    {
+        var file = Path.GetFileName(progress.File);
+        if (progress.FileCount > 1)
+        {
+            file = $"{file} ({progress.FileNumber} of {progress.FileCount})";
+        }
+
+        if (progress.Package == null)
+        {
+            return file;
+        }
+
+        return $"{file}: {progress.Package}, {progress.PackageNumber} of {progress.PackageCount}";
+    }
+
+    // Passes reports straight on, on the thread that made them. Progress<T> would post each to
+    // the thread it was made on, which ActionLog's progress does already.
+    sealed class Forward<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) =>
+            report(value);
     }
 
     /// <summary>

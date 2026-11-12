@@ -1,0 +1,5 @@
+﻿{
+  startingTheOnlySolution: Lode.slnx,
+  checkingAPackage: Lode.slnx: Serilog, 4 of 21,
+  oneOfSeveral: dotnet-tools.json (2 of 3): dotnet-ef, 1 of 1
+}

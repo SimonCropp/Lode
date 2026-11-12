@@ -58,10 +58,20 @@ static class ActionLog
     public static event Action? Changed;
 
     /// <summary>
-    /// Adds a running entry, then records how the work ended. Never throws: a failure becomes
-    /// a failed entry.
+    /// Raised on the UI thread when a running entry reports how far it has got, in its
+    /// <see cref="Entry.Summary"/>.
     /// </summary>
-    public static async Task<Entry> Run(string title, string folder, Func<Task<Outcome>> work)
+    public static event Action<Entry>? Progressed;
+
+    public static Task<Entry> Run(string title, string folder, Func<Task<Outcome>> work) =>
+        Run(title, folder, _ => work());
+
+    /// <summary>
+    /// Adds a running entry, then records how the work ended. Never throws: a failure becomes
+    /// a failed entry. The work may report, from any thread, how far it has got; that is the
+    /// entry's summary until it ends.
+    /// </summary>
+    public static async Task<Entry> Run(string title, string folder, Func<IProgress<string>, Task<Outcome>> work)
     {
         var entry = new Entry(title, folder);
         entries.Add(entry);
@@ -70,7 +80,7 @@ static class ActionLog
         Outcome outcome;
         try
         {
-            outcome = await work();
+            outcome = await work(new EntryProgress(entry));
         }
         catch (Exception exception)
         {
@@ -82,6 +92,35 @@ static class ActionLog
         entry.Details = outcome.Details;
         Changed?.Invoke();
         return entry;
+    }
+
+    // Created on the UI thread, so it can post reports made on other threads back to it.
+    sealed class EntryProgress(Entry entry) : IProgress<string>
+    {
+        readonly SynchronizationContext? context = SynchronizationContext.Current;
+
+        public void Report(string value)
+        {
+            if (context == null)
+            {
+                Show(value);
+                return;
+            }
+
+            context.Post(_ => Show(value), null);
+        }
+
+        // A report can arrive after the work has ended; the outcome stands.
+        void Show(string value)
+        {
+            if (entry.State != State.Running)
+            {
+                return;
+            }
+
+            entry.Summary = value;
+            Progressed?.Invoke(entry);
+        }
     }
 
     /// <summary>

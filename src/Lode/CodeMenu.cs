@@ -38,11 +38,11 @@ static class CodeMenu
         _ = ActionLog.Run(
             "Git pull",
             folder,
-            async () =>
+            async progress =>
             {
                 // Looking for repositories reads folders, so that is off the UI thread too.
                 var repos = await Task.Run(() => CodeCommands.FindRepos(folder));
-                return CodeCommands.GitOutcome(await CodeCommands.Pull(repos));
+                return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress));
             });
 
     static void Push(Control owner, string folder)
@@ -63,7 +63,7 @@ static class CodeMenu
         _ = ActionLog.Run(
             "Git push",
             folder,
-            async () => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message)));
+            async progress => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress)));
     }
 
     static void Discard(Control owner, string folder)
@@ -90,11 +90,11 @@ static class CodeMenu
         _ = ActionLog.Run(
             "Git discard",
             folder,
-            async () => CodeCommands.GitOutcome(await CodeCommands.Discard(repos)));
+            async progress => CodeCommands.GitOutcome(await CodeCommands.Discard(repos, progress)));
     }
 
     static void UpdateNugets(string folder) =>
-        _ = ActionLog.Run("Update NuGets", folder, () => CodeCommands.UpdateNugets(folder));
+        _ = ActionLog.Run("Update NuGets", folder, progress => CodeCommands.UpdateNugets(folder, progress));
 
     // Nothing to ask about, but still worth a line in the panel saying so.
     static void NoRepos(string title, string folder) =>

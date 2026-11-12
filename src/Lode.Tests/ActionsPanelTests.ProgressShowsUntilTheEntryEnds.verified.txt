@@ -1,0 +1,16 @@
+﻿{
+  running: [
+    {
+      line: Git pull – Code: 2 of 12: Lode,
+      state: Running,
+      Details: 
+    }
+  ],
+  finished: [
+    {
+      line: Git pull – Code: 12 repositories done,
+      state: Succeeded,
+      Details: 
+    }
+  ]
+}

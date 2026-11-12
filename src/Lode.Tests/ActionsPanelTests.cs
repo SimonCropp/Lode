@@ -31,6 +31,39 @@ public class ActionsPanelTests
             });
     }
 
+    // What the work reports is the summary while it runs; the outcome replaces it, and a
+    // report arriving after that is dropped.
+    [Test]
+    public async Task ProgressShowsUntilTheEntryEnds()
+    {
+        var finish = new TaskCompletionSource<ActionLog.Outcome>();
+        IProgress<string>? reporter = null;
+        var run = ActionLog.Run(
+            "Git pull",
+            @"C:\Code",
+            progress =>
+            {
+                reporter = progress;
+                return finish.Task;
+            });
+
+        await Task.Run(() => reporter!.Report("2 of 12: Lode"));
+        await Pump.Until(() => ActionLog.Entries[0].Summary != "Running…");
+        var running = Describe();
+
+        finish.SetResult(new(true, "12 repositories done", ""));
+        await run;
+        reporter!.Report("12 of 12: Verify");
+        Application.DoEvents();
+
+        await Verify(
+            new
+            {
+                running,
+                finished = Describe()
+            });
+    }
+
     // Work that throws still ends as a failed entry, rather than taking Lode down.
     [Test]
     public async Task WorkThatThrowsFails()

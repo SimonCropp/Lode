@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="ProjectDefaults" Version="1.0.189" />
-    <PackageVersion Include="PackageUpdateLib" Version="4.7.0" />
+    <PackageVersion Include="PackageUpdateLib" Version="4.8.0" />
     <PackageVersion Include="TUnit" Version="1.83.0" />
     <PackageVersion Include="Verify" Version="33.3.4" />
     <PackageVersion Include="Verify.TUnit" Version="33.3.4" />

@@ -82,7 +82,18 @@ sealed class ActionsPanel : Panel
         list.MouseUp += OnListMouseUp;
 
         ActionLog.Changed += Refill;
+        ActionLog.Progressed += Repaint;
         Refill();
+    }
+
+    // Progress changes only an entry's second line, so it is drawn again rather than refilled.
+    void Repaint(ActionLog.Entry entry)
+    {
+        var index = list.Items.IndexOf(entry);
+        if (index >= 0)
+        {
+            list.Invalidate(list.GetItemRectangle(index));
+        }
     }
 
     protected override void OnFontChanged(EventArgs eventArgs)
@@ -254,6 +265,7 @@ sealed class ActionsPanel : Panel
         if (disposing)
         {
             ActionLog.Changed -= Refill;
+            ActionLog.Progressed -= Repaint;
         }
 
         base.Dispose(disposing);

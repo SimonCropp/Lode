@@ -94,6 +94,57 @@ public class CodeCommandsTests
     }
 
     [Test]
+    public async Task ReportsEachRepoWhenThereAreSeveral()
+    {
+        using var code = new Scratch();
+        var one = code.CreateRepo("One");
+        var two = code.CreateRepo("Two");
+        var several = new Recorder();
+        var single = new Recorder();
+
+        await CodeCommands.Pull([one, two], several);
+        await CodeCommands.Pull([one], single);
+
+        await Assert.That(several.Reports).IsEquivalentTo(["1 of 2: One", "2 of 2: Two"]);
+        await Assert.That(single.Reports).IsEmpty();
+    }
+
+    [Test]
+    public Task NugetProgress() =>
+        Verify(
+            new
+            {
+                startingTheOnlySolution = CodeCommands.NugetProgress(new(@"C:\Code\Lode\src\Lode.slnx", 1, 1, null, 0, 0)),
+                checkingAPackage = CodeCommands.NugetProgress(new(@"C:\Code\Lode\src\Lode.slnx", 1, 1, "Serilog", 4, 21)),
+                oneOfSeveral = CodeCommands.NugetProgress(new(@"C:\Code\Lode\.config\dotnet-tools.json", 2, 3, "dotnet-ef", 1, 1))
+            });
+
+    // Git reports from a worker thread.
+    sealed class Recorder : IProgress<string>
+    {
+        readonly List<string> reports = [];
+
+        public List<string> Reports
+        {
+            get
+            {
+                lock (reports)
+                {
+                    return [..reports];
+                }
+            }
+        }
+
+        public void Report(string value)
+        {
+            lock (reports)
+            {
+                reports.Add(value);
+            }
+        }
+    }
+
+    [Test]
     public Task OutcomePutsFailuresFirst() =>
         Verify(
             CodeCommands.GitOutcome(
