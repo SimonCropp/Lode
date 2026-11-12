@@ -202,9 +202,10 @@ static class CodeCommands
 
     /// <summary>
     /// Updates the NuGet packages and dotnet tools of every solution in the folder, with
-    /// PackageUpdateLib. Only solutions using central package management are updated.
+    /// PackageUpdateLib. Only solutions using central package management are updated. With
+    /// build, each solution is built after its update.
     /// </summary>
-    public static async Task<ActionLog.Outcome> UpdateNugets(string folder, IProgress<string>? progress = null)
+    public static async Task<ActionLog.Outcome> UpdateNugets(string folder, IProgress<string>? progress = null, bool build = false)
     {
         await nugetGate.WaitAsync();
         var sink = new CollectingSink();
@@ -221,7 +222,7 @@ static class CodeCommands
                 updateProgress = new Forward<UpdateProgress>(_ => progress.Report(NugetProgress(_)));
             }
 
-            await Task.Run(() => PackageUpdater.Run(folder, null, false, updateProgress));
+            await Task.Run(() => PackageUpdater.Run(folder, null, build, updateProgress));
         }
         catch (Exception exception)
         {

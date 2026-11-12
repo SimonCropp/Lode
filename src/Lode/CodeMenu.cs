@@ -1,6 +1,6 @@
 /// <summary>
 /// The right-click entries for a folder under the code folder: git pull, push and discard
-/// across its repositories, and Update NuGets. Each runs in the background and shows in the
+/// across its repositories, and Update NuGets (optionally then building). Each runs in the background and shows in the
 /// actions panel under the tree, without holding up the rest of Lode. Push and discard
 /// ask first.
 /// </summary>
@@ -29,7 +29,8 @@ static class CodeMenu
                     new("Push…", () => Push(owner, folder)),
                     new("Discard…", () => Discard(owner, folder))
                 ]),
-            new("Update NuGets", () => UpdateNugets(folder))
+            new("Update NuGets", () => UpdateNugets(folder)),
+            new("Update NuGets and build", () => UpdateNugetsAndBuild(folder))
         ];
     }
 
@@ -95,6 +96,9 @@ static class CodeMenu
 
     static void UpdateNugets(string folder) =>
         _ = ActionLog.Run("Update NuGets", folder, progress => CodeCommands.UpdateNugets(folder, progress));
+
+    static void UpdateNugetsAndBuild(string folder) =>
+        _ = ActionLog.Run("Update NuGets and build", folder, progress => CodeCommands.UpdateNugets(folder, progress, build: true));
 
     // Nothing to ask about, but still worth a line in the panel saying so.
     static void NoRepos(string title, string folder) =>

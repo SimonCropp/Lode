@@ -16,6 +16,7 @@
       Push…,
       Discard…,
     Update NuGets,
+    Update NuGets and build,
     ----,
     Show more options
   ],
@@ -44,6 +45,7 @@
       Push…,
       Discard…,
     Update NuGets,
+    Update NuGets and build,
     ----,
     Show more options
   ]
