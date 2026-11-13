@@ -1,12 +1,10 @@
 #if DEBUG
-using System.Drawing.Imaging;
-
 /// <summary>
 /// The menus and the command palette, drawn: the readme shows these. Pixels depend on the
 /// Windows version, theme and fonts of the machine that captured them, so, as with
 /// <see cref="MainFormTests"/>, these only run in Debug builds.
 /// </summary>
-[TUnit.Core.Executors.STAThreadExecutor]
+[STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]

@@ -1,0 +1,18 @@
+﻿[
+  Open,
+  Open in new tab,
+  Terminal,
+  Terminal (admin),
+  ----,
+  Cut (disabled),
+  Copy,
+  Paste,
+  Rename (disabled),
+  Delete (disabled),
+  ----,
+  Create shortcut (disabled),
+  Copy as path,
+  Properties,
+  ----,
+  Show more options
+]

@@ -118,6 +118,16 @@ public class QuickMenuTests
         await Verify(Describe(tree.NodeCommands(fixture.At("Docs"))));
     }
 
+    // A drive can't be cut, renamed, deleted or given a shortcut.
+    [Test]
+    public async Task TreeMenuOnADrive()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = CreateTree([fixture.Root], []);
+
+        await Verify(Describe(tree.NodeCommands(Path.GetPathRoot(fixture.Root)!, canPaste: true)));
+    }
+
     // Clicking a submenu's own entry only opens it; clicking an entry inside it chooses that.
     [Test]
     public async Task ClickingInASubmenuHandsOverTheChoice()

@@ -48,6 +48,9 @@ sealed class FolderTree : TreeView
         HotTracking = true;
         AllowDrop = true;
         BorderStyle = BorderStyle.None;
+        // Only for Rename on the right-click menu; a click on the selected folder does not
+        // start editing, as it would by default.
+        LabelEdit = true;
 
         // Explorer's spacing between rows, scaled the same way as the icons.
         ItemHeight = unscaledRowHeight * ShellIcons.SmallIconSize.Height / unscaledIconSize;
@@ -542,27 +545,128 @@ sealed class FolderTree : TreeView
         var owner = FindForm()?.Handle ?? Handle;
         var location = PointToScreen(eventArgs.Location);
         var quickAccess = eventArgs.Node.Parent?.Tag is Section;
+        var node = eventArgs.Node;
         QuickMenu.Show(
             this,
             location,
-            LodeActions.ForMenu(NodeCommands(path), settings),
+            LodeActions.ForMenu(NodeCommands(path, FileOperations.ReadClipboard() != null, node), settings),
             () => ShowShellMenu(owner, path, location, quickAccess),
             settings.ShowsInMenu(LodeActions.More));
     }
 
     /// <summary>
-    /// The fixed right-click menu for a folder in the tree. A null entry is a separator.
+    /// The fixed right-click menu for a folder in the tree, the same a folder gets in the list.
+    /// A drive cannot be cut, renamed, deleted or given a shortcut. Rename edits
+    /// <paramref name="node"/>'s label, so is only offered for a folder under This PC, not a
+    /// Pinned or Recent entry. Paste puts what was cut or copied into the folder. A null entry
+    /// is a separator.
     /// </summary>
-    internal List<QuickMenu.Command?> NodeCommands(string path) =>
-    [
-        LodeActions.Command("open", () => PathSelected?.Invoke(path)),
-        LodeActions.Command("openInNewTab", () => NewTabRequested?.Invoke(path)),
-        null,
-        LodeActions.Command("copy", () => FileOperations.CopyToClipboard([path], false)),
-        LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
-        LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(FindForm()?.Handle ?? Handle, [path], "properties")),
-        .. CodeMenu.Commands(this, settings, path)
-    ];
+    internal List<QuickMenu.Command?> NodeCommands(string path, bool canPaste = false, TreeNode? node = null)
+    {
+        var owner = FindForm()?.Handle ?? Handle;
+        var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "");
+        var canRename = !isDrive && node is { Parent.Tag: not Section };
+        return
+        [
+            LodeActions.Command("open", () => PathSelected?.Invoke(path)),
+            LodeActions.Command("openInNewTab", () => NewTabRequested?.Invoke(path)),
+            LodeActions.Command("terminal", () => FileOperations.OpenTerminal(path)),
+            LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(path, admin: true)),
+            null,
+            LodeActions.Command("cut", () => FileOperations.CopyToClipboard([path], true), !isDrive),
+            LodeActions.Command("copy", () => FileOperations.CopyToClipboard([path], false)),
+            LodeActions.Command("paste", () => PasteInto(path), canPaste),
+            LodeActions.Command("rename", () => BeginRename(node), canRename),
+            LodeActions.Command("delete", () => FileOperations.Delete(owner, [path], false), !isDrive),
+            null,
+            LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
+            LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
+            LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties")),
+            .. CodeMenu.Commands(this, settings, path)
+        ];
+    }
+
+    void PasteInto(string folder)
+    {
+        if (FileOperations.ReadClipboard() is not { } clipboard)
+        {
+            return;
+        }
+
+        FileOperations.Transfer(FindForm()?.Handle ?? Handle, clipboard.Paths, folder, clipboard.Move);
+        if (clipboard.Move)
+        {
+            Clipboard.Clear();
+        }
+    }
+
+    void CreateShortcut(string path)
+    {
+        try
+        {
+            FileOperations.CreateShortcut(path);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    // Set while Rename is editing a label, so other clicks don't start an edit.
+    TreeNode? renaming;
+
+    void BeginRename(TreeNode? node)
+    {
+        if (node == null)
+        {
+            return;
+        }
+
+        renaming = node;
+        SelectedNode = node;
+        node.BeginEdit();
+    }
+
+    protected override void OnBeforeLabelEdit(NodeLabelEditEventArgs eventArgs)
+    {
+        if (eventArgs.Node != renaming)
+        {
+            eventArgs.CancelEdit = true;
+        }
+
+        base.OnBeforeLabelEdit(eventArgs);
+    }
+
+    // The folder is renamed on disk, and the label put back: the parent's watcher reads the
+    // folder again under its new name.
+    protected override void OnAfterLabelEdit(NodeLabelEditEventArgs eventArgs)
+    {
+        base.OnAfterLabelEdit(eventArgs);
+        renaming = null;
+        eventArgs.CancelEdit = true;
+        if (eventArgs.Node is not { Tag: string path, Parent: { } parent } ||
+            eventArgs.Label?.Trim() is not { Length: > 0 } newName ||
+            newName == Path.GetFileName(path))
+        {
+            return;
+        }
+
+        if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            MessageBox.Show(
+                this,
+                "A folder name can't contain any of these characters:  \\ / : * ? \" < > |",
+                "Lode",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        if (FileOperations.Rename(FindForm()?.Handle ?? Handle, path, newName))
+        {
+            changed[parent] = true;
+        }
+    }
 
     /// <summary>
     /// Pins a folder to Quick access. Replaced in tests, which must not change the real list.
