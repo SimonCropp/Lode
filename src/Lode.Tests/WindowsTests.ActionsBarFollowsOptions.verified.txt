@@ -13,7 +13,9 @@
     ----,
     Properties,
     ----,
-    Show more options
+    Show more options,
+    ----,
+    See more
   ],
   tabs: [
     Projects,

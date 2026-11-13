@@ -1,0 +1,14 @@
+﻿[
+  New tab,
+  New window,
+  Reopen closed tab (disabled),
+  Command palette,
+  ----,
+  Show hidden items,
+  Unpin from Quick access,
+  ----,
+  Options…,
+  About Lode,
+  ----,
+  Exit Lode
+]

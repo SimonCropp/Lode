@@ -1,0 +1,14 @@
+﻿[
+  Open,
+  Open in new tab (disabled),
+  Edit (disabled),
+  ----,
+  Create shortcut,
+  Copy as path,
+  ----,
+  Git (disabled),
+  Update NuGets (disabled),
+  Update NuGets and build (disabled),
+  ----,
+  Show more options
+]

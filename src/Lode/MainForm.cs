@@ -5,8 +5,8 @@ class MainForm : Form
     const string forwardGlyph = "\uE72A";
     const string upGlyph = "\uE74A";
     const string refreshGlyph = "\uE72C";
-    const string addGlyph = "\uE710";
     const string moreGlyph = "\uE712";
+    const string addGlyph = "\uE710";
 
     const int browserBackwardCommand = 1;
     const int browserForwardCommand = 2;
@@ -34,10 +34,6 @@ class MainForm : Form
         TextAlign = ContentAlignment.MiddleLeft
     };
     ToolStripStatusLabel spaceLabel = new();
-    ToolStripMenuItem showHiddenItem = new("Show hidden items")
-    {
-        ShortcutKeyDisplayString = "Ctrl+H"
-    };
     Button backButton;
     Button forwardButton;
     Button upButton;
@@ -111,9 +107,8 @@ class MainForm : Form
     {
         var refreshButton = CreateButton(refreshGlyph, "Refresh (F5)", Reload);
         var newTabButton = CreateButton(addGlyph, "New tab (Ctrl+T)", NewTab);
-        var menuButton = CreateButton(moreGlyph, "More", () => { });
-        var menu = BuildMenu();
-        menuButton.Click += (_, _) => menu.Show(menuButton, new(0, menuButton.Height));
+        var menuButton = CreateButton(moreGlyph, "Menu", () => { });
+        menuButton.Click += (_, _) => ShowWindowMenu(menuButton);
 
         addressBox.Name = "address";
         addressBox.AccessibleName = "Address";
@@ -181,42 +176,6 @@ class MainForm : Form
         return button;
     }
 
-    ContextMenuStrip BuildMenu()
-    {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("New tab", null, (_, _) => NewTab()) { ShortcutKeyDisplayString = "Ctrl+T" });
-        menu.Items.Add(new ToolStripMenuItem("New window", null, (_, _) => NewWindow()) { ShortcutKeyDisplayString = "Ctrl+N" });
-        menu.Items.Add(new ToolStripMenuItem("New folder", null, (_, _) => ActiveView?.CreateFolder()) { ShortcutKeyDisplayString = "Ctrl+Shift+N" });
-        var reopenItem = new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { ShortcutKeyDisplayString = "Ctrl+Shift+T" };
-        menu.Items.Add(reopenItem);
-        menu.Items.Add(new ToolStripMenuItem("Command palette", null, (_, _) => ShowCommandPalette()) { ShortcutKeyDisplayString = "Ctrl+Shift+P" });
-        menu.Items.Add(new ToolStripSeparator());
-        showHiddenItem.Checked = settings.ShowHidden;
-        showHiddenItem.Click += (_, _) => ToggleHidden();
-        menu.Items.Add(showHiddenItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Terminal", null, (_, _) => OpenTerminal());
-        menu.Items.Add("Terminal (admin)", null, (_, _) => OpenAdminTerminal());
-        var pinItem = new ToolStripMenuItem("Pin to Quick access", null, (_, _) => TogglePinned());
-        menu.Items.Add(pinItem);
-        menu.Opening += (_, _) =>
-        {
-            reopenItem.Enabled = CanReopenClosedTab;
-            var path = PinnablePath();
-            pinItem.Visible = path != null;
-            if (path != null)
-            {
-                pinItem.Text = PinMenuText(path);
-            }
-        };
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Options…", null, (_, _) => ShowOptions());
-        menu.Items.Add("About Lode", null, (_, _) => ShowAbout());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit Lode", null, (_, _) => ExitRequested?.Invoke());
-        return menu;
-    }
-
     // Explorer's command bar: buttons for what is most often done to the selection.
     Control BuildActionsBar()
     {
@@ -231,8 +190,8 @@ class MainForm : Form
         return actionsBar;
     }
 
-    // The buttons Options asks for, in LodeActions' order, with a separator between groups.
-    // Hidden altogether when none are asked for.
+    // The buttons Options asks for, in LodeActions' order, with a separator between groups, then
+    // See more, as Explorer's command bar ends, for the actions that are not buttons.
     void RebuildActionsBar()
     {
         actionsBar.SuspendLayout();
@@ -260,9 +219,179 @@ class MainForm : Form
             actionsBar.Items.Add(button);
         }
 
-        actionsBar.Visible = actionButtons.Count > 0;
+        if (LodeActions.All.Any(_ => !settings.ShowsAsButton(_.Id)))
+        {
+            if (actionsBar.Items.Count > 0)
+            {
+                actionsBar.Items.Add(ActionsSeparator());
+            }
+
+            actionsBar.Items.Add(CreateOverflowButton(iconSize));
+        }
+
+        actionsBar.Visible = actionsBar.Items.Count > 0;
+
         actionsBar.ResumeLayout();
         UpdateActions();
+    }
+
+    // Explorer's See more: the actions not shown as buttons, in a list of their own.
+    ToolStripDropDownButton CreateOverflowButton(int iconSize)
+    {
+        var button = new ToolStripDropDownButton("See more")
+        {
+            Name = "seeMore",
+            Image = Icons.Bitmap(Icons.More, iconSize, SystemColors.ControlText),
+            ImageScaling = ToolStripItemImageScaling.None,
+            DisplayStyle = ToolStripItemDisplayStyle.Image,
+            ShowDropDownArrow = false,
+            ToolTipText = "See more",
+            Padding = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(5), LogicalToDeviceUnits(8), LogicalToDeviceUnits(5)),
+            Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0)
+        };
+        // Without an item it would not open; filled with the real ones as it opens.
+        button.DropDownItems.Add("See more");
+        button.DropDownOpening += (_, _) => FillOverflow(button);
+        return button;
+    }
+
+    void FillOverflow(ToolStripDropDownButton button)
+    {
+        foreach (var image in dropDownImages)
+        {
+            image.Dispose();
+        }
+
+        dropDownImages.Clear();
+        button.DropDownItems.Clear();
+        var iconSize = LogicalToDeviceUnits(16);
+        button.DropDown.ImageScalingSize = new(iconSize, iconSize);
+        var below = actionsBar.PointToScreen(new(button.Bounds.Left, button.Bounds.Bottom));
+        QuickMenu.AddItems(button.DropDownItems, OverflowCommands(below), RunOnList, iconSize, dropDownImages);
+    }
+
+    /// <summary>
+    /// What See more lists: each action not shown as a button, in LodeActions' order with a
+    /// separator between groups, as the right-click menu would offer it now, or greyed out where
+    /// it does not apply. Show more options opens the full Windows menu at
+    /// <paramref name="location"/>, on the screen.
+    /// </summary>
+    internal List<QuickMenu.Command?> OverflowCommands(Point location)
+    {
+        var commands = ContextCommands();
+        var result = new List<QuickMenu.Command?>();
+        int? group = null;
+        foreach (var action in LodeActions.All.Where(_ => !settings.ShowsAsButton(_.Id)))
+        {
+            if (group != null &&
+                group != action.Group)
+            {
+                result.Add(null);
+            }
+
+            group = action.Group;
+            if (action.Id == LodeActions.More)
+            {
+                result.Add(
+                    LodeActions.Command(
+                        action.Id,
+                        () => ActiveView?.ShowShellMenu(location),
+                        ActiveView?.CanShowShellMenu == true));
+                continue;
+            }
+
+            if (commands.TryGetValue(action.Id, out var command))
+            {
+                result.Add(command);
+                continue;
+            }
+
+            result.Add(LodeActions.Command(action.Id, () => { }, enabled: false));
+        }
+
+        return result;
+    }
+
+    // The ⋯ menu at the right of the address bar: Lode's own commands, apart from the actions,
+    // which are buttons or under See more.
+    void ShowWindowMenu(Control button)
+    {
+        Action? chosen = null;
+        var strip = QuickMenu.Build(WindowCommands(), null, _ => chosen = _);
+        // Run the choice once the menu has closed, so a dialog it opens gets the focus.
+        strip.Closed += (_, _) => strip.BeginInvoke(
+            () =>
+            {
+                strip.Dispose();
+                chosen?.Invoke();
+            });
+        strip.Show(button, new Point(0, button.Height));
+    }
+
+    /// <summary>
+    /// What the ⋯ menu at the right of the address bar lists: Lode's own commands. A null entry
+    /// is a separator.
+    /// </summary>
+    internal List<QuickMenu.Command?> WindowCommands()
+    {
+        var commands = new List<QuickMenu.Command?>
+        {
+            new("New tab", NewTab)
+            {
+                Glyph = Icons.NewTab,
+                Shortcut = "Ctrl+T"
+            },
+            new("New window", NewWindow)
+            {
+                Glyph = Icons.NewWindow,
+                Shortcut = "Ctrl+N"
+            },
+            new("Reopen closed tab", ReopenClosedTab, CanReopenClosedTab)
+            {
+                Glyph = Icons.Reopen,
+                Shortcut = "Ctrl+Shift+T"
+            },
+            new("Command palette", ShowCommandPalette)
+            {
+                Glyph = Icons.CommandPalette,
+                Shortcut = "Ctrl+Shift+P"
+            },
+            null,
+            new("Show hidden items", ToggleHidden)
+            {
+                Glyph = Icons.ShowHidden,
+                Shortcut = "Ctrl+H",
+                Checked = settings.ShowHidden
+            }
+        };
+        if (PinnablePath() is { } path)
+        {
+            var pinned = IsPinned(path);
+            commands.Add(
+                new(PinMenuText(path), TogglePinned)
+                {
+                    Glyph = pinned ? Icons.Unpin : Icons.Pin
+                });
+        }
+
+        commands.AddRange(
+        [
+            null,
+            new("Options…", ShowOptions)
+            {
+                Glyph = Icons.Options
+            },
+            new("About Lode", ShowAbout)
+            {
+                Glyph = Icons.About
+            },
+            null,
+            new("Exit Lode", () => ExitRequested?.Invoke())
+            {
+                Glyph = Icons.Exit
+            }
+        ]);
+        return commands;
     }
 
     // As in Explorer's command bar, drop-downs (New, Git) keep their name beside their icon;
@@ -936,7 +1065,6 @@ class MainForm : Form
 
     void ApplySettings()
     {
-        showHiddenItem.Checked = settings.ShowHidden;
         RebuildActionsBar();
         foreach (var view in Views)
         {

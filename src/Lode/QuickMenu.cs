@@ -29,6 +29,16 @@ static class QuickMenu
         /// The icon beside it, from the system image list: a file type's own icon.
         /// </summary>
         public int? ShellIcon { get; init; }
+
+        /// <summary>
+        /// The keys that do the same, shown at the right of the entry.
+        /// </summary>
+        public string? Shortcut { get; init; }
+
+        /// <summary>
+        /// Shown ticked, for a setting the entry turns on and off.
+        /// </summary>
+        public bool Checked { get; init; }
     }
 
     /// <summary>
@@ -91,7 +101,7 @@ static class QuickMenu
 
             var more = new ToolStripMenuItem("Show more options")
             {
-                Image = Icons.Bitmap(Icons.More, iconSize, SystemColors.MenuText)
+                Image = Icons.Bitmap(Icons.MoreOptions, iconSize, SystemColors.MenuText)
             };
             more.Click += (_, _) => choose(showMore);
             strip.Items.Add(more);
@@ -126,7 +136,9 @@ static class QuickMenu
             var item = new ToolStripMenuItem(command.Text)
             {
                 Enabled = command.Enabled,
-                Image = Image(command, iconSize, images)
+                Image = Image(command, iconSize, images),
+                ShortcutKeyDisplayString = command.Shortcut,
+                Checked = command.Checked
             };
             if (command.Children == null)
             {

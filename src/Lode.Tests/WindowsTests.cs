@@ -196,6 +196,44 @@ public class WindowsTests
             });
     }
 
+    // See more, at the end of the bar, lists the actions that are not buttons, greyed where
+    // they do not apply: here, to a file.
+    [Test]
+    public async Task SeeMoreListsTheOtherActions()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("notes.aleph"));
+        await Pump.Loaded(form.ActiveView);
+
+        await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand));
+    }
+
+    // The ⋯ menu at the right of the address bar: Lode's own commands, none of the actions.
+    [Test]
+    public async Task WindowMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+
+        await Verify(form.WindowCommands().Select(DescribeCommand));
+    }
+
+    static string DescribeCommand(QuickMenu.Command? command)
+    {
+        if (command == null)
+        {
+            return "----";
+        }
+
+        if (command.Enabled)
+        {
+            return command.Text;
+        }
+
+        return $"{command.Text} (disabled)";
+    }
+
     // What Ctrl+Shift+P lists with nothing selected.
     [Test]
     public async Task PaletteCommands()

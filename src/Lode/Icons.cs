@@ -35,6 +35,18 @@ static class Icons
     public const char Package = '\uE7B8';
     public const char Build = '\uE9F5';
     public const char More = '\uE712';
+    public const char NewTab = '\uE710';
+    public const char NewWindow = '\uE737';
+    public const char Reopen = '\uE7A7';
+    public const char CommandPalette = '\uE765';
+    public const char ShowHidden = '\uE890';
+    public const char Pin = '\uE718';
+    public const char Unpin = '\uE77A';
+    public const char Options = '\uE713';
+    public const char About = '\uE946';
+    public const char Exit = '\uE7E8';
+    // A list, for Show more options: the full Windows menu.
+    public const char MoreOptions = '\uE8FD';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

@@ -11,7 +11,9 @@
     Terminal,
     Terminal (admin),
     ----,
-    Properties
+    Properties,
+    ----,
+    See more
   ],
   fileSelected: [
     New,
@@ -25,6 +27,8 @@
     Terminal,
     Terminal (admin),
     ----,
-    Properties
+    Properties,
+    ----,
+    See more
   ]
 }

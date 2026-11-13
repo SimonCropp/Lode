@@ -8,8 +8,6 @@
     -->
     <TargetFramework>net11.0</TargetFramework>
     <ToolCommandName>lode</ToolCommandName>
-    <AssemblyName>Lode</AssemblyName>
-    <PackageId>Lode</PackageId>
     <PackAsTool>True</PackAsTool>
     <Description>Alternative to Windows File Explorer.</Description>
     <PackageTags>file-manager;explorer;windows;winforms;dotnet-tool</PackageTags>

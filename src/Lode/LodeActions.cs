@@ -43,7 +43,7 @@ static class LodeActions
         new("git", "Git", Icons.Git, 4, Button: false, Menu: true, Submenu: true),
         new("updateNugets", "Update NuGets", Icons.Package, 4, Button: false, Menu: true),
         new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true),
-        new(More, "Show more options", Icons.More, 5, Button: false, Menu: true)
+        new(More, "Show more options", Icons.MoreOptions, 5, Button: false, Menu: true)
     ];
 
     static readonly Dictionary<string, Definition> byId = All.ToDictionary(_ => _.Id);
