@@ -13,6 +13,7 @@
   Next tab (Ctrl+Tab),
   Previous tab (Ctrl+Shift+Tab),
   Hide hidden items (Ctrl+H),
+  Show system files,
   Terminal,
   Terminal (admin),
   Pin to Quick access,

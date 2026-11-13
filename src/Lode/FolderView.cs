@@ -274,12 +274,13 @@ sealed class FolderView : UserControl
         var version = ++loadVersion;
         var path = CurrentPath;
         var showHidden = settings.ShowHidden;
+        var hiddenSystem = settings.HiddenSystemItems();
         List<FileEntry> loaded;
         string? failure = null;
         loading = true;
         try
         {
-            loaded = await Task.Run(() => Enumerate(path, showHidden));
+            loaded = await Task.Run(() => Enumerate(path, showHidden, hiddenSystem));
         }
         catch (Exception exception)
         {
@@ -298,7 +299,7 @@ sealed class FolderView : UserControl
         Populate(preserveState);
     }
 
-    static List<FileEntry> Enumerate(string path, bool showHidden)
+    static List<FileEntry> Enumerate(string path, bool showHidden, SystemItems? hiddenSystem)
     {
         var result = new List<FileEntry>();
         if (Locations.IsThisPC(path))
@@ -338,6 +339,12 @@ sealed class FolderView : UserControl
 
         foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos("*", options))
         {
+            if (hiddenSystem != null &&
+                hiddenSystem.IsSystem(info.FullName, info.Attributes))
+            {
+                continue;
+            }
+
             var isDirectory = info.Attributes.HasFlag(FileAttributes.Directory);
             var size = info is FileInfo file ? file.Length : 0;
             result.Add(new(info.Name, info.FullName, isDirectory, size, info.LastWriteTime, info.Attributes));

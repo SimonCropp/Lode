@@ -1,5 +1,6 @@
 ﻿{
   ShowHidden: true,
+  ShowSystem: false,
   ShowRecent: true,
   Maximized: false
 }

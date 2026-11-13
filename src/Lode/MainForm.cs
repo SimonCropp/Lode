@@ -362,6 +362,11 @@ class MainForm : Form
                 Glyph = Icons.ShowHidden,
                 Shortcut = "Ctrl+H",
                 Checked = settings.ShowHidden
+            },
+            new("Show system files", ToggleSystem)
+            {
+                Glyph = Icons.ShowSystem,
+                Checked = settings.ShowSystem
             }
         };
         if (PinnablePath() is { } path)
@@ -964,6 +969,12 @@ class MainForm : Form
         ApplySettingsToAllWindows();
     }
 
+    void ToggleSystem()
+    {
+        settings.ShowSystem = !settings.ShowSystem;
+        ApplySettingsToAllWindows();
+    }
+
     void OpenTerminal() =>
         OpenTerminal(admin: false);
 
@@ -1246,6 +1257,7 @@ class MainForm : Form
         Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
+        Add(settings.ShowSystem ? "Hide system files" : "Show system files", ToggleSystem);
         Add("Terminal", OpenTerminal, enabled: PinnablePath() != null);
         Add("Terminal (admin)", OpenAdminTerminal, enabled: PinnablePath() != null);
         if (PinMenuText() is { } pinText)

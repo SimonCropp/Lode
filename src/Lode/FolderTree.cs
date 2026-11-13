@@ -200,8 +200,10 @@ sealed class FolderTree : TreeView
                 IgnoreInaccessible = true,
                 AttributesToSkip = settings.ShowHidden ? default : FileAttributes.Hidden
             };
+            var hiddenSystem = settings.HiddenSystemItems();
             var directories = new DirectoryInfo((string)node.Tag!)
                 .EnumerateDirectories("*", options)
+                .Where(_ => hiddenSystem == null || !hiddenSystem.IsSystem(_.FullName, _.Attributes))
                 .ToList();
             directories.Sort((first, second) => StrCmpLogicalW(first.Name, second.Name));
             return directories;

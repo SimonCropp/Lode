@@ -1,0 +1,27 @@
+﻿{
+  withoutSystem: [
+    Archive,
+    Cache,
+    Docs,
+    Source,
+    hidden.aleph,
+    notes.aleph,
+    Report1.beta,
+    report2.beta,
+    report10.beta,
+    summary.gamma
+  ],
+  withSystem: [
+    Archive,
+    Cache,
+    Docs,
+    Protected,
+    Source,
+    hidden.aleph,
+    notes.aleph,
+    Report1.beta,
+    report2.beta,
+    report10.beta,
+    summary.gamma
+  ]
+}

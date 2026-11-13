@@ -310,6 +310,30 @@ public class FolderViewTests
         return text;
     }
 
+    // A folder Windows marks hidden and system is left out, even with hidden items shown,
+    // until system files are shown too.
+    [Test]
+    public async Task SystemFilesWhenShown()
+    {
+        using var fixture = Fixture.Create();
+        var protectedFolder = Directory.CreateDirectory(fixture.At("Protected"));
+        protectedFolder.Attributes |= FileAttributes.Hidden | FileAttributes.System;
+        var settings = new Settings { ShowHidden = true };
+        using var view = await Open(fixture.Root, settings);
+        var withoutSystem = view.Entries.Select(_ => _.Name).ToList();
+
+        settings.ShowSystem = true;
+        view.Reload();
+        await Pump.Loaded(view);
+
+        await Verify(
+            new
+            {
+                withoutSystem,
+                withSystem = view.Entries.Select(_ => _.Name).ToList()
+            });
+    }
+
     static List<string> Selected(FolderView view) =>
         view.SelectedEntries().Select(_ => _.Name).ToList();
 

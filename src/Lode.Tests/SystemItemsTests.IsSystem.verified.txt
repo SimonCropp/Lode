@@ -1,0 +1,15 @@
+﻿{
+  windows: true,
+  programFiles: true,
+  programFilesX86: true,
+  insideProgramFiles: false,
+  anotherUser: true,
+  myFolder: false,
+  publicFolder: false,
+  insideAnotherUser: false,
+  fileInUsers: false,
+  hiddenAndSystem: true,
+  systemButNotHidden: false,
+  hiddenOnly: false,
+  ordinaryFolder: false
+}

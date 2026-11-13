@@ -31,6 +31,14 @@ class OptionsForm : Form
         Margin = new(3, 3, 3, 6)
     };
 
+    readonly CheckBox showSystem = new()
+    {
+        Name = "showSystem",
+        Text = "Show system files",
+        AutoSize = true,
+        Margin = new(3, 3, 3, 0)
+    };
+
     readonly CheckBox showRecent = new()
     {
         Name = "showRecent",
@@ -134,6 +142,12 @@ class OptionsForm : Form
         showHidden.CheckedChanged += (_, _) =>
         {
             settings.ShowHidden = showHidden.Checked;
+            SettingsChanged?.Invoke();
+        };
+        showSystem.Checked = settings.ShowSystem;
+        showSystem.CheckedChanged += (_, _) =>
+        {
+            settings.ShowSystem = showSystem.Checked;
             SettingsChanged?.Invoke();
         };
         showRecent.Checked = settings.ShowRecent;
@@ -409,6 +423,17 @@ class OptionsForm : Form
             Dock = DockStyle.Fill
         };
         layout.Controls.Add(showHidden);
+        layout.Controls.Add(showSystem);
+        layout.Controls.Add(
+            new Label
+            {
+                AutoSize = true,
+                MaximumSize = new(420, 0),
+                Margin = new(21, 0, 3, 6),
+                ForeColor = SystemColors.GrayText,
+                Text = "Windows, Program Files, other people's folders under Users, and the files " +
+                       "Windows protects."
+            });
         layout.Controls.Add(showRecent);
         layout.Controls.Add(recentDescription);
 

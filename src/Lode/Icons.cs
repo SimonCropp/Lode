@@ -40,6 +40,7 @@ static class Icons
     public const char Reopen = '\uE7A7';
     public const char CommandPalette = '\uE765';
     public const char ShowHidden = '\uE890';
+    public const char ShowSystem = '\uEA18';
     public const char Pin = '\uE718';
     public const char Unpin = '\uE77A';
     public const char Options = '\uE713';

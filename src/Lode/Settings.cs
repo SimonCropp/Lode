@@ -10,6 +10,22 @@ sealed class Settings
 
     public bool ShowHidden { get; set; } = true;
 
+    // Windows' own files and folders, Program Files, and other people's folders. See SystemItems.
+    public bool ShowSystem { get; set; }
+
+    /// <summary>
+    /// What to leave out of listings for Show system files, or null when it is on.
+    /// </summary>
+    public SystemItems? HiddenSystemItems()
+    {
+        if (ShowSystem)
+        {
+            return null;
+        }
+
+        return SystemItems.ForThisMachine;
+    }
+
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
 

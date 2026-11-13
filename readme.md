@@ -105,7 +105,7 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
 
    ![Right-click menu on a folder](src/Lode.Tests/MenuTests.FolderMenu.verified.png) ![New](src/Lode.Tests/MenuTests.NewMenu.verified.png)
 
- * **Options** in the ⋯ menu: show hidden items (on by default; also Ctrl+H), show the Recent section, the default folder new tabs open in, the text editor, the code folder, and replace or restore File Explorer.
+ * **Options** in the ⋯ menu: show hidden items (on by default; also Ctrl+H), show system files (off by default: Windows, Program Files, other people's folders under Users, and the files Windows protects, in the list and the folder tree), show the Recent section, the default folder new tabs open in, the text editor, the code folder, and replace or restore File Explorer.
 
    ![The ⋯ menu](src/Lode.Tests/MenuTests.WindowMenu.verified.png) ![Options](src/Lode.Tests/OptionsFormTests.LodeInCharge.verified.png)
 

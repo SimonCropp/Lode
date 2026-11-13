@@ -5,6 +5,7 @@
   Command palette,
   ----,
   Show hidden items,
+  Show system files,
   Unpin from Quick access,
   ----,
   Options…,
