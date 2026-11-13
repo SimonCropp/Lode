@@ -1,0 +1,27 @@
+﻿{
+  afterClose: {
+    title: Projects,
+    tabs: [
+      Projects
+    ],
+    active: {TempPath}LodeTests\WindowsTests.ReopenClosedTabs\Projects
+  },
+  reopenedOnce: {
+    title: Source,
+    tabs: [
+      Projects,
+      Source
+    ],
+    active: {TempPath}LodeTests\WindowsTests.ReopenClosedTabs\Projects\Source
+  },
+  reopenedTwice: {
+    title: Docs,
+    tabs: [
+      Projects,
+      Source,
+      Docs
+    ],
+    active: {TempPath}LodeTests\WindowsTests.ReopenClosedTabs\Projects\Docs
+  },
+  nothingLeft: true
+}

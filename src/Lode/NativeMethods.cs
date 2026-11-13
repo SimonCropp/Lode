@@ -57,19 +57,6 @@ static partial class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct FileOperationInfo
-    {
-        public IntPtr Window;
-        public uint Function;
-        public IntPtr From;
-        public IntPtr To;
-        public ushort Flags;
-        public int AnyOperationsAborted;
-        public IntPtr NameMappings;
-        public IntPtr ProgressTitle;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public struct HeaderItem
     {
         public uint Mask;
@@ -140,9 +127,6 @@ static partial class NativeMethods
 
     [LibraryImport("shell32.dll")]
     public static partial int SHGetSpecialFolderLocation(IntPtr window, int folder, out IntPtr itemIdList);
-
-    [LibraryImport("shell32.dll", EntryPoint = "SHFileOperationW")]
-    public static partial int SHFileOperation(ref FileOperationInfo info);
 
     [LibraryImport("user32.dll")]
     public static partial IntPtr WindowFromPoint(ScreenPoint point);

@@ -1,0 +1,18 @@
+﻿{
+  afterRight: {
+    title: Source,
+    tabs: [
+      Projects,
+      Docs,
+      Source
+    ],
+    active: {TempPath}LodeTests\WindowsTests.CloseTabsToTheLeftAndRight\Projects\Source
+  },
+  afterLeft: {
+    title: Source,
+    tabs: [
+      Source
+    ],
+    active: {TempPath}LodeTests\WindowsTests.CloseTabsToTheLeftAndRight\Projects\Source
+  }
+}

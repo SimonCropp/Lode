@@ -74,6 +74,64 @@ public class WindowsTests
         }
     }
 
+    [Test]
+    public async Task CloseTabsToTheLeftAndRight()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root, fixture.At("Docs"), fixture.At("Source"), fixture.At("Archive"), fixture.At("Source", "Deep"));
+        var middle = (TabPage)form.Views.ElementAt(2).Parent!;
+
+        form.CloseTabsToTheRight(middle);
+        var afterRight = Describe(form);
+        form.CloseTabsToTheLeft(middle);
+
+        await Verify(
+            new
+            {
+                afterRight,
+                afterLeft = Describe(form)
+            });
+    }
+
+    // Most recently closed first, each at the folder it was showing.
+    [Test]
+    public async Task ReopenClosedTabs()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root, fixture.At("Docs"), fixture.At("Source"));
+        form.CloseOtherTabs((TabPage)form.Views.First().Parent!);
+        var afterClose = Describe(form);
+
+        form.ReopenClosedTab();
+        await Pump.Loaded(form.ActiveView!);
+        var reopenedOnce = Describe(form);
+        form.ReopenClosedTab();
+        await Pump.Loaded(form.ActiveView!);
+
+        await Verify(
+            new
+            {
+                afterClose,
+                reopenedOnce,
+                reopenedTwice = Describe(form),
+                nothingLeft = !form.CanReopenClosedTab
+            });
+    }
+
+    // What Ctrl+Shift+P lists with nothing selected.
+    [Test]
+    public async Task PaletteCommands()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root, fixture.At("Docs"));
+
+        // New's file types depend on what is installed.
+        var commands = form.PaletteCommands()
+            .Where(_ => !_.Name.StartsWith("New: ") || _.Name == "New: Folder")
+            .Select(_ => _.Shortcut.Length == 0 ? _.Name : $"{_.Name} ({_.Shortcut})");
+        await Verify(commands);
+    }
+
     static async Task<MainForm> Show(Fixture fixture, params string[] paths)
     {
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
@@ -96,7 +154,7 @@ public class WindowsTests
         new
         {
             title = form.Text,
-            tabs = form.Views.Select(_ => ((TabPage)_.Parent!).Text),
+            tabs = form.Views.Select(_ => ((TabPage)_.Parent!).Text).ToList(),
             active = form.ActiveView?.CurrentPath
         };
 

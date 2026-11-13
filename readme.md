@@ -77,15 +77,18 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
 
 ## Features
 
- * Tabs, each with its own back/forward history and a cross to close it.
+ * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing.
+ * **Command palette** (Ctrl+Shift+P, or the ⋯ menu): type part of a command's name and press Enter. It lists the window's commands (navigation, tabs, hidden items, terminal, pinning, options) and whatever the right-click menu offers for the selection, or for the folder when nothing is selected.
  * Drag a tab off the tab row to open it in a window of its own, or onto another Lode window to move it there, history and all.
  * Lives in the tray. Closing the last window hides it; click the tray icon (or launch Lode again) to bring it back, and choose **Exit** from the tray menu or the ⋯ menu to quit. The tray icon is put on the taskbar rather than in the overflow, unless you have moved it there yourself.
  * One copy per Windows account. Launching Lode again, including a folder opened from Explorer when Lode replaces it, hands the folders to the running copy, which opens them in a new window. All windows share that one process, so tabs can be dragged between any of them.
  * Folder tree with a **Pinned** section (folders pinned to Quick access in Explorer), a **Recent** section (folders Explorer adds to Quick access because you use them often), then the drives. It follows the active tab. To pin a folder, drag it (or a tab) onto the **Pinned** heading, or use **Pin to Quick access** in the ⋯ menu, which unpins too. Pins made in Explorer are read when Lode starts.
  * Details list with shell icons and type names, natural sort order, and click-to-sort columns.
- * A short right-click menu that opens at once: Open, Cut, Copy, Rename, Delete, Copy as path, Properties and so on. On empty space, **New** lists Folder and the file types Windows offers under New (Text Document and whatever installed apps add); the new item is ready to rename. **Show more options** at the bottom, or Shift+right-click, opens the classic Windows context menu, with installed shell extensions (7-Zip, Open with, and so on), less Send to, Include in library, Restore previous versions and Edit in Notepad.
- * **Options** in the ⋯ menu: show hidden items (on by default; also Ctrl+H), show the Recent section, and replace or restore File Explorer.
- * Copy, move, delete and rename go through the Windows shell: standard progress dialog, conflict prompts, Recycle Bin and undo.
+ * A short right-click menu that opens at once: Open, Open in terminal (on a folder, or empty space), Cut, Copy, Rename, Delete, Create shortcut, Copy as path, Properties and so on. **Create shortcut** puts a `name - Shortcut.lnk` beside each selected item, as Explorer does. On empty space, **New** lists Folder and the file types Windows offers under New (Text Document and whatever installed apps add); the new item is ready to rename. **Show more options** at the bottom, or Shift+right-click, opens the classic Windows context menu, with installed shell extensions (7-Zip, Open with, and so on), less Send to, Include in library, Restore previous versions and Edit in Notepad.
+ * **Options** in the ⋯ menu: show hidden items (on by default; also Ctrl+H), show the Recent section, the default folder new tabs open in, the text editor, the code folder, and replace or restore File Explorer.
+ * **Edit** on the right-click menu of text files opens them in the text editor chosen in Options. Installed editors (Visual Studio Code, Notepad++ and others) are found from the registry; Notepad is always there.
+ * **Code folder**: choose the folder your git repositories are in. Folders in it get a **Git** submenu (Pull, Push, Discard, across every repository up to two levels down) and **Update NuGets** (optionally then building) on their right-click menu. Push and Discard ask first. Each runs in the background and shows in an **Actions** panel under the folder tree, with progress while it runs; click a line for everything it reported, right-click to remove lines.
+ * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work.
  * Drag and drop to and from Explorer and other apps.
  * Filter box: type part of a name, or a wildcard such as `*.cs`.
  * The list refreshes itself when the folder changes on disk.
@@ -98,6 +101,8 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
 | Alt+Left / Backspace, Alt+Right   | Back, forward                 |
 | Alt+Up                            | Up one level                  |
 | Ctrl+T, Ctrl+W                    | New tab, close tab            |
+| Ctrl+Shift+T                      | Reopen closed tab             |
+| Ctrl+Shift+P                      | Command palette               |
 | Ctrl+Tab, Ctrl+Shift+Tab          | Next tab, previous tab        |
 | Ctrl+L, Alt+D, F4                 | Address bar                   |
 | Ctrl+F, F3                        | Filter box                    |

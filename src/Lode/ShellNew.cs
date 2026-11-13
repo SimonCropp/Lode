@@ -1,6 +1,3 @@
-using System.Security;
-using System.Text;
-
 /// <summary>
 /// The file types Windows offers under New on a folder's right-click menu, read from the
 /// registry's ShellNew keys. Based on Files' ShellNewMenuHelper (Files Community, MIT), reading

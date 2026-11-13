@@ -9,6 +9,7 @@ global using System.IO.Enumeration;
 global using System.IO.Pipes;
 global using System.Runtime.InteropServices;
 global using System.Runtime.Versioning;
+global using System.Security;
 global using System.Text.Json;
 global using Microsoft.Win32;
 global using static NativeMethods;

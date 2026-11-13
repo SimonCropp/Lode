@@ -37,6 +37,10 @@ class MainForm : Form
     Button upButton;
     bool updatingFilter;
 
+    // Folders of tabs closed in this window, most recent last, for Ctrl+Shift+T.
+    readonly List<string> closedTabs = [];
+    const int maximumClosedTabs = 20;
+
     // False for a window opened from another: it is placed beside that one rather than where
     // the last window to close was.
     bool restoreBounds = true;
@@ -169,16 +173,20 @@ class MainForm : Form
         menu.Items.Add(new ToolStripMenuItem("New tab", null, (_, _) => NewTab()) { ShortcutKeyDisplayString = "Ctrl+T" });
         menu.Items.Add(new ToolStripMenuItem("New window", null, (_, _) => NewWindow()) { ShortcutKeyDisplayString = "Ctrl+N" });
         menu.Items.Add(new ToolStripMenuItem("New folder", null, (_, _) => ActiveView?.CreateFolder()) { ShortcutKeyDisplayString = "Ctrl+Shift+N" });
+        var reopenItem = new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { ShortcutKeyDisplayString = "Ctrl+Shift+T" };
+        menu.Items.Add(reopenItem);
+        menu.Items.Add(new ToolStripMenuItem("Command palette", null, (_, _) => ShowCommandPalette()) { ShortcutKeyDisplayString = "Ctrl+Shift+P" });
         menu.Items.Add(new ToolStripSeparator());
         showHiddenItem.Checked = settings.ShowHidden;
         showHiddenItem.Click += (_, _) => ToggleHidden();
         menu.Items.Add(showHiddenItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Open terminal here", null, (_, _) => OpenTerminal());
+        menu.Items.Add("Open in terminal", null, (_, _) => OpenTerminal());
         var pinItem = new ToolStripMenuItem("Pin to Quick access", null, (_, _) => TogglePinned());
         menu.Items.Add(pinItem);
         menu.Opening += (_, _) =>
         {
+            reopenItem.Enabled = CanReopenClosedTab;
             var path = PinnablePath();
             pinItem.Visible = path != null;
             if (path != null)
@@ -365,6 +373,7 @@ class MainForm : Form
 
         var index = tabs.TabPages.IndexOf(page);
         var wasSelected = tabs.SelectedTab == page;
+        RememberClosed(page);
         tabs.TabPages.Remove(page);
         page.Dispose();
         if (wasSelected)
@@ -372,6 +381,32 @@ class MainForm : Form
             tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
             SyncToActiveView();
         }
+    }
+
+    void RememberClosed(TabPage page)
+    {
+        closedTabs.Add(page.Controls.OfType<FolderView>().First().CurrentPath);
+        if (closedTabs.Count > maximumClosedTabs)
+        {
+            closedTabs.RemoveAt(0);
+        }
+    }
+
+    internal bool CanReopenClosedTab => closedTabs.Count > 0;
+
+    /// <summary>
+    /// Opens the most recently closed tab again, at the folder it was showing.
+    /// </summary>
+    internal void ReopenClosedTab()
+    {
+        if (closedTabs.Count == 0)
+        {
+            return;
+        }
+
+        var path = closedTabs[^1];
+        closedTabs.RemoveAt(closedTabs.Count - 1);
+        AddTab(path, true);
     }
 
     static MainForm? WindowOf(Control? control) =>
@@ -740,10 +775,146 @@ class MainForm : Form
             var menu = new ContextMenuStrip();
             menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true));
             menu.Items.Add("Close tab", null, (_, _) => CloseTab(page));
+            var index = tabs.TabPages.IndexOf(page);
             menu.Items.Add("Close other tabs", null, (_, _) => CloseOtherTabs(page));
+            menu.Items.Add(new ToolStripMenuItem("Close tabs to the left", null, (_, _) => CloseTabsToTheLeft(page)) { Enabled = index > 0 });
+            menu.Items.Add(new ToolStripMenuItem("Close tabs to the right", null, (_, _) => CloseTabsToTheRight(page)) { Enabled = index < tabs.TabCount - 1 });
+            menu.Items.Add("Close all tabs", null, (_, _) => CloseAllTabs());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { Enabled = CanReopenClosedTab, ShortcutKeyDisplayString = "Ctrl+Shift+T" });
             menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
             menu.Show(tabs, eventArgs.Location);
         }
+    }
+
+    void ShowCommandPalette() =>
+        CommandPalette.Show(this, PaletteCommands());
+
+    // Shortcuts of the view's own commands, which its menus do not show.
+    static Dictionary<string, string> viewShortcuts = new()
+    {
+        ["Cut"] = "Ctrl+X",
+        ["Copy"] = "Ctrl+C",
+        ["Paste"] = "Ctrl+V",
+        ["Rename"] = "F2",
+        ["Delete"] = "Delete",
+        ["Properties"] = "Alt+Enter",
+        ["New: Folder"] = "Ctrl+Shift+N"
+    };
+
+    /// <summary>
+    /// What the command palette offers: the window's commands, then those the right-click menu
+    /// would show for the selection, or for the folder when nothing is selected. Commands that
+    /// cannot run now are left out.
+    /// </summary>
+    internal List<CommandPalette.Command> PaletteCommands()
+    {
+        var view = ActiveView;
+        var page = tabs.SelectedTab;
+        var index = tabs.SelectedIndex;
+        var commands = new List<CommandPalette.Command>();
+
+        void Add(string name, Action action, string shortcut = "", bool enabled = true)
+        {
+            if (enabled)
+            {
+                commands.Add(new(name, action, shortcut));
+            }
+        }
+
+        Add("Back", () => ActiveView?.GoBack(), "Alt+Left", view?.CanGoBack == true);
+        Add("Forward", () => ActiveView?.GoForward(), "Alt+Right", view?.CanGoForward == true);
+        Add("Up", () => ActiveView?.GoUp(), "Alt+Up", view?.CanGoUp == true);
+        Add("Refresh", Reload, "F5");
+        Add("Go to address", FocusAddress, "Ctrl+L");
+        Add("Filter this folder", FocusFilter, "Ctrl+F");
+        Add("New tab", NewTab, "Ctrl+T");
+        Add("New window", NewWindow, "Ctrl+N");
+        if (page != null)
+        {
+            Add("Duplicate tab", () => AddTab(view!.CurrentPath, true));
+            Add("Close tab", () => CloseTab(page), "Ctrl+W");
+            Add("Close other tabs", () => CloseOtherTabs(page), enabled: tabs.TabCount > 1);
+            Add("Close tabs to the left", () => CloseTabsToTheLeft(page), enabled: index > 0);
+            Add("Close tabs to the right", () => CloseTabsToTheRight(page), enabled: index < tabs.TabCount - 1);
+            Add("Close all tabs", CloseAllTabs);
+        }
+
+        Add("Reopen closed tab", ReopenClosedTab, "Ctrl+Shift+T", CanReopenClosedTab);
+        Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
+        Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
+        Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
+        Add("Open in terminal", OpenTerminal, enabled: PinnablePath() != null);
+        if (PinMenuText() is { } pinText)
+        {
+            Add(pinText, TogglePinned);
+        }
+
+        if (view != null)
+        {
+            var selection = view.SelectedEntries();
+            List<QuickMenu.Command?> viewCommands;
+            if (selection.Count > 0)
+            {
+                viewCommands = view.ItemCommands(selection);
+            }
+            else if (!Locations.IsThisPC(view.CurrentPath))
+            {
+                viewCommands = view.BackgroundCommands(FileOperations.ReadClipboard() != null);
+            }
+            else
+            {
+                viewCommands = [];
+            }
+
+            AddViewCommands(commands, view, viewCommands, "");
+        }
+
+        Add("Options…", ShowOptions);
+        Add("About Lode", ShowAbout);
+        Add("Exit Lode", () => ExitRequested?.Invoke());
+
+        // A view command named as a window one (New folder, say) would only repeat it.
+        return commands
+            .DistinctBy(_ => _.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    // A submenu's entries are named after it: "New: Text Document", "Git: Pull".
+    static void AddViewCommands(List<CommandPalette.Command> commands, FolderView view, IReadOnlyList<QuickMenu.Command?> viewCommands, string prefix)
+    {
+        foreach (var command in viewCommands)
+        {
+            if (command is not { Enabled: true })
+            {
+                continue;
+            }
+
+            var name = prefix + command.Text;
+            if (command.Children != null)
+            {
+                AddViewCommands(commands, view, command.Children, $"{name}: ");
+                continue;
+            }
+
+            var action = command.Action;
+            commands.Add(
+                new(
+                    name,
+                    () =>
+                    {
+                        // Back on the list first, so Rename has an item to edit.
+                        view.FocusList();
+                        action();
+                    },
+                    viewShortcuts.GetValueOrDefault(name, "")));
+        }
+    }
+
+    void FocusFilter()
+    {
+        filterBox.Focus();
+        filterBox.SelectAll();
     }
 
     TabPage? TabAt(Point location)
@@ -759,9 +930,24 @@ class MainForm : Form
         return null;
     }
 
-    void CloseOtherTabs(TabPage keep)
+    internal void CloseOtherTabs(TabPage keep) =>
+        CloseTabs(TabPages.Where(_ => _ != keep));
+
+    internal void CloseTabsToTheLeft(TabPage keep) =>
+        CloseTabs(TabPages.TakeWhile(_ => _ != keep));
+
+    internal void CloseTabsToTheRight(TabPage keep) =>
+        CloseTabs(TabPages.SkipWhile(_ => _ != keep).Skip(1));
+
+    // Closing the last one closes the window, as Ctrl+W on a lone tab does.
+    internal void CloseAllTabs() =>
+        CloseTabs(TabPages);
+
+    IEnumerable<TabPage> TabPages => tabs.TabPages.Cast<TabPage>();
+
+    void CloseTabs(IEnumerable<TabPage> pages)
     {
-        foreach (var page in tabs.TabPages.Cast<TabPage>().Where(_ => _ != keep).ToList())
+        foreach (var page in pages.ToList())
         {
             CloseTab(page);
         }
@@ -802,6 +988,12 @@ class MainForm : Form
                 }
 
                 return true;
+            case Keys.Control | Keys.Shift | Keys.T:
+                ReopenClosedTab();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.P:
+                ShowCommandPalette();
+                return true;
             case Keys.Control | Keys.Tab:
                 SelectAdjacentTab(1);
                 return true;
@@ -815,8 +1007,7 @@ class MainForm : Form
                 return true;
             case Keys.Control | Keys.F:
             case Keys.F3:
-                filterBox.Focus();
-                filterBox.SelectAll();
+                FocusFilter();
                 return true;
             case Keys.Control | Keys.N:
                 NewWindow();

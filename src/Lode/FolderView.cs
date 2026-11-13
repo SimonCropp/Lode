@@ -628,6 +628,24 @@ sealed class FolderView : UserControl
     public void CreateFile(ShellNew.Entry entry) =>
         Create(_ => FileOperations.CreateFile(_, entry));
 
+    // One shortcut beside each item, the last of them selected once the list shows it.
+    void CreateShortcuts(List<FileEntry> selection)
+    {
+        try
+        {
+            foreach (var entry in selection)
+            {
+                pendingSelection = FileOperations.CreateShortcut(entry.FullPath);
+            }
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        Loading = LoadAsync(true);
+    }
+
     // Makes the item, then shows it with its name ready to edit.
     void Create(Func<string, string> create)
     {
@@ -799,6 +817,11 @@ sealed class FolderView : UserControl
             commands.Add(new("Open in new tab", () => OpenInNewTabs(selection)));
         }
 
+        if (selection is [{ IsDirectory: true } terminalFolder])
+        {
+            commands.Add(new("Open in terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
+        }
+
         if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))
         {
             commands.Add(new("Edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
@@ -812,6 +835,7 @@ sealed class FolderView : UserControl
             new("Rename", BeginRename, selection.Count == 1 && !anyDrive),
             new("Delete", () => Delete(false), !anyDrive),
             null,
+            new("Create shortcut", () => CreateShortcuts(selection), !anyDrive),
             new("Copy as path", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             new("Properties", ShowProperties)
         ]);
@@ -841,6 +865,7 @@ sealed class FolderView : UserControl
         QuickMenu.Submenu("New", NewCommands(newTypes ?? ShellNew.Current)),
         new("Paste", Paste, canPaste),
         null,
+        new("Open in terminal", () => FileOperations.OpenTerminal(CurrentPath)),
         new("Copy as path", () => CopyAsPath([CurrentPath])),
         new("Properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, CurrentPath)

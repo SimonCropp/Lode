@@ -1,5 +1,3 @@
-using System.Security;
-
 class OptionsForm : Form
 {
     readonly ExplorerReplacement explorerReplacement;

@@ -6,6 +6,7 @@
   Rename (disabled),
   Delete,
   ----,
+  Create shortcut,
   Copy as path,
   Properties,
   ----,

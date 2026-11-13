@@ -1,0 +1,14 @@
+﻿[
+  {
+    path: Projects/notes - Shortcut.lnk,
+    written: true
+  },
+  {
+    path: Projects/notes - Shortcut (2).lnk,
+    written: true
+  },
+  {
+    path: Projects/Docs - Shortcut.lnk,
+    written: true
+  }
+]

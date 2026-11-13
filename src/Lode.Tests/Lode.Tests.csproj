@@ -4,6 +4,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <OutputType>Exe</OutputType>
     <NoWarn>$(NoWarn);CA1416;WFO1000</NoWarn>
+    <!-- The app's manifest, so long path tests run with the long path support Lode has. -->
+    <ApplicationManifest>../Lode/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="TUnit" />

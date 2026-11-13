@@ -1,0 +1,10 @@
+﻿{
+  pathLength: true,
+  copied: true,
+  renamed: true,
+  moved: true,
+  target: [
+    file.txt,
+    renamed.txt
+  ]
+}

@@ -99,4 +99,57 @@ public class FileOperationsTests
             content = File.ReadAllText(_)
         }));
     }
+
+    [Test]
+    public async Task CreateShortcutPicksFreeName()
+    {
+        using var fixture = Fixture.Create();
+
+        string[] created =
+        [
+            FileOperations.CreateShortcut(fixture.At("notes.aleph")),
+            FileOperations.CreateShortcut(fixture.At("notes.aleph")),
+            FileOperations.CreateShortcut(fixture.At("Docs"))
+        ];
+
+        await Verify(created.Select(_ => new
+        {
+            path = fixture.Relative(_),
+            written = new FileInfo(_).Length > 0
+        }));
+    }
+
+    // Past the old 260 character limit, which SHFileOperation could not go beyond.
+    [Test]
+    public async Task LongPaths()
+    {
+        using var fixture = Fixture.Create();
+        var deep = fixture.Root;
+        for (var level = 0; deep.Length < 300; level++)
+        {
+            deep = Path.Combine(deep, $"a folder with a long name to get past the limit {level}");
+        }
+
+        var source = Path.Combine(deep, "source");
+        var target = Path.Combine(deep, "target");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(target);
+        var file = Path.Combine(source, "file.txt");
+        await File.WriteAllTextAsync(file, "content");
+
+        var copied = await FileOperations.Transfer(IntPtr.Zero, [file], target, move: false);
+        var renamed = FileOperations.Rename(IntPtr.Zero, Path.Combine(target, "file.txt"), "renamed.txt");
+        var moved = await FileOperations.Transfer(IntPtr.Zero, [file], target, move: true);
+
+        await Verify(
+            new
+            {
+                pathLength = file.Length > 260,
+                copied,
+                renamed,
+                moved,
+                source = Directory.GetFileSystemEntries(source).Select(Path.GetFileName),
+                target = Directory.GetFileSystemEntries(target).Select(Path.GetFileName).Order()
+            });
+    }
 }

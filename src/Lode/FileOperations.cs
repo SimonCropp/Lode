@@ -6,14 +6,6 @@ static class FileOperations
 {
     public record ClipboardFiles(string[] Paths, bool Move);
 
-    const uint moveFunction = 1;
-    const uint copyFunction = 2;
-    const uint deleteFunction = 3;
-    const uint renameFunction = 4;
-
-    const ushort renameOnCollision = 0x8;
-    const ushort allowUndo = 0x40;
-
     const string dropEffectFormat = "Preferred DropEffect";
     const int dropEffectMove = 2;
     const int dropEffectCopyOrLink = 5;
@@ -27,7 +19,7 @@ static class FileOperations
         var inPlace = sources
             .Where(_ => Locations.IsChildOf(_, destination))
             .ToList();
-        var flags = allowUndo;
+        var flags = undoFlags;
         if (move)
         {
             sources = sources.Except(inPlace).ToList();
@@ -35,7 +27,7 @@ static class FileOperations
         else if (inPlace.Count > 0)
         {
             // Pasting into the folder the files came from makes "name - Copy" duplicates.
-            flags |= renameOnCollision;
+            flags |= ShellFileOperation.RenameOnCollision;
         }
 
         if (sources.Count == 0)
@@ -43,8 +35,12 @@ static class FileOperations
             return Task.FromResult(true);
         }
 
-        return RunInBackground(owner, move ? moveFunction : copyFunction, sources, destination, flags);
+        var kind = move ? ShellFileOperation.Kind.Move : ShellFileOperation.Kind.Copy;
+        return RunInBackground(owner, kind, sources, destination, flags);
     }
+
+    // Undoable with Ctrl+Z in Explorer, as SHFileOperation's allow-undo flag was.
+    const uint undoFlags = ShellFileOperation.AllowUndo | ShellFileOperation.AddUndoRecord;
 
     public static Task<bool> Delete(IntPtr owner, IReadOnlyCollection<string> paths, bool permanent)
     {
@@ -53,51 +49,36 @@ static class FileOperations
             return Task.FromResult(true);
         }
 
-        return RunInBackground(owner, deleteFunction, paths, null, permanent ? (ushort)0 : allowUndo);
+        var flags = permanent ? 0 : undoFlags | ShellFileOperation.RecycleOnDelete;
+        return RunInBackground(owner, ShellFileOperation.Kind.Delete, paths, null, flags);
     }
 
-    public static bool Rename(IntPtr owner, string path, string newName)
-    {
-        var target = Path.Combine(Path.GetDirectoryName(path)!, newName);
-        return Execute(owner, renameFunction, [path], target, allowUndo);
-    }
+    public static bool Rename(IntPtr owner, string path, string newName) =>
+        ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, [path], newName, undoFlags);
 
     // The shell runs the operation on the calling thread, so a large copy on the UI thread
     // would freeze the window. Each operation gets its own STA thread instead.
-    static Task<bool> RunInBackground(IntPtr owner, uint function, IReadOnlyCollection<string> sources, string? destination, ushort flags)
+    static Task<bool> RunInBackground(IntPtr owner, ShellFileOperation.Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags)
     {
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() => completion.SetResult(Execute(owner, function, sources, destination, flags)))
+        var thread = new Thread(
+            () =>
+            {
+                try
+                {
+                    completion.SetResult(ShellFileOperation.Run(owner, kind, sources, destination, flags));
+                }
+                catch (Exception exception)
+                {
+                    completion.SetException(exception);
+                }
+            })
         {
             Name = "Lode file operation"
         };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return completion.Task;
-    }
-
-    static bool Execute(IntPtr owner, uint function, IReadOnlyCollection<string> sources, string? destination, ushort flags)
-    {
-        // Path lists are null separated and double-null terminated.
-        var from = Marshal.StringToHGlobalUni(string.Join('\0', sources) + "\0\0");
-        var to = destination == null ? IntPtr.Zero : Marshal.StringToHGlobalUni(destination + "\0\0");
-        try
-        {
-            var info = new FileOperationInfo
-            {
-                Window = owner,
-                Function = function,
-                From = from,
-                To = to,
-                Flags = flags
-            };
-            return SHFileOperation(ref info) == 0 && info.AnyOperationsAborted == 0;
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(from);
-            Marshal.FreeHGlobal(to);
-        }
     }
 
     public static string CreateFolder(string parent)
@@ -138,6 +119,24 @@ static class FileOperations
             stream.Write(entry.Data);
         }
 
+        return path;
+    }
+
+    /// <summary>
+    /// A shortcut to <paramref name="target"/> beside it, named as Explorer names one
+    /// ("notes - Shortcut.lnk", then "notes - Shortcut (2).lnk"). Returns its path.
+    /// </summary>
+    public static string CreateShortcut(string target)
+    {
+        var parent = Path.GetDirectoryName(target)!;
+        var stem = Directory.Exists(target) ? Path.GetFileName(target) : Path.GetFileNameWithoutExtension(target);
+        var path = Path.Combine(parent, $"{stem} - Shortcut.lnk");
+        for (var counter = 2; Directory.Exists(path) || File.Exists(path); counter++)
+        {
+            path = Path.Combine(parent, $"{stem} - Shortcut ({counter}).lnk");
+        }
+
+        ShellLink.Save(path, target);
         return path;
     }
 
