@@ -1,0 +1,22 @@
+﻿{
+  buttons: [
+    New,
+    ----,
+    Copy,
+    Paste,
+    Rename,
+    Delete,
+    ----,
+    Open in new tab,
+    Terminal,
+    Terminal (admin),
+    ----,
+    Properties,
+    ----,
+    Show more options
+  ],
+  tabs: [
+    Projects,
+    Docs
+  ]
+}

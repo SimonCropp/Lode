@@ -17,15 +17,9 @@ class MainForm : Form
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
     ToolStrip actionsBar = new();
-    ChevronDropDownButton newButton = new("New");
-    ToolStripButton cutButton = new("Cut");
-    ToolStripButton copyButton = new("Copy");
-    ToolStripButton pasteButton = new("Paste");
-    ToolStripButton renameButton = new("Rename");
-    ToolStripButton deleteButton = new("Delete");
-    ToolStripButton terminalButton = new("Terminal");
-    ToolStripButton adminTerminalButton = new("Terminal (admin)");
-    ToolStripButton propertiesButton = new("Properties");
+
+    // The actions bar's buttons, by action id.
+    readonly Dictionary<string, ToolStripItem> actionButtons = [];
     FramedTextBox filterFrame = new();
     TextBox filterBox;
     SplitContainer split = new();
@@ -233,74 +227,85 @@ class MainForm : Form
         actionsBar.RenderMode = ToolStripRenderMode.System;
         // Roomy, as Explorer's command bar is.
         actionsBar.Padding = new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(4), LogicalToDeviceUnits(6), LogicalToDeviceUnits(4));
-        var iconSize = LogicalToDeviceUnits(20);
-        actionsBar.ImageScalingSize = new(iconSize, iconSize);
-        SetIcon(newButton, Icons.New, iconSize);
-        SetIcon(cutButton, Icons.Cut, iconSize);
-        SetIcon(copyButton, Icons.Copy, iconSize);
-        SetIcon(pasteButton, Icons.Paste, iconSize);
-        SetIcon(renameButton, Icons.Rename, iconSize);
-        SetIcon(deleteButton, Icons.Delete, iconSize);
-        SetIcon(terminalButton, Icons.Terminal, iconSize);
-        SetIcon(adminTerminalButton, Icons.Terminal, iconSize);
-        // The terminal icon with a shield in its corner, as Windows marks what runs elevated.
-        adminTerminalButton.Image = Icons.Bitmap(Icons.Terminal, iconSize, SystemColors.ControlText, Icons.Shield);
-        SetIcon(propertiesButton, Icons.Properties, iconSize);
-        newButton.DropDownOpening += (_, _) => FillNewMenu();
-        // Without an item it would show no arrow until first opened.
-        newButton.DropDownItems.Add("Folder");
-        cutButton.ToolTipText = "Cut (Ctrl+X)";
-        copyButton.ToolTipText = "Copy (Ctrl+C)";
-        pasteButton.ToolTipText = "Paste (Ctrl+V)";
-        renameButton.ToolTipText = "Rename (F2)";
-        deleteButton.ToolTipText = "Delete (Delete)";
-        propertiesButton.ToolTipText = "Properties (Alt+Enter)";
-        cutButton.Click += (_, _) => ActiveView?.Copy(true);
-        copyButton.Click += (_, _) => ActiveView?.Copy(false);
-        pasteButton.Click += (_, _) => ActiveView?.Paste();
-        renameButton.Click += (_, _) => RunOnList(_ => _.BeginRename());
-        deleteButton.Click += (_, _) => ActiveView?.Delete(false);
-        terminalButton.Click += (_, _) => OpenTerminal();
-        adminTerminalButton.Click += (_, _) => OpenAdminTerminal();
-        propertiesButton.Click += (_, _) => ActiveView?.ShowProperties();
-        actionsBar.Items.AddRange(
-        [
-            newButton,
-            ActionsSeparator(),
-            cutButton,
-            copyButton,
-            pasteButton,
-            renameButton,
-            deleteButton,
-            ActionsSeparator(),
-            terminalButton,
-            adminTerminalButton,
-            propertiesButton
-        ]);
+        RebuildActionsBar();
         return actionsBar;
     }
 
-    // Disabled buttons grey their icon themselves.
-    void SetIcon(ToolStripItem item, char icon, int size)
+    // The buttons Options asks for, in LodeActions' order, with a separator between groups.
+    // Hidden altogether when none are asked for.
+    void RebuildActionsBar()
     {
-        item.Image = Icons.Bitmap(icon, size, SystemColors.ControlText);
+        actionsBar.SuspendLayout();
+        foreach (var item in actionsBar.Items.Cast<ToolStripItem>().ToList())
+        {
+            item.Dispose();
+        }
+
+        actionsBar.Items.Clear();
+        actionButtons.Clear();
+        var iconSize = LogicalToDeviceUnits(20);
+        actionsBar.ImageScalingSize = new(iconSize, iconSize);
+        int? group = null;
+        foreach (var action in LodeActions.All.Where(_ => settings.ShowsAsButton(_.Id)))
+        {
+            if (group != null &&
+                group != action.Group)
+            {
+                actionsBar.Items.Add(ActionsSeparator());
+            }
+
+            group = action.Group;
+            var button = CreateActionButton(action, iconSize);
+            actionButtons[action.Id] = button;
+            actionsBar.Items.Add(button);
+        }
+
+        actionsBar.Visible = actionButtons.Count > 0;
+        actionsBar.ResumeLayout();
+        UpdateActions();
+    }
+
+    // As in Explorer's command bar, drop-downs (New, Git) keep their name beside their icon;
+    // the rest show theirs as a tooltip. Disabled buttons grey their icon themselves.
+    ToolStripItem CreateActionButton(LodeActions.Definition action, int iconSize)
+    {
+        ToolStripItem item;
+        if (action.Submenu)
+        {
+            var dropDown = new ChevronDropDownButton(action.Text);
+            // Without an item it would not open; filled with the real ones as it opens.
+            dropDown.DropDownItems.Add(action.Text);
+            dropDown.DropDownOpening += (_, _) => FillDropDown(dropDown, action.Id);
+            item = dropDown;
+        }
+        else
+        {
+            item = new ToolStripButton(action.Text);
+            item.Click += (_, _) => RunAction(action.Id, item);
+        }
+
+        item.Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText);
         item.ImageScaling = ToolStripItemImageScaling.None;
-        // As in Explorer's command bar, only New keeps its name beside its icon; the rest show
-        // theirs as a tooltip.
         item.Padding = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(5), LogicalToDeviceUnits(8), LogicalToDeviceUnits(5));
-        if (item == newButton)
+        item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
+        item.ToolTipText = action.Text;
+        if (action.Shortcut.Length > 0)
+        {
+            item.ToolTipText = $"{action.Text} ({action.Shortcut})";
+        }
+
+        if (item is ChevronDropDownButton chevron)
         {
             item.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
             item.TextImageRelation = TextImageRelation.ImageBeforeText;
-            item.Padding = item.Padding with { Right = item.Padding.Right + newButton.ChevronWidth };
+            item.Padding = item.Padding with { Right = item.Padding.Right + chevron.ChevronWidth };
         }
         else
         {
             item.DisplayStyle = ToolStripItemDisplayStyle.Image;
-            item.ToolTipText = item.Text;
         }
 
-        item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
+        return item;
     }
 
     ToolStripSeparator ActionsSeparator() =>
@@ -309,24 +314,100 @@ class MainForm : Form
             Margin = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(4), LogicalToDeviceUnits(8), LogicalToDeviceUnits(4))
         };
 
-    void RunOnList(Action<FolderView> action)
+    // The drop-down's entries are the submenu the right-click menu would show now.
+    void FillDropDown(ChevronDropDownButton dropDown, string id)
     {
-        if (ActiveView is { } view)
+        foreach (var image in dropDownImages)
         {
-            view.FocusList();
-            action(view);
+            image.Dispose();
+        }
+
+        dropDownImages.Clear();
+        dropDown.DropDownItems.Clear();
+        if (ContextCommands().TryGetValue(id, out var command) &&
+            command.Children != null)
+        {
+            var iconSize = LogicalToDeviceUnits(16);
+            dropDown.DropDown.ImageScalingSize = new(iconSize, iconSize);
+            QuickMenu.AddItems(dropDown.DropDownItems, command.Children, RunOnList, iconSize, dropDownImages);
         }
     }
 
-    void FillNewMenu()
+    // Icons drawn for the open drop-down's entries.
+    readonly List<Image> dropDownImages = [];
+
+    // Back on the list first, so Rename has an item to edit and what the action opens has the
+    // focus to return to.
+    void RunOnList(Action action)
     {
-        newButton.DropDownItems.Clear();
-        newButton.DropDownItems.Add("Folder", null, (_, _) => RunOnList(_ => _.CreateFolder()));
-        newButton.DropDownItems.Add(new ToolStripSeparator());
-        foreach (var entry in ShellNew.Current.OrderBy(_ => FolderView.NewLabel(_.TypeName), StringComparer.CurrentCultureIgnoreCase))
+        ActiveView?.FocusList();
+        action();
+    }
+
+    /// <summary>
+    /// Runs an action from its button: what the right-click menu would do for the selection, or
+    /// for the folder when nothing is selected.
+    /// </summary>
+    internal void RunAction(string id, ToolStripItem? button = null)
+    {
+        if (ActiveView is not { } view)
         {
-            newButton.DropDownItems.Add(FolderView.NewLabel(entry.TypeName), null, (_, _) => RunOnList(_ => _.CreateFile(entry)));
+            return;
         }
+
+        if (id == LodeActions.More)
+        {
+            var below = Point.Empty;
+            if (button != null)
+            {
+                below = actionsBar.PointToScreen(new(button.Bounds.Left, button.Bounds.Bottom));
+            }
+
+            view.ShowShellMenu(below);
+            return;
+        }
+
+        if (ContextCommands().TryGetValue(id, out var command) &&
+            command is { Enabled: true, Children: null })
+        {
+            RunOnList(command.Action);
+        }
+    }
+
+    // What the buttons act on: the right-click menu's commands for the selection, then the
+    // folder's, so New and Paste still work with something selected. The selection's win where
+    // both have one (Terminal on a selected folder opens it).
+    Dictionary<string, QuickMenu.Command> ContextCommands()
+    {
+        var result = new Dictionary<string, QuickMenu.Command>();
+        if (ActiveView is not { } view)
+        {
+            return result;
+        }
+
+        var commands = new List<QuickMenu.Command?>();
+        var selection = view.SelectedEntries();
+        if (selection.Count > 0)
+        {
+            commands.AddRange(view.ItemCommands(selection));
+        }
+
+        if (!Locations.IsThisPC(view.CurrentPath))
+        {
+            // Not tied to the clipboard, which changes without telling Lode. Paste with nothing
+            // to paste does nothing.
+            commands.AddRange(view.BackgroundCommands(canPaste: true));
+        }
+
+        foreach (var command in commands)
+        {
+            if (command is { Id: { } id })
+            {
+                result.TryAdd(id, command);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -334,21 +415,24 @@ class MainForm : Form
     /// </summary>
     internal void UpdateActions()
     {
-        var view = ActiveView;
-        var inFolder = view != null && !Locations.IsThisPC(view.CurrentPath);
-        var selection = view?.SelectedEntries() ?? [];
-        var files = selection.Count > 0 && selection.All(_ => !_.IsDrive);
-        newButton.Enabled = inFolder;
-        cutButton.Enabled = files;
-        copyButton.Enabled = files;
-        // Not tied to the clipboard, which changes without telling Lode. Paste with nothing
-        // to paste does nothing.
-        pasteButton.Enabled = inFolder;
-        renameButton.Enabled = files && selection.Count == 1;
-        deleteButton.Enabled = files;
-        terminalButton.Enabled = inFolder;
-        adminTerminalButton.Enabled = inFolder;
-        propertiesButton.Enabled = view != null && (selection.Count > 0 || inFolder);
+        if (actionButtons.Count == 0)
+        {
+            return;
+        }
+
+        var commands = ContextCommands();
+        foreach (var (id, button) in actionButtons)
+        {
+            if (id == LodeActions.More)
+            {
+                button.Enabled = ActiveView?.CanShowShellMenu == true;
+                continue;
+            }
+
+            button.Enabled = commands.TryGetValue(id, out var command) &&
+                             command.Enabled &&
+                             (command.Children == null || command.Children.Any(_ => _ is { Enabled: true }));
+        }
     }
 
     /// <summary>
@@ -853,6 +937,7 @@ class MainForm : Form
     void ApplySettings()
     {
         showHiddenItem.Checked = settings.ShowHidden;
+        RebuildActionsBar();
         foreach (var view in Views)
         {
             view.Reload();

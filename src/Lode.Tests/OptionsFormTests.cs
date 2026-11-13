@@ -48,6 +48,39 @@ public class OptionsFormTests
             });
     }
 
+    // Each action has a tick for the actions bar and one for the right-click menus.
+    [Test]
+    public async Task TickingAnActionChangesWhereItShows()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var changes = 0;
+        form.SettingsChanged += () => changes++;
+        var before = new
+        {
+            openButton = settings.ShowsAsButton("open"),
+            cutMenu = settings.ShowsInMenu("cut")
+        };
+
+        ((CheckBox) form.Controls.Find("button.open", true)[0]).Checked = true;
+        ((CheckBox) form.Controls.Find("menu.cut", true)[0]).Checked = false;
+
+        await Verify(
+            new
+            {
+                before,
+                after = new
+                {
+                    openButton = settings.ShowsAsButton("open"),
+                    cutMenu = settings.ShowsInMenu("cut"),
+                    // Cut's button tick is untouched.
+                    cutButton = settings.ShowsAsButton("cut")
+                },
+                changes
+            });
+    }
+
     [Test]
     public async Task UntickingShowRecentChangesTheSetting()
     {

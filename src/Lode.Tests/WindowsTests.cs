@@ -169,6 +169,33 @@ public class WindowsTests
         };
     }
 
+    // The bar shows the buttons Options asks for, in the catalog's order, and each does what its
+    // right-click menu entry would.
+    [Test]
+    public async Task ActionsBarFollowsOptions()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        settings.SetPlacement("openInNewTab", button: true, menu: true);
+        settings.SetPlacement("cut", button: false, menu: true);
+        settings.SetPlacement(LodeActions.More, button: true, menu: true);
+        using var form = await Show(fixture, settings, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("Docs"));
+        await Pump.Loaded(form.ActiveView);
+        form.UpdateActions();
+        var buttons = form.DescribeActions().ToList();
+
+        form.RunAction("openInNewTab");
+        await Pump.Loaded(form.Views.Last());
+
+        await Verify(
+            new
+            {
+                buttons,
+                tabs = form.Views.Select(_ => ((TabPage)_.Parent!).Text).ToList()
+            });
+    }
+
     // What Ctrl+Shift+P lists with nothing selected.
     [Test]
     public async Task PaletteCommands()
@@ -183,10 +210,13 @@ public class WindowsTests
         await Verify(commands);
     }
 
-    static async Task<MainForm> Show(Fixture fixture, params string[] paths)
+    static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
+        Show(fixture, new(), paths);
+
+    static async Task<MainForm> Show(Fixture fixture, Settings settings, params string[] paths)
     {
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
-        var form = new QuietForm(paths, new(), places)
+        var form = new QuietForm(paths, settings, places)
         {
             ShowInTaskbar = false,
             StartPosition = FormStartPosition.Manual,

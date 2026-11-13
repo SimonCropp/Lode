@@ -543,8 +543,9 @@ sealed class FolderTree : TreeView
         QuickMenu.Show(
             this,
             location,
-            NodeCommands(path),
-            () => ShowShellMenu(owner, path, location, quickAccess));
+            LodeActions.ForMenu(NodeCommands(path), settings),
+            () => ShowShellMenu(owner, path, location, quickAccess),
+            settings.ShowsInMenu(LodeActions.More));
     }
 
     /// <summary>
@@ -552,12 +553,12 @@ sealed class FolderTree : TreeView
     /// </summary>
     internal List<QuickMenu.Command?> NodeCommands(string path) =>
     [
-        new("Open", () => PathSelected?.Invoke(path)),
-        new("Open in new tab", () => NewTabRequested?.Invoke(path)),
+        LodeActions.Command("open", () => PathSelected?.Invoke(path)),
+        LodeActions.Command("openInNewTab", () => NewTabRequested?.Invoke(path)),
         null,
-        new("Copy", () => FileOperations.CopyToClipboard([path], false)),
-        new("Copy as path", () => FolderView.CopyAsPath([path])),
-        new("Properties", () => ShellContextMenu.InvokeVerb(FindForm()?.Handle ?? Handle, [path], "properties")),
+        LodeActions.Command("copy", () => FileOperations.CopyToClipboard([path], false)),
+        LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
+        LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(FindForm()?.Handle ?? Handle, [path], "properties")),
         .. CodeMenu.Commands(this, settings, path)
     ];
 

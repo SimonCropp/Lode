@@ -996,12 +996,13 @@ sealed class FolderView : UserControl
         QuickMenu.Show(
             list,
             location,
-            ItemCommands(selection),
+            LodeActions.ForMenu(ItemCommands(selection), settings),
             () =>
             {
                 using var menu = new ShellContextMenu();
                 ShowItemMenu(menu, selection, location);
-            });
+            },
+            settings.ShowsInMenu(LodeActions.More));
 
     /// <summary>
     /// The fixed right-click menu for selected items. A null entry is a separator.
@@ -1011,35 +1012,35 @@ sealed class FolderView : UserControl
         var anyDrive = selection.Any(_ => _.IsDrive);
         var commands = new List<QuickMenu.Command?>
         {
-            new("Open", () => OpenEntries(selection))
+            LodeActions.Command("open", () => OpenEntries(selection))
         };
         if (selection.All(_ => _.IsDirectory))
         {
-            commands.Add(new("Open in new tab", () => OpenInNewTabs(selection)));
+            commands.Add(LodeActions.Command("openInNewTab", () => OpenInNewTabs(selection)));
         }
 
         if (selection is [{ IsDirectory: true } terminalFolder])
         {
-            commands.Add(new("Terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
-            commands.Add(new("Terminal (admin)", () => FileOperations.OpenTerminal(terminalFolder.FullPath, admin: true)));
+            commands.Add(LodeActions.Command("terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
+            commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(terminalFolder.FullPath, admin: true)));
         }
 
         if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))
         {
-            commands.Add(new("Edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
+            commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
         }
 
         commands.AddRange(
         [
             null,
-            new("Cut", () => Copy(true), !anyDrive),
-            new("Copy", () => Copy(false), !anyDrive),
-            new("Rename", BeginRename, selection.Count == 1 && !anyDrive),
-            new("Delete", () => Delete(false), !anyDrive),
+            LodeActions.Command("cut", () => Copy(true), !anyDrive),
+            LodeActions.Command("copy", () => Copy(false), !anyDrive),
+            LodeActions.Command("rename", BeginRename, selection.Count == 1 && !anyDrive),
+            LodeActions.Command("delete", () => Delete(false), !anyDrive),
             null,
-            new("Create shortcut", () => CreateShortcuts(selection), !anyDrive),
-            new("Copy as path", () => CopyAsPath(selection.Select(_ => _.FullPath))),
-            new("Properties", ShowProperties)
+            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyDrive),
+            LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
+            LodeActions.Command("properties", ShowProperties)
         ]);
         if (selection is [{ IsDirectory: true } folder])
         {
@@ -1053,35 +1054,69 @@ sealed class FolderView : UserControl
         QuickMenu.Show(
             list,
             location,
-            BackgroundCommands(FileOperations.ReadClipboard() != null),
+            LodeActions.ForMenu(BackgroundCommands(FileOperations.ReadClipboard() != null), settings),
             () =>
             {
                 using var menu = new ShellContextMenu();
                 ShowBackgroundMenu(menu, location);
-            });
+            },
+            settings.ShowsInMenu(LodeActions.More));
+
+    /// <summary>
+    /// The full Windows menu, as Show more options opens it, for the selection, or for the
+    /// folder when nothing is selected, at a point on the screen.
+    /// </summary>
+    public void ShowShellMenu(Point location)
+    {
+        var selection = SelectedEntries();
+        using var menu = new ShellContextMenu();
+        if (selection.Count > 0)
+        {
+            ShowItemMenu(menu, selection, location);
+            return;
+        }
+
+        if (!IsThisPC)
+        {
+            ShowBackgroundMenu(menu, location);
+        }
+    }
+
+    /// <summary>
+    /// Whether there is anything for <see cref="ShowShellMenu"/> to show a menu for.
+    /// </summary>
+    public bool CanShowShellMenu =>
+        list.SelectedIndices.Count > 0 || !IsThisPC;
 
     /// <summary>
     /// The fixed right-click menu for the empty part of the list. A null entry is a separator.
     /// </summary>
     internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes = null) =>
     [
-        QuickMenu.Submenu("New", NewCommands(newTypes ?? ShellNew.Current)),
-        new("Paste", Paste, canPaste),
+        LodeActions.Submenu("new", NewCommands(newTypes ?? ShellNew.Current)),
+        LodeActions.Command("paste", Paste, canPaste),
         null,
-        new("Terminal", () => FileOperations.OpenTerminal(CurrentPath)),
-        new("Terminal (admin)", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
-        new("Copy as path", () => CopyAsPath([CurrentPath])),
-        new("Properties", ShowProperties),
+        LodeActions.Command("terminal", () => FileOperations.OpenTerminal(CurrentPath)),
+        LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
+        LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath])),
+        LodeActions.Command("properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, CurrentPath)
     ];
 
     // Folder, then each type Windows offers under New, by label.
     List<QuickMenu.Command?> NewCommands(IReadOnlyList<ShellNew.Entry> types) =>
     [
-        new("Folder", CreateFolder),
+        new("Folder", CreateFolder)
+        {
+            Glyph = Icons.Folder
+        },
         null,
         .. types
-            .Select(_ => new QuickMenu.Command(NewLabel(_.TypeName), () => CreateFile(_)))
+            .Select(_ => new QuickMenu.Command(NewLabel(_.TypeName), () => CreateFile(_))
+            {
+                // The type's own icon, as Explorer's New menu shows.
+                ShellIcon = ShellIcons.GetIcon($"x{_.Extension}", false)
+            })
             .OrderBy(_ => _.Text, StringComparer.CurrentCultureIgnoreCase)
     ];
 

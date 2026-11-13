@@ -10,6 +10,7 @@
     ----,
     Terminal,
     Terminal (admin),
+    ----,
     Properties
   ],
   fileSelected: [
@@ -23,6 +24,7 @@
     ----,
     Terminal,
     Terminal (admin),
+    ----,
     Properties
   ]
 }

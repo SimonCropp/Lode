@@ -78,7 +78,7 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
 ## Features
 
  * Address bar that shows each folder up the path as a button, with chevrons between, as Explorer does, with This PC as an icon: click a folder to go there. The chevrons are only separators, without Explorer's drop-down lists. Click the empty space after the path, or press Ctrl+L, to type a path instead.
- * Actions bar under the address bar: New (Folder and the file types Windows offers), Cut, Copy, Paste, Rename, Delete, Terminal, Terminal (admin) and Properties, each enabled when it applies to the selection.
+ * Actions bar under the address bar, with a button for any of the right-click menus' actions: New, Cut, Copy, Paste, Rename, Delete, Terminal, Terminal (admin) and Properties by default, each enabled when it applies to the selection, or to the folder when nothing is selected. Under **Actions** in Options, tick which actions show as buttons and which in the right-click menus (the list's, and the folder tree's). Menu entries have icons too.
  * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing.
  * **Command palette** (Ctrl+Shift+P, or the ⋯ menu): type part of a command's name and press Enter. It lists the window's commands (navigation, tabs, hidden items, terminal, pinning, options) and whatever the right-click menu offers for the selection, or for the folder when nothing is selected.
  * Drag a tab off the tab row to open it in a window of its own, or onto another Lode window to move it there, history and all.

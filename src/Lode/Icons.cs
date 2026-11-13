@@ -20,7 +20,21 @@ static class Icons
     public const char Properties = '\uE90F';
     public const char ThisPC = '\uE7F4';
     public const char ChevronDown = '\uE70D';
-    public const char Shield = '\uEA18';
+    public const char Open = '\uE8E5';
+    public const char OpenInNewTab = '\uE8A7';
+    public const char Edit = '\uE70F';
+    // A window with a shield, as Windows marks what runs elevated.
+    public const char AdminTerminal = '\uE7EF';
+    public const char Shortcut = '\uE71B';
+    public const char CopyAsPath = '\uE62F';
+    public const char Folder = '\uE8B7';
+    public const char Git = '\uE895';
+    public const char Pull = '\uE896';
+    public const char Push = '\uE898';
+    public const char Discard = '\uE7A7';
+    public const char Package = '\uE7B8';
+    public const char Build = '\uE9F5';
+    public const char More = '\uE712';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";
@@ -50,39 +64,15 @@ static class Icons
     /// <paramref name="color"/>, on a transparent background. Cached: do not dispose it.
     /// </summary>
     public static Bitmap Bitmap(char glyph, int size, Color color) =>
-        cache.GetOrAdd((glyph, size, color.ToArgb()), _ => Draw(glyph, size, color, null));
+        cache.GetOrAdd((glyph, size, color.ToArgb()), _ => Draw(glyph, size, color));
 
-    /// <summary>
-    /// The glyph with <paramref name="badge"/> small in its bottom right corner, cut out of the
-    /// glyph beneath it. Cached: do not dispose it.
-    /// </summary>
-    public static Bitmap Bitmap(char glyph, int size, Color color, char badge) =>
-        badgedCache.GetOrAdd((glyph, badge, size, color.ToArgb()), _ => Draw(glyph, size, color, badge));
-
-    static readonly ConcurrentDictionary<(char, char, int, int), Bitmap> badgedCache = new();
-
-    static Bitmap Draw(char glyph, int size, Color color, char? badge)
+    static Bitmap Draw(char glyph, int size, Color color)
     {
         var bitmap = new Bitmap(size, size);
         using var graphics = Graphics.FromImage(bitmap);
         // ClearType needs an opaque background to blend with; this one is transparent.
         graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         DrawGlyph(graphics, glyph, new(0, 0, size, size), color);
-        if (badge is { } badgeGlyph)
-        {
-            var badgeSize = (int)Math.Round(size * 0.6);
-            var bounds = new Rectangle(size - badgeSize, size - badgeSize, badgeSize, badgeSize);
-            // A gap round the badge, so it reads apart from the glyph under it.
-            graphics.CompositingMode = CompositingMode.SourceCopy;
-            using (var clear = new SolidBrush(Color.Transparent))
-            {
-                graphics.FillRectangle(clear, Rectangle.Inflate(bounds, 1, 1));
-            }
-
-            graphics.CompositingMode = CompositingMode.SourceOver;
-            DrawGlyph(graphics, badgeGlyph, bounds, color);
-        }
-
         return bitmap;
     }
 

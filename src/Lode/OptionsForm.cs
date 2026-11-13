@@ -170,19 +170,32 @@ class OptionsForm : Form
         AcceptButton = closeButton;
         CancelButton = closeButton;
 
+        // The settings down the left, and beside them the actions, a row each.
         var layout = new TableLayoutPanel
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
+            ColumnCount = 2,
             Location = new(Padding.Left, Padding.Top)
         };
-        layout.Controls.Add(BuildStartupGroup());
-        layout.Controls.Add(BuildViewGroup());
-        layout.Controls.Add(BuildTextEditorGroup());
-        layout.Controls.Add(BuildCodeGroup());
-        layout.Controls.Add(BuildExplorerGroup());
-        layout.Controls.Add(closeButton);
+        GroupBox[] groups =
+        [
+            BuildStartupGroup(),
+            BuildViewGroup(),
+            BuildTextEditorGroup(),
+            BuildCodeGroup(),
+            BuildExplorerGroup()
+        ];
+        for (var row = 0; row < groups.Length; row++)
+        {
+            layout.Controls.Add(groups[row], 0, row);
+        }
+
+        var actions = BuildActionsGroup();
+        layout.Controls.Add(actions, 1, 0);
+        layout.SetRowSpan(actions, groups.Length);
+        layout.Controls.Add(closeButton, 0, groups.Length);
+        layout.SetColumnSpan(closeButton, 2);
         Controls.Add(layout);
         ResumeLayout(false);
         PerformLayout();
@@ -265,6 +278,116 @@ class OptionsForm : Form
         defaultDirectory.Text = settings.DefaultDirectory ?? "";
         resetDefaultDirectory.Enabled = settings.DefaultDirectory != null;
     }
+
+    // Where each action shows: a button on the actions bar, an entry in the right-click menus,
+    // both or neither. A tick changes every window at once.
+    GroupBox BuildActionsGroup()
+    {
+        var description = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new(340, 0),
+            Margin = new(3, 3, 3, 9),
+            Text = "Show each action as a button on the bar under the address bar, in the " +
+                   "right-click menus, or both. The menus only offer what applies to what was clicked."
+        };
+
+        var table = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 4,
+            Margin = Padding.Empty
+        };
+        // Empty, and sized to it, so they leave the icon and name columns as narrow as their rows.
+        table.Controls.Add(new Label { AutoSize = true }, 0, 0);
+        table.Controls.Add(new Label { AutoSize = true }, 1, 0);
+        table.Controls.Add(ColumnHeading("Button"), 2, 0);
+        table.Controls.Add(ColumnHeading("Right-click"), 3, 0);
+
+        var iconSize = LogicalToDeviceUnits(16);
+        var row = 1;
+        foreach (var action in LodeActions.All)
+        {
+            var icon = new PictureBox
+            {
+                Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText),
+                SizeMode = PictureBoxSizeMode.CenterImage,
+                Size = new(iconSize + 4, iconSize + 4),
+                Anchor = AnchorStyles.None,
+                Margin = new(3, 1, 3, 1)
+            };
+            var name = new Label
+            {
+                Text = action.Text,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new(0, 1, 12, 1)
+            };
+            var button = new CheckBox
+            {
+                Name = $"button.{action.Id}",
+                AccessibleName = $"{action.Text} as a button",
+                AutoSize = true,
+                Anchor = AnchorStyles.None,
+                Margin = new(3, 1, 3, 1),
+                Checked = settings.ShowsAsButton(action.Id)
+            };
+            var menu = new CheckBox
+            {
+                Name = $"menu.{action.Id}",
+                AccessibleName = $"{action.Text} in the right-click menu",
+                AutoSize = true,
+                Anchor = AnchorStyles.None,
+                Margin = new(3, 1, 3, 1),
+                Checked = settings.ShowsInMenu(action.Id)
+            };
+            var id = action.Id;
+            EventHandler changed = (_, _) =>
+            {
+                settings.SetPlacement(id, button.Checked, menu.Checked);
+                SettingsChanged?.Invoke();
+            };
+            button.CheckedChanged += changed;
+            menu.CheckedChanged += changed;
+            table.Controls.Add(icon, 0, row);
+            table.Controls.Add(name, 1, row);
+            table.Controls.Add(button, 2, row);
+            table.Controls.Add(menu, 3, row);
+            row++;
+        }
+
+        var layout = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Fill
+        };
+        layout.Controls.Add(description);
+        layout.Controls.Add(table);
+
+        var group = new GroupBox
+        {
+            Text = "Actions",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            Padding = new(9, 6, 9, 9)
+        };
+        group.Controls.Add(layout);
+        return group;
+    }
+
+    static Label ColumnHeading(string text) =>
+        new()
+        {
+            Text = text,
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            ForeColor = SystemColors.GrayText,
+            Margin = new(6, 0, 6, 3)
+        };
 
     GroupBox BuildViewGroup()
     {
@@ -529,6 +652,7 @@ class OptionsForm : Form
             Text = "File Explorer",
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
             Padding = new(9, 6, 9, 9)
         };
         group.Controls.Add(layout);

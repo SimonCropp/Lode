@@ -22,15 +22,24 @@ static class CodeMenu
         return
         [
             null,
-            QuickMenu.Submenu(
-                "Git",
+            LodeActions.Submenu(
+                "git",
                 [
-                    new("Pull", () => Pull(folder)),
-                    new("Push…", () => Push(owner, folder)),
+                    new("Pull", () => Pull(folder))
+                    {
+                        Glyph = Icons.Pull
+                    },
+                    new("Push…", () => Push(owner, folder))
+                    {
+                        Glyph = Icons.Push
+                    },
                     new("Discard…", () => Discard(owner, folder))
+                    {
+                        Glyph = Icons.Discard
+                    }
                 ]),
-            new("Update NuGets", () => UpdateNugets(folder)),
-            new("Update NuGets and build", () => UpdateNugetsAndBuild(folder))
+            LodeActions.Command("updateNugets", () => UpdateNugets(folder)),
+            LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folder))
         ];
     }
 

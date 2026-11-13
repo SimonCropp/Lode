@@ -1,0 +1,12 @@
+﻿{
+  before: {
+    openButton: false,
+    cutMenu: true
+  },
+  after: {
+    openButton: true,
+    cutMenu: false,
+    cutButton: true
+  },
+  changes: 2
+}

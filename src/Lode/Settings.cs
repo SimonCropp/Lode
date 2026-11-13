@@ -13,6 +13,37 @@ sealed class Settings
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
 
+    // Where each action shows, for those changed in Options: as a button on the actions bar, in
+    // the right-click menu, both or neither. Those missing show where LodeActions says.
+    public Dictionary<string, ActionPlacement> Actions { get; set; } = [];
+
+    public bool ShowsAsButton(string id)
+    {
+        if (Actions.TryGetValue(id, out var placement))
+        {
+            return placement.Button;
+        }
+
+        return LodeActions.Find(id)?.Button ?? false;
+    }
+
+    public bool ShowsInMenu(string id)
+    {
+        if (Actions.TryGetValue(id, out var placement))
+        {
+            return placement.Menu;
+        }
+
+        return LodeActions.Find(id)?.Menu ?? true;
+    }
+
+    public void SetPlacement(string id, bool button, bool menu) =>
+        Actions[id] = new()
+        {
+            Button = button,
+            Menu = menu
+        };
+
     // The file list's columns hidden from its header's right-click menu: Date, Type or Size.
     public List<string> HiddenColumns { get; set; } = [];
 
@@ -103,4 +134,13 @@ sealed class Settings
             // Settings are a convenience; failing to persist them is not fatal.
         }
     }
+}
+
+/// <summary>
+/// Whether an action shows as a button on the actions bar, in the right-click menu, or both.
+/// </summary>
+sealed class ActionPlacement
+{
+    public bool Button { get; set; }
+    public bool Menu { get; set; }
 }

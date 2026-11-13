@@ -92,6 +92,23 @@ public class QuickMenuTests
         await Verify(Describe(view.BackgroundCommands(canPaste: false, newTypes)));
     }
 
+    // What Options keeps off the menu is left out, with the separators that would leave
+    // doubled or at the end; Show more options too.
+    [Test]
+    public async Task MenuLeavesOutWhatOptionsHides()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false };
+        foreach (var id in new[] { "cut", "copy", "rename", "delete", "properties", "createShortcut", "copyAsPath" })
+        {
+            settings.SetPlacement(id, button: false, menu: false);
+        }
+
+        using var view = await Open(fixture.Root, settings);
+
+        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "notes.aleph")]), settings)));
+    }
+
     [Test]
     public async Task TreeMenu()
     {
