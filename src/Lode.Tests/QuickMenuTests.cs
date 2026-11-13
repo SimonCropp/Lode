@@ -11,6 +11,14 @@ public class QuickMenuTests
 {
     static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
 
+    // In place of this machine's New types, which depend on what is installed.
+    static readonly ShellNew.Entry[] newTypes =
+    [
+        new(".bmp", "Bitmap image"),
+        new(".docx", "Microsoft Word Document"),
+        new(".txt", "Text Document")
+    ];
+
     [Test]
     public async Task FileMenu()
     {
@@ -52,7 +60,7 @@ public class QuickMenuTests
             {
                 folder = Describe(view.ItemCommands([Entry(view, "Docs")])),
                 file = Describe(view.ItemCommands([Entry(view, "notes.aleph")])),
-                background = Describe(view.BackgroundCommands(canPaste: false))
+                background = Describe(view.BackgroundCommands(canPaste: false, newTypes))
             });
     }
 
@@ -72,7 +80,7 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.BackgroundCommands(canPaste: true)));
+        await Verify(Describe(view.BackgroundCommands(canPaste: true, newTypes)));
     }
 
     [Test]
@@ -81,7 +89,7 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.BackgroundCommands(canPaste: false)));
+        await Verify(Describe(view.BackgroundCommands(canPaste: false, newTypes)));
     }
 
     [Test]

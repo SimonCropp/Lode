@@ -1,5 +1,3 @@
-using Microsoft.Win32;
-
 /// <summary>
 /// Finding editors from a described registry and file system, and which files offer Edit.
 /// </summary>

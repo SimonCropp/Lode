@@ -1,0 +1,14 @@
+﻿[
+  {
+    path: Projects/New Text Document.txt,
+    content: 
+  },
+  {
+    path: Projects/New Text Document (2).txt,
+    content: 
+  },
+  {
+    path: Projects/New Rich Text Document.rtf,
+    content: {\rtf1}
+  }
+]

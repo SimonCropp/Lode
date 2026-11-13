@@ -112,6 +112,35 @@ static class FileOperations
         return path;
     }
 
+    /// <summary>
+    /// A new file of <paramref name="entry"/>'s type in <paramref name="parent"/>, named as
+    /// Explorer names one ("New Text Document.txt", then "New Text Document (2).txt"). Returns its path.
+    /// </summary>
+    public static string CreateFile(string parent, ShellNew.Entry entry)
+    {
+        var stem = $"New {entry.TypeName}";
+        var path = Path.Combine(parent, stem + entry.Extension);
+        for (var counter = 2; Directory.Exists(path) || File.Exists(path); counter++)
+        {
+            path = Path.Combine(parent, $"{stem} ({counter}){entry.Extension}");
+        }
+
+        var template = entry.Template == null ? null : ShellNew.ResolveTemplate(entry.Template);
+        if (template != null)
+        {
+            File.Copy(template, path);
+            return path;
+        }
+
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+        if (entry.Data != null)
+        {
+            stream.Write(entry.Data);
+        }
+
+        return path;
+    }
+
     public static void Open(IWin32Window owner, string path)
     {
         try

@@ -34,7 +34,12 @@
     Show more options
   ],
   background: [
-    New folder,
+    New,
+      Folder,
+      ----,
+      Bitmap image,
+      Text Document,
+      Word Document,
     Paste (disabled),
     ----,
     Copy as path,

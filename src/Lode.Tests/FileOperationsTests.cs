@@ -78,4 +78,25 @@ public class FileOperationsTests
 
         await Verify(created.Select(fixture.Relative));
     }
+
+    [Test]
+    public async Task CreateFilePicksFreeNameAndWritesData()
+    {
+        using var fixture = Fixture.Create();
+        var empty = new ShellNew.Entry(".txt", "Text Document");
+        var withData = new ShellNew.Entry(".rtf", "Rich Text Document", @"{\rtf1}"u8.ToArray());
+
+        string[] created =
+        [
+            FileOperations.CreateFile(fixture.Root, empty),
+            FileOperations.CreateFile(fixture.Root, empty),
+            FileOperations.CreateFile(fixture.Root, withData)
+        ];
+
+        await Verify(created.Select(_ => new
+        {
+            path = fixture.Relative(_),
+            content = File.ReadAllText(_)
+        }));
+    }
 }

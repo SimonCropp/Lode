@@ -1,5 +1,3 @@
-using Microsoft.Win32;
-
 /// <summary>
 /// A throwaway key under HKEY_CURRENT_USER that stands in for Software\Classes, so tests can
 /// replace Explorer without touching the real associations.

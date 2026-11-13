@@ -622,7 +622,14 @@ sealed class FolderView : UserControl
         }
     }
 
-    public void CreateFolder()
+    public void CreateFolder() =>
+        Create(FileOperations.CreateFolder);
+
+    public void CreateFile(ShellNew.Entry entry) =>
+        Create(_ => FileOperations.CreateFile(_, entry));
+
+    // Makes the item, then shows it with its name ready to edit.
+    void Create(Func<string, string> create)
     {
         if (IsThisPC)
         {
@@ -631,7 +638,7 @@ sealed class FolderView : UserControl
 
         try
         {
-            pendingRename = FileOperations.CreateFolder(CurrentPath);
+            pendingRename = create(CurrentPath);
         }
         catch (Exception exception)
         {
@@ -829,15 +836,39 @@ sealed class FolderView : UserControl
     /// <summary>
     /// The fixed right-click menu for the empty part of the list. A null entry is a separator.
     /// </summary>
-    internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste) =>
+    internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes = null) =>
     [
-        new("New folder", CreateFolder),
+        QuickMenu.Submenu("New", NewCommands(newTypes ?? ShellNew.Current)),
         new("Paste", Paste, canPaste),
         null,
         new("Copy as path", () => CopyAsPath([CurrentPath])),
         new("Properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, CurrentPath)
     ];
+
+    // Folder, then each type Windows offers under New, by label.
+    List<QuickMenu.Command?> NewCommands(IReadOnlyList<ShellNew.Entry> types) =>
+    [
+        new("Folder", CreateFolder),
+        null,
+        .. types
+            .Select(_ => new QuickMenu.Command(NewLabel(_.TypeName), () => CreateFile(_)))
+            .OrderBy(_ => _.Text, StringComparer.CurrentCultureIgnoreCase)
+    ];
+
+    // "Microsoft Word Document" reads as "Word Document". Only the label: the file is still
+    // named as Explorer names it.
+    internal static string NewLabel(string typeName)
+    {
+        const string prefix = "Microsoft ";
+        if (typeName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            typeName.Length > prefix.Length)
+        {
+            return typeName[prefix.Length..];
+        }
+
+        return typeName;
+    }
 
     void OpenInNewTabs(List<FileEntry> selection)
     {
