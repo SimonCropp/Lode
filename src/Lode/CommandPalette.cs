@@ -13,6 +13,16 @@ sealed class CommandPalette : Form
     bool closing;
 
     /// <summary>
+    /// What has been typed. For tests.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal string Search
+    {
+        get => searchBox.Text;
+        set => searchBox.Text = value;
+    }
+
+    /// <summary>
     /// The command picked, once the palette has closed. Null when it was dismissed.
     /// </summary>
     public Command? Chosen { get; private set; }
