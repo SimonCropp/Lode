@@ -2,7 +2,7 @@
 <Project>
   <PropertyGroup>
     <!-- Local builds only. CI builds a tag as the version it names. -->
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
