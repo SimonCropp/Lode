@@ -13,6 +13,9 @@ sealed class Settings
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
 
+    // The file list's columns hidden from its header's right-click menu: Date, Type or Size.
+    public List<string> HiddenColumns { get; set; } = [];
+
     // The tree's sections (Pinned, Recent) the user collapsed, so they stay that way.
     public List<string> CollapsedSections { get; set; } = [];
 

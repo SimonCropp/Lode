@@ -510,6 +510,7 @@ class MainForm : Form
         // Handled by whichever window the tab is in at the time, since a tab can be dragged to
         // another window.
         view.PathChanged += () => WindowOf(view)?.OnViewPathChanged(view);
+        view.ColumnsChanged += RefreshColumnsInAllWindows;
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
         view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false);
         tabs.TabPages.Add(page);
@@ -826,6 +827,18 @@ class MainForm : Form
         using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser(), settings, TextEditors.Find());
         options.SettingsChanged += ApplySettingsToAllWindows;
         options.ShowDialog(this);
+    }
+
+    // A column hidden or shown in one view goes for every tab of every window.
+    static void RefreshColumnsInAllWindows()
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            foreach (var view in window.Views)
+            {
+                view.RefreshColumns();
+            }
+        }
     }
 
     // Settings are shared by every window, so a change shows in all of them.

@@ -6,6 +6,7 @@ static partial class NativeMethods
 
     public const int ListViewGetEditControl = 0x1018;
     public const int ListViewGetHeader = 0x101F;
+    public const int HeaderGetItemRect = 0x1207;
     public const int ListViewSetItemState = 0x102B;
     public const int ListViewItemSelected = 0x0002;
 
@@ -73,6 +74,16 @@ static partial class NativeMethods
         public uint State;
     }
 
+    // RECT. System.Drawing.Rectangle is width and height, not right and bottom.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct ListViewItemState
     {
@@ -107,6 +118,13 @@ static partial class NativeMethods
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref ListViewItemState item);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref NativeRect rect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ScreenToClient(IntPtr window, ref ScreenPoint point);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

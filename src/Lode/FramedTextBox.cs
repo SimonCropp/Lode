@@ -7,7 +7,7 @@ using System.Windows.Forms.VisualStyles;
 /// </summary>
 sealed class FramedTextBox : Control
 {
-    public TextBox Box { get; } = new()
+    public FrameTextBox Box { get; } = new()
     {
         BorderStyle = BorderStyle.None
     };
@@ -40,6 +40,23 @@ sealed class FramedTextBox : Control
         PlaceBox();
     }
 
+    protected override void OnLayout(LayoutEventArgs eventArgs)
+    {
+        base.OnLayout(eventArgs);
+        PlaceBox();
+    }
+
+    // On a display above 100% the form scales its controls after they are built, and again when
+    // the window moves to a display of another scale. Scaled, the frame would be taller than its
+    // font, which is already at the display's scale, needs; it keeps a text box's height instead,
+    // and puts the box, which ignores scaling, back on its text line.
+    protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
+    {
+        base.ScaleControl(factor, specified);
+        Height = TextFrame.Height(Font);
+        PlaceBox();
+    }
+
     void PlaceBox()
     {
         var inset = TextFrame.Inset(this);
@@ -61,6 +78,18 @@ sealed class FramedTextBox : Control
     {
         base.OnMouseDown(eventArgs);
         Box.Focus();
+    }
+}
+
+/// <summary>
+/// The borderless text box inside a frame. The frame decides where it goes, so it ignores the
+/// form's scaling: scaled after the frame has placed it, it would sit low and run over the
+/// frame's right border.
+/// </summary>
+sealed class FrameTextBox : TextBox
+{
+    protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
+    {
     }
 }
 

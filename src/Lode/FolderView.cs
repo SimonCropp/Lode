@@ -4,9 +4,33 @@
 /// </summary>
 sealed class FolderView : UserControl
 {
+    const int nameColumn = 0;
     const int dateColumn = 1;
     const int typeColumn = 2;
     const int sizeColumn = 3;
+
+    // The list's columns, in order, by the index sorting and the cells use. Name is always
+    // shown; the others can be hidden from the header's right-click menu, in every view at once.
+    // On This PC, Date modified and Size show each drive's free space and total size.
+    sealed record ColumnDefinition(string Key, string Title, string ThisPCTitle, int Width, HorizontalAlignment Alignment);
+
+    static readonly ColumnDefinition[] columnDefinitions =
+    [
+        new("Name", "Name", "Name", 380, HorizontalAlignment.Left),
+        new("Date", "Date modified", "Free space", 150, HorizontalAlignment.Left),
+        new("Type", "Type", "Type", 180, HorizontalAlignment.Left),
+        new("Size", "Size", "Total size", 110, HorizontalAlignment.Right)
+    ];
+
+    // The columns the list has now, in the order shown, and the widths of any taken away, so
+    // one shown again comes back as wide as it was.
+    List<int> shownColumns = [];
+    readonly Dictionary<int, int> columnWidths = [];
+
+    /// <summary>
+    /// A column was hidden or shown. Every view shares the setting, so each should refresh.
+    /// </summary>
+    public event Action? ColumnsChanged;
 
     readonly Settings settings;
     readonly Places places;
@@ -82,10 +106,7 @@ sealed class FolderView : UserControl
         list.AllowDrop = true;
         list.HideSelection = false;
         list.BorderStyle = BorderStyle.None;
-        list.Columns.Add("Name", LogicalToDeviceUnits(380));
-        list.Columns.Add("Date modified", LogicalToDeviceUnits(150));
-        list.Columns.Add("Type", LogicalToDeviceUnits(180));
-        list.Columns.Add("Size", LogicalToDeviceUnits(110), HorizontalAlignment.Right);
+        UpdateColumns();
 
         list.ItemActivate += (_, _) => OpenEntries(SelectedEntries());
         list.ColumnClick += OnColumnClick;
@@ -94,6 +115,7 @@ sealed class FolderView : UserControl
         list.BeforeLabelEdit += OnBeforeLabelEdit;
         list.AfterLabelEdit += OnAfterLabelEdit;
         list.ContextMenuRequested += OnContextMenuRequested;
+        list.HeaderContextMenuRequested += ShowHeaderMenu;
         list.ItemDrag += OnItemDrag;
         list.DragEnter += OnDragOver;
         list.DragOver += OnDragOver;
@@ -326,12 +348,14 @@ sealed class FolderView : UserControl
 
     void Populate(bool preserveState)
     {
+        // Before sorting: hiding the column the list is sorted by sorts it by name.
+        var columnsChanged = UpdateColumns();
         var visible = ApplyFilter().ToList();
         visible.Sort(Compare);
 
-        if (preserveState && pendingRename == null && visible.SequenceEqual(displayed))
+        if (preserveState && pendingRename == null && !columnsChanged && visible.SequenceEqual(displayed))
         {
-            list.SetSortArrow(sortColumn, sortAscending);
+            list.SetSortArrow(SortArrowColumn, sortAscending);
             QueueStatusChanged();
             return;
         }
@@ -401,7 +425,7 @@ sealed class FolderView : UserControl
         }
 
         displayed = visible;
-        list.SetSortArrow(sortColumn, sortAscending);
+        list.SetSortArrow(SortArrowColumn, sortAscending);
 
         if (reveal != null)
         {
@@ -425,10 +449,170 @@ sealed class FolderView : UserControl
 
     void SetColumnText(int column, string text)
     {
-        if (list.Columns[column].Text != text)
+        var shown = shownColumns.IndexOf(column);
+        if (shown >= 0 &&
+            list.Columns[shown].Text != text)
         {
-            list.Columns[column].Text = text;
+            list.Columns[shown].Text = text;
         }
+    }
+
+    int SortArrowColumn => shownColumns.IndexOf(sortColumn);
+
+    string ColumnTitle(int column)
+    {
+        var definition = columnDefinitions[column];
+        if (IsThisPC)
+        {
+            return definition.ThisPCTitle;
+        }
+
+        return definition.Title;
+    }
+
+    bool IsColumnShown(int column) =>
+        column == nameColumn ||
+        !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
+
+    // Brings the list's columns in line with the setting. True when they changed, in which case
+    // every row needs building again, since a row holds a cell per column shown.
+    bool UpdateColumns()
+    {
+        var wanted = Enumerable.Range(0, columnDefinitions.Length)
+            .Where(IsColumnShown)
+            .ToList();
+        if (wanted.SequenceEqual(shownColumns))
+        {
+            return false;
+        }
+
+        for (var index = 0; index < shownColumns.Count; index++)
+        {
+            columnWidths[shownColumns[index]] = list.Columns[index].Width;
+        }
+
+        list.Columns.Clear();
+        foreach (var column in wanted)
+        {
+            var definition = columnDefinitions[column];
+            if (!columnWidths.TryGetValue(column, out var width))
+            {
+                width = LogicalToDeviceUnits(definition.Width);
+            }
+
+            list.Columns.Add(ColumnTitle(column), width, definition.Alignment);
+        }
+
+        shownColumns = wanted;
+        if (!shownColumns.Contains(sortColumn))
+        {
+            sortColumn = nameColumn;
+            sortAscending = true;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The titles of the columns shown, in order. For tests.
+    /// </summary>
+    internal IEnumerable<string> ColumnTitles =>
+        list.Columns.Cast<ColumnHeader>().Select(_ => _.Text);
+
+    /// <summary>
+    /// The first row's cells, one per column shown. For tests.
+    /// </summary>
+    internal IEnumerable<string> FirstRowCells
+    {
+        get
+        {
+            if (list.Items.Count == 0)
+            {
+                return [];
+            }
+
+            return list.Items[0].SubItems
+                .Cast<ListViewItem.ListViewSubItem>()
+                .Select(_ => _.Text)
+                .ToList();
+        }
+    }
+
+    // A row's cells for the columns shown, from one for every column.
+    string[] ShownCells(string[] cells) =>
+        shownColumns.Select(_ => cells[_]).ToArray();
+
+    /// <summary>
+    /// Shows or hides a column in every view. Name cannot be hidden.
+    /// </summary>
+    internal void SetColumnShown(int column, bool shown)
+    {
+        if (column == nameColumn ||
+            IsColumnShown(column) == shown)
+        {
+            return;
+        }
+
+        var key = columnDefinitions[column].Key;
+        settings.HiddenColumns.RemoveAll(_ => string.Equals(_, key, StringComparison.OrdinalIgnoreCase));
+        if (!shown)
+        {
+            settings.HiddenColumns.Add(key);
+        }
+
+        RefreshColumns();
+        ColumnsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Applies the hidden columns setting, rebuilding the rows from what is already listed.
+    /// </summary>
+    public void RefreshColumns() =>
+        Populate(true);
+
+    /// <summary>
+    /// The header's right-click menu, as Explorer's: size the column clicked, or all of them,
+    /// to fit, then a tick for each column, to hide or show it. Name cannot be hidden.
+    /// </summary>
+    internal ContextMenuStrip HeaderMenu(int clickedColumn)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add(
+            new ToolStripMenuItem("Size column to fit", null, (_, _) => list.SizeColumnToFit(clickedColumn))
+            {
+                Enabled = clickedColumn >= 0
+            });
+        menu.Items.Add(
+            "Size all columns to fit",
+            null,
+            (_, _) =>
+            {
+                for (var index = 0; index < list.Columns.Count; index++)
+                {
+                    list.SizeColumnToFit(index);
+                }
+            });
+        menu.Items.Add(new ToolStripSeparator());
+        for (var column = 0; column < columnDefinitions.Length; column++)
+        {
+            var current = column;
+            var shown = IsColumnShown(column);
+            menu.Items.Add(
+                new ToolStripMenuItem(ColumnTitle(column), null, (_, _) => SetColumnShown(current, !shown))
+                {
+                    Checked = shown,
+                    Enabled = column != nameColumn
+                });
+        }
+
+        return menu;
+    }
+
+    void ShowHeaderMenu(Point screen)
+    {
+        var menu = HeaderMenu(list.HeaderColumnAt(screen));
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(list, list.PointToClient(screen));
     }
 
     ListViewItem CreateItem(FileEntry entry)
@@ -443,7 +627,7 @@ sealed class FolderView : UserControl
                 typeName,
                 entry.Size > 0 ? Formatting.Size(entry.Size) : ""
             ];
-            return new(driveCells, list.PaddedIcon(driveIcon)) { Tag = entry };
+            return new(ShownCells(driveCells), list.PaddedIcon(driveIcon)) { Tag = entry };
         }
 
         string[] cells =
@@ -454,7 +638,7 @@ sealed class FolderView : UserControl
             entry.IsDirectory ? "" : Formatting.Kilobytes(entry.Size)
         ];
         var icon = list.PaddedIcon(ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory));
-        var item = new ListViewItem(cells, icon) { Tag = entry };
+        var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
         if (entry.IsHidden)
         {
             item.ForeColor = SystemColors.GrayText;
@@ -542,7 +726,7 @@ sealed class FolderView : UserControl
     }
 
     void OnColumnClick(object? sender, ColumnClickEventArgs eventArgs) =>
-        SortBy(eventArgs.Column);
+        SortBy(shownColumns[eventArgs.Column]);
 
     /// <summary>
     /// Sorts by a column, as clicking its header does: ascending first, then toggling.

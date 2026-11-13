@@ -1,0 +1,41 @@
+﻿{
+  hidden: {
+    columns: [
+      Name,
+      Date modified,
+      Size
+    ],
+    firstRow: [
+      Archive,
+      3/14/2025 9:26 AM,
+      
+    ],
+    rows: [
+      Archive,
+      Docs,
+      Source,
+      notes.aleph,
+      Report1.beta,
+      report2.beta,
+      report10.beta,
+      summary.gamma
+    ],
+    setting: [
+      Type
+    ]
+  },
+  shownAgain: {
+    columns: [
+      Name,
+      Date modified,
+      Type,
+      Size
+    ],
+    firstRow: [
+      Archive,
+      3/14/2025 9:26 AM,
+      File folder,
+      
+    ]
+  }
+}

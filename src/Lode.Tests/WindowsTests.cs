@@ -137,6 +137,38 @@ public class WindowsTests
             });
     }
 
+    // On a display above 100% the form scales its controls after building them. The boxes in
+    // the address bar and filter frames must still sit centred inside them, not pushed down and
+    // over the right border.
+    [Test]
+    public async Task BoxesStayInsideTheirFramesWhenScaled()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        form.Scale(new SizeF(1.25f, 1.25f));
+        var address = (TextBox)form.Controls.Find("address", true)[0];
+        ((Breadcrumb)address.Parent!).BeginEdit();
+        Application.DoEvents();
+
+        await Verify(
+            new
+            {
+                filter = Placement((TextBox)form.Controls.Find("filter", true)[0]),
+                address = Placement(address)
+            });
+    }
+
+    static object Placement(TextBox box)
+    {
+        var frame = box.Parent!.ClientSize;
+        return new
+        {
+            insideFrame = box.Left >= 0 && box.Right <= frame.Width,
+            gapAbove = box.Top,
+            gapBelow = frame.Height - box.Bottom
+        };
+    }
+
     // What Ctrl+Shift+P lists with nothing selected.
     [Test]
     public async Task PaletteCommands()

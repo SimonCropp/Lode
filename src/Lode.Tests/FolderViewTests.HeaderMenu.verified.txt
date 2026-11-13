@@ -1,0 +1,16 @@
+﻿{
+  columns: [
+    Name,
+    Date modified,
+    Type
+  ],
+  menu: [
+    Size column to fit,
+    Size all columns to fit,
+    ----,
+    [x] Name (disabled),
+    [x] Date modified,
+    [x] Type,
+    Size
+  ]
+}

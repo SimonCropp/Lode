@@ -1,0 +1,12 @@
+﻿{
+  filter: {
+    insideFrame: true,
+    gapAbove: 3,
+    gapBelow: 4
+  },
+  address: {
+    insideFrame: true,
+    gapAbove: 3,
+    gapBelow: 4
+  }
+}

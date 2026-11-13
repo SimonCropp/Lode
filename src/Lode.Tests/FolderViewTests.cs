@@ -238,6 +238,78 @@ public class FolderViewTests
             });
     }
 
+    // Hiding a column takes it and its cells out of the list, and sorting by it falls back to
+    // the name. Showing it again puts it back in its place.
+    [Test]
+    public async Task HideAndShowColumns()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false };
+        using var view = await Open(fixture.Root, settings);
+        view.SortBy(typeColumn);
+
+        view.SetColumnShown(typeColumn, false);
+        var hidden = new
+        {
+            columns = view.ColumnTitles.ToList(),
+            firstRow = view.FirstRowCells.ToList(),
+            rows = view.Entries.Select(_ => _.Name).ToList(),
+            setting = settings.HiddenColumns.ToList()
+        };
+
+        view.SetColumnShown(typeColumn, true);
+
+        await Verify(
+            new
+            {
+                hidden,
+                shownAgain = new
+                {
+                    columns = view.ColumnTitles.ToList(),
+                    firstRow = view.FirstRowCells.ToList(),
+                    setting = settings.HiddenColumns.ToList()
+                }
+            });
+    }
+
+    // Name stays ticked and cannot be unticked.
+    [Test]
+    public async Task HeaderMenu()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false, HiddenColumns = ["Size"] };
+        using var view = await Open(fixture.Root, settings);
+        using var menu = view.HeaderMenu(clickedColumn: 1);
+
+        await Verify(
+            new
+            {
+                columns = view.ColumnTitles.ToList(),
+                menu = menu.Items.Cast<ToolStripItem>().Select(DescribeMenuItem).ToList()
+            });
+    }
+
+    static string DescribeMenuItem(ToolStripItem item)
+    {
+        if (item is ToolStripSeparator)
+        {
+            return "----";
+        }
+
+        var text = item.Text!;
+        if (item is ToolStripMenuItem { Checked: true })
+        {
+            text = $"[x] {text}";
+        }
+
+        if (!item.Enabled)
+        {
+            text += " (disabled)";
+        }
+
+        return text;
+    }
+
     static List<string> Selected(FolderView view) =>
         view.SelectedEntries().Select(_ => _.Name).ToList();
 
