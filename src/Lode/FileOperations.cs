@@ -189,26 +189,50 @@ static class FileOperations
         }
     }
 
-    public static void OpenTerminal(string directory)
+    /// <summary>
+    /// Windows Terminal in <paramref name="directory"/>, or a command prompt where it is not
+    /// installed. With <paramref name="admin"/>, elevated, after the UAC prompt.
+    /// </summary>
+    public static void OpenTerminal(string directory, bool admin = false)
     {
+        var verb = admin ? "runas" : "";
         try
         {
             var startInfo = new ProcessStartInfo("wt.exe")
             {
-                UseShellExecute = true
+                UseShellExecute = true,
+                Verb = verb
             };
             startInfo.ArgumentList.Add("-d");
             startInfo.ArgumentList.Add(directory);
             Process.Start(startInfo)?.Dispose();
         }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
+        {
+            // The user said no to the UAC prompt; a prompt that is not elevated would not be
+            // what they asked for.
+        }
         catch (Exception)
         {
+            // An elevated process starts in System32 whatever its working directory, so the
+            // prompt changes to the folder itself.
             var fallback = new ProcessStartInfo("cmd.exe")
             {
                 UseShellExecute = true,
+                Verb = verb,
                 WorkingDirectory = directory
             };
-            Process.Start(fallback)?.Dispose();
+            fallback.ArgumentList.Add("/k");
+            fallback.ArgumentList.Add("cd");
+            fallback.ArgumentList.Add("/d");
+            fallback.ArgumentList.Add(directory);
+            try
+            {
+                Process.Start(fallback)?.Dispose();
+            }
+            catch (Win32Exception fallbackException) when (fallbackException.NativeErrorCode == cancelledByUser)
+            {
+            }
         }
     }
 

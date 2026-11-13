@@ -205,6 +205,42 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // A drag from the margin left of the list selects the rows it spans.
+    [Test]
+    public async Task MarqueeFromTheMargin()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var marquee = view.Marquee;
+
+        // Straight down the margin, from the second row to the fourth.
+        marquee.Begin(new(-5, view.RowBounds(1).Top + 2), add: false);
+        marquee.Update(new(-5, view.RowBounds(3).Top + 2));
+        marquee.End();
+        var dragged = Selected(view);
+
+        // With Ctrl, the rows covered flip: the fourth is dropped, the fifth added.
+        marquee.Begin(new(-5, view.RowBounds(3).Top + 2), add: true);
+        marquee.Update(new(-5, view.RowBounds(4).Top + 2));
+        marquee.End();
+        var toggled = Selected(view);
+
+        // A click in the margin, without Ctrl, clears the selection.
+        marquee.Begin(new(-5, view.RowBounds(0).Top + 2), add: false);
+        marquee.End();
+
+        await Verify(
+            new
+            {
+                dragged,
+                toggled,
+                clicked = Selected(view)
+            });
+    }
+
+    static List<string> Selected(FolderView view) =>
+        view.SelectedEntries().Select(_ => _.Name).ToList();
+
     static async Task<FolderView> Open(string path, Settings? settings = null)
     {
         // Hidden items off unless a test asks: most tests are about everything else.

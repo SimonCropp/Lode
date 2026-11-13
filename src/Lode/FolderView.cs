@@ -28,6 +28,18 @@ sealed class FolderView : UserControl
     string? error;
 
     string? pendingSelection;
+    readonly GutterMarquee marquee;
+
+    /// <summary>
+    /// The selection rectangle dragged from the margin left of the list. For tests.
+    /// </summary>
+    internal GutterMarquee Marquee => marquee;
+
+    /// <summary>
+    /// Where a row is, in the list's coordinates. For tests.
+    /// </summary>
+    internal Rectangle RowBounds(int index) =>
+        list.Items[index].Bounds;
     string? pendingRename;
     bool editing;
     bool statusPending;
@@ -59,6 +71,10 @@ sealed class FolderView : UserControl
     {
         this.settings = settings;
         this.places = places;
+        // Explorer's margin left of the list, which a selection rectangle can be dragged from.
+        Padding = new(LogicalToDeviceUnits(12), 0, 0, 0);
+        BackColor = SystemColors.Window;
+        marquee = new(this, list);
         list.Dock = DockStyle.Fill;
         list.View = View.Details;
         list.FullRowSelect = true;
@@ -821,6 +837,7 @@ sealed class FolderView : UserControl
         if (selection is [{ IsDirectory: true } terminalFolder])
         {
             commands.Add(new("Terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
+            commands.Add(new("Terminal (admin)", () => FileOperations.OpenTerminal(terminalFolder.FullPath, admin: true)));
         }
 
         if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))
@@ -868,6 +885,7 @@ sealed class FolderView : UserControl
         new("Paste", Paste, canPaste),
         null,
         new("Terminal", () => FileOperations.OpenTerminal(CurrentPath)),
+        new("Terminal (admin)", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
         new("Copy as path", () => CopyAsPath([CurrentPath])),
         new("Properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, CurrentPath)
@@ -1088,6 +1106,7 @@ sealed class FolderView : UserControl
         {
             watchTimer.Dispose();
             watcher?.Dispose();
+            marquee.Dispose();
         }
 
         base.Dispose(disposing);

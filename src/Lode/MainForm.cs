@@ -17,15 +17,17 @@ class MainForm : Form
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
     ToolStrip actionsBar = new();
-    ToolStripDropDownButton newButton = new("New");
+    ChevronDropDownButton newButton = new("New");
     ToolStripButton cutButton = new("Cut");
     ToolStripButton copyButton = new("Copy");
     ToolStripButton pasteButton = new("Paste");
     ToolStripButton renameButton = new("Rename");
     ToolStripButton deleteButton = new("Delete");
     ToolStripButton terminalButton = new("Terminal");
+    ToolStripButton adminTerminalButton = new("Terminal (admin)");
     ToolStripButton propertiesButton = new("Properties");
-    TextBox filterBox = new();
+    FramedTextBox filterFrame = new();
+    TextBox filterBox;
     SplitContainer split = new();
     Settings settings;
     Places places;
@@ -88,6 +90,7 @@ class MainForm : Form
         this.places = places;
         tree = new(settings, places);
         addressBox = breadcrumb.Box;
+        filterBox = filterFrame.Box;
         places.Changed += RebuildTree;
 
         SuspendLayout();
@@ -134,8 +137,8 @@ class MainForm : Form
 
         filterBox.Name = "filter";
         filterBox.AccessibleName = "Filter";
-        filterBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        filterBox.Margin = new(4, 0, 4, 0);
+        filterFrame.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        filterFrame.Margin = new(4, 0, 4, 0);
         filterBox.PlaceholderText = "Filter this folder (Ctrl+F)";
         filterBox.TextChanged += OnFilterTextChanged;
         filterBox.KeyDown += OnFilterKeyDown;
@@ -161,7 +164,7 @@ class MainForm : Form
         bar.Controls.Add(upButton, 2, 0);
         bar.Controls.Add(refreshButton, 3, 0);
         bar.Controls.Add(breadcrumb, 4, 0);
-        bar.Controls.Add(filterBox, 5, 0);
+        bar.Controls.Add(filterFrame, 5, 0);
         bar.Controls.Add(newTabButton, 6, 0);
         bar.Controls.Add(menuButton, 7, 0);
         return bar;
@@ -199,6 +202,7 @@ class MainForm : Form
         menu.Items.Add(showHiddenItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Terminal", null, (_, _) => OpenTerminal());
+        menu.Items.Add("Terminal (admin)", null, (_, _) => OpenAdminTerminal());
         var pinItem = new ToolStripMenuItem("Pin to Quick access", null, (_, _) => TogglePinned());
         menu.Items.Add(pinItem);
         menu.Opening += (_, _) =>
@@ -238,6 +242,9 @@ class MainForm : Form
         SetIcon(renameButton, Icons.Rename, iconSize);
         SetIcon(deleteButton, Icons.Delete, iconSize);
         SetIcon(terminalButton, Icons.Terminal, iconSize);
+        SetIcon(adminTerminalButton, Icons.Terminal, iconSize);
+        // The terminal icon with a shield in its corner, as Windows marks what runs elevated.
+        adminTerminalButton.Image = Icons.Bitmap(Icons.Terminal, iconSize, SystemColors.ControlText, Icons.Shield);
         SetIcon(propertiesButton, Icons.Properties, iconSize);
         newButton.DropDownOpening += (_, _) => FillNewMenu();
         // Without an item it would show no arrow until first opened.
@@ -254,6 +261,7 @@ class MainForm : Form
         renameButton.Click += (_, _) => RunOnList(_ => _.BeginRename());
         deleteButton.Click += (_, _) => ActiveView?.Delete(false);
         terminalButton.Click += (_, _) => OpenTerminal();
+        adminTerminalButton.Click += (_, _) => OpenAdminTerminal();
         propertiesButton.Click += (_, _) => ActiveView?.ShowProperties();
         actionsBar.Items.AddRange(
         [
@@ -266,6 +274,7 @@ class MainForm : Form
             deleteButton,
             ActionsSeparator(),
             terminalButton,
+            adminTerminalButton,
             propertiesButton
         ]);
         return actionsBar;
@@ -283,6 +292,7 @@ class MainForm : Form
         {
             item.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
             item.TextImageRelation = TextImageRelation.ImageBeforeText;
+            item.Padding = item.Padding with { Right = item.Padding.Right + newButton.ChevronWidth };
         }
         else
         {
@@ -337,6 +347,7 @@ class MainForm : Form
         renameButton.Enabled = files && selection.Count == 1;
         deleteButton.Enabled = files;
         terminalButton.Enabled = inFolder;
+        adminTerminalButton.Enabled = inFolder;
         propertiesButton.Enabled = view != null && (selection.Count > 0 || inFolder);
     }
 
@@ -739,12 +750,18 @@ class MainForm : Form
         ApplySettingsToAllWindows();
     }
 
-    void OpenTerminal()
+    void OpenTerminal() =>
+        OpenTerminal(admin: false);
+
+    void OpenAdminTerminal() =>
+        OpenTerminal(admin: true);
+
+    void OpenTerminal(bool admin)
     {
         if (ActiveView is { } view &&
             !Locations.IsThisPC(view.CurrentPath))
         {
-            FileOperations.OpenTerminal(view.CurrentPath);
+            FileOperations.OpenTerminal(view.CurrentPath, admin);
         }
     }
 
@@ -1004,6 +1021,7 @@ class MainForm : Form
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
         Add("Terminal", OpenTerminal, enabled: PinnablePath() != null);
+        Add("Terminal (admin)", OpenAdminTerminal, enabled: PinnablePath() != null);
         if (PinMenuText() is { } pinText)
         {
             Add(pinText, TogglePinned);

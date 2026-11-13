@@ -1,5 +1,3 @@
-using System.Windows.Forms.VisualStyles;
-
 /// <summary>
 /// The address bar as Explorer shows it: each folder up the path, with chevrons between.
 /// Clicking a folder goes there. Clicking anywhere else in the bar, or Ctrl+L, swaps in a text
@@ -9,7 +7,7 @@ using System.Windows.Forms.VisualStyles;
 /// </summary>
 sealed class Breadcrumb : Control
 {
-    const string chevron = "";
+    const string chevron = "\uE76C";
     const string ellipsis = "…";
 
     // Explorer's hover and pressed colours for its address bar items.
@@ -54,7 +52,7 @@ sealed class Breadcrumb : Control
             true);
         Box.Leave += (_, _) => EndEdit();
         Controls.Add(Box);
-        FitHeight();
+        Height = TextFrame.Height(Font);
         Rebuild();
     }
 
@@ -128,21 +126,12 @@ sealed class Breadcrumb : Control
         Invalidate();
     }
 
-    // As tall as a text box with a border, so the bar matches the filter box beside it.
-    void FitHeight()
-    {
-        using var probe = new TextBox
-        {
-            Font = Font
-        };
-        Height = probe.PreferredHeight;
-    }
 
     // Centred on the text line, starting where the first folder name does.
     void PlaceBox()
     {
         var inner = Inner;
-        var left = inner.Left + ItemPadding - LogicalToDeviceUnits(1);
+        var left = TextFrame.Inset(this);
         Box.SetBounds(
             left,
             (ClientSize.Height - Box.PreferredHeight) / 2,
@@ -153,7 +142,7 @@ sealed class Breadcrumb : Control
     protected override void OnFontChanged(EventArgs eventArgs)
     {
         base.OnFontChanged(eventArgs);
-        FitHeight();
+        Height = TextFrame.Height(Font);
         Rebuild();
     }
 
@@ -232,7 +221,7 @@ sealed class Breadcrumb : Control
     {
         var graphics = eventArgs.Graphics;
         graphics.Clear(SystemColors.Window);
-        DrawBorder(graphics);
+        TextFrame.DrawBorder(graphics, ClientRectangle, Editing);
         if (Editing)
         {
             return;
@@ -293,21 +282,6 @@ sealed class Breadcrumb : Control
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 
-    // The same border the filter box beside it has.
-    void DrawBorder(Graphics graphics)
-    {
-        // Focused while typing, which Windows 11 shows with an accent line along the bottom, as
-        // the filter box has when it has focus.
-        var element = Editing ? VisualStyleElement.TextBox.TextEdit.Focused : VisualStyleElement.TextBox.TextEdit.Normal;
-        if (Application.RenderWithVisualStyles &&
-            VisualStyleRenderer.IsElementDefined(element))
-        {
-            new VisualStyleRenderer(element).DrawBackground(graphics, ClientRectangle);
-            return;
-        }
-
-        ControlPaint.DrawBorder3D(graphics, ClientRectangle, Border3DStyle.Sunken);
-    }
 
     int IndexAt(Point point)
     {

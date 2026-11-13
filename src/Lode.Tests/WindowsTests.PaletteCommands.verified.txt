@@ -14,6 +14,7 @@
   Previous tab (Ctrl+Shift+Tab),
   Hide hidden items (Ctrl+H),
   Terminal,
+  Terminal (admin),
   Pin to Quick access,
   New: Folder (Ctrl+Shift+N),
   Copy as path,

@@ -1,0 +1,12 @@
+﻿{
+  dragged: [
+    Docs,
+    Source,
+    notes.aleph
+  ],
+  toggled: [
+    Docs,
+    Source,
+    Report1.beta
+  ]
+}
