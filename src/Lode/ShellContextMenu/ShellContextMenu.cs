@@ -355,21 +355,23 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     /// </summary>
     public static event Action? QuickAccessChanged;
 
-    static readonly HashSet<string> quickAccessVerbs = new(StringComparer.OrdinalIgnoreCase)
-    {
+    static readonly HashSet<string> quickAccessVerbs =
+    [
+        with(StringComparer.OrdinalIgnoreCase),
         "pintohome",
         "unpinfromhome"
-    };
+    ];
 
     // Entries left out of every menu, by verb, which unlike the text is the same in every
     // language.
-    static readonly HashSet<string> removedVerbs = new(StringComparer.OrdinalIgnoreCase)
-    {
+    static readonly HashSet<string> removedVerbs =
+    [
+        with(StringComparer.OrdinalIgnoreCase),
         // Restore previous versions
         "PreviousVersions",
         // Edit in Notepad, added by the Notepad app
         "{CA6CC9F1-867A-481E-951E-A28C5E4F01EA}"
-    };
+    ];
 
     /// <summary>
     /// Takes out the entries Lode leaves off: those in <see cref="removedVerbs"/>, plus

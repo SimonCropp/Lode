@@ -1,0 +1,21 @@
+﻿{
+  folder: [
+    This PC => This PC,
+    D:\ => D:,
+    D:\Projects => Projects,
+    D:\Projects\Lode => Lode,
+    D:\Projects\Lode\src => src
+  ],
+  drive: [
+    This PC => This PC,
+    D:\ => D:
+  ],
+  thisPC: [
+    This PC => This PC
+  ],
+  share: [
+    This PC => This PC,
+    \\server\share => share,
+    \\server\share\folder => folder
+  ]
+}

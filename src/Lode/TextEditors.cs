@@ -255,8 +255,9 @@ static class TextEditors
     }
 
     // Common text formats whose type Windows may not know as text.
-    static HashSet<string> textExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
+    static HashSet<string> textExtensions =
+    [
+        with(StringComparer.OrdinalIgnoreCase),
         ".txt", ".md", ".markdown", ".log", ".csv", ".tsv",
         ".json", ".jsonc", ".xml", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf", ".config", ".env",
         ".editorconfig", ".gitignore", ".gitattributes",
@@ -264,7 +265,7 @@ static class TextEditors
         ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".css", ".scss", ".less", ".html", ".htm",
         ".py", ".rb", ".go", ".rs", ".java", ".kt", ".c", ".h", ".cpp", ".hpp", ".swift", ".php", ".sql",
         ".ps1", ".psm1", ".psd1", ".bat", ".cmd", ".sh", ".svg"
-    };
+    ];
 
     /// <summary>
     /// True for a file to offer Edit on: a known text extension, or one Windows says is text.

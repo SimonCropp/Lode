@@ -3,7 +3,7 @@
 /// The whole window, drawn. Pixels depend on the Windows version, theme and fonts of the
 /// machine that captured them, so these only run in Debug builds, on a developer's machine.
 /// </summary>
-[TUnit.Core.Executors.STAThreadExecutor]
+[STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]
@@ -33,6 +33,14 @@ public class MainFormTests
                 form.AddTab(fixture.At("Source"), false);
                 form.AddTab(fixture.At("Docs"), true);
             });
+
+    // Typing a path: the box sits on the bar's text line, inside the bar's own border.
+    [Test]
+    public Task EditingAddress() =>
+        Capture(
+            (form, _) => ((Breadcrumb)form.Controls.Find("address", true)[0].Parent!).BeginEdit(),
+            // Taking the focus away would end the editing.
+            keepFocus: true);
 
     [Test]
     public Task Filtered() =>
@@ -81,7 +89,7 @@ public class MainFormTests
         }
     }
 
-    static async Task Capture(Action<MainForm, Fixture>? arrange = null, bool showHidden = false, int width = 1200)
+    static async Task Capture(Action<MainForm, Fixture>? arrange = null, bool showHidden = false, int width = 1200, bool keepFocus = false)
     {
         using var fixture = Fixture.CreateAtFixedPath();
         var settings = new Settings { ShowHidden = showHidden };
@@ -109,7 +117,11 @@ public class MainFormTests
         // Windows can activate this window when another test closes its own, which gives the
         // list the focus and turns its selection from grey to blue. Take the focus off it, so
         // the capture is the same either way.
-        form.ActiveControl = null;
+        if (!keepFocus)
+        {
+            form.ActiveControl = null;
+        }
+
         Application.DoEvents();
 
         await Verify(form);

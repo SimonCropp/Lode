@@ -32,9 +32,14 @@ sealed class WindowContext : ApplicationContext
         };
         tray.MouseClick += (_, eventArgs) =>
         {
-            if (eventArgs.Button == MouseButtons.Left)
+            switch (TrayClick(eventArgs.Button, Control.ModifierKeys))
             {
-                ShowWindows();
+                case TrayAction.NewWindow:
+                    OpenWindow([settings.StartLocation()]);
+                    break;
+                case TrayAction.ShowWindows:
+                    ShowWindows();
+                    break;
             }
         };
 
@@ -47,6 +52,32 @@ sealed class WindowContext : ApplicationContext
         first.Show();
         instance.Listen(OnLaunched);
         WarmUpContextMenu();
+    }
+
+    internal enum TrayAction
+    {
+        None,
+        ShowWindows,
+        NewWindow
+    }
+
+    /// <summary>
+    /// What a click on the tray icon does. A left click brings the windows back; Shift+click
+    /// opens another, as it does on a taskbar button. Right-click is the icon's menu.
+    /// </summary>
+    internal static TrayAction TrayClick(MouseButtons button, Keys modifiers)
+    {
+        if (button != MouseButtons.Left)
+        {
+            return TrayAction.None;
+        }
+
+        if (modifiers.HasFlag(Keys.Shift))
+        {
+            return TrayAction.NewWindow;
+        }
+
+        return TrayAction.ShowWindows;
     }
 
     // Once the first window has drawn and settled, so the work does not hold up opening it.

@@ -23,8 +23,12 @@ static class QuickMenu
             Children = children
         };
 
-    // A null entry is a separator.
-    public static void Show(Point location, IReadOnlyList<Command?> commands, Action showMore)
+    /// <summary>
+    /// Shows the menu at <paramref name="location"/>, in screen coordinates, owned by
+    /// <paramref name="owner"/> so it closes when that window loses focus or hides. Unowned, it
+    /// could be left on screen. A null entry is a separator.
+    /// </summary>
+    public static void Show(Control owner, Point location, IReadOnlyList<Command?> commands, Action showMore)
     {
         if (Control.ModifierKeys.HasFlag(Keys.Shift))
         {
@@ -43,7 +47,7 @@ static class QuickMenu
                 strip.Dispose();
                 chosen?.Invoke();
             });
-        strip.Show(location);
+        strip.Show(owner, owner.PointToClient(location));
     }
 
     /// <summary>

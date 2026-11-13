@@ -14,7 +14,17 @@ class MainForm : Form
 
     Font glyphFont = new("Segoe MDL2 Assets", 10f);
     ToolTip toolTip = new();
-    TextBox addressBox = new();
+    Breadcrumb breadcrumb = new();
+    TextBox addressBox;
+    ToolStrip actionsBar = new();
+    ToolStripDropDownButton newButton = new("New");
+    ToolStripButton cutButton = new("Cut");
+    ToolStripButton copyButton = new("Copy");
+    ToolStripButton pasteButton = new("Paste");
+    ToolStripButton renameButton = new("Rename");
+    ToolStripButton deleteButton = new("Delete");
+    ToolStripButton terminalButton = new("Terminal");
+    ToolStripButton propertiesButton = new("Properties");
     TextBox filterBox = new();
     SplitContainer split = new();
     Settings settings;
@@ -77,6 +87,7 @@ class MainForm : Form
         this.settings = settings;
         this.places = places;
         tree = new(settings, places);
+        addressBox = breadcrumb.Box;
         places.Changed += RebuildTree;
 
         SuspendLayout();
@@ -92,6 +103,7 @@ class MainForm : Form
         upButton = CreateButton(upGlyph, "Up (Alt+Up)", () => ActiveView?.GoUp());
 
         Controls.Add(BuildContent());
+        Controls.Add(BuildActionsBar());
         Controls.Add(BuildNavigationBar());
         Controls.Add(BuildStatusBar());
         ResumeLayout(false);
@@ -108,8 +120,13 @@ class MainForm : Form
 
         addressBox.Name = "address";
         addressBox.AccessibleName = "Address";
-        addressBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        addressBox.Margin = new(6, 0, 4, 0);
+        breadcrumb.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        breadcrumb.Margin = new(6, 0, 4, 0);
+        breadcrumb.PathClicked += _ =>
+        {
+            ActiveView?.Navigate(_);
+            ActiveView?.FocusList();
+        };
         addressBox.AutoCompleteMode = AutoCompleteMode.Suggest;
         addressBox.AutoCompleteSource = AutoCompleteSource.FileSystemDirectories;
         addressBox.KeyDown += OnAddressKeyDown;
@@ -143,7 +160,7 @@ class MainForm : Form
         bar.Controls.Add(forwardButton, 1, 0);
         bar.Controls.Add(upButton, 2, 0);
         bar.Controls.Add(refreshButton, 3, 0);
-        bar.Controls.Add(addressBox, 4, 0);
+        bar.Controls.Add(breadcrumb, 4, 0);
         bar.Controls.Add(filterBox, 5, 0);
         bar.Controls.Add(newTabButton, 6, 0);
         bar.Controls.Add(menuButton, 7, 0);
@@ -181,7 +198,7 @@ class MainForm : Form
         showHiddenItem.Click += (_, _) => ToggleHidden();
         menu.Items.Add(showHiddenItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Open in terminal", null, (_, _) => OpenTerminal());
+        menu.Items.Add("Terminal", null, (_, _) => OpenTerminal());
         var pinItem = new ToolStripMenuItem("Pin to Quick access", null, (_, _) => TogglePinned());
         menu.Items.Add(pinItem);
         menu.Opening += (_, _) =>
@@ -200,6 +217,150 @@ class MainForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit Lode", null, (_, _) => ExitRequested?.Invoke());
         return menu;
+    }
+
+    // Explorer's command bar: buttons for what is most often done to the selection.
+    Control BuildActionsBar()
+    {
+        actionsBar.Dock = DockStyle.Top;
+        actionsBar.GripStyle = ToolStripGripStyle.Hidden;
+        // A tool strip takes the menu font otherwise, smaller than the rest of the window.
+        actionsBar.Font = DefaultFont;
+        actionsBar.RenderMode = ToolStripRenderMode.System;
+        // Roomy, as Explorer's command bar is.
+        actionsBar.Padding = new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(4), LogicalToDeviceUnits(6), LogicalToDeviceUnits(4));
+        var iconSize = LogicalToDeviceUnits(20);
+        actionsBar.ImageScalingSize = new(iconSize, iconSize);
+        SetIcon(newButton, Icons.New, iconSize);
+        SetIcon(cutButton, Icons.Cut, iconSize);
+        SetIcon(copyButton, Icons.Copy, iconSize);
+        SetIcon(pasteButton, Icons.Paste, iconSize);
+        SetIcon(renameButton, Icons.Rename, iconSize);
+        SetIcon(deleteButton, Icons.Delete, iconSize);
+        SetIcon(terminalButton, Icons.Terminal, iconSize);
+        SetIcon(propertiesButton, Icons.Properties, iconSize);
+        newButton.DropDownOpening += (_, _) => FillNewMenu();
+        // Without an item it would show no arrow until first opened.
+        newButton.DropDownItems.Add("Folder");
+        cutButton.ToolTipText = "Cut (Ctrl+X)";
+        copyButton.ToolTipText = "Copy (Ctrl+C)";
+        pasteButton.ToolTipText = "Paste (Ctrl+V)";
+        renameButton.ToolTipText = "Rename (F2)";
+        deleteButton.ToolTipText = "Delete (Delete)";
+        propertiesButton.ToolTipText = "Properties (Alt+Enter)";
+        cutButton.Click += (_, _) => ActiveView?.Copy(true);
+        copyButton.Click += (_, _) => ActiveView?.Copy(false);
+        pasteButton.Click += (_, _) => ActiveView?.Paste();
+        renameButton.Click += (_, _) => RunOnList(_ => _.BeginRename());
+        deleteButton.Click += (_, _) => ActiveView?.Delete(false);
+        terminalButton.Click += (_, _) => OpenTerminal();
+        propertiesButton.Click += (_, _) => ActiveView?.ShowProperties();
+        actionsBar.Items.AddRange(
+        [
+            newButton,
+            ActionsSeparator(),
+            cutButton,
+            copyButton,
+            pasteButton,
+            renameButton,
+            deleteButton,
+            ActionsSeparator(),
+            terminalButton,
+            propertiesButton
+        ]);
+        return actionsBar;
+    }
+
+    // Disabled buttons grey their icon themselves.
+    void SetIcon(ToolStripItem item, char icon, int size)
+    {
+        item.Image = Icons.Bitmap(icon, size, SystemColors.ControlText);
+        item.ImageScaling = ToolStripItemImageScaling.None;
+        // As in Explorer's command bar, only New keeps its name beside its icon; the rest show
+        // theirs as a tooltip.
+        item.Padding = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(5), LogicalToDeviceUnits(8), LogicalToDeviceUnits(5));
+        if (item == newButton)
+        {
+            item.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+            item.TextImageRelation = TextImageRelation.ImageBeforeText;
+        }
+        else
+        {
+            item.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            item.ToolTipText = item.Text;
+        }
+
+        item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
+    }
+
+    ToolStripSeparator ActionsSeparator() =>
+        new()
+        {
+            Margin = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(4), LogicalToDeviceUnits(8), LogicalToDeviceUnits(4))
+        };
+
+    void RunOnList(Action<FolderView> action)
+    {
+        if (ActiveView is { } view)
+        {
+            view.FocusList();
+            action(view);
+        }
+    }
+
+    void FillNewMenu()
+    {
+        newButton.DropDownItems.Clear();
+        newButton.DropDownItems.Add("Folder", null, (_, _) => RunOnList(_ => _.CreateFolder()));
+        newButton.DropDownItems.Add(new ToolStripSeparator());
+        foreach (var entry in ShellNew.Current.OrderBy(_ => FolderView.NewLabel(_.TypeName), StringComparer.CurrentCultureIgnoreCase))
+        {
+            newButton.DropDownItems.Add(FolderView.NewLabel(entry.TypeName), null, (_, _) => RunOnList(_ => _.CreateFile(entry)));
+        }
+    }
+
+    /// <summary>
+    /// Enables the actions bar's buttons for the active view and its selection.
+    /// </summary>
+    internal void UpdateActions()
+    {
+        var view = ActiveView;
+        var inFolder = view != null && !Locations.IsThisPC(view.CurrentPath);
+        var selection = view?.SelectedEntries() ?? [];
+        var files = selection.Count > 0 && selection.All(_ => !_.IsDrive);
+        newButton.Enabled = inFolder;
+        cutButton.Enabled = files;
+        copyButton.Enabled = files;
+        // Not tied to the clipboard, which changes without telling Lode. Paste with nothing
+        // to paste does nothing.
+        pasteButton.Enabled = inFolder;
+        renameButton.Enabled = files && selection.Count == 1;
+        deleteButton.Enabled = files;
+        terminalButton.Enabled = inFolder;
+        propertiesButton.Enabled = view != null && (selection.Count > 0 || inFolder);
+    }
+
+    /// <summary>
+    /// The actions bar's buttons and whether each is enabled, for tests.
+    /// </summary>
+    internal IEnumerable<string> DescribeActions() =>
+        actionsBar.Items
+            .OfType<ToolStripItem>()
+            .Select(DescribeAction);
+
+    static string DescribeAction(ToolStripItem item)
+    {
+        if (item is ToolStripSeparator)
+        {
+            return "----";
+        }
+
+        if (item.Enabled)
+        {
+            return item.Text!;
+        }
+
+        return $"{item.Text} (disabled)";
     }
 
     Control BuildContent()
@@ -547,7 +708,7 @@ class MainForm : Form
             return;
         }
 
-        addressBox.Text = view.CurrentPath;
+        breadcrumb.Path = view.CurrentPath;
         updatingFilter = true;
         filterBox.Text = view.Filter;
         updatingFilter = false;
@@ -561,6 +722,7 @@ class MainForm : Form
 
     void UpdateStatus(FolderView view)
     {
+        UpdateActions();
         statusLabel.Text = view.StatusText;
         spaceLabel.Text = view.FreeSpaceText;
     }
@@ -701,11 +863,8 @@ class MainForm : Form
         TaskDialog.ShowDialog(this, page);
     }
 
-    void FocusAddress()
-    {
-        addressBox.Focus();
-        addressBox.SelectAll();
-    }
+    void FocusAddress() =>
+        breadcrumb.BeginEdit();
 
     void OnAddressKeyDown(object? sender, KeyEventArgs eventArgs)
     {
@@ -720,14 +879,14 @@ class MainForm : Form
             eventArgs.Handled = true;
             eventArgs.SuppressKeyPress = true;
             view.Navigate(addressBox.Text);
-            addressBox.Text = view.CurrentPath;
+            breadcrumb.Path = view.CurrentPath;
             view.FocusList();
         }
         else if (eventArgs.KeyCode == Keys.Escape)
         {
             eventArgs.Handled = true;
             eventArgs.SuppressKeyPress = true;
-            addressBox.Text = view.CurrentPath;
+            breadcrumb.Path = view.CurrentPath;
             view.FocusList();
         }
     }
@@ -844,7 +1003,7 @@ class MainForm : Form
         Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
-        Add("Open in terminal", OpenTerminal, enabled: PinnablePath() != null);
+        Add("Terminal", OpenTerminal, enabled: PinnablePath() != null);
         if (PinMenuText() is { } pinText)
         {
             Add(pinText, TogglePinned);

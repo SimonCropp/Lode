@@ -1,0 +1,7 @@
+﻿{
+  leftClick: ShowWindows,
+  shiftClick: NewWindow,
+  controlClick: ShowWindows,
+  rightClick: None,
+  shiftRightClick: None
+}

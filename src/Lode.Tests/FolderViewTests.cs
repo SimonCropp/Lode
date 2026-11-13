@@ -2,7 +2,7 @@
 /// What the file list shows and selects, as text. These don't depend on how anything is
 /// drawn, so they hold on any machine.
 /// </summary>
-[TUnit.Core.Executors.STAThreadExecutor]
+[STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]

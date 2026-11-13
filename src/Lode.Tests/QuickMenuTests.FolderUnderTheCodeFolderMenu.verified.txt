@@ -2,7 +2,7 @@
   folder: [
     Open,
     Open in new tab,
-    Open in terminal,
+    Terminal,
     ----,
     Cut,
     Copy,
@@ -45,7 +45,7 @@
       Word Document,
     Paste (disabled),
     ----,
-    Open in terminal,
+    Terminal,
     Copy as path,
     Properties,
     ----,

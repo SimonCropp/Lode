@@ -13,7 +13,7 @@
   Next tab (Ctrl+Tab),
   Previous tab (Ctrl+Shift+Tab),
   Hide hidden items (Ctrl+H),
-  Open in terminal,
+  Terminal,
   Pin to Quick access,
   New: Folder (Ctrl+Shift+N),
   Copy as path,

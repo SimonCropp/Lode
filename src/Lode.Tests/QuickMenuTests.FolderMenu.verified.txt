@@ -1,7 +1,7 @@
 ﻿[
   Open,
   Open in new tab,
-  Open in terminal,
+  Terminal,
   ----,
   Cut,
   Copy,

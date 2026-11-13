@@ -1,0 +1,26 @@
+﻿{
+  nothingSelected: [
+    New,
+    ----,
+    Cut (disabled),
+    Copy (disabled),
+    Paste,
+    Rename (disabled),
+    Delete (disabled),
+    ----,
+    Terminal,
+    Properties
+  ],
+  fileSelected: [
+    New,
+    ----,
+    Cut,
+    Copy,
+    Paste,
+    Rename,
+    Delete,
+    ----,
+    Terminal,
+    Properties
+  ]
+}

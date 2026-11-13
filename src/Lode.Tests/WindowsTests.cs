@@ -1,7 +1,7 @@
 /// <summary>
 /// Tabs moving between windows, and into windows of their own.
 /// </summary>
-[TUnit.Core.Executors.STAThreadExecutor]
+[STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]
@@ -115,6 +115,25 @@ public class WindowsTests
                 reopenedOnce,
                 reopenedTwice = Describe(form),
                 nothingLeft = !form.CanReopenClosedTab
+            });
+    }
+
+    // Which of the actions bar's buttons work with nothing selected, then with a file.
+    [Test]
+    public async Task ActionsBar()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        var nothingSelected = form.DescribeActions().ToList();
+        form.ActiveView!.Reveal(fixture.At("notes.aleph"));
+        await Pump.Loaded(form.ActiveView);
+        form.UpdateActions();
+
+        await Verify(
+            new
+            {
+                nothingSelected,
+                fileSelected = form.DescribeActions().ToList()
             });
     }
 

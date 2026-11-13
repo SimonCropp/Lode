@@ -541,6 +541,7 @@ sealed class FolderTree : TreeView
         var location = PointToScreen(eventArgs.Location);
         var quickAccess = eventArgs.Node.Parent?.Tag is Section;
         QuickMenu.Show(
+            this,
             location,
             NodeCommands(path),
             () => ShowShellMenu(owner, path, location, quickAccess));

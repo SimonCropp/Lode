@@ -7,7 +7,7 @@
     Word Document,
   Paste (disabled),
   ----,
-  Open in terminal,
+  Terminal,
   Copy as path,
   Properties,
   ----,

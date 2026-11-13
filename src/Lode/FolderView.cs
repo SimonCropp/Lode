@@ -794,6 +794,7 @@ sealed class FolderView : UserControl
 
     void ShowQuickItemMenu(List<FileEntry> selection, Point location) =>
         QuickMenu.Show(
+            list,
             location,
             ItemCommands(selection),
             () =>
@@ -819,7 +820,7 @@ sealed class FolderView : UserControl
 
         if (selection is [{ IsDirectory: true } terminalFolder])
         {
-            commands.Add(new("Open in terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
+            commands.Add(new("Terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
         }
 
         if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))
@@ -849,6 +850,7 @@ sealed class FolderView : UserControl
 
     void ShowQuickBackgroundMenu(Point location) =>
         QuickMenu.Show(
+            list,
             location,
             BackgroundCommands(FileOperations.ReadClipboard() != null),
             () =>
@@ -865,7 +867,7 @@ sealed class FolderView : UserControl
         QuickMenu.Submenu("New", NewCommands(newTypes ?? ShellNew.Current)),
         new("Paste", Paste, canPaste),
         null,
-        new("Open in terminal", () => FileOperations.OpenTerminal(CurrentPath)),
+        new("Terminal", () => FileOperations.OpenTerminal(CurrentPath)),
         new("Copy as path", () => CopyAsPath([CurrentPath])),
         new("Properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, CurrentPath)
