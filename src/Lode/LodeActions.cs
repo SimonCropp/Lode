@@ -37,6 +37,7 @@ static class LodeActions
         new("edit", "Edit", Icons.Edit, 2, Button: false, Menu: true),
         new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true),
         new("terminalAdmin", "Terminal (admin)", Icons.AdminTerminal, 2, Button: true, Menu: true),
+        new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true),
         new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true),
         new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
@@ -66,6 +67,41 @@ static class LodeActions
             Id = id,
             Glyph = definition.Glyph
         };
+    }
+
+    /// <summary>
+    /// Pin to Quick access for <paramref name="folders"/>, or Unpin when every one of them is
+    /// pinned already. <paramref name="setPinned"/> pins or unpins one folder.
+    /// </summary>
+    public static QuickMenu.Command Pin(IReadOnlyList<string> folders, Places places, Action<string, bool> setPinned)
+    {
+        var allPinned = folders.All(folder => places.Pinned.Any(_ => Locations.Same(_, folder)));
+        if (allPinned)
+        {
+            return Command(
+                "pin",
+                () =>
+                {
+                    foreach (var folder in folders)
+                    {
+                        setPinned(folder, false);
+                    }
+                },
+                text: "Unpin from Quick access") with
+            {
+                Glyph = Icons.Unpin
+            };
+        }
+
+        return Command(
+            "pin",
+            () =>
+            {
+                foreach (var folder in folders)
+                {
+                    setPinned(folder, true);
+                }
+            });
     }
 
     /// <summary>

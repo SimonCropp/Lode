@@ -16,7 +16,7 @@
   Show system files,
   Terminal,
   Terminal (admin),
-  Pin to Quick access,
+  Pin this folder to Quick access,
   New: Folder (Ctrl+Shift+N),
   Copy as path,
   Properties (Alt+Enter),

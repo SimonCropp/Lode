@@ -4,6 +4,7 @@
     Open in new tab,
     Terminal,
     Terminal (admin),
+    Pin to Quick access,
     ----,
     Cut,
     Copy,

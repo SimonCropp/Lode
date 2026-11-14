@@ -55,6 +55,12 @@ sealed class FolderView : UserControl
     readonly GutterMarquee marquee;
 
     /// <summary>
+    /// Pins a folder to Quick access, or unpins it. Replaced in tests, which must not change the
+    /// real list.
+    /// </summary>
+    internal Action<string, bool> SetPinned;
+
+    /// <summary>
     /// The selection rectangle dragged from the margin left of the list. For tests.
     /// </summary>
     internal GutterMarquee Marquee => marquee;
@@ -95,6 +101,8 @@ sealed class FolderView : UserControl
     {
         this.settings = settings;
         this.places = places;
+        SetPinned = (path, pin) => ShellContextMenu.SetPinned(Owner, path, pin);
+
         // Explorer's margin left of the list, which a selection rectangle can be dragged from.
         Padding = new(LogicalToDeviceUnits(12), 0, 0, 0);
         BackColor = SystemColors.Window;
@@ -1030,6 +1038,11 @@ sealed class FolderView : UserControl
         {
             commands.Add(LodeActions.Command("terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
             commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(terminalFolder.FullPath, admin: true)));
+        }
+
+        if (selection.All(_ => _.IsDirectory))
+        {
+            commands.Add(LodeActions.Pin(selection.Select(_ => _.FullPath).ToList(), places, SetPinned));
         }
 
         if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))

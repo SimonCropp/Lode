@@ -41,7 +41,8 @@ sealed class FolderTree : TreeView
     {
         this.settings = settings;
         this.places = places;
-        Pin = _ => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, _, true);
+        SetPinned = (path, pin) => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, path, pin);
+        Pin = _ => SetPinned(_, true);
         HideSelection = false;
         ShowLines = false;
         FullRowSelect = true;
@@ -579,6 +580,7 @@ sealed class FolderTree : TreeView
             LodeActions.Command("rename", () => BeginRename(node), canRename),
             LodeActions.Command("delete", () => FileOperations.Delete(owner, [path], false), !isDrive),
             null,
+            LodeActions.Pin([path], places, SetPinned),
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
             LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
             LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties")),
@@ -672,6 +674,12 @@ sealed class FolderTree : TreeView
     /// Pins a folder to Quick access. Replaced in tests, which must not change the real list.
     /// </summary>
     internal Action<string> Pin;
+
+    /// <summary>
+    /// Pins a folder to Quick access, or unpins it. Replaced in tests, which must not change the
+    /// real list.
+    /// </summary>
+    internal Action<string, bool> SetPinned;
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
     {

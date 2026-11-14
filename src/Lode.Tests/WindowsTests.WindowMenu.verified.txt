@@ -6,7 +6,7 @@
   ----,
   Show hidden items,
   Show system files,
-  Unpin from Quick access,
+  Unpin this folder from Quick access,
   ----,
   Options…,
   About Lode,

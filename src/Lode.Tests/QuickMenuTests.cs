@@ -241,7 +241,7 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var form = await ShowForm(fixture, fixture.Root);
 
-        await Assert.That(form.PinMenuText()).IsEqualTo("Unpin from Quick access");
+        await Assert.That(form.PinMenuText()).IsEqualTo("Unpin this folder from Quick access");
     }
 
     [Test]
@@ -250,7 +250,7 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var form = await ShowForm(fixture, fixture.At("Docs"));
 
-        await Assert.That(form.PinMenuText()).IsEqualTo("Pin to Quick access");
+        await Assert.That(form.PinMenuText()).IsEqualTo("Pin this folder to Quick access");
     }
 
     static async Task<FolderView> Open(string path, Settings? settings = null)

@@ -10,6 +10,7 @@
   Rename (disabled),
   Delete (disabled),
   ----,
+  Pin to Quick access,
   Create shortcut (disabled),
   Copy as path,
   Properties,

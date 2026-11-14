@@ -26,7 +26,11 @@ public class MenuTests
     public async Task FolderMenu()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false, CodeDirectory = fixture.Root };
+        var settings = new Settings
+        {
+            ShowHidden = false,
+            CodeDirectory = fixture.Root
+        };
         using var view = await Open(fixture.Root, settings);
         var docs = view.Entries.Single(_ => _.Name == "Docs");
 
@@ -38,7 +42,12 @@ public class MenuTests
     public async Task NewMenu()
     {
         using var fixture = Fixture.Create();
-        using var view = await Open(fixture.Root, new() { ShowHidden = false });
+        using var view = await Open(
+            fixture.Root,
+            new()
+            {
+                ShowHidden = false
+            });
         var children = view.BackgroundCommands(canPaste: true, newTypes)[0]!.Children!;
 
         await CaptureMenu(QuickMenu.Build(children, null, _ => { }));
@@ -71,7 +80,13 @@ public class MenuTests
     public async Task ColumnMenu()
     {
         using var fixture = Fixture.Create();
-        using var view = await Open(fixture.Root, new() { ShowHidden = false, HiddenColumns = ["Size"] });
+        using var view = await Open(
+            fixture.Root,
+            new()
+            {
+                ShowHidden = false,
+                HiddenColumns = ["Size"]
+            });
 
         await CaptureMenu(view.HeaderMenu(clickedColumn: 1));
     }

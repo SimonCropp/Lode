@@ -1026,14 +1026,16 @@ class MainForm : Form
         return PinMenuText(path);
     }
 
+    // "This folder": the one the tab shows, whatever is selected. Pin to Quick access, the
+    // action, is for the selection.
     string PinMenuText(string path)
     {
         if (IsPinned(path))
         {
-            return "Unpin from Quick access";
+            return "Unpin this folder from Quick access";
         }
 
-        return "Pin to Quick access";
+        return "Pin this folder to Quick access";
     }
 
     bool IsPinned(string path) =>

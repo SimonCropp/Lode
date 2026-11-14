@@ -3,6 +3,7 @@
   Open in new tab (disabled),
   Edit (disabled),
   ----,
+  Pin to Quick access (disabled),
   Create shortcut,
   Copy as path,
   ----,
