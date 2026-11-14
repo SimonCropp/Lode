@@ -19,6 +19,9 @@ public static class ModuleInitializer
         Application.SetCompatibleTextRenderingDefault(false);
         Program.UseDefaultFont();
 
+        // The app's Debug builds mark their window titles; tests run in both builds.
+        MainForm.TitleSuffix = "";
+
         // Dates and numbers in the list follow the current culture; pin it.
         var culture = CultureInfo.GetCultureInfo("en-US");
         CultureInfo.DefaultThreadCurrentCulture = culture;

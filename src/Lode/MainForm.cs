@@ -64,6 +64,18 @@ class MainForm : Form
     /// </summary>
     public static bool HideLastWindowOnClose { get; set; }
 
+    /// <summary>
+    /// After every window title: " (Lode Debug)" in a Debug build, so a build being worked on is
+    /// easy to tell from the installed Lode. Tests clear it, so titles and captures are the same
+    /// in either build.
+    /// </summary>
+    internal static string TitleSuffix { get; set; } =
+#if DEBUG
+        " (Lode Debug)";
+#else
+        "";
+#endif
+
     public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
     public IEnumerable<FolderView> Views =>
@@ -86,7 +98,7 @@ class MainForm : Form
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
-        Text = "Lode";
+        Text = "Lode" + TitleSuffix;
         Icon = ShellIcons.FolderWindowIcon();
         ClientSize = new(1200, 760);
         MinimumSize = new(520, 320);
@@ -942,7 +954,7 @@ class MainForm : Form
         updatingFilter = true;
         filterBox.Text = view.Filter;
         updatingFilter = false;
-        Text = Locations.DisplayName(view.CurrentPath);
+        Text = Locations.DisplayName(view.CurrentPath) + TitleSuffix;
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;
