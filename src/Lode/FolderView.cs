@@ -1115,6 +1115,7 @@ sealed class FolderView : UserControl
     [
         LodeActions.Submenu("new", NewCommands(newTypes ?? ShellNew.Current)),
         LodeActions.Command("paste", Paste, canPaste),
+        .. UndoCommands(),
         null,
         LodeActions.Command("terminal", () => FileOperations.OpenTerminal(CurrentPath)),
         LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
@@ -1122,6 +1123,36 @@ sealed class FolderView : UserControl
         LodeActions.Command("properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, CurrentPath)
     ];
+
+    /// <summary>
+    /// Undo and Redo, worded for what they would do ("Undo rename"), for the history every
+    /// window shares.
+    /// </summary>
+    internal List<QuickMenu.Command?> UndoCommands()
+    {
+        var history = UndoHistory.Instance;
+        return
+        [
+            LodeActions.Command("undo", Undo, history.CanUndo, history.UndoText),
+            LodeActions.Command("redo", Redo, history.CanRedo, history.RedoText)
+        ];
+    }
+
+    public void Undo() =>
+        RunUndo(UndoHistory.Instance.Undo);
+
+    public void Redo() =>
+        RunUndo(UndoHistory.Instance.Redo);
+
+    async void RunUndo(Func<IntPtr, Task<string?>> step)
+    {
+        var failure = await step(Owner);
+        if (failure != null &&
+            !IsDisposed)
+        {
+            MessageBox.Show(this, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
 
     // Folder, then each type Windows offers under New, by label.
     List<QuickMenu.Command?> NewCommands(IReadOnlyList<ShellNew.Entry> types) =>

@@ -1,7 +1,9 @@
 /// <summary>
 /// The shell's IFileOperation: the copy engine Explorer uses, with its progress dialog,
 /// conflict prompts, Recycle Bin and undo. Unlike SHFileOperation it copes with paths longer
-/// than 260 characters.
+/// than 260 characters. It reports what each item became, which Lode's undo history needs: a
+/// copy's or a move's new path (a "name - Copy" included), a renamed item's new path, and where
+/// in the Recycle Bin a deleted item went.
 /// </summary>
 static class ShellFileOperation
 {
@@ -19,42 +21,73 @@ static class ShellFileOperation
     }
 
     /// <summary>
-    /// Runs one operation over <paramref name="sources"/>. <paramref name="destination"/> is the
-    /// folder to copy or move into, or the new name for a rename. False when it failed, was
-    /// cancelled, or the user skipped something.
+    /// One item for <see cref="Run(IntPtr, Kind, IReadOnlyList{Item}, uint)"/>:
+    /// <paramref name="Destination"/> is the folder a copy or move goes into, and
+    /// <paramref name="NewName"/> the name it gets there, or the new name for a rename.
     /// </summary>
-    public static bool Run(IntPtr owner, Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags)
+    public sealed record Item(string Source, string? Destination = null, string? NewName = null);
+
+    /// <summary>
+    /// An item done: what it became, as a path. For a delete, its path in the Recycle Bin, or
+    /// null when it was deleted outright.
+    /// </summary>
+    public sealed record Change(string Source, string? Result);
+
+    /// <summary>
+    /// What happened. <paramref name="Succeeded"/> is false when the operation failed, was
+    /// cancelled, or the user skipped something; <paramref name="Changes"/> lists the items done
+    /// either way.
+    /// </summary>
+    public sealed record Outcome(bool Succeeded, IReadOnlyList<Change> Changes);
+
+    /// <summary>
+    /// Runs one operation over <paramref name="sources"/>. <paramref name="destination"/> is the
+    /// folder to copy or move into, or the new name for a rename.
+    /// </summary>
+    public static Outcome Run(IntPtr owner, Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags)
+    {
+        List<Item> items;
+        if (kind == Kind.Rename)
+        {
+            items = sources.Select(_ => new Item(_, NewName: destination)).ToList();
+        }
+        else
+        {
+            items = sources.Select(_ => new Item(_, destination)).ToList();
+        }
+
+        return Run(owner, kind, items, flags);
+    }
+
+    public static Outcome Run(IntPtr owner, Kind kind, IReadOnlyList<Item> items, uint flags)
     {
         var operation = (IFileOperation)new FileOperationObject();
-        var items = new List<IShellItem>();
+        var created = new List<IShellItem>();
+        var folders = new Dictionary<string, IShellItem>(StringComparer.OrdinalIgnoreCase);
+        var sink = new ProgressSink();
+        uint cookie = 0;
         try
         {
             operation.SetOwnerWindow(owner);
             operation.SetOperationFlags(flags);
-            IShellItem? target = null;
-            if (kind is Kind.Copy or Kind.Move)
+            operation.Advise(sink, out cookie);
+            foreach (var item in items)
             {
-                target = CreateItem(destination!);
-                items.Add(target);
-            }
-
-            foreach (var source in sources)
-            {
-                var item = CreateItem(source);
-                items.Add(item);
+                var shellItem = CreateItem(item.Source);
+                created.Add(shellItem);
                 switch (kind)
                 {
                     case Kind.Copy:
-                        operation.CopyItem(item, target!, null, IntPtr.Zero);
+                        operation.CopyItem(shellItem, Folder(item.Destination!), item.NewName, IntPtr.Zero);
                         break;
                     case Kind.Move:
-                        operation.MoveItem(item, target!, null, IntPtr.Zero);
+                        operation.MoveItem(shellItem, Folder(item.Destination!), item.NewName, IntPtr.Zero);
                         break;
                     case Kind.Delete:
-                        operation.DeleteItem(item, IntPtr.Zero);
+                        operation.DeleteItem(shellItem, IntPtr.Zero);
                         break;
                     case Kind.Rename:
-                        operation.RenameItem(item, destination!, IntPtr.Zero);
+                        operation.RenameItem(shellItem, item.NewName!, IntPtr.Zero);
                         break;
                 }
             }
@@ -62,20 +95,36 @@ static class ShellFileOperation
             // Fails when the user cancels, which is not an error worth an exception.
             if (operation.PerformOperations() < 0)
             {
-                return false;
+                return new(false, sink.Changes);
             }
 
             operation.GetAnyOperationsAborted(out var aborted);
-            return !aborted;
+            return new(!aborted, sink.Changes);
         }
         finally
         {
-            foreach (var item in items)
+            if (cookie != 0)
+            {
+                operation.Unadvise(cookie);
+            }
+
+            foreach (var item in created.Concat(folders.Values))
             {
                 Marshal.FinalReleaseComObject(item);
             }
 
             Marshal.FinalReleaseComObject(operation);
+        }
+
+        IShellItem Folder(string path)
+        {
+            if (!folders.TryGetValue(path, out var folder))
+            {
+                folder = CreateItem(path);
+                folders[path] = folder;
+            }
+
+            return folder;
         }
     }
 
@@ -84,6 +133,97 @@ static class ShellFileOperation
         var result = SHCreateItemFromParsingName(path, IntPtr.Zero, typeof(IShellItem).GUID, out var item);
         Marshal.ThrowExceptionForHR(result);
         return (IShellItem)item;
+    }
+
+    const uint fileSystemPath = 0x80058000;
+    const uint desktopAbsoluteParsing = 0x80028000;
+
+    // A file system path where the item has one, otherwise the shell's own name for it.
+    static string? PathOf(IShellItem? item)
+    {
+        if (item == null)
+        {
+            return null;
+        }
+
+        foreach (var form in new[] { fileSystemPath, desktopAbsoluteParsing })
+        {
+            if (item.GetDisplayName(form, out var name) < 0 ||
+                name == IntPtr.Zero)
+            {
+                continue;
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(name);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(name);
+            }
+        }
+
+        return null;
+    }
+
+    // Hears each item finish, on the thread running the operation.
+    [ComVisible(true)]
+    sealed class ProgressSink : IFileOperationProgressSink
+    {
+        public List<Change> Changes { get; } = [];
+
+        void Record(IShellItem? item, int result, IShellItem? newlyCreated)
+        {
+            if (result < 0 ||
+                PathOf(item) is not { } source)
+            {
+                return;
+            }
+
+            Changes.Add(new(source, PathOf(newlyCreated)));
+        }
+
+        public int StartOperations() => 0;
+        public int FinishOperations(int result) => 0;
+        public int PreRenameItem(uint flags, IShellItem? item, string? newName) => 0;
+
+        public int PostRenameItem(uint flags, IShellItem? item, string? newName, int result, IShellItem? newlyCreated)
+        {
+            Record(item, result, newlyCreated);
+            return 0;
+        }
+
+        public int PreMoveItem(uint flags, IShellItem? item, IShellItem? destination, string? newName) => 0;
+
+        public int PostMoveItem(uint flags, IShellItem? item, IShellItem? destination, string? newName, int result, IShellItem? newlyCreated)
+        {
+            Record(item, result, newlyCreated);
+            return 0;
+        }
+
+        public int PreCopyItem(uint flags, IShellItem? item, IShellItem? destination, string? newName) => 0;
+
+        public int PostCopyItem(uint flags, IShellItem? item, IShellItem? destination, string? newName, int result, IShellItem? newlyCreated)
+        {
+            Record(item, result, newlyCreated);
+            return 0;
+        }
+
+        public int PreDeleteItem(uint flags, IShellItem? item) => 0;
+
+        public int PostDeleteItem(uint flags, IShellItem? item, int result, IShellItem? newlyCreated)
+        {
+            Record(item, result, newlyCreated);
+            return 0;
+        }
+
+        public int PreNewItem(uint flags, IShellItem? destination, string? newName) => 0;
+        public int PostNewItem(uint flags, IShellItem? destination, string? newName, string? template, uint attributes, int result, IShellItem? newItem) => 0;
+        public int UpdateProgress(uint total, uint done) => 0;
+        public int ResetTimer() => 0;
+        public int PauseTimer() => 0;
+        public int ResumeTimer() => 0;
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
@@ -100,14 +240,84 @@ static class ShellFileOperation
     [ComImport]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
-    internal interface IShellItem;
+    internal interface IShellItem
+    {
+        [PreserveSig]
+        int BindToHandler(IntPtr bindContext, ref Guid handler, ref Guid interfaceId, out IntPtr result);
+
+        [PreserveSig]
+        int GetParent(out IShellItem parent);
+
+        [PreserveSig]
+        int GetDisplayName(uint form, out IntPtr name);
+
+        [PreserveSig]
+        int GetAttributes(uint mask, out uint attributes);
+
+        [PreserveSig]
+        int Compare(IShellItem other, uint hint, out int order);
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("04b0f1a7-9490-44bc-96e1-4296a31252e2")]
+    interface IFileOperationProgressSink
+    {
+        [PreserveSig]
+        int StartOperations();
+
+        [PreserveSig]
+        int FinishOperations(int result);
+
+        [PreserveSig]
+        int PreRenameItem(uint flags, IShellItem? item, [MarshalAs(UnmanagedType.LPWStr)] string? newName);
+
+        [PreserveSig]
+        int PostRenameItem(uint flags, IShellItem? item, [MarshalAs(UnmanagedType.LPWStr)] string? newName, int result, IShellItem? newlyCreated);
+
+        [PreserveSig]
+        int PreMoveItem(uint flags, IShellItem? item, IShellItem? destination, [MarshalAs(UnmanagedType.LPWStr)] string? newName);
+
+        [PreserveSig]
+        int PostMoveItem(uint flags, IShellItem? item, IShellItem? destination, [MarshalAs(UnmanagedType.LPWStr)] string? newName, int result, IShellItem? newlyCreated);
+
+        [PreserveSig]
+        int PreCopyItem(uint flags, IShellItem? item, IShellItem? destination, [MarshalAs(UnmanagedType.LPWStr)] string? newName);
+
+        [PreserveSig]
+        int PostCopyItem(uint flags, IShellItem? item, IShellItem? destination, [MarshalAs(UnmanagedType.LPWStr)] string? newName, int result, IShellItem? newlyCreated);
+
+        [PreserveSig]
+        int PreDeleteItem(uint flags, IShellItem? item);
+
+        [PreserveSig]
+        int PostDeleteItem(uint flags, IShellItem? item, int result, IShellItem? newlyCreated);
+
+        [PreserveSig]
+        int PreNewItem(uint flags, IShellItem? destination, [MarshalAs(UnmanagedType.LPWStr)] string? newName);
+
+        [PreserveSig]
+        int PostNewItem(uint flags, IShellItem? destination, [MarshalAs(UnmanagedType.LPWStr)] string? newName, [MarshalAs(UnmanagedType.LPWStr)] string? template, uint attributes, int result, IShellItem? newItem);
+
+        [PreserveSig]
+        int UpdateProgress(uint total, uint done);
+
+        [PreserveSig]
+        int ResetTimer();
+
+        [PreserveSig]
+        int PauseTimer();
+
+        [PreserveSig]
+        int ResumeTimer();
+    }
 
     [ComImport]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     [Guid("947aab5f-0a5c-4c13-b4d6-4bf7836fc9f8")]
     interface IFileOperation
     {
-        void Advise(IntPtr sink, out uint cookie);
+        void Advise(IFileOperationProgressSink sink, out uint cookie);
         void Unadvise(uint cookie);
         void SetOperationFlags(uint flags);
         void SetProgressMessage([MarshalAs(UnmanagedType.LPWStr)] string message);

@@ -1,4 +1,7 @@
 ﻿[
+  Undo (disabled),
+  Redo (disabled),
+  ----,
   Open,
   Open in new tab (disabled),
   Edit (disabled),

@@ -36,8 +36,30 @@ static class FileOperations
         }
 
         var kind = move ? ShellFileOperation.Kind.Move : ShellFileOperation.Kind.Copy;
-        return RunInBackground(owner, kind, sources, destination, flags);
+        return RunInBackground(
+            owner,
+            kind,
+            sources,
+            destination,
+            flags,
+            outcome =>
+            {
+                if (move)
+                {
+                    UndoHistory.Instance.RecordMove(Pairs(outcome));
+                    return;
+                }
+
+                UndoHistory.Instance.RecordCreated("copy", Pairs(outcome).Select(_ => _.To).ToList());
+            });
     }
+
+    // The items done, from and to: for a delete, from where to where in the Recycle Bin.
+    static List<(string From, string To)> Pairs(ShellFileOperation.Outcome outcome) =>
+        outcome.Changes
+            .Where(_ => _.Result != null)
+            .Select(_ => (_.Source, _.Result!))
+            .ToList();
 
     // Undoable with Ctrl+Z in Explorer, as SHFileOperation's allow-undo flag was.
     const uint undoFlags = ShellFileOperation.AllowUndo | ShellFileOperation.AddUndoRecord;
@@ -49,24 +71,56 @@ static class FileOperations
             return Task.FromResult(true);
         }
 
-        var flags = permanent ? 0 : undoFlags | ShellFileOperation.RecycleOnDelete;
-        return RunInBackground(owner, ShellFileOperation.Kind.Delete, paths, null, flags);
+        if (permanent)
+        {
+            return RunInBackground(owner, ShellFileOperation.Kind.Delete, paths, null, 0, _ => { });
+        }
+
+        // Only what went to the Recycle Bin can be undone; an item too big for it is deleted
+        // outright, and has no place there.
+        return RunInBackground(
+            owner,
+            ShellFileOperation.Kind.Delete,
+            paths,
+            null,
+            undoFlags | ShellFileOperation.RecycleOnDelete,
+            outcome => UndoHistory.Instance.RecordDelete(Pairs(outcome)));
     }
 
-    public static bool Rename(IntPtr owner, string path, string newName) =>
-        ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, [path], newName, undoFlags);
+    public static bool Rename(IntPtr owner, string path, string newName)
+    {
+        var outcome = ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, [path], newName, undoFlags);
+        if (outcome.Changes is [{ Result: { } renamed }, ..])
+        {
+            UndoHistory.Instance.RecordRename(path, renamed);
+        }
+
+        return outcome.Succeeded;
+    }
 
     // The shell runs the operation on the calling thread, so a large copy on the UI thread
     // would freeze the window. Each operation gets its own STA thread instead.
-    static Task<bool> RunInBackground(IntPtr owner, ShellFileOperation.Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags)
+    static Task<bool> RunInBackground(IntPtr owner, ShellFileOperation.Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags, Action<ShellFileOperation.Outcome> done) =>
+        OnStaThread(
+            () =>
+            {
+                var outcome = ShellFileOperation.Run(owner, kind, sources, destination, flags);
+                done(outcome);
+                return outcome.Succeeded;
+            });
+
+    /// <summary>
+    /// Runs <paramref name="work"/> on a thread of its own, set up for the shell's COM objects.
+    /// </summary>
+    internal static Task<T> OnStaThread<T>(Func<T> work)
     {
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(
             () =>
             {
                 try
                 {
-                    completion.SetResult(ShellFileOperation.Run(owner, kind, sources, destination, flags));
+                    completion.SetResult(work());
                 }
                 catch (Exception exception)
                 {
@@ -90,6 +144,7 @@ static class FileOperations
         }
 
         Directory.CreateDirectory(path);
+        UndoHistory.Instance.RecordCreated("new folder", [path]);
         return path;
     }
 
@@ -110,15 +165,17 @@ static class FileOperations
         if (template != null)
         {
             File.Copy(template, path);
-            return path;
         }
-
-        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
-        if (entry.Data != null)
+        else
         {
-            stream.Write(entry.Data);
+            using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+            if (entry.Data != null)
+            {
+                stream.Write(entry.Data);
+            }
         }
 
+        UndoHistory.Instance.RecordCreated("new file", [path]);
         return path;
     }
 
@@ -137,6 +194,7 @@ static class FileOperations
         }
 
         ShellLink.Save(path, target);
+        UndoHistory.Instance.RecordCreated("create shortcut", [path]);
         return path;
     }
 

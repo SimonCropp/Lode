@@ -27,6 +27,8 @@ static class LodeActions
     public static IReadOnlyList<Definition> All { get; } =
     [
         new("new", "New", Icons.New, 0, Button: true, Menu: true, Submenu: true),
+        new("undo", "Undo", Icons.Undo, 1, Button: false, Menu: true, "Ctrl+Z"),
+        new("redo", "Redo", Icons.Redo, 1, Button: false, Menu: true, "Ctrl+Y"),
         new("cut", "Cut", Icons.Cut, 1, Button: true, Menu: true, "Ctrl+X"),
         new("copy", "Copy", Icons.Copy, 1, Button: true, Menu: true, "Ctrl+C"),
         new("paste", "Paste", Icons.Paste, 1, Button: true, Menu: true, "Ctrl+V"),

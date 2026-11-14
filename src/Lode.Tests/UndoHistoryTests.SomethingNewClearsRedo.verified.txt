@@ -1,0 +1,5 @@
+﻿{
+  canRedoBefore: true,
+  canRedoAfter: false,
+  undo: Undo new folder
+}

@@ -10,6 +10,8 @@ static class Icons
 {
     // Code points shared by Segoe Fluent Icons and Segoe MDL2 Assets.
     public const char New = '\uECC8';
+    public const char Undo = '\uE7A7';
+    public const char Redo = '\uE7A6';
     public const char Cut = '\uE8C6';
     public const char Copy = '\uE8C8';
     public const char Paste = '\uE77F';

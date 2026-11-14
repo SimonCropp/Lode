@@ -22,6 +22,12 @@ public static class ModuleInitializer
         // The app's Debug builds mark their window titles; tests run in both builds.
         MainForm.TitleSuffix = "";
 
+        // What tests do to files would otherwise show as Undo in each other's menus.
+        UndoHistory.Instance = new(new UndoHistory.ShellFileActions())
+        {
+            Records = false
+        };
+
         // Dates and numbers in the list follow the current culture; pin it.
         var culture = CultureInfo.GetCultureInfo("en-US");
         CultureInfo.DefaultThreadCurrentCulture = culture;

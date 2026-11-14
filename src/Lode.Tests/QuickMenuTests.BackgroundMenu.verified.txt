@@ -6,6 +6,8 @@
     Text Document,
     Word Document,
   Paste,
+  Undo (disabled),
+  Redo (disabled),
   ----,
   Terminal,
   Terminal (admin),

@@ -94,6 +94,7 @@ class MainForm : Form
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
         places.Changed += RebuildTree;
+        UndoHistory.Instance.Changed += OnUndoChanged;
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -544,6 +545,9 @@ class MainForm : Form
             // to paste does nothing.
             commands.AddRange(view.BackgroundCommands(canPaste: true));
         }
+
+        // Undo and Redo work anywhere, This PC included.
+        commands.AddRange(view.UndoCommands());
 
         foreach (var command in commands)
         {
@@ -1270,6 +1274,8 @@ class MainForm : Form
         }
 
         Add("Reopen closed tab", ReopenClosedTab, "Ctrl+Shift+T", CanReopenClosedTab);
+        Add(UndoHistory.Instance.UndoText, () => ActiveView?.Undo(), "Ctrl+Z", UndoHistory.Instance.CanUndo);
+        Add(UndoHistory.Instance.RedoText, () => ActiveView?.Redo(), "Ctrl+Y", UndoHistory.Instance.CanRedo);
         Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
@@ -1419,6 +1425,13 @@ class MainForm : Form
                 }
 
                 return true;
+            case Keys.Control | Keys.Z when !IsEditingText():
+                ActiveView?.Undo();
+                return true;
+            case Keys.Control | Keys.Y when !IsEditingText():
+            case Keys.Control | Keys.Shift | Keys.Z when !IsEditingText():
+                ActiveView?.Redo();
+                return true;
             case Keys.Control | Keys.Shift | Keys.T:
                 ReopenClosedTab();
                 return true;
@@ -1449,6 +1462,31 @@ class MainForm : Form
         }
 
         return base.ProcessCmdKey(ref message, keyData);
+    }
+
+    // The history changes on the thread that did the work; the buttons follow on the UI thread.
+    void OnUndoChanged()
+    {
+        if (IsHandleCreated &&
+            !IsDisposed)
+        {
+            BeginInvoke(UpdateActions);
+        }
+    }
+
+    // Typing in a box (the address, the filter, a name being edited) keeps Ctrl+Z for the text.
+    static unsafe bool IsEditingText()
+    {
+        var focus = GetFocus();
+        if (focus == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        const int capacity = 64;
+        var name = stackalloc char[capacity];
+        var length = GetClassNameW(focus, name, capacity);
+        return new ReadOnlySpan<char>(name, Math.Max(length, 0)).Contains("Edit", StringComparison.OrdinalIgnoreCase);
     }
 
     // The mouse's back and forward buttons arrive as app commands from whichever control is
@@ -1482,6 +1520,7 @@ class MainForm : Form
         if (disposing)
         {
             places.Changed -= RebuildTree;
+            UndoHistory.Instance.Changed -= OnUndoChanged;
             glyphFont.Dispose();
             toolTip.Dispose();
         }

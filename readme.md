@@ -60,23 +60,6 @@ Any one of these works:
 
 After restoring, folders open in Explorer straight away. If one still opens in Lode, sign out and back in, or restart Explorer from Task Manager.
 
-## Publish
-
-Pushing a tag builds and publishes that version: tag `1.2.3` (or `v1.2.3`) publishes 1.2.3 to nuget.org through [trusted publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing). The `publish` job in `.github/workflows/build.yml` needs a `nuget` environment on the repository and a trusted publishing policy on nuget.org for this repository and workflow.
-
-## Build and test
-
-Needs the .NET 11 SDK.
-
-```
-dotnet build src/Lode.slnx
-dotnet test --solution src/Lode.slnx
-```
-
-Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://github.com/VerifyTests/Verify):
-
- * Text snapshots cover sorting, filtering, navigation history, the folder tree, settings, and copy, move and rename against a sample folder. They run in any configuration.
- * Image snapshots of the whole window ([Verify.WinForms](https://github.com/VerifyTests/Verify.WinForms)), the menus, the command palette and the Options dialog, which are also the pictures in this readme, run in Debug builds only, since pixels depend on the Windows version, theme and fonts of the machine that captured them. While they run they create a sample folder at `C:\Users\Public\Documents\LodeTests`, a path that is the same on every machine so it can appear in the address bar, and delete it afterwards.
 
 ## Features
 
@@ -115,6 +98,7 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
    ![Actions panel](src/Lode.Tests/MainFormTests.Actions.verified.png)
 
  * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work.
+ * **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z), across every window: renames, moves, copies, deletes to the Recycle Bin, and new folders, files and shortcuts. Lode reverses each itself: a rename or move is done back, a copy or new item goes to the Recycle Bin, a deleted item is restored from it. Also on the right-click menu of empty space, under See more, and in the command palette, worded for what they would do ("Undo rename"). Permanent deletes can't be undone.
  * Drag and drop to and from Explorer and other apps.
  * Filter box: type part of a name, or a wildcard such as `*.cs`.
 
@@ -140,6 +124,7 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
 | F2                                | Rename                        |
 | Delete, Shift+Delete              | Recycle, delete permanently   |
 | Ctrl+C, Ctrl+X, Ctrl+V            | Copy, cut, paste              |
+| Ctrl+Z, Ctrl+Y                    | Undo, redo                    |
 | Ctrl+Shift+N                      | New folder                    |
 | Alt+Enter                         | Properties                    |
 | Ctrl+H                            | Show or hide hidden items     |

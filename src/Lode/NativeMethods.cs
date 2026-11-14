@@ -150,6 +150,12 @@ static partial class NativeMethods
     [LibraryImport("user32.dll")]
     public static partial IntPtr WindowFromPoint(ScreenPoint point);
 
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr GetFocus();
+
+    [LibraryImport("user32.dll")]
+    public static unsafe partial int GetClassNameW(IntPtr window, char* name, int length);
+
     // POINT. System.Drawing.Point lives in another assembly, so LibraryImport can't vouch for its layout.
     [StructLayout(LayoutKind.Sequential)]
     public record struct ScreenPoint(int X, int Y);

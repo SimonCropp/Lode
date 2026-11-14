@@ -46,6 +46,8 @@
       Text Document,
       Word Document,
     Paste (disabled),
+    Undo (disabled),
+    Redo (disabled),
     ----,
     Terminal,
     Terminal (admin),
