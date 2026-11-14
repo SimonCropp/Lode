@@ -8,6 +8,7 @@
   "DefaultDirectory": null,
   "TextEditor": null,
   "CodeDirectory": null,
+  "PurgePermanently": false,
   "Left": 10,
   "Top": 20,
   "Width": 1200,

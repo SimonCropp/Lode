@@ -76,6 +76,9 @@ sealed class Settings
     // on their right-click menu. Null for none.
     public string? CodeDirectory { get; set; }
 
+    // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
+    public bool PurgePermanently { get; set; }
+
     /// <summary>
     /// True when <paramref name="folder"/> is the code folder or inside it.
     /// </summary>

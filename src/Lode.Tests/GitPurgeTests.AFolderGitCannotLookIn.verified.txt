@@ -1,0 +1,10 @@
+﻿{
+  Succeeded: false,
+  Summary: 1 item deleted, git failed in 1 folder,
+  Details:
+NotARepo: FAILED
+  fatal: not a git repository (or any of the parent directories): .git
+
+Repo: 1 item
+  Untracked.txt
+}

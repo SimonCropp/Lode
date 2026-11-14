@@ -32,7 +32,9 @@ lode --replace-explorer
 lode --restore-explorer
 ```
 
-The same two actions are buttons under **Options** in the ⋯ menu at the right of the address bar. Replacing makes Lode what opens folders and drives (double-clicks, folder shortcuts, other apps opening a folder) and what Win+E starts. Restoring undoes it, and puts back whichever app was the default for folders before.
+The same two actions are buttons on the **File Explorer** page of **Options**, in the ⋯ menu at the right of the address bar. Replacing makes Lode what opens folders and drives (double-clicks, folder shortcuts, other apps opening a folder) and what Win+E starts. Restoring undoes it, and puts back whichever app was the default for folders before.
+
+![The File Explorer page of Options](src/Lode.Tests/OptionsFormTests.ExplorerInCharge.verified.png)
 
  * It writes only to `HKEY_CURRENT_USER\Software\Classes`, so it applies to the current Windows account and needs no administrator rights.
  * Folders are pointed at the installed tool (`%USERPROFILE%\.dotnet\tools\lode.exe`) whenever it exists, even when Replace is clicked in a local build, so cleaning a build folder never breaks opening folders. Only without the tool is the running copy registered.
@@ -44,7 +46,7 @@ The same two actions are buttons under **Options** in the ⋯ menu at the right 
 
 Any one of these works:
 
- * In Lode, open **Options** from the ⋯ menu and click **Restore File Explorer**.
+ * In Lode, open **Options** from the ⋯ menu, pick **File Explorer**, and click **Restore File Explorer**.
  * From a terminal, run `lode --restore-explorer`.
  * If Lode is already uninstalled, or will not start, remove its registry entries by hand:
 
@@ -64,9 +66,9 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 ## Features
 
  * Address bar that shows each folder up the path as a button, with chevrons between, as Explorer does, with This PC as an icon: click a folder to go there. The chevrons are only separators, without Explorer's drop-down lists. Click the empty space after the path, or press Ctrl+L, to type a path instead.
- * Actions bar under the address bar, with a button for any of the right-click menus' actions: New, Cut, Copy, Paste, Rename, Delete, Terminal, Terminal (admin) and Properties by default, each enabled when it applies to the selection, or to the folder when nothing is selected. Under **Actions** in Options, tick which actions show as buttons and which in the right-click menus (the list's, and the folder tree's). The rest are under **See more** (⋯) at the end of the bar, as in Explorer. Menu entries have icons too.
+ * Actions bar under the address bar, with a button for any of the right-click menus' actions: New, Cut, Copy, Paste, Rename, Delete, Terminal, Terminal (admin) and Properties by default, each enabled when it applies to the selection, or to the folder when nothing is selected. On the **Actions** page of Options, tick which actions show as buttons and which in the right-click menus (the list's, and the folder tree's). The rest are under **See more** (⋯) at the end of the bar, as in Explorer. Menu entries have icons too.
 
-   ![See more](src/Lode.Tests/MenuTests.SeeMore.verified.png)
+   ![See more](src/Lode.Tests/MenuTests.SeeMore.verified.png) ![The Actions page of Options](src/Lode.Tests/OptionsFormTests.ActionsPage.verified.png)
 
  * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing.
 
@@ -88,14 +90,21 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
    ![Right-click menu on a folder](src/Lode.Tests/MenuTests.FolderMenu.verified.png) ![New](src/Lode.Tests/MenuTests.NewMenu.verified.png)
 
- * **Options** in the ⋯ menu: show hidden items (on by default; also Ctrl+H), show system files (off by default: Windows, Program Files, other people's folders under Users, and the files Windows protects, in the list and the folder tree), show the Recent section, the default folder new tabs open in, the text editor, the code folder, and replace or restore File Explorer.
+ * **Options** in the ⋯ menu, a page each, picked from the list down the left as in Windows' Settings (Ctrl+Tab and Ctrl+Shift+Tab go through them). Changes apply straight away.
+   * **General**: the default folder new tabs open in, and the text editor.
+   * **View**: show hidden items (on by default; also Ctrl+H), show system files (off by default: Windows, Program Files, other people's folders under Users, and the files Windows protects, in the list and the folder tree), and show the Recent section.
+   * **Actions**: which actions show as buttons and which in the right-click menus.
+   * **Code**: the code folder, whether Git purge deletes permanently, and excluding the code folder from Microsoft Defender.
+   * **File Explorer**: replace or restore it.
 
-   ![The ⋯ menu](src/Lode.Tests/MenuTests.WindowMenu.verified.png) ![Options](src/Lode.Tests/OptionsFormTests.LodeInCharge.verified.png)
+   ![The ⋯ menu](src/Lode.Tests/MenuTests.WindowMenu.verified.png) ![The General page of Options](src/Lode.Tests/OptionsFormTests.GeneralPage.verified.png) ![The View page of Options](src/Lode.Tests/OptionsFormTests.ViewPage.verified.png)
 
- * **Edit** on the right-click menu of text files opens them in the text editor chosen in Options. Installed editors (Visual Studio Code, Notepad++ and others) are found from the registry; Notepad is always there.
- * **Code folder**: choose the folder your git repositories are in. Folders in it get a **Git** submenu (Pull, Push, Discard, across every repository up to two levels down) and **Update NuGets** (optionally then building) on their right-click menu. Push and Discard ask first. Each runs in the background and shows in an **Actions** panel under the folder tree, with progress while it runs; click a line for everything it reported, right-click to remove lines.
+ * **Edit** on the right-click menu of text files opens them in the text editor chosen on the **General** page of Options. Installed editors (Visual Studio Code, Notepad++ and others) are found from the registry; Notepad is always there.
+ * **Code folder**: on the **Code** page of Options, choose the folder your git repositories are in. **Exclude from Defender…** on the same page stops Microsoft Defender scanning the folder, as Rider offers to, which speeds up builds and git: after asking, it runs a PowerShell script with administrator permission that adds the folder to Defender's exclusions and removes the exclusions already under it, which that makes redundant. Folders in it get a **Git** submenu (Pull, Push, Discard, across every repository up to two levels down, and Purge) and **Update NuGets** (optionally then building) on their right-click menu. Push, Discard and Purge ask first.
+   * **Purge** deletes every file and folder git doesn't track, ignored ones included (bin, obj, node_modules and the like): what `git clean -xdf` would, leaving repositories nested inside alone. In a repository, or a folder anywhere inside one, it purges just that folder. In a folder that isn't in a repository, it purges every repository under it, however deep. Everything goes to the Recycle Bin in one go, unless **Delete them permanently** is ticked on the Code page of Options, which is faster. Its line in the Actions panel lists what went.
+   * Each runs in the background and shows in an **Actions** panel under the folder tree, with progress while it runs; click a line for everything it reported, right-click to remove lines.
 
-   ![Actions panel](src/Lode.Tests/MainFormTests.Actions.verified.png)
+   ![The Code page of Options](src/Lode.Tests/OptionsFormTests.CodePage.verified.png) ![Actions panel](src/Lode.Tests/MainFormTests.Actions.verified.png)
 
  * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work.
  * **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z), across every window: renames, moves, copies, deletes to the Recycle Bin, and new folders, files and shortcuts. Lode reverses each itself: a rename or move is done back, a copy or new item goes to the Recycle Bin, a deleted item is restored from it. Also on the right-click menu of empty space, under See more, and in the command palette, worded for what they would do ("Undo rename"). Permanent deletes can't be undone.

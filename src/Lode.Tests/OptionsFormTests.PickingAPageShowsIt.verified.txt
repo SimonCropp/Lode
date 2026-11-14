@@ -1,0 +1,14 @@
+﻿{
+  pages: [
+    General,
+    View,
+    Actions,
+    Code,
+    File Explorer
+  ],
+  opened: General,
+  picked: Code,
+  next: File Explorer,
+  wrapped: General,
+  back: File Explorer
+}

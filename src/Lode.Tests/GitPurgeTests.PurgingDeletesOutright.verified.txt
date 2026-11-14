@@ -1,0 +1,22 @@
+﻿{
+  outcome: {
+    Succeeded: true,
+    Summary: 6 items deleted,
+    Details:
+Repo: 6 items
+  Empty/
+  bin/
+  src/Untracked.cs
+  src/build.log
+  src/obj/
+  src/ünï cödé.txt
+  },
+  left: [
+    .gitignore,
+    Nested,
+    Nested/Untracked.txt,
+    src,
+    src/Tracked.cs,
+    tracked.txt
+  ]
+}

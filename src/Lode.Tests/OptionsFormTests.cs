@@ -9,6 +9,7 @@ public class OptionsFormTests
     {
         using var scratch = new RegistryScratch();
         using var form = Show(scratch.Replacement());
+        form.ShowPage("File Explorer");
         var before = Describe(form);
 
         Click(form, "replaceExplorer");
@@ -36,6 +37,7 @@ public class OptionsFormTests
             "D:\Old\Lode.exe"
             """).Replace();
         using var form = Show(scratch.Replacement());
+        form.ShowPage("File Explorer");
         var before = Describe(form);
 
         Click(form, "replaceExplorer");
@@ -81,6 +83,53 @@ public class OptionsFormTests
             });
     }
 
+    // Only with a code folder set. Excluding asks first, then hands over the folder and says
+    // how it went; the real exclusion never runs in a test.
+    [Test]
+    public async Task ExcludeCodeFolderFromDefender()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        form.ShowPage("Code");
+        var button = (Button) form.Controls.Find("excludeFromDefender", true)[0];
+        var enabledWithoutFolder = button.Enabled;
+
+        form.BrowseForCodeDirectory = () => @"D:\Code";
+        ((Button) form.Controls.Find("browseCodeDirectory", true)[0]).PerformClick();
+        var enabledWithFolder = button.Enabled;
+
+        var events = new List<string>();
+        var answer = false;
+        form.ConfirmDefenderExclusion = folder =>
+        {
+            events.Add($"asked about {folder}");
+            return answer;
+        };
+        form.ExcludeFromDefender = folder =>
+        {
+            events.Add($"excluded {folder}");
+            return Task.FromResult(new DefenderExclusion.Outcome(true, false, [@"D:\Code\Lode", @"D:\Code\Lode\bin"], null));
+        };
+        form.ReportDefenderExclusion = (folder, outcome) =>
+            events.Add($"reported {folder}: removed {string.Join(", ", outcome.Removed)}");
+
+        // Turned down: nothing is excluded.
+        button.PerformClick();
+        Application.DoEvents();
+        answer = true;
+        button.PerformClick();
+        Application.DoEvents();
+
+        await Verify(
+            new
+            {
+                enabledWithoutFolder,
+                enabledWithFolder,
+                events
+            });
+    }
+
     [Test]
     public async Task UntickingShowRecentChangesTheSetting()
     {
@@ -99,6 +148,25 @@ public class OptionsFormTests
                 before,
                 after = settings.ShowRecent,
                 changes
+            });
+    }
+
+    // Off by default, so purged files go to the Recycle Bin.
+    [Test]
+    public async Task TickingPurgePermanentlyChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var before = settings.PurgePermanently;
+
+        ((CheckBox) form.Controls.Find("purgePermanently", true)[0]).Checked = true;
+
+        await Verify(
+            new
+            {
+                before,
+                after = settings.PurgePermanently
             });
     }
 
@@ -153,25 +221,115 @@ public class OptionsFormTests
 
 #if DEBUG
     // Pixels depend on the Windows version, theme and fonts of the machine that captured them,
-    // so, like MainFormTests, these only run in Debug builds.
+    // so, like MainFormTests, these only run in Debug builds. A capture of each page; File
+    // Explorer's in both states.
     [Test]
-    public async Task ExplorerInCharge()
-    {
-        using var scratch = new RegistryScratch();
-        using var form = Show(scratch.Replacement());
-        await Verify(form);
-    }
+    public Task GeneralPage() =>
+        VerifyPage(
+            "General",
+            new()
+            {
+                DefaultDirectory = @"D:\Documents",
+                TextEditor = editors[0].Path
+            });
 
     [Test]
-    public async Task LodeInCharge()
+    public Task ViewPage() =>
+        VerifyPage("View", new());
+
+    [Test]
+    public Task ActionsPage() =>
+        VerifyPage("Actions", new());
+
+    [Test]
+    public Task CodePage() =>
+        VerifyPage("Code", new() { CodeDirectory = @"C:\Code" });
+
+    [Test]
+    public Task ExplorerInCharge() =>
+        VerifyPage("File Explorer", new());
+
+    [Test]
+    public Task LodeInCharge() =>
+        VerifyPage("File Explorer", new(), replace: true);
+
+    static async Task VerifyPage(string page, Settings settings, bool replace = false)
     {
         using var scratch = new RegistryScratch();
         var replacement = scratch.Replacement();
-        replacement.Replace();
-        using var form = Show(replacement);
+        if (replace)
+        {
+            replacement.Replace();
+        }
+
+        using var form = Show(replacement, settings);
+        form.ShowPage(page);
+        form.Refresh();
+        Application.DoEvents();
         await Verify(form);
     }
 #endif
+
+    // Picking a page in the list shows it and hides the rest; Ctrl+Tab and Ctrl+Shift+Tab go
+    // round them.
+    [Test]
+    public async Task PickingAPageShowsIt()
+    {
+        using var scratch = new RegistryScratch();
+        using var form = Show(scratch.Replacement());
+        var list = (PageList) form.Controls.Find("pages", true)[0];
+        var opened = Shown(form);
+
+        list.SelectedIndex = 3;
+        var picked = Shown(form);
+        form.Press(Keys.Control | Keys.Tab);
+        var next = Shown(form);
+        form.Press(Keys.Control | Keys.Tab);
+        var wrapped = Shown(form);
+        form.Press(Keys.Control | Keys.Shift | Keys.Tab);
+
+        await Verify(
+            new
+            {
+                pages = Enumerable.Range(0, list.Count).Select(list.PageText),
+                opened,
+                picked,
+                next,
+                wrapped,
+                back = Shown(form)
+            });
+    }
+
+    // What shows: the code folder box is on the Code page, the tick for hidden items on View.
+    static string Shown(Form form)
+    {
+        if (form.Controls.Find("codeDirectory", true)[0].Visible)
+        {
+            return "Code";
+        }
+
+        if (form.Controls.Find("explorerStatus", true)[0].Visible)
+        {
+            return "File Explorer";
+        }
+
+        if (form.Controls.Find("showHidden", true)[0].Visible)
+        {
+            return "View";
+        }
+
+        if (form.Controls.Find("button.cut", true)[0].Visible)
+        {
+            return "Actions";
+        }
+
+        if (form.Controls.Find("textEditor", true)[0].Visible)
+        {
+            return "General";
+        }
+
+        return "none";
+    }
 
     [Test]
     public async Task ChoosingAnEditorChangesTheSetting()
@@ -233,6 +391,7 @@ public class OptionsFormTests
         using var scratch = new RegistryScratch();
         var settings = new Settings();
         using var form = Show(scratch.Replacement(), settings);
+        form.ShowPage("Code");
         form.BrowseForCodeDirectory = () => @"C:\Code";
 
         Click(form, "browseCodeDirectory");
@@ -329,5 +488,13 @@ public class OptionsFormTests
         OptionsForm(replacement, settings, editors)
     {
         protected override bool ShowWithoutActivation => true;
+
+        // As the keys would: the modifiers of a real key press come from the keyboard.
+        public void Press(Keys keys)
+        {
+            var message = new Message();
+            ProcessCmdKey(ref message, keys);
+            Application.DoEvents();
+        }
     }
 }

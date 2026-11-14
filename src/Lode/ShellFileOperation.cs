@@ -11,6 +11,9 @@ static class ShellFileOperation
     public const uint RenameOnCollision = 0x8;
     public const uint RecycleOnDelete = 0x80000;
     public const uint AddUndoRecord = 0x20000000;
+    public const uint NoConfirmation = 0x10;
+    // Asks before deleting outright what is too big for the Recycle Bin, even with NoConfirmation.
+    public const uint WantNukeWarning = 0x4000;
 
     public enum Kind
     {

@@ -2,5 +2,6 @@
   ShowHidden: true,
   ShowSystem: false,
   ShowRecent: true,
+  PurgePermanently: false,
   Maximized: false
 }

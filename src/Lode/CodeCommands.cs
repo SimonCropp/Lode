@@ -59,7 +59,7 @@ static class CodeCommands
     }
 
     // A .git folder, or a .git file as a worktree or submodule has.
-    static bool IsRepo(string folder)
+    internal static bool IsRepo(string folder)
     {
         var git = Path.Combine(folder, ".git");
         return Directory.Exists(git) || File.Exists(git);
@@ -124,17 +124,20 @@ static class CodeCommands
                 })
                 .ToList());
 
-    static RepoResult Git(string repo, params string[] arguments)
+    internal static RepoResult Git(string repo, params string[] arguments)
     {
         try
         {
+            // Git writes file names as UTF-8, whatever the console's code page.
             var startInfo = new ProcessStartInfo("git")
             {
                 WorkingDirectory = repo,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
             };
             foreach (var argument in arguments)
             {

@@ -1,0 +1,19 @@
+﻿{
+  repo: [
+    Empty/,
+    bin/,
+    src/Untracked.cs,
+    src/build.log,
+    src/obj/,
+    src/ünï cödé.txt
+  ],
+  src: [
+    Untracked.cs,
+    build.log,
+    obj/,
+    ünï cödé.txt
+  ],
+  bin: [
+    Debug
+  ]
+}

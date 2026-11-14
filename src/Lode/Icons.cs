@@ -34,6 +34,8 @@ static class Icons
     public const char Pull = '\uE896';
     public const char Push = '\uE898';
     public const char Discard = '\uE7A7';
+    // A broom.
+    public const char Purge = '\uEA99';
     public const char Package = '\uE7B8';
     public const char Build = '\uE9F5';
     public const char More = '\uE712';
@@ -50,6 +52,12 @@ static class Icons
     public const char Exit = '\uE7E8';
     // A list, for Show more options: the full Windows menu.
     public const char MoreOptions = '\uE8FD';
+    // The pages of Options.
+    public const char View = '\uE890';
+    // A lightning bolt, for the actions the bar and menus offer.
+    public const char Actions = '\uE945';
+    public const char Code = '\uE943';
+    public const char FileExplorer = '\uEC50';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

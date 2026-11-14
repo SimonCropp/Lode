@@ -2,6 +2,7 @@
   ShowHidden: true,
   ShowSystem: false,
   ShowRecent: true,
+  PurgePermanently: false,
   Maximized: true,
   Tabs: [
     D:\Work

@@ -1,11 +1,18 @@
+/// <summary>
+/// Lode's options, a page each for General, View, Actions, Code and File Explorer, picked from
+/// the list down the left, as Windows 11's Settings does. A change applies straight away.
+/// </summary>
 class OptionsForm : Form
 {
+    // The widest a page's text runs before it wraps.
+    const int textWidth = 440;
+
     readonly ExplorerReplacement explorerReplacement;
     readonly Label explorerStatus = new()
     {
         Name = "explorerStatus",
         AutoSize = true,
-        MaximumSize = new(440, 0),
+        MaximumSize = new(textWidth, 0),
         Margin = new(3, 0, 3, 6)
     };
     readonly Button replaceButton = new()
@@ -28,7 +35,7 @@ class OptionsForm : Form
         Name = "showHidden",
         Text = "Show hidden items (Ctrl+H)",
         AutoSize = true,
-        Margin = new(3, 3, 3, 6)
+        Margin = new(3, 0, 3, 9)
     };
 
     readonly CheckBox showSystem = new()
@@ -36,7 +43,7 @@ class OptionsForm : Form
         Name = "showSystem",
         Text = "Show system files",
         AutoSize = true,
-        Margin = new(3, 3, 3, 0)
+        Margin = new(3, 0, 3, 0)
     };
 
     readonly CheckBox showRecent = new()
@@ -44,7 +51,7 @@ class OptionsForm : Form
         Name = "showRecent",
         Text = "Show recent folders in the folder tree",
         AutoSize = true,
-        Margin = new(3, 3, 3, 0)
+        Margin = new(3, 0, 3, 0)
     };
 
     readonly TextBox defaultDirectory = new()
@@ -92,6 +99,39 @@ class OptionsForm : Form
     /// </summary>
     internal Func<string?> BrowseForCodeDirectory;
 
+    readonly CheckBox purgePermanently = new()
+    {
+        Name = "purgePermanently",
+        Text = "Delete them permanently instead, which is faster",
+        AutoSize = true,
+        Margin = new(3, 0, 3, 3)
+    };
+
+    // Shows the shield Windows puts on buttons that ask for administrator permission.
+    readonly Button excludeFromDefender = new()
+    {
+        Name = "excludeFromDefender",
+        Text = "Exclude from Defender…",
+        AutoSize = true,
+        FlatStyle = FlatStyle.System,
+        Anchor = AnchorStyles.Left
+    };
+
+    /// <summary>
+    /// Asks whether to exclude the folder from Defender, saying why. Replaced in tests.
+    /// </summary>
+    internal Func<string, bool> ConfirmDefenderExclusion;
+
+    /// <summary>
+    /// Excludes the folder from Defender. Replaced in tests, which must never change Defender.
+    /// </summary>
+    internal Func<string, Task<DefenderExclusion.Outcome>> ExcludeFromDefender = DefenderExclusion.Exclude;
+
+    /// <summary>
+    /// Says how excluding the folder went. Replaced in tests.
+    /// </summary>
+    internal Action<string, DefenderExclusion.Outcome> ReportDefenderExclusion;
+
     readonly Settings settings;
     readonly IReadOnlyList<TextEditors.Editor> editors;
 
@@ -109,6 +149,21 @@ class OptionsForm : Form
     };
 
     int textEditorIndex;
+
+    readonly PageList pageList = new()
+    {
+        Name = "pages",
+        AutoSize = true,
+        Anchor = AnchorStyles.Top | AnchorStyles.Left,
+        Margin = new(0, 0, 15, 0)
+    };
+
+    // In the list's order, only the one picked there shown.
+    readonly List<Control> pages = [];
+
+    // A page's name over it, and the headings of its sections.
+    readonly Font headingFont;
+    readonly Font sectionFont;
 
     /// <summary>
     /// A setting that changes how windows look was changed.
@@ -132,6 +187,10 @@ class OptionsForm : Form
             }
         };
         clearCodeDirectory.Click += (_, _) => SetCodeDirectory(null);
+        ConfirmDefenderExclusion = ShowDefenderPrompt;
+        ReportDefenderExclusion = ShowDefenderOutcome;
+        excludeFromDefender.Click += (_, _) => OnExcludeFromDefender();
+        excludeFromDefender.HandleCreated += (_, _) => SendMessage(excludeFromDefender.Handle, buttonSetShield, IntPtr.Zero, 1);
         UpdateCodeDirectory();
         FillTextEditors();
         textEditor.SelectedIndexChanged += (_, _) => TextEditorChosen();
@@ -150,6 +209,8 @@ class OptionsForm : Form
             settings.ShowSystem = showSystem.Checked;
             SettingsChanged?.Invoke();
         };
+        purgePermanently.Checked = settings.PurgePermanently;
+        purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
         showRecent.Checked = settings.ShowRecent;
         showRecent.CheckedChanged += (_, _) =>
         {
@@ -169,6 +230,8 @@ class OptionsForm : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Padding = new(9);
+        headingFont = new(Font.FontFamily, Font.SizeInPoints * 1.5f);
+        sectionFont = new(Font, FontStyle.Bold);
 
         replaceButton.Click += (_, _) => Change(explorerReplacement.Replace);
         restoreButton.Click += (_, _) => Change(explorerReplacement.Restore);
@@ -179,12 +242,30 @@ class OptionsForm : Form
             DialogResult = DialogResult.OK,
             AutoSize = true,
             Anchor = AnchorStyles.Right,
-            Margin = new(3, 9, 3, 3)
+            Margin = new(3, 12, 3, 3)
         };
         AcceptButton = closeButton;
         CancelButton = closeButton;
 
-        // The settings down the left, and beside them the actions, a row each.
+        AddPage("General", Icons.Options, BuildGeneralPage());
+        AddPage("View", Icons.View, BuildViewPage());
+        AddPage("Actions", Icons.Actions, BuildActionsPage());
+        AddPage("Code", Icons.Code, BuildCodePage());
+        AddPage("File Explorer", Icons.FileExplorer, BuildExplorerPage());
+        pageList.SelectedChanged += ShowSelectedPage;
+        ShowSelectedPage();
+
+        var host = new PageHost
+        {
+            AutoSize = true,
+            Margin = new(0, 6, 0, 0)
+        };
+        foreach (var page in pages)
+        {
+            host.Controls.Add(page);
+        }
+
+        // The pages down the left, and beside them the one picked.
         var layout = new TableLayoutPanel
         {
             AutoSize = true,
@@ -192,23 +273,9 @@ class OptionsForm : Form
             ColumnCount = 2,
             Location = new(Padding.Left, Padding.Top)
         };
-        GroupBox[] groups =
-        [
-            BuildStartupGroup(),
-            BuildViewGroup(),
-            BuildTextEditorGroup(),
-            BuildCodeGroup(),
-            BuildExplorerGroup()
-        ];
-        for (var row = 0; row < groups.Length; row++)
-        {
-            layout.Controls.Add(groups[row], 0, row);
-        }
-
-        var actions = BuildActionsGroup();
-        layout.Controls.Add(actions, 1, 0);
-        layout.SetRowSpan(actions, groups.Length);
-        layout.Controls.Add(closeButton, 0, groups.Length);
+        layout.Controls.Add(pageList, 0, 0);
+        layout.Controls.Add(host, 1, 0);
+        layout.Controls.Add(closeButton, 0, 1);
         layout.SetColumnSpan(closeButton, 2);
         Controls.Add(layout);
         ResumeLayout(false);
@@ -217,54 +284,220 @@ class OptionsForm : Form
         UpdateExplorerState();
     }
 
-    GroupBox BuildStartupGroup()
+    // A page: its name as a heading, then its parts one under another. Hidden until picked.
+    void AddPage(string title, char glyph, Control[] parts)
     {
-        var description = new Label
+        var page = Column(Padding.Empty);
+        page.Dock = DockStyle.Fill;
+        page.Visible = false;
+        page.Controls.Add(
+            new Label
+            {
+                Text = title,
+                AutoSize = true,
+                Font = headingFont,
+                Margin = new(1, 0, 3, 12)
+            });
+        foreach (var part in parts)
         {
-            AutoSize = true,
-            MaximumSize = new(420, 0),
-            Margin = new(3, 3, 3, 6),
-            Text = "The folder new tabs open in, and new windows given no folder to show. " +
-                   "Reset goes back to your user folder."
-        };
+            page.Controls.Add(part);
+        }
 
-        // A table row rather than a flow, so each control is centred on the row's middle and the
-        // text box lines up with the taller buttons.
-        var row = new TableLayoutPanel
+        pages.Add(page);
+        pageList.Add(title, glyph);
+    }
+
+    void ShowSelectedPage()
+    {
+        for (var index = 0; index < pages.Count; index++)
         {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 3,
-            RowCount = 1,
-            Margin = Padding.Empty
-        };
-        defaultDirectory.Anchor = AnchorStyles.Left;
-        browseDefaultDirectory.Anchor = AnchorStyles.Left;
-        resetDefaultDirectory.Anchor = AnchorStyles.Left;
-        row.Controls.Add(defaultDirectory, 0, 0);
-        row.Controls.Add(browseDefaultDirectory, 1, 0);
-        row.Controls.Add(resetDefaultDirectory, 2, 0);
+            pages[index].Visible = index == pageList.SelectedIndex;
+        }
+    }
 
-        var layout = new TableLayoutPanel
+    /// <summary>
+    /// Shows the page named <paramref name="title"/>, as picking it in the list does.
+    /// </summary>
+    internal void ShowPage(string title)
+    {
+        for (var index = 0; index < pageList.Count; index++)
+        {
+            if (pageList.PageText(index) == title)
+            {
+                pageList.SelectedIndex = index;
+                return;
+            }
+        }
+
+        throw new ArgumentException($"Options has no {title} page.", nameof(title));
+    }
+
+    // Ctrl+Tab and Ctrl+Shift+Tab, or Ctrl+Page Down and Up, go through the pages, as they go
+    // through a dialog's tabs.
+    protected override bool ProcessCmdKey(ref Message message, Keys keyData)
+    {
+        var step = keyData switch
+        {
+            (Keys.Control | Keys.Tab) or (Keys.Control | Keys.PageDown) => 1,
+            (Keys.Control | Keys.Shift | Keys.Tab) or (Keys.Control | Keys.PageUp) => -1,
+            _ => 0
+        };
+        if (step == 0)
+        {
+            return base.ProcessCmdKey(ref message, keyData);
+        }
+
+        pageList.SelectedIndex = (pageList.SelectedIndex + step + pageList.Count) % pageList.Count;
+        return true;
+    }
+
+    static TableLayoutPanel Column(Padding margin) =>
+        new()
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
-            Dock = DockStyle.Fill
+            Margin = margin
         };
-        layout.Controls.Add(description);
-        layout.Controls.Add(row);
 
-        var group = new GroupBox
+    // A part of a page: a heading, what it is for, then its controls.
+    TableLayoutPanel Section(string heading, string description, params Control[] controls)
+    {
+        var section = Column(new(0, 0, 0, 15));
+        section.Controls.Add(
+            new Label
+            {
+                Text = heading,
+                AutoSize = true,
+                Font = sectionFont,
+                Margin = new(3, 0, 3, 3)
+            });
+        section.Controls.Add(Description(description, new(3, 0, 3, 6)));
+        foreach (var control in controls)
         {
-            Text = "Default folder",
+            section.Controls.Add(control);
+        }
+
+        return section;
+    }
+
+    static Label Description(string text, Padding margin) =>
+        new()
+        {
+            Text = text,
+            AutoSize = true,
+            MaximumSize = new(textWidth, 0),
+            Margin = margin
+        };
+
+    // Grey text under a check box, lined up with the box's text.
+    static Label Note(string text) =>
+        new()
+        {
+            Text = text,
+            AutoSize = true,
+            MaximumSize = new(textWidth, 0),
+            Margin = new(21, 0, 3, 9),
+            ForeColor = SystemColors.GrayText
+        };
+
+    // A table row rather than a flow, so each control is centred on the row's middle and a text
+    // box lines up with the taller buttons beside it.
+    static TableLayoutPanel Row(params Control[] controls)
+    {
+        var row = new TableLayoutPanel
+        {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = new(9, 6, 9, 9)
+            ColumnCount = controls.Length,
+            RowCount = 1,
+            Margin = Padding.Empty
         };
-        group.Controls.Add(layout);
-        return group;
+        for (var column = 0; column < controls.Length; column++)
+        {
+            controls[column].Anchor = AnchorStyles.Left;
+            row.Controls.Add(controls[column], column, 0);
+        }
+
+        return row;
+    }
+
+    Control[] BuildGeneralPage() =>
+    [
+        Section(
+            "Default folder",
+            "The folder new tabs open in, and new windows given no folder to show. Reset goes " +
+            "back to your user folder.",
+            Row(defaultDirectory, browseDefaultDirectory, resetDefaultDirectory)),
+        Section(
+            "Text editor",
+            "Edit, on the right-click menu of a text file, opens it in this editor.",
+            textEditor)
+    ];
+
+    Control[] BuildViewPage() =>
+    [
+        showHidden,
+        showSystem,
+        Note("Windows, Program Files, other people's folders under Users, and the files Windows protects."),
+        showRecent,
+        Note(
+            "Pinned folders are the ones pinned to Quick access in File Explorer. Recent folders " +
+            "are the ones Explorer adds there because you use them often.")
+    ];
+
+    Control[] BuildActionsPage() =>
+    [
+        Description(
+            "Show each action as a button on the bar under the address bar, in the right-click " +
+            "menus, or both. The menus only offer what applies to what was clicked.",
+            new(3, 0, 3, 9)),
+        BuildActionsTable()
+    ];
+
+    Control[] BuildCodePage() =>
+    [
+        Section(
+            "Code folder",
+            "The folder your git repositories are in. Folders in it get a Git menu (pull, push, " +
+            "discard, purge) and Update NuGets on their right-click menu.",
+            Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
+        Section(
+            "Git purge",
+            "Purge, in the Git menu, deletes every file and folder git doesn't track, ignored " +
+            "ones included, such as bin and obj. It moves them to the Recycle Bin.",
+            purgePermanently),
+        Section(
+            "Microsoft Defender",
+            "Defender scans every file builds and git write in the code folder, which slows " +
+            "them down. Excluding the folder stops that, as Rider suggests, and removes the " +
+            "exclusions under it, which it makes redundant. Windows asks for administrator " +
+            "permission.",
+            excludeFromDefender)
+    ];
+
+    Control[] BuildExplorerPage()
+    {
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            Margin = Padding.Empty
+        };
+        buttons.Controls.Add(replaceButton);
+        buttons.Controls.Add(restoreButton);
+
+        return
+        [
+            Description(
+                "Open folders, drives and Win+E in Lode instead of File Explorer. This applies to " +
+                "your Windows account only. Explorer's own Open stays on every folder's " +
+                "right-click menu, and the taskbar's File Explorer button still opens Explorer.",
+                new(3, 0, 3, 9)),
+            explorerStatus,
+            buttons
+        ];
     }
 
     void BrowseDefaultDirectory()
@@ -295,17 +528,8 @@ class OptionsForm : Form
 
     // Where each action shows: a button on the actions bar, an entry in the right-click menus,
     // both or neither. A tick changes every window at once.
-    GroupBox BuildActionsGroup()
+    TableLayoutPanel BuildActionsTable()
     {
-        var description = new Label
-        {
-            AutoSize = true,
-            MaximumSize = new(340, 0),
-            Margin = new(3, 3, 3, 9),
-            Text = "Show each action as a button on the bar under the address bar, in the " +
-                   "right-click menus, or both. The menus only offer what applies to what was clicked."
-        };
-
         var table = new TableLayoutPanel
         {
             AutoSize = true,
@@ -371,26 +595,7 @@ class OptionsForm : Form
             row++;
         }
 
-        var layout = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            Dock = DockStyle.Fill
-        };
-        layout.Controls.Add(description);
-        layout.Controls.Add(table);
-
-        var group = new GroupBox
-        {
-            Text = "Actions",
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = new(9, 6, 9, 9)
-        };
-        group.Controls.Add(layout);
-        return group;
+        return table;
     }
 
     static Label ColumnHeading(string text) =>
@@ -402,101 +607,6 @@ class OptionsForm : Form
             ForeColor = SystemColors.GrayText,
             Margin = new(6, 0, 6, 3)
         };
-
-    GroupBox BuildViewGroup()
-    {
-        var recentDescription = new Label
-        {
-            AutoSize = true,
-            MaximumSize = new(420, 0),
-            Margin = new(21, 0, 3, 3),
-            ForeColor = SystemColors.GrayText,
-            Text = "Pinned folders are the ones pinned to Quick access in File Explorer. " +
-                   "Recent folders are the ones Explorer adds there because you use them often."
-        };
-
-        var layout = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            Dock = DockStyle.Fill
-        };
-        layout.Controls.Add(showHidden);
-        layout.Controls.Add(showSystem);
-        layout.Controls.Add(
-            new Label
-            {
-                AutoSize = true,
-                MaximumSize = new(420, 0),
-                Margin = new(21, 0, 3, 6),
-                ForeColor = SystemColors.GrayText,
-                Text = "Windows, Program Files, other people's folders under Users, and the files " +
-                       "Windows protects."
-            });
-        layout.Controls.Add(showRecent);
-        layout.Controls.Add(recentDescription);
-
-        var group = new GroupBox
-        {
-            Text = "View",
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = new(9, 6, 9, 9)
-        };
-        group.Controls.Add(layout);
-        return group;
-    }
-
-    GroupBox BuildCodeGroup()
-    {
-        var description = new Label
-        {
-            AutoSize = true,
-            MaximumSize = new(420, 0),
-            Margin = new(3, 3, 3, 6),
-            Text = "The folder your git repositories are in. Folders in it get a Git menu (pull, " +
-                   "push, discard) and Update NuGets on their right-click menu."
-        };
-
-        // Centred on the row's middle, as the Default folder row is.
-        var row = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 3,
-            RowCount = 1,
-            Margin = Padding.Empty
-        };
-        codeDirectory.Anchor = AnchorStyles.Left;
-        browseCodeDirectory.Anchor = AnchorStyles.Left;
-        clearCodeDirectory.Anchor = AnchorStyles.Left;
-        row.Controls.Add(codeDirectory, 0, 0);
-        row.Controls.Add(browseCodeDirectory, 1, 0);
-        row.Controls.Add(clearCodeDirectory, 2, 0);
-
-        var layout = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            Dock = DockStyle.Fill
-        };
-        layout.Controls.Add(description);
-        layout.Controls.Add(row);
-
-        var group = new GroupBox
-        {
-            Text = "Code folder",
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = new(9, 6, 9, 9)
-        };
-        group.Controls.Add(layout);
-        return group;
-    }
 
     string? ShowCodeDirectoryDialog()
     {
@@ -524,38 +634,76 @@ class OptionsForm : Form
     {
         codeDirectory.Text = settings.CodeDirectory ?? "";
         clearCodeDirectory.Enabled = settings.CodeDirectory != null;
+        excludeFromDefender.Enabled = settings.CodeDirectory != null;
     }
 
-    GroupBox BuildTextEditorGroup()
+    const int buttonSetShield = 0x160C;
+
+    async void OnExcludeFromDefender()
     {
-        var description = new Label
+        if (settings.CodeDirectory is not { } folder ||
+            !ConfirmDefenderExclusion(folder))
         {
-            AutoSize = true,
-            MaximumSize = new(420, 0),
-            Margin = new(3, 3, 3, 6),
-            Text = "Edit, on the right-click menu of a text file, opens it in this editor."
-        };
+            return;
+        }
 
-        var layout = new TableLayoutPanel
+        excludeFromDefender.Enabled = false;
+        try
         {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            Dock = DockStyle.Fill
-        };
-        layout.Controls.Add(description);
-        layout.Controls.Add(textEditor);
+            var outcome = await ExcludeFromDefender(folder);
+            if (!IsDisposed)
+            {
+                ReportDefenderExclusion(folder, outcome);
+            }
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                UpdateCodeDirectory();
+            }
+        }
+    }
 
-        var group = new GroupBox
+    bool ShowDefenderPrompt(string folder)
+    {
+        var exclude = new TaskDialogButton("Exclude");
+        var page = new TaskDialogPage
         {
-            Text = "Text editor",
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = new(9, 6, 9, 9)
+            Caption = "Lode",
+            Heading = "Exclude the code folder from Microsoft Defender?",
+            Text = $"Defender scans every file builds and git write in {folder}, which slows them " +
+                   "down. Excluding the folder stops that, as Rider suggests.\n\n" +
+                   "Exclusions already under it become redundant, so they are removed. Windows " +
+                   "will ask for administrator permission.",
+            Icon = TaskDialogIcon.ShieldBlueBar,
+            Buttons = { exclude, TaskDialogButton.Cancel },
+            DefaultButton = exclude
         };
-        group.Controls.Add(layout);
-        return group;
+        return TaskDialog.ShowDialog(this, page) == exclude;
+    }
+
+    void ShowDefenderOutcome(string folder, DefenderExclusion.Outcome outcome)
+    {
+        if (outcome.Cancelled)
+        {
+            return;
+        }
+
+        if (!outcome.Succeeded)
+        {
+            MessageBox.Show(this, $"Lode couldn't exclude {folder} from Defender: {outcome.Error}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var text = $"Defender no longer scans {folder}.";
+        if (outcome.Removed.Count > 0)
+        {
+            text += $"\n\nRemoved {outcome.Removed.Count} exclusions under it, which this made redundant:\n" +
+                    string.Join("\n", outcome.Removed);
+        }
+
+        MessageBox.Show(this, text, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     // The editors found, then one chosen by browsing if that is what is set, then Browse….
@@ -638,58 +786,22 @@ class OptionsForm : Form
         return dialog.FileName;
     }
 
-    GroupBox BuildExplorerGroup()
-    {
-        var description = new Label
-        {
-            AutoSize = true,
-            MaximumSize = new(440, 0),
-            Margin = new(3, 3, 3, 9),
-            Text = "Open folders, drives and Win+E in Lode instead of File Explorer. " +
-                   "This applies to your Windows account only. Explorer's own Open stays on " +
-                   "every folder's right-click menu, and the taskbar's File Explorer button " +
-                   "still opens Explorer."
-        };
-
-        var buttons = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = false,
-            Margin = Padding.Empty
-        };
-        buttons.Controls.Add(replaceButton);
-        buttons.Controls.Add(restoreButton);
-
-        var layout = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            Dock = DockStyle.Fill
-        };
-        layout.Controls.Add(description);
-        layout.Controls.Add(explorerStatus);
-        layout.Controls.Add(buttons);
-
-        var group = new GroupBox
-        {
-            Text = "File Explorer",
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Dock = DockStyle.Fill,
-            Padding = new(9, 6, 9, 9)
-        };
-        group.Controls.Add(layout);
-        return group;
-    }
-
     // Written straight away rather than when the last window closes, so a change made here
     // survives Lode ending some other way.
     protected override void OnFormClosed(FormClosedEventArgs eventArgs)
     {
         base.OnFormClosed(eventArgs);
         settings.Save();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing)
+        {
+            headingFont.Dispose();
+            sectionFont.Dispose();
+        }
     }
 
     void Change(Action change)
@@ -726,5 +838,22 @@ class OptionsForm : Form
         // Replace stays available when another copy is registered, to point folders at this one.
         replaceButton.Enabled = !here;
         restoreButton.Enabled = registered != null;
+    }
+
+    // Holds every page, one shown at a time, and asks for room for the largest, so the dialog
+    // keeps its size whichever page is shown.
+    sealed class PageHost : Panel
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var size = Size.Empty;
+            foreach (Control page in Controls)
+            {
+                var preferred = page.GetPreferredSize(proposedSize);
+                size = new(Math.Max(size.Width, preferred.Width), Math.Max(size.Height, preferred.Height));
+            }
+
+            return size;
+        }
     }
 }

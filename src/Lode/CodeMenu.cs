@@ -1,8 +1,8 @@
 /// <summary>
-/// The right-click entries for a folder under the code folder: git pull, push and discard
-/// across its repositories, and Update NuGets (optionally then building). Each runs in the background and shows in the
-/// actions panel under the tree, without holding up the rest of Lode. Push and discard
-/// ask first.
+/// The right-click entries for a folder under the code folder: git pull, push, discard and
+/// purge across its repositories, and Update NuGets (optionally then building). Each runs in
+/// the background and shows in the actions panel under the tree, without holding up the rest
+/// of Lode. Push, discard and purge ask first.
 /// </summary>
 static class CodeMenu
 {
@@ -36,6 +36,10 @@ static class CodeMenu
                     new("Discard…", () => Discard(owner, folder))
                     {
                         Glyph = Icons.Discard
+                    },
+                    new("Purge…", () => Purge(owner, settings, folder))
+                    {
+                        Glyph = Icons.Purge
                     }
                 ]),
             LodeActions.Command("updateNugets", () => UpdateNugets(folder)),
@@ -101,6 +105,49 @@ static class CodeMenu
             "Git discard",
             folder,
             async progress => CodeCommands.GitOutcome(await CodeCommands.Discard(repos, progress)));
+    }
+
+    // Deletes what git doesn't track, ignored files too. Finding the repositories can mean
+    // reading a whole tree of folders, so that is off the UI thread; then it asks, saying where
+    // the files go.
+    static async void Purge(Control owner, Settings settings, string folder)
+    {
+        var folders = await Task.Run(() => GitPurge.Folders(folder, settings.CodeDirectory ?? folder));
+        if (folders.Count == 0)
+        {
+            NoRepos("Git purge", folder);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
+        var permanent = settings.PurgePermanently;
+        var where = "They go to the Recycle Bin.";
+        if (permanent)
+        {
+            where = "They are deleted permanently, as set in Options. This cannot be undone.";
+        }
+
+        var answer = MessageBox.Show(
+            owner,
+            $"Delete every file and folder git doesn't track, ignored ones included (such as bin and obj), in {Describe(folders)}?\n\n{where}",
+            "Git purge",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        if (answer != DialogResult.OK)
+        {
+            return;
+        }
+
+        var window = owner.FindForm()?.Handle ?? owner.Handle;
+        _ = ActionLog.Run(
+            "Git purge",
+            folder,
+            progress => GitPurge.Run(folders, permanent, window, progress));
     }
 
     static void UpdateNugets(string folder) =>

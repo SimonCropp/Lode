@@ -206,7 +206,7 @@ public class CodeCommandsTests
         await Assert.That(outcome).IsEqualTo(new ActionLog.Outcome(true, "Nothing to update", ""));
     }
 
-    sealed class Scratch : IDisposable
+    internal sealed class Scratch : IDisposable
     {
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "LodeTests", $"Code.{Guid.NewGuid():N}");
 
