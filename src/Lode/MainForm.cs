@@ -1101,8 +1101,10 @@ class MainForm : Form
 
     void RebuildTree()
     {
-        tree.Rebuild();
-        if (ActiveView is { } view)
+        // Not when the tree kept a pinned folder selected that was just moved, so moving it
+        // again with the keyboard carries on from it.
+        if (!tree.Rebuild() &&
+            ActiveView is { } view)
         {
             tree.SelectPath(view.CurrentPath);
         }

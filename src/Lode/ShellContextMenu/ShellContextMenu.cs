@@ -389,8 +389,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             bool remove;
             if (submenu != IntPtr.Zero)
             {
-                remove = Lists(submenu, sendTo) || Lists(submenu, libraries);
-                if (!remove && (sendTo.Count > 0 || libraries.Count > 0) && LoneEntry(submenu))
+                remove = Lists(submenu, sendTo) ||
+                         Lists(submenu, libraries);
+                if (!remove &&
+                    (sendTo.Count > 0 ||
+                     libraries.Count > 0) &&
+                    LoneEntry(submenu))
                 {
                     // Include in library holds only a "Retrieving libraries..." placeholder until
                     // the shell fills it in, which it does on a message posted back to this
@@ -403,7 +407,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                         Thread.Sleep(5);
                     }
 
-                    remove = Lists(submenu, sendTo) || Lists(submenu, libraries);
+                    remove = Lists(submenu, sendTo) ||
+                             Lists(submenu, libraries);
                 }
             }
             else
@@ -480,7 +485,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             .Select(_ => MenuText(submenu, _).Replace("&", ""))
             .Where(_ => _.Length > 0)
             .ToList();
-        return texts.Count > 0 && texts.Count(names.Contains) >= Math.Max(1, texts.Count - 1);
+        return texts.Count > 0 &&
+               texts.Count(names.Contains) >= Math.Max(1, texts.Count - 1);
     }
 
     static unsafe string MenuText(IntPtr menu, int position)
@@ -501,7 +507,9 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         {
             var last = position == GetMenuItemCount(menu) - 1;
             if (IsSeparator(menu, position) &&
-                (position == 0 || last || IsSeparator(menu, position + 1)))
+                (position == 0 ||
+                 last ||
+                 IsSeparator(menu, position + 1)))
             {
                 DeleteMenu(menu, (uint)position, menuByPosition);
             }

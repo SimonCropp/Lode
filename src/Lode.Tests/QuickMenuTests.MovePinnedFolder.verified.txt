@@ -1,0 +1,8 @@
+﻿[
+  unpin Projects/Archive,
+  unpin Projects/Docs,
+  unpin Projects/Source,
+  pin Projects/Source,
+  pin Projects/Archive,
+  pin Projects/Docs
+]

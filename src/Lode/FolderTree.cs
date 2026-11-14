@@ -67,8 +67,13 @@ sealed class FolderTree : TreeView
         SendMessage(Handle, TreeViewSetImageList, IntPtr.Zero, ShellIcons.SmallImageList);
     }
 
-    public void Rebuild()
+    /// <summary>
+    /// Builds the tree again from the settings and places. True when it selected a pinned folder
+    /// that was just moved, which the caller then leaves selected.
+    /// </summary>
+    public bool Rebuild()
     {
+        var selectedMoved = false;
         BeginUpdate();
         try
         {
@@ -87,12 +92,149 @@ sealed class FolderTree : TreeView
                 LoadDrives();
                 computerNode.Expand();
             }
+
+            selectedMoved = SelectMovedPinned();
         }
         finally
         {
             EndUpdate();
         }
+
+        return selectedMoved;
     }
+
+    // A pinned folder being moved, and the order it is being moved into. Its node is selected
+    // in each rebuild until Quick access has that order.
+    string? movingPinned;
+    IReadOnlyList<string> movingOrder = [];
+
+    bool SelectMovedPinned()
+    {
+        if (movingPinned == null ||
+            PinnedSection is not { } section)
+        {
+            return false;
+        }
+
+        var node = section.Nodes.Cast<TreeNode>().FirstOrDefault(_ => Locations.Same(_.Tag as string, movingPinned));
+        if (node == null)
+        {
+            return false;
+        }
+
+        SelectedNode = node;
+        if (places.Pinned.SequenceEqual(movingOrder, StringComparer.OrdinalIgnoreCase))
+        {
+            movingPinned = null;
+        }
+
+        return true;
+    }
+
+    TreeNode? PinnedSection =>
+        Nodes.Cast<TreeNode>().FirstOrDefault(_ => _.Tag is Section { Name: "Pinned" });
+
+    static bool IsPinnedEntry(TreeNode? node) =>
+        node is { Tag: string, Parent.Tag: Section { Name: "Pinned" } };
+
+    /// <summary>
+    /// Moves a pinned folder to <paramref name="index"/> in the Pinned list, as dragging it there
+    /// does.
+    /// </summary>
+    internal void MovePinned(string folder, int index)
+    {
+        var desired = PinnedOrder.Move(places.Pinned, folder, index);
+        var steps = PinnedOrder.Steps(places.Pinned, desired);
+        if (steps.Count == 0)
+        {
+            return;
+        }
+
+        movingPinned = folder;
+        movingOrder = desired;
+        foreach (var (path, pin) in steps)
+        {
+            SetPinned(path, pin);
+        }
+    }
+
+    // Alt+Shift+Up and Down move the selected pinned folder up or down the list.
+    protected override void OnKeyDown(KeyEventArgs eventArgs)
+    {
+        if (eventArgs.KeyData is (Keys.Alt | Keys.Shift | Keys.Up) or (Keys.Alt | Keys.Shift | Keys.Down) &&
+            IsPinnedEntry(SelectedNode))
+        {
+            var node = SelectedNode!;
+            var offset = eventArgs.KeyCode == Keys.Up ? -1 : 1;
+            MovePinned((string)node.Tag!, node.Index + offset);
+            eventArgs.Handled = true;
+            eventArgs.SuppressKeyPress = true;
+            return;
+        }
+
+        base.OnKeyDown(eventArgs);
+    }
+
+    // A pinned folder can be dragged up or down the Pinned list to reorder it, as in Explorer.
+    const string pinnedFormat = "Lode.PinnedFolder";
+
+    protected override void OnItemDrag(ItemDragEventArgs eventArgs)
+    {
+        base.OnItemDrag(eventArgs);
+        if (eventArgs.Button == MouseButtons.Left &&
+            eventArgs.Item is TreeNode node &&
+            IsPinnedEntry(node))
+        {
+            var data = new DataObject();
+            data.SetData(pinnedFormat, (string)node.Tag!);
+            DoDragDrop(data, DragDropEffects.Move);
+            ClearInsertMark();
+        }
+    }
+
+    // Where a dragged pinned folder would land: before or after a pinned folder, or first when
+    // over the Pinned heading. Null when not over the Pinned list.
+    (string Folder, int Index, TreeNode Node, bool After)? PinnedDropTarget(DragEventArgs eventArgs)
+    {
+        if (eventArgs.Data?.GetData(pinnedFormat) is not string folder)
+        {
+            return null;
+        }
+
+        var point = PointToClient(new(eventArgs.X, eventArgs.Y));
+        var node = GetNodeAt(point);
+        if (node?.Tag is Section { Name: "Pinned" })
+        {
+            return (folder, 0, node, false);
+        }
+
+        if (!IsPinnedEntry(node))
+        {
+            return null;
+        }
+
+        var after = point.Y > node!.Bounds.Top + node.Bounds.Height / 2;
+        var others = places.Pinned.Where(_ => !Locations.Same(_, folder)).ToList();
+        var targetIndex = others.FindIndex(_ => Locations.Same(_, node.Tag as string));
+        if (targetIndex < 0)
+        {
+            // Over the folder being dragged: it stays where it is.
+            targetIndex = node.Index;
+            after = false;
+        }
+        else if (after)
+        {
+            targetIndex++;
+        }
+
+        return (folder, targetIndex, node, after);
+    }
+
+    void ShowInsertMark(TreeNode node, bool after) =>
+        SendMessage(Handle, TreeViewSetInsertMark, after ? 1 : 0, node.Handle);
+
+    void ClearInsertMark() =>
+        SendMessage(Handle, TreeViewSetInsertMark, IntPtr.Zero, IntPtr.Zero);
 
     // A heading with the folders beneath it, open. Nothing at all when there are no folders.
     void AddSection(string name, int icon, IReadOnlyList<string> folders)
@@ -775,6 +917,26 @@ sealed class FolderTree : TreeView
 
     DragDropEffects DropEffect(DragEventArgs eventArgs)
     {
+        if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
+        {
+            if (PinnedDropTarget(eventArgs) is { } target)
+            {
+                if (target.Node.Tag is Section)
+                {
+                    ShowInsertMark(target.Node.Nodes[0], false);
+                }
+                else
+                {
+                    ShowInsertMark(target.Node, target.After);
+                }
+
+                return DragDropEffects.Move;
+            }
+
+            ClearInsertMark();
+            return DragDropEffects.None;
+        }
+
         if (FoldersToPin(eventArgs) != null)
         {
             return DragDropEffects.Link;
@@ -789,6 +951,12 @@ sealed class FolderTree : TreeView
         eventArgs.Effect = DropEffect(eventArgs);
     }
 
+    protected override void OnDragLeave(EventArgs eventArgs)
+    {
+        base.OnDragLeave(eventArgs);
+        ClearInsertMark();
+    }
+
     protected override void OnDragOver(DragEventArgs eventArgs)
     {
         base.OnDragOver(eventArgs);
@@ -798,7 +966,18 @@ sealed class FolderTree : TreeView
     protected override void OnDragDrop(DragEventArgs eventArgs)
     {
         base.OnDragDrop(eventArgs);
+        ClearInsertMark();
         var owner = FindForm()?.Handle ?? Handle;
+        if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
+        {
+            if (PinnedDropTarget(eventArgs) is { } target)
+            {
+                MovePinned(target.Folder, target.Index);
+            }
+
+            return;
+        }
+
         if (FoldersToPin(eventArgs) is { } folders)
         {
             foreach (var folder in folders)

@@ -1,0 +1,26 @@
+﻿{
+  cToFirst: [
+    C:\C,
+    C:\A,
+    C:\B,
+    C:\D
+  ],
+  aToLast: [
+    C:\B,
+    C:\C,
+    C:\D,
+    C:\A
+  ],
+  bAfterC: [
+    C:\A,
+    C:\C,
+    C:\B,
+    C:\D
+  ],
+  pastTheEnd: [
+    C:\B,
+    C:\C,
+    C:\D,
+    C:\A
+  ]
+}
