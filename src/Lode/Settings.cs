@@ -107,11 +107,44 @@ sealed class Settings
     public List<string> Tabs { get; set; } = [];
     public int ActiveTab { get; set; }
 
+    static string Folder =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lode");
+
+    // A Debug build keeps its own, so one run from an IDE beside the installed Lode doesn't
+    // save its tabs and window over the installed one's.
+    const string fileName =
+#if DEBUG
+        "settings.debug.json";
+#else
+        "settings.json";
+#endif
+
     public static string DefaultPath =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Lode",
-            "settings.json");
+        Path.Combine(Folder, fileName);
+
+    /// <summary>
+    /// On a Debug build's first run, starts its settings as a copy of the installed Lode's, so it
+    /// opens with the same options and tabs. Nothing once it has settings of its own.
+    /// </summary>
+    public static void SeedFromInstalled()
+    {
+        var installed = Path.Combine(Folder, "settings.json");
+        if (DefaultPath == installed ||
+            File.Exists(DefaultPath) ||
+            !File.Exists(installed))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Copy(installed, DefaultPath);
+        }
+        catch (IOException)
+        {
+            // Starting with defaults is fine.
+        }
+    }
 
     public static Settings Load(string path)
     {

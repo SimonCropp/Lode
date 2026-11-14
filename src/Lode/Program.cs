@@ -44,6 +44,7 @@ static class Program
         }
 
         ShellNew.Warm();
+        Settings.SeedFromInstalled();
         var settings = Settings.Load(Settings.DefaultPath);
         var places = Places.ForThisMachine();
         Application.Run(new WindowContext(new(commandLine.Paths.ToArray(), settings, places), settings, places, instance));

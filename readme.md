@@ -121,7 +121,7 @@ Tests use [TUnit](https://github.com/thomhurst/TUnit) and [Verify](https://githu
    ![Filtered](src/Lode.Tests/MainFormTests.Filtered.verified.png)
 
  * The list refreshes itself when the folder changes on disk.
- * Window size, open tabs and the options are remembered in `%AppData%\Lode\settings.json`. With several windows open, the last one closed is what the next start restores.
+ * Window size, open tabs and the options are remembered in `%AppData%\Lode\settings.json`. With several windows open, the last one closed is what the next start restores. A Debug build (from source) keeps its own `settings.debug.json`, first copied from `settings.json`, and runs as a copy of its own beside the installed Lode, with " (Lode Debug)" after its window titles.
 
 ## Keyboard
 

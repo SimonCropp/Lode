@@ -10,6 +10,15 @@ sealed class SingleInstance : IDisposable
     // started do that.
     const int anyProcess = -1;
 
+    // A Debug build is a copy of its own, so one started from an IDE runs beside the installed
+    // Lode rather than handing its folders to it and quitting.
+    const string buildSuffix =
+#if DEBUG
+        "-Debug";
+#else
+        "";
+#endif
+
     Mutex mutex;
     string pipeName;
     CancelSource cancel = new();
@@ -19,7 +28,7 @@ sealed class SingleInstance : IDisposable
     public SingleInstance()
     {
         using var process = Process.GetCurrentProcess();
-        var name = $"Lode-{Environment.UserDomainName}-{Environment.UserName}-{process.SessionId}";
+        var name = $"Lode-{Environment.UserDomainName}-{Environment.UserName}-{process.SessionId}{buildSuffix}";
         mutex = new(initiallyOwned: true, $@"Local\{name}", out var createdNew);
         IsFirst = createdNew;
         pipeName = name;
