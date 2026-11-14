@@ -26,7 +26,7 @@ sealed class FolderTree : TreeView
     // The folders whose subfolders are kept up to date: those loaded and still expanded. Each has
     // a watcher, or null where the location can't be watched. A folder drops out when it is
     // collapsed, and is brought up to date when it is expanded again.
-    readonly Dictionary<TreeNode, FileSystemWatcher?> watched = [];
+    readonly Dictionary<TreeNode, FolderWatcher?> watched = [];
 
     // Folders a watcher has seen change. Watcher events arrive on thread-pool threads and can
     // come in bursts, so they only land here; the timer syncs each folder once per tick on the
@@ -466,27 +466,15 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        FileSystemWatcher? watcher = null;
+        FolderWatcher? watcher = null;
         try
         {
-            watcher = new((string)node.Tag!)
-            {
-                NotifyFilter = NotifyFilters.DirectoryName
-            };
-            watcher.Created += (_, _) => changed[node] = true;
-            watcher.Deleted += (_, _) => changed[node] = true;
-            watcher.Renamed += (_, _) => changed[node] = true;
-
-            // Too many changes at once to keep track of, or the folder itself has gone.
-            // Either way, read it again.
-            watcher.Error += (_, _) => changed[node] = true;
-            watcher.EnableRaisingEvents = true;
+            watcher = new((string)node.Tag!, NotifyFilters.DirectoryName, () => changed[node] = true);
         }
         catch (Exception)
         {
             // Some locations (an offline share, an empty drive) can't be watched. Those are
             // read again whenever they are expanded.
-            watcher?.Dispose();
             watcher = null;
         }
 

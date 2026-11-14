@@ -39,7 +39,7 @@ sealed class FolderView : UserControl
     readonly List<string> history = [];
     int historyIndex = -1;
 
-    FileSystemWatcher? watcher;
+    FolderWatcher? watcher;
     volatile bool changePending;
     bool loading;
     int loadVersion;
@@ -1284,15 +1284,10 @@ sealed class FolderView : UserControl
 
         try
         {
-            watcher = new(CurrentPath)
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size
-            };
-            watcher.Created += (_, _) => changePending = true;
-            watcher.Deleted += (_, _) => changePending = true;
-            watcher.Changed += (_, _) => changePending = true;
-            watcher.Renamed += (_, _) => changePending = true;
-            watcher.EnableRaisingEvents = true;
+            watcher = new(
+                CurrentPath,
+                NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                () => changePending = true);
         }
         catch (Exception)
         {

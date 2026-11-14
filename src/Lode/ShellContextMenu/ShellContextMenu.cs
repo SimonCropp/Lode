@@ -297,9 +297,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 flags |= extendedVerbsFlag;
             }
 
-            if (contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, flags) < 0)
+            // A stuck extension would otherwise hold up the menu, and the window with it.
+            using (new ShellExtensionGuard())
             {
-                return;
+                if (contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, flags) < 0)
+                {
+                    return;
+                }
             }
 
             RemoveUnwanted(contextMenu, menu);
@@ -550,7 +554,11 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         var menu = CreatePopupMenu();
         try
         {
-            contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, canRenameFlag);
+            using (new ShellExtensionGuard())
+            {
+                contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, canRenameFlag);
+            }
+
             RemoveUnwanted(contextMenu, menu);
             return DescribeMenu(contextMenu, menu);
         }

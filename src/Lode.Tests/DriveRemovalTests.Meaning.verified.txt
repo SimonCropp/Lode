@@ -1,0 +1,13 @@
+﻿{
+  queryRemove: true,
+  queryRemoveFailed: false,
+  removePending: true,
+  removeComplete: true,
+  volumeLock: true,
+  volumeLockFailed: false,
+  volumeUnlock: false,
+  volumeDismount: true,
+  volumeMount: false,
+  otherCustomEvent: neither,
+  interfaceArrival: neither
+}
