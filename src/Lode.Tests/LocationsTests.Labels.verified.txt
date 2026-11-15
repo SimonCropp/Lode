@@ -1,0 +1,14 @@
+﻿{
+  C:\Backup\This PC: Backup\This PC,
+  C:\Notes: C:\Notes,
+  C:\Repos: Repos,
+  C:\Repos\Lode\src: Lode\src,
+  C:\Repos\Lode\src\Lode: Repos\Lode\src\Lode,
+  C:\Repos\Other\src: Other\src,
+  C:\Worktrees\Lode\src\Lode: Worktrees\Lode\src\Lode,
+  D:\Notes: D:\Notes,
+  This PC: This PC,
+  \\other\share: \\other\share,
+  \\server\share: \\server\share,
+  \\server\share\Notes: \\server\share\Notes
+}

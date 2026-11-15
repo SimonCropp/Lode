@@ -155,11 +155,16 @@ sealed class FolderTree : TreeView
             UnwatchAll();
             Nodes.Clear();
             computerNode.Nodes.Clear();
-            AddSection("Pinned", ShellIcons.QuickAccessIcon, places.Pinned);
+            IReadOnlyList<string> recent = [];
             if (settings.ShowRecent)
             {
-                AddSection("Recent", ShellIcons.RecentIcon, places.Recent);
+                recent = places.Recent;
             }
+
+            // Told apart across both sections, which show side by side, as tabs are.
+            var labels = Locations.Labels(places.Pinned.Concat(recent));
+            AddSection("Pinned", ShellIcons.QuickAccessIcon, places.Pinned, labels);
+            AddSection("Recent", ShellIcons.RecentIcon, recent, labels);
 
             if (places.ShowComputer)
             {
@@ -309,7 +314,7 @@ sealed class FolderTree : TreeView
         SendMessage(Handle, TreeViewSetInsertMark, IntPtr.Zero, IntPtr.Zero);
 
     // A heading with the folders beneath it, open. Nothing at all when there are no folders.
-    void AddSection(string name, int icon, IReadOnlyList<string> folders)
+    void AddSection(string name, int icon, IReadOnlyList<string> folders, Dictionary<string, string> labels)
     {
         if (folders.Count == 0)
         {
@@ -329,7 +334,7 @@ sealed class FolderTree : TreeView
             var folderIcon = Locations.IsNetwork(folder) ? ShellIcons.FolderIcon : ShellIcons.GetActualIcon(folder);
             // Shortcuts, not a second copy of the folder tree: they have no children, and
             // picking one selects the folder in the tree under This PC.
-            section.Nodes.Add(CreateNode(folder, Locations.DisplayName(folder), folderIcon, expandable: false));
+            section.Nodes.Add(CreateNode(folder, labels[folder], folderIcon, expandable: false));
         }
 
         Nodes.Add(section);

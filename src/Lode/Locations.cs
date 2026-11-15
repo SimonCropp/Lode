@@ -121,6 +121,70 @@ static class Locations
         return name;
     }
 
+    /// <summary>
+    /// What a tab or a window's title calls each of <paramref name="locations"/>: its name, or,
+    /// where another has the same name, as much of the end of its path as tells the two apart,
+    /// "Lode\src" and "Other\src", and the whole path when only the root does, "C:\src" and
+    /// "D:\src". Keyed by location, ignoring case.
+    /// </summary>
+    public static Dictionary<string, string> Labels(IEnumerable<string> locations)
+    {
+        var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var sameNames = locations
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .GroupBy(DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(_ => _.ToList());
+        foreach (var sameName in sameNames)
+        {
+            foreach (var location in sameName)
+            {
+                labels[location] = Label(location, sameName);
+            }
+        }
+
+        return labels;
+    }
+
+    static string Label(string location, List<string> sameName)
+    {
+        if (sameName.Count == 1)
+        {
+            return DisplayName(location);
+        }
+
+        for (var depth = 1; ; depth++)
+        {
+            var label = Tail(location, depth);
+            if (label.Length == location.Length ||
+                sameName.All(_ => ReferenceEquals(_, location) ||
+                                  !Tail(_, depth).Equals(label, StringComparison.OrdinalIgnoreCase)))
+            {
+                return label;
+            }
+        }
+    }
+
+    // The location's name with the names of depth folders above it, or the whole location once
+    // that reaches into its root, which means nothing without the rest of it: a share's name
+    // without its server's.
+    static string Tail(string location, int depth)
+    {
+        var root = Path.GetPathRoot(location.AsSpan()).Length;
+        var start = location.Length;
+        for (var step = 0; step <= depth; step++)
+        {
+            start = location.AsSpan(0, start).LastIndexOf(Path.DirectorySeparatorChar);
+            // C:\'s own separator can start a tail; a separator inside \\server\share cannot.
+            if (start < 0 ||
+                start < root - 1)
+            {
+                return location;
+            }
+        }
+
+        return location[(start + 1)..];
+    }
+
     public static bool SameRoot(CharSpan first, CharSpan second) =>
         Path.GetPathRoot(first)
             .Equals(Path.GetPathRoot(second), StringComparison.OrdinalIgnoreCase);

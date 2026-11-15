@@ -35,6 +35,33 @@ public class LocationsTests
         Verify(Normalized().ToDictionary(_ => _, Locations.DisplayName));
 
     [Test]
+    public Task Labels() =>
+        Verify(
+            Locations.Labels(
+            [
+                // Alone in its name.
+                @"C:\Repos",
+                // Told apart by the folder they are in.
+                @"C:\Repos\Lode\src",
+                @"C:\Repos\Other\src",
+                // The same folder written another way is one folder.
+                @"c:\repos\other\SRC",
+                // Told apart only further up.
+                @"C:\Repos\Lode\src\Lode",
+                @"C:\Worktrees\Lode\src\Lode",
+                // Told apart only by their roots, a share's whole.
+                @"C:\Notes",
+                @"D:\Notes",
+                @"\\server\share\Notes",
+                // Shares named alike, on two servers.
+                @"\\server\share",
+                @"\\other\share",
+                // This PC beside a folder with its name.
+                "This PC",
+                @"C:\Backup\This PC"
+            ]));
+
+    [Test]
     public Task IsWithin()
     {
         (string Path, string Folder)[] pairs =

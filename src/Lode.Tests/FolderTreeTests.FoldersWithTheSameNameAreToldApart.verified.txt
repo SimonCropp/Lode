@@ -1,0 +1,8 @@
+﻿- Pinned
+    Source\Deep
+    Docs\Deep
+    Docs
+- Recent
+    Archive\Deep
+- This PC
+  + FolderTreeTests.FoldersWithTheSameNameAreToldApart

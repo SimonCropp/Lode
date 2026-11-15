@@ -892,6 +892,11 @@ class MainForm : Form
             tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
             SyncToActiveView();
         }
+        else
+        {
+            // A folder that had the same name as this one's may go back to its name alone.
+            RetitleAll();
+        }
     }
 
     void RememberClosed(TabPage page)
@@ -1022,6 +1027,10 @@ class MainForm : Form
             tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
             SyncToActiveView();
         }
+        else
+        {
+            RetitleAll();
+        }
     }
 
     void OnViewStatusChanged(FolderView view)
@@ -1034,18 +1043,77 @@ class MainForm : Form
 
     void OnViewPathChanged(FolderView view)
     {
-        if (view.Parent is not TabPage page)
+        if (view.Parent is not TabPage)
         {
             return;
         }
 
-        var name = Locations.DisplayName(view.CurrentPath);
-        page.Text = name.Length > maximumTabTextLength ? string.Concat(name.AsSpan(0, maximumTabTextLength), "…") : name;
-        page.ToolTipText = view.CurrentPath;
         if (view == ActiveView)
         {
             SyncToActiveView();
         }
+        else
+        {
+            RetitleAll();
+        }
+    }
+
+    // Closed, though perhaps not yet gone from the open forms, so its tabs no longer count when
+    // the others are named.
+    bool closed;
+
+    /// <summary>
+    /// Names the tabs, and titles the windows, of every window: a folder is called by its name,
+    /// unless another folder open in any window has the same name, when both take in as much of
+    /// their paths as tells them apart, "Lode\src" and "Other\src". The taskbar shows the
+    /// windows' titles side by side, so the folders in two windows need telling apart as much as
+    /// those in two tabs do.
+    /// </summary>
+    void RetitleAll()
+    {
+        // This one too while it is being built, before it is among the open forms.
+        var windows = Application.OpenForms
+            .OfType<MainForm>()
+            .Append(this)
+            .Distinct()
+            .Where(_ => !_.closed &&
+                        !_.Disposing &&
+                        !_.IsDisposed)
+            .ToList();
+        var labels = Locations.Labels(windows.SelectMany(_ => _.Views).Select(_ => _.CurrentPath));
+        foreach (var window in windows)
+        {
+            window.Retitle(labels);
+        }
+    }
+
+    void Retitle(Dictionary<string, string> labels)
+    {
+        foreach (var view in Views)
+        {
+            var page = (TabPage)view.Parent!;
+            var label = labels[view.CurrentPath];
+            var text = label.Length > maximumTabTextLength ? string.Concat(label.AsSpan(0, maximumTabTextLength), "…") : label;
+            // Setting a tab's text, even to what it was, has the tab control update the tab.
+            if (page.Text != text)
+            {
+                page.Text = text;
+            }
+
+            page.ToolTipText = view.CurrentPath;
+        }
+
+        if (ActiveView is { } active)
+        {
+            Text = labels[active.CurrentPath] + TitleSuffix;
+        }
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs eventArgs)
+    {
+        closed = true;
+        RetitleAll();
+        base.OnFormClosed(eventArgs);
     }
 
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
@@ -1065,7 +1133,7 @@ class MainForm : Form
         updatingFilter = true;
         filterBox.Text = view.Filter;
         updatingFilter = false;
-        Text = Locations.DisplayName(view.CurrentPath) + TitleSuffix;
+        RetitleAll();
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;

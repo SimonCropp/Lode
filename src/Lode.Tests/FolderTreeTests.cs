@@ -210,6 +210,23 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // Pinned and recent folders with the same name, in one section or across the two, are told
+    // apart by the folder each is in. One alone in its name keeps its name.
+    [Test]
+    public async Task FoldersWithTheSameNameAreToldApart()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Docs", "Deep"));
+        Directory.CreateDirectory(fixture.At("Archive", "Deep"));
+        using var tree = CreateWithRecent(
+            fixture,
+            new() { ShowHidden = false },
+            [fixture.At("Source", "Deep"), fixture.At("Docs", "Deep"), fixture.At("Docs")],
+            [fixture.At("Archive", "Deep")]);
+
+        await Verify(Dump(tree));
+    }
+
     [Test]
     public async Task RecentHiddenWhenTurnedOff()
     {

@@ -93,6 +93,52 @@ public class WindowsTests
             });
     }
 
+    // Two folders with the same name are told apart by the folder each is in: in two tabs, and
+    // in two windows, whose titles the taskbar shows side by side. Each goes back to its name
+    // alone once the other is no longer open.
+    [Test]
+    public async Task FoldersWithTheSameNameAreToldApart()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Docs", "Deep"));
+        using var first = await Show(fixture, fixture.At("Source", "Deep"), fixture.At("Docs", "Deep"));
+        var twoTabs = Describe(first);
+
+        first.CloseTabsToTheRight((TabPage)first.Views.First().Parent!);
+        var oneTab = Describe(first);
+
+        using var second = await Show(fixture, fixture.At("Docs", "Deep"));
+        var twoWindows = new
+        {
+            first = Describe(first),
+            second = Describe(second)
+        };
+
+        second.ActiveView!.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(second.ActiveView);
+        var navigatedAway = new
+        {
+            first = Describe(first),
+            second = Describe(second)
+        };
+
+        second.ActiveView.GoBack();
+        await Pump.Loaded(second.ActiveView);
+        var navigatedBack = Describe(first);
+        second.Close();
+
+        await Verify(
+            new
+            {
+                twoTabs,
+                oneTab,
+                twoWindows,
+                navigatedAway,
+                navigatedBack,
+                secondClosed = Describe(first)
+            });
+    }
+
     // Most recently closed first, each at the folder it was showing.
     [Test]
     public async Task ReopenClosedTabs()
