@@ -1,7 +1,8 @@
 /// <summary>
 /// Reordering the folders pinned to Quick access. Windows has no call that moves a pinned
-/// folder; pinning adds a folder at the end. So a new order is reached by unpinning every
-/// folder from the first one out of place onwards, then pinning them again in the new order.
+/// folder; pinning adds a folder at the end. So a new order is reached by moving folders to the
+/// end one after another, each unpinned then pinned again straight away, so no folder is left
+/// unpinned for longer than it takes to pin it again.
 /// </summary>
 static class PinnedOrder
 {
@@ -17,30 +18,23 @@ static class PinnedOrder
     }
 
     /// <summary>
-    /// The unpins then pins that turn <paramref name="current"/> into <paramref name="desired"/>,
-    /// in order. None when they already match.
+    /// The folders that, moved to the end in turn, turn <paramref name="current"/> into
+    /// <paramref name="desired"/>. Those at the start of <paramref name="desired"/> that are
+    /// already in that order in <paramref name="current"/> stay put; the rest move. None when
+    /// they already match.
     /// </summary>
-    public static List<(string Path, bool Pin)> Steps(IReadOnlyList<string> current, IReadOnlyList<string> desired)
+    public static List<string> ToMoveToEnd(IReadOnlyList<string> current, IReadOnlyList<string> desired)
     {
-        var first = 0;
-        while (first < current.Count &&
-               first < desired.Count &&
-               Locations.Same(current[first], desired[first]))
+        var staying = 0;
+        foreach (var folder in current)
         {
-            first++;
+            if (staying < desired.Count &&
+                Locations.Same(folder, desired[staying]))
+            {
+                staying++;
+            }
         }
 
-        var steps = new List<(string, bool)>();
-        for (var index = first; index < current.Count; index++)
-        {
-            steps.Add((current[index], false));
-        }
-
-        for (var index = first; index < desired.Count; index++)
-        {
-            steps.Add((desired[index], true));
-        }
-
-        return steps;
+        return desired.Skip(staying).ToList();
     }
 }

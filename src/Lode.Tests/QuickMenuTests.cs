@@ -317,20 +317,21 @@ public class QuickMenuTests
     static FileEntry Entry(FolderView view, string name) =>
         view.Entries.Single(_ => _.Name == name);
 
-    // Moving a pinned folder unpins and pins again, through the tree's hook, never the real
-    // Quick access list.
+    // Moving a pinned folder moves the others after it to the end, through the tree's hook,
+    // never the real Quick access list, and all in one go.
     [Test]
     public async Task MovePinnedFolder()
     {
         using var fixture = Fixture.Create();
         string[] pinned = [fixture.At("Archive"), fixture.At("Docs"), fixture.At("Source")];
         using var tree = CreateTree(pinned, []);
-        var steps = new List<string>();
-        tree.SetPinned = (path, pin) => steps.Add($"{(pin ? "pin" : "unpin")} {fixture.Relative(path)}");
+        var moves = new List<List<string>>();
+        tree.MovePinnedToEnd = _ => moves.Add(_.Select(fixture.Relative).ToList());
+        tree.SetPinned = (_, _) => throw new("Moving does not pin or unpin one at a time");
 
         tree.MovePinned(fixture.At("Source"), 0);
 
-        await Verify(steps);
+        await Verify(moves);
     }
 
     static FolderTree CreateTree(string[] pinned, string[] recent)

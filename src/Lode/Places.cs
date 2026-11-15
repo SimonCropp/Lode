@@ -131,7 +131,7 @@ sealed record Places(
     /// user pinned and the frequent ones Explorer adds itself. Pinning or unpinning a folder in
     /// Explorer is how the pinned list is edited.
     /// </summary>
-    static (List<string> Pinned, List<string> Recent) QuickAccessFolders()
+    internal static (List<string> Pinned, List<string> Recent) QuickAccessFolders()
     {
         var pinned = new List<string>();
         var recent = new List<string>();

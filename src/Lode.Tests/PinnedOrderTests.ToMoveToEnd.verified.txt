@@ -1,0 +1,21 @@
+﻿{
+  cToFirst: [
+    C:\A,
+    C:\B,
+    C:\D
+  ],
+  dUpOne: [
+    C:\C
+  ],
+  dToSecond: [
+    C:\B,
+    C:\C
+  ],
+  aToLast: [
+    C:\A
+  ],
+  bDownOne: [
+    C:\B,
+    C:\D
+  ]
+}

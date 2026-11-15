@@ -25,6 +25,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     const uint commandVerbUnicode = 0x4;
     const uint invokeUnicode = 0x4000;
+    const uint invokeNoAsync = 0x100;
     const uint invokePointValid = 0x20000000;
     const uint invokeShiftDown = 0x10000000;
     const uint invokeControlDown = 0x40000000;
@@ -228,30 +229,127 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     /// <summary>
     /// Pins a folder to Quick access, or unpins it, as the shell's own menu entries do.
-    /// Unpin is only offered by the folder's Quick access entry, so it is asked for that.
     /// </summary>
     public static void SetPinned(IntPtr owner, string path, bool pin)
     {
-        IContextMenu? contextMenu;
         if (pin)
         {
-            contextMenu = CreateForItems(owner, [path]);
+            Pin(path);
         }
         else
         {
-            contextMenu = CreateForQuickAccessItem(owner, path);
+            Unpin(owner, path);
         }
 
+        QuickAccessChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Moves pinned folders to the end of the Pinned list one after another, so they end up
+    /// last in this order: each is unpinned and pinned again, which puts it at the end. Quick
+    /// access is read again once, after them all.
+    /// </summary>
+    public static void MoveToEnd(IntPtr owner, IReadOnlyList<string> folders)
+    {
+        foreach (var folder in folders)
+        {
+            // Pinning toggles, so a folder is pinned again only once it has been unpinned. Were
+            // pinning to fail, the folders after it are left pinned where they are rather than
+            // unpinned too.
+            if (Unpin(owner, folder) &&
+                !TogglePinned(folder))
+            {
+                break;
+            }
+        }
+
+        QuickAccessChanged?.Invoke();
+    }
+
+    // Unpin is only offered by the folder's Quick access entry, so it is asked for that. True
+    // when it ran: false when Quick access has no entry for the folder, or one not pinned.
+    static bool Unpin(IntPtr owner, string path)
+    {
+        var contextMenu = CreateForQuickAccessItem(owner, path);
         if (contextMenu == null)
+        {
+            return false;
+        }
+
+        // Done by the time it returns, so the folder can be pinned again straight after.
+        return InvokeVerb(contextMenu, owner, "unpinfromhome", invokeNoAsync) >= 0;
+    }
+
+    // Unlike Unpin, Pin to Quick access is not asked of the folder's menu: some versions of
+    // Windows leave it off folders' menus, though the command behind it still pins them. That
+    // command toggles, unpinning a folder pinned already, so it only runs on a folder Quick
+    // access does not have pinned.
+    static void Pin(string path)
+    {
+        if (Places.QuickAccessFolders().Pinned.Any(_ => Locations.Same(_, path)))
         {
             return;
         }
 
-        InvokeVerb(contextMenu, owner, pin ? "pintohome" : "unpinfromhome");
-        QuickAccessChanged?.Invoke();
+        TogglePinned(path);
     }
 
-    static void InvokeVerb(IContextMenu contextMenu, IntPtr owner, string verb)
+    // What the shell's Pin to Quick access entries run, for folders, drives and files alike.
+    static readonly Guid pinToQuickAccessCommand = new("b455f46e-e4af-4035-b0a4-cf18d2f6f28e");
+    static readonly Guid shellItemId = new("43826d1e-e718-42ee-bc55-a1e261c37bfe");
+    static readonly Guid shellItemArrayId = new("b63ea76d-1f85-456f-a19c-48159efa858b");
+
+    // Pins the folder, or unpins it if it is pinned. True when the command ran.
+    static bool TogglePinned(string path)
+    {
+        var itemId = shellItemId;
+        if (SHCreateItemFromParsingName(path, IntPtr.Zero, ref itemId, out var item) != 0)
+        {
+            return false;
+        }
+
+        var items = IntPtr.Zero;
+        object? command = null;
+        try
+        {
+            var itemsId = shellItemArrayId;
+            if (SHCreateShellItemArrayFromShellItem(item, ref itemsId, out items) != 0)
+            {
+                return false;
+            }
+
+            command = Activator.CreateInstance(Type.GetTypeFromCLSID(pinToQuickAccessCommand)!);
+            if (command is not IObjectWithSelection selection ||
+                command is not IExecuteCommand execute ||
+                selection.SetSelection(items) < 0)
+            {
+                return false;
+            }
+
+            execute.SetShowWindow(showNormal);
+            return execute.Execute() >= 0;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (command != null)
+            {
+                Marshal.ReleaseComObject(command);
+            }
+
+            if (items != IntPtr.Zero)
+            {
+                Marshal.Release(items);
+            }
+
+            Marshal.Release(item);
+        }
+    }
+
+    static int InvokeVerb(IContextMenu contextMenu, IntPtr owner, string verb, uint flags = 0)
     {
         var menu = CreatePopupMenu();
         var verbAnsi = Marshal.StringToHGlobalAnsi(verb);
@@ -262,13 +360,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             var info = new InvokeCommandInfo
             {
                 Size = Marshal.SizeOf<InvokeCommandInfo>(),
-                Mask = invokeUnicode,
+                Mask = invokeUnicode | flags,
                 Window = owner,
                 Verb = verbAnsi,
                 VerbUnicode = verbUnicode,
                 Show = showNormal
             };
-            contextMenu.InvokeCommand(ref info);
+            return contextMenu.InvokeCommand(ref info);
         }
         finally
         {
@@ -853,6 +951,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     [LibraryImport("shell32.dll")]
     private static partial int SHGetNameFromIDList(IntPtr identifier, uint form, out IntPtr name);
+
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int SHCreateItemFromParsingName(string path, IntPtr bindContext, ref Guid interfaceId, out IntPtr item);
+
+    [LibraryImport("shell32.dll")]
+    private static partial int SHCreateShellItemArrayFromShellItem(IntPtr item, ref Guid interfaceId, out IntPtr items);
 
 
     [LibraryImport("user32.dll")]

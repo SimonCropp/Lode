@@ -87,6 +87,7 @@ sealed class FolderTree : TreeView
         this.places = places;
         SetPinned = (path, pin) => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, path, pin);
         Pin = _ => SetPinned(_, true);
+        MovePinnedToEnd = _ => ShellContextMenu.MoveToEnd(FindForm()?.Handle ?? Handle, _);
         HideSelection = false;
         ShowLines = false;
         FullRowSelect = true;
@@ -213,18 +214,15 @@ sealed class FolderTree : TreeView
     internal void MovePinned(string folder, int index)
     {
         var desired = PinnedOrder.Move(places.Pinned, folder, index);
-        var steps = PinnedOrder.Steps(places.Pinned, desired);
-        if (steps.Count == 0)
+        var toMove = PinnedOrder.ToMoveToEnd(places.Pinned, desired);
+        if (toMove.Count == 0)
         {
             return;
         }
 
         movingPinned = folder;
         movingOrder = desired;
-        foreach (var (path, pin) in steps)
-        {
-            SetPinned(path, pin);
-        }
+        MovePinnedToEnd(toMove);
     }
 
     // Alt+Shift+Up and Down move the selected pinned folder up or down the list.
@@ -1119,6 +1117,12 @@ sealed class FolderTree : TreeView
     /// real list.
     /// </summary>
     internal Action<string, bool> SetPinned;
+
+    /// <summary>
+    /// Moves pinned folders to the end of the Pinned list, one after another. Replaced in tests,
+    /// which must not change the real list.
+    /// </summary>
+    internal Action<IReadOnlyList<string>> MovePinnedToEnd;
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
     {

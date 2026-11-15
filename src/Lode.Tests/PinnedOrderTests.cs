@@ -13,17 +13,46 @@ public class PinnedOrderTests
                 pastTheEnd = PinnedOrder.Move(pinned, @"C:\A", 10)
             });
 
-    // Everything from the first folder out of place is unpinned, then pinned again in order.
+    // The folders moved to the end in turn, each unpinned and pinned again. Those already in
+    // order at the start stay put.
     [Test]
-    public Task Steps() =>
+    public Task ToMoveToEnd() =>
         Verify(
             new
             {
-                cToFirst = Describe(PinnedOrder.Steps(pinned, PinnedOrder.Move(pinned, @"C:\C", 0))),
-                dUpOne = Describe(PinnedOrder.Steps(pinned, PinnedOrder.Move(pinned, @"C:\D", 2))),
-                unchanged = Describe(PinnedOrder.Steps(pinned, pinned))
+                cToFirst = MovedFor(PinnedOrder.Move(pinned, @"C:\C", 0)),
+                dUpOne = MovedFor(PinnedOrder.Move(pinned, @"C:\D", 2)),
+                dToSecond = MovedFor(PinnedOrder.Move(pinned, @"C:\D", 1)),
+                aToLast = MovedFor(PinnedOrder.Move(pinned, @"C:\A", 3)),
+                bDownOne = MovedFor(PinnedOrder.Move(pinned, @"C:\B", 2))
             });
 
-    static IEnumerable<string> Describe(List<(string Path, bool Pin)> steps) =>
-        steps.Select(_ => $"{(_.Pin ? "pin" : "unpin")} {_.Path}");
+    [Test]
+    public async Task NothingToMoveWhenUnchanged() =>
+        await Assert.That(MovedFor(pinned)).IsEmpty();
+
+    // Moving them to the end of the list as it is, as Quick access does, gives the order asked
+    // for.
+    [Test]
+    public async Task MovingToEndGivesTheOrder()
+    {
+        for (var from = 0; from < pinned.Length; from++)
+        {
+            for (var to = 0; to < pinned.Length; to++)
+            {
+                var desired = PinnedOrder.Move(pinned, pinned[from], to);
+                var list = pinned.ToList();
+                foreach (var folder in PinnedOrder.ToMoveToEnd(pinned, desired))
+                {
+                    list.Remove(folder);
+                    list.Add(folder);
+                }
+
+                await Assert.That(string.Join(", ", list)).IsEqualTo(string.Join(", ", desired));
+            }
+        }
+    }
+
+    static List<string> MovedFor(IReadOnlyList<string> desired) =>
+        PinnedOrder.ToMoveToEnd(pinned, desired);
 }
