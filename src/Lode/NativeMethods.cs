@@ -199,6 +199,13 @@ static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AllowSetForegroundWindow(int processId);
 
+    // Unlike WinForms' FormWindowState.Normal, puts a minimized window back maximized if it was.
+    public const int ShowWindowRestore = 9;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ShowWindow(IntPtr window, int command);
+
     [LibraryImport("shell32.dll")]
     public static partial int SHGetKnownFolderPath(in Guid folderId, uint flags, IntPtr token, out IntPtr path);
 

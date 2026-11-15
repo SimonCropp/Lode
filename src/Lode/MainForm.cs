@@ -668,14 +668,20 @@ class MainForm : Form
         return status;
     }
 
-    void OpenInitialTabs(string[] arguments)
-    {
-        var paths = arguments
+    /// <summary>
+    /// The folders and files among a launch's <paramref name="arguments"/>, as full paths.
+    /// </summary>
+    internal static List<string> Openable(IEnumerable<string> arguments) =>
+        arguments
             .Select(_ => Locations.Normalize(_))
             .OfType<string>()
             .Where(_ => Directory.Exists(_) ||
                         File.Exists(_))
             .ToList();
+
+    void OpenInitialTabs(string[] arguments)
+    {
+        var paths = Openable(arguments);
         var active = paths.Count - 1;
         if (paths.Count == 0)
         {
@@ -812,6 +818,55 @@ class MainForm : Form
 
         UpdateShowing();
         return view;
+    }
+
+    /// <summary>
+    /// Selects the tab showing <paramref name="path"/>, or the folder it is in when it is a file,
+    /// with the file selected: the selected tab when that is one, otherwise the first. False
+    /// when no tab shows it.
+    /// </summary>
+    internal bool SelectTabShowing(string path)
+    {
+        var file = File.Exists(path);
+        var folder = path;
+        if (file)
+        {
+            folder = Path.GetDirectoryName(path) ?? path;
+        }
+
+        var active = ActiveView;
+        var view = Views
+            .OrderByDescending(_ => _ == active)
+            .FirstOrDefault(_ => Locations.Same(_.CurrentPath, folder));
+        if (view == null)
+        {
+            return false;
+        }
+
+        // Before the tab shows, so a tab in the background reads its folder once.
+        if (file)
+        {
+            view.Reveal(path);
+        }
+
+        tabs.SelectedTab = (TabPage)view.Parent!;
+        view.FocusList();
+        return true;
+    }
+
+    /// <summary>
+    /// Brings the window to the front, from the tray or the taskbar too, as it was before it
+    /// went there: maximized if it was.
+    /// </summary>
+    internal void ShowInFront()
+    {
+        Show();
+        if (WindowState == FormWindowState.Minimized)
+        {
+            ShowWindow(Handle, ShowWindowRestore);
+        }
+
+        Activate();
     }
 
     void NewTab() =>

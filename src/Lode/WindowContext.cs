@@ -5,7 +5,8 @@
 /// </summary>
 sealed class WindowContext : ApplicationContext
 {
-    HashSet<MainForm> windows = [];
+    // The window used most recently first, which is where another launch's folders go.
+    List<MainForm> windows = [];
     Settings settings;
     Places places;
     NotifyIcon tray;
@@ -96,7 +97,12 @@ sealed class WindowContext : ApplicationContext
 
     void Track(MainForm window)
     {
-        windows.Add(window);
+        windows.Insert(0, window);
+        window.Activated += (_, _) =>
+        {
+            windows.Remove(window);
+            windows.Insert(0, window);
+        };
         window.FormClosed += (_, _) =>
         {
             windows.Remove(window);
@@ -107,27 +113,64 @@ sealed class WindowContext : ApplicationContext
         };
     }
 
-    // Another launch handed over. With folders or files, they open in a new window, as they
-    // would have in that launch's own. Without, the hidden windows come back, or a new window
-    // opens when none are hidden.
-    void OnLaunched(string[] paths)
+    // Another launch handed over. Its folders and files open as tabs in the windows showing
+    // (see OpenInTabs), and the window they end up in comes to the front. With no window
+    // showing, only ones gone to the tray, they open in a new window, as they would have in
+    // that launch's own. Without folders or files, the hidden windows come back, or a new
+    // window opens when none are hidden, as Win+E opens a new one in Explorer.
+    void OnLaunched(string[] arguments)
     {
-        if (paths.Length == 0 &&
+        var paths = global::MainForm.Openable(arguments);
+        var showing = windows
+            .Where(_ => _.Visible)
+            .ToList();
+        if (paths.Count > 0 &&
+            showing.Count > 0)
+        {
+            OpenInTabs(showing, paths).ShowInFront();
+            return;
+        }
+
+        if (paths.Count == 0 &&
             windows.Any(_ => !_.Visible))
         {
             ShowWindows();
             return;
         }
 
-        OpenWindow(paths.Length == 0 ? [settings.StartLocation()] : paths);
+        OpenWindow(paths.Count == 0 ? [settings.StartLocation()] : paths.ToArray());
+    }
+
+    /// <summary>
+    /// Opens folders and files another launch handed over, in <paramref name="windows"/>, the
+    /// one used most recently first. One that a tab in any of them already shows has that tab
+    /// selected, as a browser does with a link to a page already open; the rest open in new
+    /// tabs in the first window. Returns the window the last of them ended up in, to bring to
+    /// the front.
+    /// </summary>
+    internal static global::MainForm OpenInTabs(IReadOnlyList<global::MainForm> windows, IReadOnlyList<string> paths)
+    {
+        var last = windows[0];
+        foreach (var path in paths)
+        {
+            if (windows.FirstOrDefault(_ => _.SelectTabShowing(path)) is { } showing)
+            {
+                last = showing;
+                continue;
+            }
+
+            last = windows[0];
+            last.AddTab(path, true);
+        }
+
+        return last;
     }
 
     void OpenWindow(string[] paths)
     {
         var window = new MainForm(paths, settings, places);
         Track(window);
-        window.Show();
-        window.Activate();
+        window.ShowInFront();
     }
 
     void ShowWindows()
@@ -138,15 +181,11 @@ sealed class WindowContext : ApplicationContext
             return;
         }
 
-        foreach (var window in windows)
+        // The one used least recently first, so the one used last ends up in front. A copy,
+        // since each window coming to the front moves it up the list.
+        foreach (var window in windows.AsEnumerable().Reverse().ToList())
         {
-            window.Show();
-            if (window.WindowState == FormWindowState.Minimized)
-            {
-                window.WindowState = FormWindowState.Normal;
-            }
-
-            window.Activate();
+            window.ShowInFront();
         }
     }
 

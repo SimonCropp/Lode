@@ -118,6 +118,58 @@ public class WindowsTests
             });
     }
 
+    // Another launch's folders, a GitHub Desktop "Show in Explorer" say: one a tab in any
+    // window already shows, however its path is written, selects that tab, and the rest open as
+    // tabs in the window used last, each once.
+    [Test]
+    public async Task LaunchedFoldersOpenAsTabs()
+    {
+        using var fixture = Fixture.Create();
+        using var older = await Show(fixture, fixture.Root, fixture.At("Docs"), fixture.At("Source"));
+        using var recent = await Show(fixture, fixture.At("Archive"));
+        var paths = MainForm.Openable(
+        [
+            fixture.At("docs"),
+            fixture.At("Source", "Deep"),
+            fixture.At("Source", "Deep") + @"\"
+        ]);
+
+        var front = WindowContext.OpenInTabs([recent, older], paths);
+        await Pump.Loaded(older.ActiveView!);
+        await Pump.Loaded(recent.ActiveView!);
+
+        await Verify(
+            new
+            {
+                front = front == recent ? "recent" : "older",
+                recent = Describe(recent),
+                older = Describe(older)
+            });
+    }
+
+    // A file opens in the tab already showing its folder, with the file selected, without a
+    // second step back to the same folder.
+    [Test]
+    public async Task ALaunchedFileIsSelectedInTheTabShowingItsFolder()
+    {
+        using var fixture = Fixture.Create();
+        using var older = await Show(fixture, fixture.At("Source"), fixture.Root);
+        using var recent = await Show(fixture, fixture.At("Archive"));
+
+        var front = WindowContext.OpenInTabs([recent, older], [fixture.At("Source", "main.aleph")]);
+        await Pump.Loaded(older.ActiveView!);
+
+        await Verify(
+            new
+            {
+                front = front == recent ? "recent" : "older",
+                recent = Describe(recent),
+                older = Describe(older),
+                selected = older.ActiveView!.SelectedEntries().Select(_ => _.Name).ToList(),
+                canGoBack = older.ActiveView.CanGoBack
+            });
+    }
+
     // Only the tab showing reads its folder. The rest, the tabs a window opens with and those
     // opened in the background alike, have their names but read nothing until they are picked.
     [Test]

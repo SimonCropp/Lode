@@ -548,7 +548,9 @@ sealed class FolderView : UserControl
     }
 
     /// <summary>
-    /// Opens the folder containing <paramref name="path"/> with that item selected.
+    /// Opens the folder containing <paramref name="path"/> with that item selected. Already in
+    /// that folder, and not filtering it, the view reads it again to select the item, rather than
+    /// going there a second time.
     /// </summary>
     public void Reveal(string path)
     {
@@ -560,6 +562,13 @@ sealed class FolderView : UserControl
         }
 
         pendingSelection = path;
+        if (filter.Length == 0 &&
+            Locations.Same(parent, CurrentPath))
+        {
+            Reload();
+            return;
+        }
+
         Navigate(parent);
     }
 
@@ -746,7 +755,7 @@ sealed class FolderView : UserControl
         // In order already, as the entries it is taken from are.
         var visible = ApplyFilter().ToList();
 
-        if (preserveState && pendingRename == null && !columnsChanged && visible.SequenceEqual(displayed))
+        if (preserveState && pendingRename == null && pendingSelection == null && !columnsChanged && visible.SequenceEqual(displayed))
         {
             if (rowsStale)
             {
