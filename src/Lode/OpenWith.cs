@@ -38,7 +38,7 @@ static partial class OpenWith
     {
         var extension = Path.GetExtension(paths[0]);
         if (excluded.Contains(extension) ||
-            paths.Any(_ => !string.Equals(Path.GetExtension(_), extension, StringComparison.OrdinalIgnoreCase)))
+            paths.Any(_ => !Path.GetExtension(_.AsSpan()).Equals(extension, StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }

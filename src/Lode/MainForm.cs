@@ -538,8 +538,9 @@ class MainForm : Form
 
     // What the buttons act on: the right-click menu's commands for the selection, then the
     // folder's, so New and Paste still work with something selected. The selection's win where
-    // both have one (Terminal on a selected folder opens it).
-    Dictionary<string, QuickMenu.Command> ContextCommands()
+    // both have one (Terminal on a selected folder opens it). The selection is the active view's,
+    // read from its list here unless the caller already has it.
+    Dictionary<string, QuickMenu.Command> ContextCommands(List<FileEntry>? selection = null)
     {
         var result = new Dictionary<string, QuickMenu.Command>();
         if (ActiveView is not { } view)
@@ -548,7 +549,7 @@ class MainForm : Form
         }
 
         var commands = new List<QuickMenu.Command?>();
-        var selection = view.SelectedEntries();
+        selection ??= view.SelectedEntries();
         if (selection.Count > 0)
         {
             commands.AddRange(view.ItemCommands(selection));
@@ -578,14 +579,18 @@ class MainForm : Form
     /// <summary>
     /// Enables the actions bar's buttons for the active view and its selection.
     /// </summary>
-    internal void UpdateActions()
+    internal void UpdateActions() =>
+        UpdateActions(null);
+
+    // For a selection the caller has already read from the active view's list.
+    void UpdateActions(List<FileEntry>? selection)
     {
         if (actionButtons.Count == 0)
         {
             return;
         }
 
-        var commands = ContextCommands();
+        var commands = ContextCommands(selection);
         foreach (var (id, button) in actionButtons)
         {
             if (id == LodeActions.More)
@@ -751,7 +756,9 @@ class MainForm : Form
     {
         var view = new FolderView(settings, places)
         {
-            Dock = DockStyle.Fill
+            Dock = DockStyle.Fill,
+            // Until it is the tab showing, which is when it reads its folder.
+            Showing = false
         };
         var page = new TabPage
         {
@@ -782,6 +789,7 @@ class MainForm : Form
             view.FocusList();
         }
 
+        UpdateShowing();
         return view;
     }
 
@@ -966,6 +974,9 @@ class MainForm : Form
     // tab is showing.
     void SyncToActiveView()
     {
+        // First, so the tab now showing has started reading its folder by the time its status
+        // is asked for.
+        UpdateShowing();
         var view = ActiveView;
         if (view == null)
         {
@@ -984,15 +995,68 @@ class MainForm : Form
         UpdateStatus(view);
     }
 
+    // Only ever the active view. Its selection is read from the list once, for the buttons and
+    // the status bar both: this follows every change of selection.
     void UpdateStatus(FolderView view)
     {
-        UpdateActions();
-        statusLabel.Text = view.StatusText;
+        var selection = view.SelectedEntries();
+        UpdateActions(selection);
+        statusLabel.Text = view.StatusFor(selection);
         spaceLabel.Text = view.FreeSpaceText;
     }
 
+    // Only the tab showing, in a window that is, reads its folder and follows the changes to
+    // it. The rest read theirs when they are shown: a tab in the background, when it is picked;
+    // a window in the tray or minimized, when it comes back.
+    void UpdateShowing()
+    {
+        // A window on its way out has nothing left to show, and its tabs may already be gone.
+        if (Disposing || IsDisposed)
+        {
+            return;
+        }
+
+        var windowShowing = !hidden && !minimized;
+        var active = ActiveView;
+        foreach (var view in Views)
+        {
+            view.Showing = windowShowing && view == active;
+        }
+
+        tree.Showing = windowShowing;
+    }
+
+    // Shown and then hidden, to the tray, rather than not shown yet: a window being built reads
+    // its first folder before it shows.
+    bool hidden;
+    bool minimized;
+
+    protected override void OnVisibleChanged(EventArgs eventArgs)
+    {
+        base.OnVisibleChanged(eventArgs);
+        hidden = !Visible;
+        UpdateShowing();
+    }
+
+    protected override void OnResize(EventArgs eventArgs)
+    {
+        base.OnResize(eventArgs);
+        var nowMinimized = WindowState == FormWindowState.Minimized;
+        if (nowMinimized == minimized)
+        {
+            return;
+        }
+
+        minimized = nowMinimized;
+        UpdateShowing();
+    }
+
+    // Refresh also asks again what it otherwise remembers about files: their own icons, and
+    // which types are text.
     void Reload()
     {
+        ShellIcons.ForgetFileIcons();
+        TextEditors.ForgetTypes();
         tree.RefreshDrives();
         ActiveView?.Reload();
     }

@@ -29,10 +29,14 @@ sealed class FolderTree : TreeView
     readonly Dictionary<TreeNode, FolderWatcher?> watched = [];
 
     // Folders a watcher has seen change. Watcher events arrive on thread-pool threads and can
-    // come in bursts, so they only land here; the timer syncs each folder once per tick on the
-    // UI thread.
+    // come in bursts, so they only land here; the signal syncs each folder at most once per
+    // interval on the UI thread.
     readonly ConcurrentDictionary<TreeNode, bool> changed = [];
-    readonly Timer changeTimer = new() { Interval = 300 };
+    readonly ChangeSignal changes;
+
+    // False while the window is hidden or minimized. Folders that change then wait, and are
+    // synced when it shows again.
+    bool showing = true;
 
     public event Action<string>? PathSelected;
     public event Action<string>? NewTabRequested;
@@ -55,9 +59,34 @@ sealed class FolderTree : TreeView
 
         // Explorer's spacing between rows, scaled the same way as the icons.
         ItemHeight = unscaledRowHeight * ShellIcons.SmallIconSize.Height / unscaledIconSize;
-        changeTimer.Tick += (_, _) => SyncChanged();
-        changeTimer.Start();
+        changes = new(
+            300,
+            () =>
+            {
+                SyncChanged();
+                return true;
+            });
         Rebuild();
+    }
+
+    /// <summary>
+    /// Whether anybody can see the tree. In a window that is hidden or minimized it is told it is
+    /// not showing, and leaves the folders that change until it shows again.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Showing
+    {
+        get => showing;
+        set
+        {
+            if (showing == value)
+            {
+                return;
+            }
+
+            showing = value;
+            SyncChanged();
+        }
     }
 
     protected override void OnHandleCreated(EventArgs eventArgs)
@@ -469,7 +498,14 @@ sealed class FolderTree : TreeView
         FolderWatcher? watcher;
         try
         {
-            watcher = new((string)node.Tag!, NotifyFilters.DirectoryName, () => changed[node] = true);
+            watcher = new(
+                (string)node.Tag!,
+                NotifyFilters.DirectoryName,
+                () =>
+                {
+                    changed[node] = true;
+                    changes.Raise();
+                });
         }
         catch (Exception)
         {
@@ -512,7 +548,8 @@ sealed class FolderTree : TreeView
 
     void SyncChanged()
     {
-        if (changed.IsEmpty)
+        if (!showing ||
+            changed.IsEmpty)
         {
             return;
         }
@@ -830,6 +867,7 @@ sealed class FolderTree : TreeView
         if (FileOperations.Rename(FindForm()?.Handle ?? Handle, path, newName))
         {
             changed[parent] = true;
+            changes.Raise();
         }
     }
 
@@ -1016,7 +1054,7 @@ sealed class FolderTree : TreeView
     {
         if (disposing)
         {
-            changeTimer.Dispose();
+            changes.Dispose();
             UnwatchAll();
         }
 

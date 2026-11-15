@@ -151,7 +151,12 @@ static class ShellIcons
         return bitmap;
     }
 
-    public static int GetIcon(string path, bool isDirectory)
+    public static int GetIcon(string path, bool isDirectory) =>
+        GetIcon(path, isDirectory, null);
+
+    /// <param name="modified">When the file was last written, for one listed in a folder. Its
+    /// own icon, if it has one, is then remembered until it is written again.</param>
+    public static int GetIcon(string path, bool isDirectory, DateTime? modified)
     {
         if (isDirectory)
         {
@@ -161,6 +166,11 @@ static class ShellIcons
         var extension = Path.GetExtension(path.AsSpan());
         if (perFileIconExtensions.Contains(extension))
         {
+            if (modified is { } written)
+            {
+                return GetFileIcon(path, written);
+            }
+
             return GetActualIcon(path);
         }
 
@@ -218,6 +228,39 @@ static class ShellIcons
         var result = SHGetFileInfo(path, 0, ref info, infoSize, systemIconIndexFlag | smallIconFlag);
         return result == IntPtr.Zero ? FolderIcon : info.IconIndex;
     }
+
+    // The icons of files that have their own (programs, shortcuts), each as of when the file was
+    // last written. Asking the shell reads the file, and a folder's rows are made again for every
+    // sort, filter and change on disk.
+    static readonly ConcurrentDictionary<string, (DateTime Modified, int Icon)> iconsByFile = new(StringComparer.OrdinalIgnoreCase);
+
+    // Browsing keeps finding more programs. Past this many, start again rather than keep them all.
+    const int maximumFileIcons = 4096;
+
+    static int GetFileIcon(string path, DateTime modified)
+    {
+        if (iconsByFile.TryGetValue(path, out var known) &&
+            known.Modified == modified)
+        {
+            return known.Icon;
+        }
+
+        var icon = GetActualIcon(path);
+        if (iconsByFile.Count >= maximumFileIcons)
+        {
+            iconsByFile.Clear();
+        }
+
+        iconsByFile[path] = (modified, icon);
+        return icon;
+    }
+
+    /// <summary>
+    /// Asks the shell again for the icons of files that have their own, for Refresh: a
+    /// shortcut's icon follows what it points at, which can change without the shortcut.
+    /// </summary>
+    public static void ForgetFileIcons() =>
+        iconsByFile.Clear();
 
     /// <summary>
     /// The icon a program or library holds among its resources, at <paramref name="index"/>

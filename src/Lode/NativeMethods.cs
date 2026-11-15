@@ -4,6 +4,8 @@ static partial class NativeMethods
     public const int WindowMessageAppCommand = 0x0319;
     public const int EditSetSelection = 0x00B1;
 
+    public const int ListViewSetImageList = 0x1003;
+    public const int ListViewImageListSmall = 1;
     public const int ListViewGetEditControl = 0x1018;
     public const int ListViewGetHeader = 0x101F;
     public const int HeaderGetItemRect = 0x1207;

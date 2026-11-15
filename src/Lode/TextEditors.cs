@@ -271,7 +271,21 @@ static class TextEditors
     /// True for a file to offer Edit on: a known text extension, or one Windows says is text.
     /// </summary>
     public static bool IsText(string path) =>
-        IsText(path, PerceivedType);
+        IsText(path, RememberedPerceivedType);
+
+    // What Windows said each extension is. Asking reads the registry, and the actions bar asks
+    // about every file selected each time the selection changes.
+    static readonly ConcurrentDictionary<string, string?> perceivedTypes = new(StringComparer.OrdinalIgnoreCase);
+
+    static string? RememberedPerceivedType(string extension) =>
+        perceivedTypes.GetOrAdd(extension, PerceivedType);
+
+    /// <summary>
+    /// Asks Windows again what each type of file is, for Refresh: a program installed since may
+    /// have changed the answer.
+    /// </summary>
+    public static void ForgetTypes() =>
+        perceivedTypes.Clear();
 
     internal static bool IsText(string path, Func<string, string?> perceivedType)
     {

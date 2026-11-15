@@ -35,19 +35,29 @@ sealed class FolderView : UserControl
     readonly Settings settings;
     readonly Places places;
     readonly ShellListView list = new();
-    readonly Timer watchTimer = new() { Interval = 400 };
+
+    // Watcher events arrive on thread-pool threads and can come in bursts. This turns them into
+    // at most one reload per interval, on the UI thread.
+    readonly ChangeSignal changes;
     readonly List<string> history = [];
     int historyIndex = -1;
 
     FolderWatcher? watcher;
-    volatile bool changePending;
     bool loading;
     int loadVersion;
+
+    // False while nobody can see the view. It then reads nothing: the folder is stale, and read
+    // when the view shows again.
+    bool showing = true;
+    bool stale;
 
     List<FileEntry> entries = [];
     List<FileEntry> displayed = [];
     int sortColumn;
     bool sortAscending = true;
+
+    // How the entries are ordered now, so they are only sorted again when that changes.
+    (int Column, bool Ascending) entriesSort;
     string filter = "";
     string? error;
 
@@ -136,8 +146,32 @@ sealed class FolderView : UserControl
         list.DragDrop += OnDragDrop;
         Controls.Add(list);
 
-        watchTimer.Tick += (_, _) => OnWatchTimerTick();
-        watchTimer.Start();
+        changes = new(400, OnChanged);
+    }
+
+    /// <summary>
+    /// Whether anybody can see the view. A tab in the background, or in a window that is hidden
+    /// or minimized, is told it is not showing, and then reads nothing: a folder opened in it, or
+    /// changed, is read when it shows again.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Showing
+    {
+        get => showing;
+        set
+        {
+            if (showing == value)
+            {
+                return;
+            }
+
+            showing = value;
+            if (value && stale && !IsDisposed)
+            {
+                // The rows are still the folder's, a read behind, unless it was never read.
+                ReadFolder(entries.Count > 0);
+            }
+        }
     }
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -157,33 +191,45 @@ sealed class FolderView : UserControl
         }
     }
 
-    public string StatusText
+    public string StatusText => StatusFor(SelectedEntries());
+
+    /// <summary>
+    /// <see cref="StatusText"/> for a selection the caller has already read from the list, so it
+    /// is read once for everything that follows a change of selection.
+    /// </summary>
+    public string StatusFor(IReadOnlyList<FileEntry> selection)
     {
-        get
+        if (error != null)
         {
-            if (error != null)
-            {
-                return error;
-            }
+            return error;
+        }
 
-            var text = displayed.Count == 1 ? "1 item" : $"{displayed.Count:N0} items";
-            if (filter.Length > 0)
-            {
-                text += $" (filtered from {entries.Count:N0})";
-            }
+        var text = displayed.Count == 1 ? "1 item" : $"{displayed.Count:N0} items";
+        if (filter.Length > 0)
+        {
+            text += $" (filtered from {entries.Count:N0})";
+        }
 
-            var selection = SelectedEntries();
-            if (selection.Count > 0)
-            {
-                text += selection.Count == 1 ? "    1 item selected" : $"    {selection.Count:N0} items selected";
-                if (selection.All(_ => !_.IsDirectory))
-                {
-                    text += $"  {Formatting.Size(selection.Sum(_ => _.Size))}";
-                }
-            }
-
+        if (selection.Count == 0)
+        {
             return text;
         }
+
+        text += selection.Count == 1 ? "    1 item selected" : $"    {selection.Count:N0} items selected";
+
+        // The size of the files selected. Not with a folder among them, whose size isn't known.
+        long size = 0;
+        foreach (var entry in selection)
+        {
+            if (entry.IsDirectory)
+            {
+                return text;
+            }
+
+            size += entry.Size;
+        }
+
+        return $"{text}  {Formatting.Size(size)}";
     }
 
     public void FocusList() =>
@@ -224,10 +270,43 @@ sealed class FolderView : UserControl
         CurrentPath = normalized;
         filter = "";
         error = null;
+        if (!showing)
+        {
+            // Read when the view shows. Until then it lists nothing, rather than the folder left.
+            stale = true;
+            Unwatch();
+            Clear();
+            FreeSpaceText = "";
+            PathChanged?.Invoke();
+            return;
+        }
+
+        stale = false;
         Watch();
         UpdateFreeSpace();
         PathChanged?.Invoke();
         Loading = LoadAsync(false);
+    }
+
+    // Watches the folder and reads it, for a view that has just shown.
+    void ReadFolder(bool preserveState)
+    {
+        stale = false;
+        Watch();
+        UpdateFreeSpace();
+        Loading = LoadAsync(preserveState);
+    }
+
+    // Empties the list, for a folder that is not read until the view shows.
+    void Clear()
+    {
+        // Whatever is being read is the folder left.
+        loadVersion++;
+        loading = false;
+        entries = [];
+        displayed = [];
+        list.Items.Clear();
+        QueueStatusChanged();
     }
 
     public void GoBack()
@@ -279,6 +358,12 @@ sealed class FolderView : UserControl
 
     public void Reload()
     {
+        if (!showing)
+        {
+            stale = true;
+            return;
+        }
+
         UpdateFreeSpace();
         Loading = LoadAsync(true);
     }
@@ -289,12 +374,21 @@ sealed class FolderView : UserControl
         var path = CurrentPath;
         var showHidden = settings.ShowHidden;
         var hiddenSystem = settings.HiddenSystemItems();
+        var column = sortColumn;
+        var ascending = sortAscending;
         List<FileEntry> loaded;
         string? failure = null;
         loading = true;
         try
         {
-            loaded = await Task.Run(() => Enumerate(path, showHidden, hiddenSystem));
+            // Sorted there too, which leaves the UI thread only the rows to make.
+            loaded = await Task.Run(
+                () =>
+                {
+                    var found = Enumerate(path, showHidden, hiddenSystem);
+                    found.Sort((first, second) => Compare(first, second, column, ascending));
+                    return found;
+                });
         }
         catch (Exception exception)
         {
@@ -309,6 +403,7 @@ sealed class FolderView : UserControl
 
         loading = false;
         entries = loaded;
+        entriesSort = (column, ascending);
         error = failure;
         Populate(preserveState);
     }
@@ -351,17 +446,31 @@ sealed class FolderView : UserControl
         // IgnoreInaccessible is set, so probe first to surface a real error message.
         _ = Directory.EnumerateFileSystemEntries(path).Any();
 
-        foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos("*", options))
+        // Made straight from what the file system reports, without a FileInfo or DirectoryInfo
+        // for each on the way.
+        var found = new FileSystemEnumerable<FileEntry>(
+            path,
+            (ref FileSystemEntry entry) =>
+            {
+                var isDirectory = (entry.Attributes & FileAttributes.Directory) != 0;
+                long size = 0;
+                if (!isDirectory)
+                {
+                    size = entry.Length;
+                }
+
+                return new(entry.FileName.ToString(), entry.ToFullPath(), isDirectory, size, entry.LastWriteTimeUtc.LocalDateTime, entry.Attributes);
+            },
+            options);
+        foreach (var entry in found)
         {
             if (hiddenSystem != null &&
-                hiddenSystem.IsSystem(info.FullName, info.Attributes))
+                hiddenSystem.IsSystem(entry.FullPath, entry.Attributes))
             {
                 continue;
             }
 
-            var isDirectory = info.Attributes.HasFlag(FileAttributes.Directory);
-            var size = info is FileInfo file ? file.Length : 0;
-            result.Add(new(info.Name, info.FullName, isDirectory, size, info.LastWriteTime, info.Attributes));
+            result.Add(entry);
         }
 
         return result;
@@ -371,8 +480,16 @@ sealed class FolderView : UserControl
     {
         // Before sorting: hiding the column the list is sorted by sorts it by name.
         var columnsChanged = UpdateColumns();
+        if (entriesSort != (sortColumn, sortAscending))
+        {
+            var column = sortColumn;
+            var ascending = sortAscending;
+            entries.Sort((first, second) => Compare(first, second, column, ascending));
+            entriesSort = (column, ascending);
+        }
+
+        // In order already, as the entries it is taken from are.
         var visible = ApplyFilter().ToList();
-        visible.Sort(Compare);
 
         if (preserveState && pendingRename == null && !columnsChanged && visible.SequenceEqual(displayed))
         {
@@ -560,8 +677,22 @@ sealed class FolderView : UserControl
     }
 
     // A row's cells for the columns shown, from one for every column.
-    string[] ShownCells(string[] cells) =>
-        shownColumns.Select(_ => cells[_]).ToArray();
+    string[] ShownCells(string[] cells)
+    {
+        // Every column, which are in order: the cells as they are.
+        if (shownColumns.Count == cells.Length)
+        {
+            return cells;
+        }
+
+        var shown = new string[shownColumns.Count];
+        for (var index = 0; index < shown.Length; index++)
+        {
+            shown[index] = cells[shownColumns[index]];
+        }
+
+        return shown;
+    }
 
     /// <summary>
     /// Shows or hides a column in every view. Name cannot be hidden.
@@ -588,8 +719,17 @@ sealed class FolderView : UserControl
     /// <summary>
     /// Applies the hidden columns setting, rebuilding the rows from what is already listed.
     /// </summary>
-    public void RefreshColumns() =>
+    public void RefreshColumns()
+    {
+        // A folder not read yet has no rows to rebuild, and may have an item waiting to be
+        // selected once it is. Its columns are brought in line when it is read.
+        if (stale && entries.Count == 0)
+        {
+            return;
+        }
+
         Populate(true);
+    }
 
     /// <summary>
     /// The header's right-click menu, as Explorer's: size the column clicked, or all of them,
@@ -648,7 +788,7 @@ sealed class FolderView : UserControl
                 typeName,
                 entry.Size > 0 ? Formatting.Size(entry.Size) : ""
             ];
-            return new(ShownCells(driveCells), list.PaddedIcon(driveIcon)) { Tag = entry };
+            return new(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) { Tag = entry };
         }
 
         string[] cells =
@@ -658,7 +798,7 @@ sealed class FolderView : UserControl
             ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory),
             entry.IsDirectory ? "" : Formatting.Kilobytes(entry.Size)
         ];
-        var icon = list.PaddedIcon(ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory));
+        var icon = ShellListView.PaddedIcon(ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified));
         var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
         if (entry.IsHidden)
         {
@@ -683,15 +823,22 @@ sealed class FolderView : UserControl
         return entries.Where(_ => _.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
     }
 
-    int Compare(FileEntry first, FileEntry second)
+    // Static, with the column and direction handed in, so a folder can be sorted off the UI
+    // thread as it is read.
+    static int Compare(FileEntry first, FileEntry second, int column, bool ascending)
     {
         // Folders stay grouped above files whichever way the column is sorted.
         if (first.IsDirectory != second.IsDirectory)
         {
-            return first.IsDirectory ? -1 : 1;
+            if (first.IsDirectory)
+            {
+                return -1;
+            }
+
+            return 1;
         }
 
-        var result = sortColumn switch
+        var result = column switch
         {
             dateColumn => first.IsDrive
                 ? first.FreeSpace.CompareTo(second.FreeSpace)
@@ -709,7 +856,12 @@ sealed class FolderView : UserControl
             result = StrCmpLogicalW(first.Name, second.Name);
         }
 
-        return sortAscending ? result : -result;
+        if (ascending)
+        {
+            return result;
+        }
+
+        return -result;
     }
 
     public List<FileEntry> SelectedEntries() =>
@@ -928,7 +1080,17 @@ sealed class FolderView : UserControl
             return null;
         }
 
-        return hiddenExtensions.FirstOrDefault(_ => entry.Name.EndsWith(_, StringComparison.OrdinalIgnoreCase) && entry.Name.Length > _.Length);
+        // A loop rather than a query: this runs for every row, and a query would allocate for each.
+        foreach (var extension in hiddenExtensions)
+        {
+            if (entry.Name.Length > extension.Length &&
+                entry.Name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            {
+                return extension;
+            }
+        }
+
+        return null;
     }
 
     internal static string DisplayName(FileEntry entry)
@@ -989,7 +1151,7 @@ sealed class FolderView : UserControl
             Name = newName,
             FullPath = Path.Combine(Path.GetDirectoryName(entry.FullPath)!, newName)
         };
-        changePending = true;
+        changes.Raise();
     }
 
     void OnContextMenuRequested(Point location, bool fromKeyboard)
@@ -1030,12 +1192,28 @@ sealed class FolderView : UserControl
     /// </summary>
     internal List<QuickMenu.Command?> ItemCommands(List<FileEntry> selection)
     {
-        var anyDrive = selection.Any(_ => _.IsDrive);
+        // Worked out in one pass: the actions bar asks for these each time the selection changes.
+        var anyDrive = false;
+        var allFolders = true;
+        var allFiles = true;
+        foreach (var entry in selection)
+        {
+            anyDrive |= entry.IsDrive;
+            if (entry.IsDirectory)
+            {
+                allFiles = false;
+            }
+            else
+            {
+                allFolders = false;
+            }
+        }
+
         var commands = new List<QuickMenu.Command?>
         {
             LodeActions.Command("open", () => OpenEntries(selection))
         };
-        if (selection.All(_ => _.IsDirectory))
+        if (allFolders)
         {
             commands.Add(LodeActions.Command("openInNewTab", () => OpenInNewTabs(selection)));
         }
@@ -1046,17 +1224,18 @@ sealed class FolderView : UserControl
             commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(terminalFolder.FullPath, admin: true)));
         }
 
-        if (selection.All(_ => _.IsDirectory))
+        if (allFolders)
         {
             commands.Add(LodeActions.Pin(selection.Select(_ => _.FullPath).ToList(), places, SetPinned));
         }
 
-        if (selection.All(_ => !_.IsDirectory && TextEditors.IsText(_.FullPath)))
+        if (allFiles &&
+            selection.All(_ => TextEditors.IsText(_.FullPath)))
         {
             commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
         }
 
-        if (selection.All(_ => !_.IsDirectory))
+        if (allFiles)
         {
             var paths = selection.Select(_ => _.FullPath).ToList();
             if (OpenWith.Extension(paths) is { } extension)
@@ -1199,14 +1378,40 @@ sealed class FolderView : UserControl
             Glyph = Icons.Folder
         },
         null,
-        .. types
-            .Select(_ => new QuickMenu.Command(NewLabel(_.TypeName), () => CreateFile(_))
+        .. NewItems(types)
+            .Select(_ => new QuickMenu.Command(_.Label, () => CreateFile(_.Type))
             {
-                // The type's own icon, as Explorer's New menu shows.
-                ShellIcon = ShellIcons.GetIcon($"x{_.Extension}", false)
+                ShellIcon = _.Icon
             })
-            .OrderBy(_ => _.Text, StringComparer.CurrentCultureIgnoreCase)
     ];
+
+    /// <summary>
+    /// A type under New: its label, and the type's own icon, as Explorer's New menu shows.
+    /// </summary>
+    sealed record NewItem(ShellNew.Entry Type, string Label, int Icon);
+
+    sealed record NewMenu(IReadOnlyList<ShellNew.Entry> Types, List<NewItem> Items);
+
+    // The last types asked for, as the New menu lists them. The machine's own are read once, and
+    // the actions bar asks for the menu each time the selection changes, so their labels, icons
+    // and order are worked out once too.
+    static NewMenu? newMenu;
+
+    static List<NewItem> NewItems(IReadOnlyList<ShellNew.Entry> types)
+    {
+        if (newMenu is { } known &&
+            ReferenceEquals(known.Types, types))
+        {
+            return known.Items;
+        }
+
+        var items = types
+            .Select(_ => new NewItem(_, NewLabel(_.TypeName), ShellIcons.GetIcon($"x{_.Extension}", false)))
+            .OrderBy(_ => _.Label, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        newMenu = new(types, items);
+        return items;
+    }
 
     // "Microsoft Word Document" reads as "Word Document". Only the label: the file is still
     // named as Explorer names it.
@@ -1342,9 +1547,8 @@ sealed class FolderView : UserControl
 
     void Watch()
     {
-        watcher?.Dispose();
-        watcher = null;
-        changePending = false;
+        Unwatch();
+        changes.Reset();
         if (IsThisPC)
         {
             return;
@@ -1355,7 +1559,7 @@ sealed class FolderView : UserControl
             watcher = new(
                 CurrentPath,
                 NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                () => changePending = true);
+                changes.Raise);
         }
         catch (Exception)
         {
@@ -1364,17 +1568,31 @@ sealed class FolderView : UserControl
         }
     }
 
-    // Watcher events arrive on thread-pool threads and can come in bursts. They only raise a
-    // flag; this timer turns the flag into at most one reload per tick on the UI thread.
-    void OnWatchTimerTick()
+    void Unwatch()
     {
-        if (!changePending || loading || editing)
+        watcher?.Dispose();
+        watcher = null;
+    }
+
+    // The folder changed. False while reading it again has to wait: for the read under way, or
+    // for the name being edited.
+    bool OnChanged()
+    {
+        if (loading || editing)
         {
-            return;
+            return false;
         }
 
-        changePending = false;
+        if (!showing)
+        {
+            // Read when the view shows. Nothing more to learn by watching until then.
+            stale = true;
+            Unwatch();
+            return true;
+        }
+
         Reload();
+        return true;
     }
 
     void UpdateFreeSpace() =>
@@ -1406,7 +1624,7 @@ sealed class FolderView : UserControl
     {
         if (disposing)
         {
-            watchTimer.Dispose();
+            changes.Dispose();
             watcher?.Dispose();
             marquee.Dispose();
         }

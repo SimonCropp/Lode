@@ -22,6 +22,22 @@ static class Pump
         Application.DoEvents();
     }
 
+    /// <summary>
+    /// Dispatches messages for a while, for checking that something has not happened by the
+    /// time it would have.
+    /// </summary>
+    public static async Task For(TimeSpan duration)
+    {
+        var end = DateTime.UtcNow + duration;
+        while (DateTime.UtcNow < end)
+        {
+            Application.DoEvents();
+            await Task.Delay(15);
+        }
+
+        Application.DoEvents();
+    }
+
     public static async Task Loaded(FolderView view)
     {
         await Until(() => view.Loading.IsCompleted);

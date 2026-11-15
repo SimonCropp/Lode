@@ -191,6 +191,56 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // A view nobody can see, such as a tab in the background, leaves changes on disk unread
+    // until it shows again.
+    [Test]
+    public async Task LeavesChangesUnreadWhileNotShowing()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Showing = false;
+
+        await File.WriteAllBytesAsync(fixture.At("arrived.aleph"), new byte[3_000]);
+
+        // Several times as long as a change takes to be read by a view that is showing.
+        await Pump.For(TimeSpan.FromSeconds(2));
+        var readWhileHidden = Names(view).Contains("arrived.aleph");
+
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(readWhileHidden).IsFalse();
+        await Assert.That(Names(view)).Contains("arrived.aleph");
+    }
+
+    // A folder opened in a view nobody can see, as a tab opened in the background is, is read
+    // when the view shows, and the item it was opened for selected then.
+    [Test]
+    public async Task FolderOpenedWhileNotShowingIsReadWhenShown()
+    {
+        using var fixture = Fixture.Create();
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        {
+            Showing = false
+        };
+
+        view.Reveal(fixture.At("report10.beta"));
+        await Pump.Loaded(view);
+        var path = view.CurrentPath;
+        var readWhileHidden = Names(view);
+
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(path).IsEqualTo(fixture.Root);
+        await Assert.That(readWhileHidden).IsEmpty();
+        await Assert.That(Names(view)).Contains("report10.beta");
+        await Assert.That(Selected(view)).IsEquivalentTo(["report10.beta"]);
+    }
+
+    static List<string> Names(FolderView view) =>
+        view.Entries.Select(_ => _.Name).ToList();
+
     [Test]
     public async Task CreateFolder()
     {

@@ -10,9 +10,53 @@ sealed class ShellListView : ListView
     const int paddingAfterIcon = 4;
     const int unscaledIconSize = 16;
 
-    readonly ImageList icons = new() { ColorDepth = ColorDepth.Depth32Bit };
-    readonly Dictionary<int, int> paddedIcons = [];
-    readonly Point iconOffset;
+    /// <summary>
+    /// A list has no setting for row height or left margin: a row is as tall as its icon and
+    /// starts where its icon does. So each icon is drawn inside a larger transparent image that
+    /// carries the padding. Every list shows the same icons at the same size, so they share one
+    /// set of these, rather than each tab keeping a copy of every icon it has shown.
+    /// </summary>
+    static class PaddedIcons
+    {
+        static readonly Lock gate = new();
+        static readonly ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
+        static readonly Dictionary<int, int> indexes = [];
+        static readonly Point offset;
+
+        static PaddedIcons()
+        {
+            var iconSize = ShellIcons.SmallIconSize;
+            var scale = iconSize.Width / (float)unscaledIconSize;
+            var height = Math.Max((int)(rowHeight * scale), iconSize.Height);
+            offset = new((int)(paddingBeforeIcon * scale), (height - iconSize.Height) / 2);
+            images.ImageSize = new(offset.X + iconSize.Width + (int)(paddingAfterIcon * scale), height);
+
+            // Created now so that each image is copied in as it is added. Until an image list
+            // has its handle it only keeps a reference to what it is given, and Index disposes
+            // its bitmap straight after adding it.
+            Handle = images.Handle;
+        }
+
+        public static IntPtr Handle { get; }
+
+        public static int Index(int systemIcon)
+        {
+            // Tests make lists on more than one UI thread; the app has one.
+            lock (gate)
+            {
+                if (indexes.TryGetValue(systemIcon, out var index))
+                {
+                    return index;
+                }
+
+                using var image = ShellIcons.Render(systemIcon, images.ImageSize, offset);
+                images.Images.Add(image);
+                index = images.Images.Count - 1;
+                indexes[systemIcon] = index;
+                return index;
+            }
+        }
+    }
 
     int sortArrowColumn = -1;
     bool sortArrowAscending;
@@ -25,45 +69,35 @@ sealed class ShellListView : ListView
     /// </summary>
     public event Action<Point>? HeaderContextMenuRequested;
 
-    public ShellListView()
-    {
+    public ShellListView() =>
         DoubleBuffered = true;
-
-        // A list has no setting for row height or left margin: a row is as tall as its icon
-        // and starts where its icon does. So each icon is drawn inside a larger transparent
-        // image that carries the padding.
-        var iconSize = ShellIcons.SmallIconSize;
-        var scale = iconSize.Width / (float)unscaledIconSize;
-        var height = Math.Max((int)(rowHeight * scale), iconSize.Height);
-        iconOffset = new((int)(paddingBeforeIcon * scale), (height - iconSize.Height) / 2);
-        icons.ImageSize = new(iconOffset.X + iconSize.Width + (int)(paddingAfterIcon * scale), height);
-
-        // Created now so that each image is copied in as it is added. Until an image list has
-        // its handle it only keeps a reference to what it is given, and PaddedIcon disposes
-        // its bitmap straight after adding it.
-        _ = icons.Handle;
-        SmallImageList = icons;
-    }
 
     /// <summary>
     /// The index to give a list item for an icon from the system image list.
     /// </summary>
-    public int PaddedIcon(int systemIcon)
-    {
-        if (paddedIcons.TryGetValue(systemIcon, out var index))
-        {
-            return index;
-        }
+    public static int PaddedIcon(int systemIcon) =>
+        PaddedIcons.Index(systemIcon);
 
-        using var image = ShellIcons.Render(systemIcon, icons.ImageSize, iconOffset);
-        icons.Images.Add(image);
-        index = icons.Images.Count - 1;
-        paddedIcons[systemIcon] = index;
-        return index;
+    /// <summary>
+    /// The size of the image a row shows, the icon with its padding, as the lists' shared image
+    /// list has it. Empty if that list is gone. For tests.
+    /// </summary>
+    internal static Size PaddedIconSize
+    {
+        get
+        {
+            ImageList_GetIconSize(PaddedIcons.Handle, out var width, out var height);
+            return new(width, height);
+        }
     }
 
     protected override void OnHandleCreated(EventArgs eventArgs)
     {
+        // Given to the window itself rather than through SmallImageList, which would have the
+        // shared list hold on to every list that ever showed it. Before the rows go in, which
+        // take their height from it. Windows leaves the list alone when this window closes, as
+        // every ListView asks it to.
+        SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle);
         base.OnHandleCreated(eventArgs);
         SetWindowTheme(Handle, "Explorer", null);
 
@@ -185,14 +219,4 @@ sealed class ShellListView : ListView
                 SendMessage(edit, EditSetSelection, IntPtr.Zero, length);
             }
         });
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            icons.Dispose();
-        }
-
-        base.Dispose(disposing);
-    }
 }

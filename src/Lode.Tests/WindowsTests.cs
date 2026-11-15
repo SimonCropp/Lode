@@ -118,6 +118,57 @@ public class WindowsTests
             });
     }
 
+    // Only the tab showing reads its folder. The rest, the tabs a window opens with and those
+    // opened in the background alike, have their names but read nothing until they are picked.
+    [Test]
+    public async Task BackgroundTabsReadTheirFoldersWhenPicked()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.At("Source"), fixture.Root);
+        var restored = form.Views.First();
+        var opened = form.AddTab(fixture.At("Docs"), false);
+        var titles = form.Views.Select(_ => ((TabPage)_.Parent!).Text).ToList();
+        var readInBackground = restored.Entries.Count + opened.Entries.Count;
+
+        Pick(restored);
+        await Pump.Until(() => restored.Entries.Count > 0);
+        Pick(opened);
+        await Pump.Until(() => opened.Entries.Count > 0);
+
+        await Assert.That(titles).IsEquivalentTo(["Source", "Projects", "Docs"]);
+        await Assert.That(readInBackground).IsEqualTo(0);
+        await Assert.That(restored.Entries.Select(_ => _.Name)).Contains("main.aleph");
+        await Assert.That(opened.Entries.Select(_ => _.Name)).Contains("guide.aleph");
+    }
+
+    static void Pick(FolderView view)
+    {
+        var page = (TabPage)view.Parent!;
+        ((TabControl)page.Parent!).SelectedTab = page;
+    }
+
+    // Hidden, as closing the last window to the tray hides it, a window leaves changes on disk
+    // unread until it is shown again.
+    [Test]
+    public async Task LeavesChangesUnreadWhileHidden()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        var view = form.ActiveView!;
+
+        form.Hide();
+        await File.WriteAllBytesAsync(fixture.At("arrived.aleph"), new byte[3_000]);
+
+        // Several times as long as a change takes to be read by a window that is showing.
+        await Pump.For(TimeSpan.FromSeconds(2));
+        var readWhileHidden = view.Entries.Any(_ => _.Name == "arrived.aleph");
+
+        form.Show();
+        await Pump.Until(() => view.Entries.Any(_ => _.Name == "arrived.aleph"));
+
+        await Assert.That(readWhileHidden).IsFalse();
+    }
+
     // Which of the actions bar's buttons work with nothing selected, then with a file.
     [Test]
     public async Task ActionsBar()
