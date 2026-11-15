@@ -1,0 +1,4 @@
+﻿{
+  ToolPath: C:\Users\Someone\.dotnet\tools,
+  StoreDirectory: C:\Users\Someone\.dotnet\tools\.store\Lode
+}

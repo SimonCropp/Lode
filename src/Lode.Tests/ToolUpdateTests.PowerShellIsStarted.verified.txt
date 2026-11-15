@@ -1,0 +1,13 @@
+﻿{
+  FileName: powershell.exe,
+  arguments: [
+    -NoProfile,
+    -ExecutionPolicy,
+    Unrestricted,
+    -EncodedCommand
+  ],
+  scriptEncoded: true,
+  CreateNoWindow: true,
+  UseShellExecute: false,
+  inTemp: true
+}

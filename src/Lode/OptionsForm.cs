@@ -586,7 +586,11 @@ class OptionsForm : Form
     {
         updateStatus.Text = UpdateStatus(updates);
         applyUpdate.Enabled = updates.Available != null && !updates.Checking;
-        checkForUpdates.Enabled = updates.Tool != null && !updates.Checking;
+        checkForUpdates.Enabled = updates is
+        {
+            Tool: not null,
+            Checking: false
+        };
     }
 
     /// <summary>

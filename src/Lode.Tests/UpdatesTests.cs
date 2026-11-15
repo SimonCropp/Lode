@@ -1,5 +1,4 @@
 using NuGet.Versioning;
-using PlatformHeads;
 
 public class UpdatesTests
 {

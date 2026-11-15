@@ -1,0 +1,12 @@
+﻿{
+  succeeded: {
+    Title: Lode updated,
+    Message: Now running 1.2.3.,
+    Icon: Info
+  },
+  failed: {
+    Title: Lode did not update,
+    Message: Failed to uninstall tool package 'lode': Access to the path 'C:\Users\me\.dotnet\tools\.store\lode\0.1.0' is denied.,
+    Icon: Warning
+  }
+}

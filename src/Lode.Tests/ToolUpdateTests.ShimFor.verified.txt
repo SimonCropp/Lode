@@ -1,0 +1,5 @@
+﻿{
+  ridSpecific: C:\Users\Someone\.dotnet\tools\lode.exe,
+  portable: C:\Users\Someone\.dotnet\tools\lode.exe,
+  buildHasNone: true
+}

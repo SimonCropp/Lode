@@ -1,13 +1,6 @@
-using System.Reflection;
-using NuGet.Common;
-using NuGet.Protocol;
-using NuGet.Protocol.Core.Types;
-using NuGet.Versioning;
-using PlatformHeads;
-
 /// <summary>
 /// Whether a newer Lode is on NuGet, asked once a day, and the update to it. The update is
-/// PlatformHeads' <see cref="ToolUpdate"/>, as DiffEngineTray's and BuildMonitor's are: a hidden
+/// <see cref="ToolUpdate"/>, as DiffEngineTray's and BuildMonitor's are: a hidden
 /// PowerShell waits for Lode to exit, runs <c>dotnet tool update</c> by the tool path Lode is in,
 /// and starts Lode again, which reopens the tabs it had. How that went is written to
 /// <see cref="OutcomePath"/>, for the Lode it starts to say (<see cref="Report"/>).
@@ -236,7 +229,7 @@ sealed class Updates
     /// start but the one after an update. Said once, since reading it removes it, so only the
     /// first instance asks.
     /// </summary>
-    public TrayNotification? Report()
+    public UpdateNotice? Report()
     {
         if (Tool == null)
         {

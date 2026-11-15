@@ -3,11 +3,12 @@
   succeeded: {
     Title: Lode updated,
     Message: Now running 0.3.0.,
-    Kind: Info
+    Icon: Info
   },
   noneAgain: true,
   failed: {
     Title: Lode did not update,
-    Message: Unhandled exception: Access to the path 'lode.dll' is denied.
+    Message: Unhandled exception: Access to the path 'lode.dll' is denied.,
+    Icon: Warning
   }
 }

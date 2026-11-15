@@ -65,13 +65,7 @@ sealed class WindowContext : ApplicationContext
             return;
         }
 
-        var icon = ToolTipIcon.Warning;
-        if (report.Kind == PlatformHeads.TrayNotificationKind.Info)
-        {
-            icon = ToolTipIcon.Info;
-        }
-
-        tray.ShowBalloonTip(10000, report.Title, report.Message, icon);
+        tray.ShowBalloonTip(10000, report.Title, report.Message, report.Icon);
     }
 
     internal enum TrayAction
