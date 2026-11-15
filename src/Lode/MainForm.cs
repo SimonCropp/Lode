@@ -728,6 +728,19 @@ class MainForm : Form
         ActiveView?.FocusList();
     }
 
+    // Again whenever WinForms makes the window anew, which changing some properties does.
+    protected override void OnHandleCreated(EventArgs eventArgs)
+    {
+        base.OnHandleCreated(eventArgs);
+        TaskbarIdentity.Apply(Handle);
+    }
+
+    protected override void OnHandleDestroyed(EventArgs eventArgs)
+    {
+        TaskbarIdentity.Clear(Handle);
+        base.OnHandleDestroyed(eventArgs);
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs eventArgs)
     {
         base.OnFormClosing(eventArgs);

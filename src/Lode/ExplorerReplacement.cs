@@ -272,12 +272,12 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         }
     }
 
-    // Quoted, ready for a registry command. The installed dotnet tool when there is one, even
-    // when Replace is clicked in a Debug build or other copy: its shim
+    // Quoted, ready for a registry command or a taskbar pin. The installed dotnet tool when
+    // there is one, even when Replace is clicked in a Debug build or other copy: its shim
     // (%USERPROFILE%\.dotnet\tools\lode.exe) keeps its path across tool updates, unlike the
     // versioned copy under tools\.store, and unlike a build folder that gets cleaned or moved.
     // Only without the tool is this process registered.
-    static string PreferredCommand()
+    public static string PreferredCommand()
     {
         if (InstalledToolPath() is { } tool)
         {

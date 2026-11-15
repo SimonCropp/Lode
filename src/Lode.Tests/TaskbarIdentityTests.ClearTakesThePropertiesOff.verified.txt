@@ -1,0 +1,9 @@
+﻿{
+  applied: {
+    Id: Lode,
+    Command: "lode.exe",
+    Name: Lode,
+    Icon: imageres.dll,-3
+  },
+  cleared: {}
+}
