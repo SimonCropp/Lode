@@ -1,4 +1,4 @@
-using Serilog.Events;
+using NuGet.Versioning;
 
 /// <summary>
 /// The git commands, run for real against throwaway repositories in the temp folder. A bare
@@ -166,24 +166,51 @@ public class CodeCommandsTests
     public Task OutcomeWithNoRepos() =>
         Verify(CodeCommands.GitOutcome([]));
 
-    // As PackageUpdateLib logged a real run: each package it changed is listed, the whole-file
-    // "Updated" line is not, and an error makes it a failure.
+    // Each package changed is listed under its file, then the problems. A solution that could
+    // not be updated makes it a failure.
     [Test]
-    public Task NugetOutcomeListsEachPackage() =>
+    public Task NugetOutcomeListsEachPackageByFile() =>
         Verify(
             CodeCommands.NugetOutcome(
+                @"C:\Code\CountryData",
                 [
-                    (LogEventLevel.Information, "TargetDirectory: {TargetDirectory}", "TargetDirectory: C:\\Code\\CountryData"),
-                    (LogEventLevel.Information, "Updated {Package}: {NuGetVersion} -> {LatestVersion}", "Updated MarkdownSnippets.MsBuild: 28.5.1 -> 29.0.0"),
-                    (LogEventLevel.Information, "Updated {Package}: {NuGetVersion} -> {LatestVersion}", "Updated xunit.v3: 4.0.2 -> 4.0.3"),
-                    (LogEventLevel.Information, "Updated tool {Package}: {NuGetVersion} -> {LatestVersion}", "Updated tool dotnet-ef: 9.0.0 -> 10.0.0"),
-                    (LogEventLevel.Information, "    Updated {Props} in {Elapsed}", "    Updated C:\\Code\\CountryData\\src\\Directory.Packages.props in 2.1s"),
-                    (LogEventLevel.Error, "    Only central packages supported. Skipping: {Solution}", "    Only central packages supported. Skipping: C:\\Code\\Old\\Old.sln")
+                    Change(PackageChangeKind.Version, @"src\Directory.Packages.props", "MarkdownSnippets.MsBuild", "28.5.1", "29.0.0"),
+                    Change(PackageChangeKind.Version, @"src\Directory.Packages.props", "xunit.v3", "4.0.2", "4.0.3"),
+                    Change(PackageChangeKind.Migration, @"src\Directory.Packages.props", "Microsoft.Azure.Storage.Blob", "11.2.3", "12.24.0") with
+                    {
+                        Alternative = "Azure.Storage.Blobs",
+                        Projects = [@"C:\Code\CountryData\src\CountryData\CountryData.csproj"]
+                    },
+                    Change(PackageChangeKind.VersionOverride, @"src\Tests\Tests.csproj", "NUnit", "3.13.0", "4.3.2"),
+                    Change(PackageChangeKind.Tool, @".config\dotnet-tools.json", "dotnet-ef", "9.0.0", "10.0.0")
+                ],
+                [
+                    new(UpdateProblemKind.AlternativeNotFound, @"C:\Code\CountryData\src\Directory.Packages.props", "Package Old.Thing is deprecated with alternative New.Thing, but alternative not found in sources"),
+                    new(UpdateProblemKind.NotCentralPackages, @"C:\Code\CountryData\Old\Old.sln", "Only central packages supported. Skipped")
                 ]));
+
+    // A warning is listed, but everything that could be updated was.
+    [Test]
+    public async Task NugetOutcomeWithOnlyAWarningSucceeds()
+    {
+        var outcome = CodeCommands.NugetOutcome(
+            @"C:\Code\CountryData",
+            [],
+            [new(UpdateProblemKind.ManifestUnreadable, @"C:\Code\CountryData\.config\dotnet-tools.json", "Failed to parse tool manifest. Error: bad json")]);
+
+        await Assert.That(outcome).IsEqualTo(
+            new ActionLog.Outcome(
+                true,
+                "Nothing to update, 1 problem",
+                @".config\dotnet-tools.json: Failed to parse tool manifest. Error: bad json"));
+    }
 
     [Test]
     public Task NugetOutcomeWithNothingToDo() =>
-        Verify(CodeCommands.NugetOutcome([(LogEventLevel.Information, "Completed in {Elapsed}", "Completed in 1s")]));
+        Verify(CodeCommands.NugetOutcome(@"C:\Code\CountryData", [], []));
+
+    static PackageChange Change(PackageChangeKind kind, string file, string package, string from, string to) =>
+        new(kind, Path.Combine(@"C:\Code\CountryData", file), package, NuGetVersion.Parse(from), NuGetVersion.Parse(to));
 
     [Test]
     public Task DescribeNamesTheRepos() =>

@@ -1,0 +1,16 @@
+﻿{
+  Succeeded: false,
+  Summary: 5 packages updated, 2 problems,
+  Details:
+src\Directory.Packages.props
+  MarkdownSnippets.MsBuild: 28.5.1 -> 29.0.0
+  xunit.v3: 4.0.2 -> 4.0.3
+  Microsoft.Azure.Storage.Blob 11.2.3 -> Azure.Storage.Blobs 12.24.0
+src\Tests\Tests.csproj
+  NUnit VersionOverride: 3.13.0 -> 4.3.2
+.config\dotnet-tools.json
+  dotnet-ef: 9.0.0 -> 10.0.0
+
+src\Directory.Packages.props: Package Old.Thing is deprecated with alternative New.Thing, but alternative not found in sources
+Old\Old.sln: Only central packages supported. Skipped
+}

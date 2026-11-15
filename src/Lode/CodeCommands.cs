@@ -1,7 +1,3 @@
-using Serilog;
-using Serilog.Core;
-using Serilog.Events;
-
 /// <summary>
 /// Git and NuGet commands for the repositories in a folder under the code folder. Each git
 /// command does what the matching script in the code folder does (pull.ps1, push.ps1,
@@ -200,7 +196,8 @@ static class CodeCommands
         return new(failed == 0, summary, details.ToString().TrimEnd());
     }
 
-    // PackageUpdateLib writes through Serilog's global logger, so only one update at a time.
+    // Only one update at a time. Two over the same files, as a folder and a repository in it
+    // are, would race to write them, and two builds of a solution fight over its obj folder.
     static readonly SemaphoreSlim nugetGate = new(1, 1);
 
     /// <summary>
@@ -211,12 +208,7 @@ static class CodeCommands
     public static async Task<ActionLog.Outcome> UpdateNugets(string folder, IProgress<string>? progress = null, bool build = false)
     {
         await nugetGate.WaitAsync();
-        var sink = new CollectingSink();
-        var previous = Log.Logger;
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Information()
-            .WriteTo.Sink(sink)
-            .CreateLogger();
+        UpdateResult result;
         try
         {
             IProgress<UpdateProgress>? updateProgress = null;
@@ -225,7 +217,7 @@ static class CodeCommands
                 updateProgress = new Forward<UpdateProgress>(_ => progress.Report(NugetProgress(_)));
             }
 
-            await Task.Run(() => PackageUpdater.Run(folder, null, build, updateProgress));
+            result = await Task.Run(() => PackageUpdater.Run(folder, null, build, updateProgress));
         }
         catch (Exception exception)
         {
@@ -233,11 +225,10 @@ static class CodeCommands
         }
         finally
         {
-            Log.Logger = previous;
             nugetGate.Release();
         }
 
-        return NugetOutcome(sink.Entries());
+        return NugetOutcome(folder, result.Changes, result.Problems);
     }
 
     /// <summary>
@@ -269,25 +260,12 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// What PackageUpdateLib logged, as an outcome: each package it changed, and anything it
-    /// complained about. A logged error, such as a solution it could not update, is a failure.
+    /// What an update did, as an outcome: each package it changed, under the file it changed it
+    /// in, then anything it skipped or failed at. A solution or tool manifest it could not update
+    /// is a failure. Files are relative to the folder.
     /// </summary>
-    internal static ActionLog.Outcome NugetOutcome(IReadOnlyList<(LogEventLevel Level, string Template, string Message)> entries)
+    internal static ActionLog.Outcome NugetOutcome(string folder, IReadOnlyList<PackageChange> changes, IReadOnlyList<UpdateProblem> problems)
     {
-        // "Updated {Package}: {Old} -> {New}", "Updated tool …", "Updated … VersionOverride …",
-        // "Migrated {Old} -> {New} …", "Updated PackageReference {Old} -> {New} in {File}".
-        // Not "    Updated {Props} in {Elapsed}", which is a whole file.
-        var changes = entries
-            .Where(_ => _.Level == LogEventLevel.Information &&
-                        (_.Template.StartsWith("Updated ", StringComparison.Ordinal) ||
-                         _.Template.StartsWith("Migrated ", StringComparison.Ordinal)))
-            .Select(_ => _.Message.Trim())
-            .ToList();
-        var problems = entries
-            .Where(_ => _.Level >= LogEventLevel.Warning)
-            .Select(_ => _.Message.Trim())
-            .ToList();
-
         var summary = changes.Count switch
         {
             0 => "Nothing to update",
@@ -300,9 +278,13 @@ static class CodeCommands
         }
 
         var details = new StringBuilder();
-        foreach (var change in changes)
+        foreach (var file in changes.GroupBy(_ => _.File, StringComparer.OrdinalIgnoreCase))
         {
-            details.AppendLine(change);
+            details.AppendLine(Path.GetRelativePath(folder, file.Key));
+            foreach (var change in file)
+            {
+                details.AppendLine($"  {Describe(change)}");
+            }
         }
 
         if (problems.Count > 0)
@@ -314,35 +296,27 @@ static class CodeCommands
 
             foreach (var problem in problems)
             {
-                details.AppendLine(problem);
+                details.AppendLine($"{Path.GetRelativePath(folder, problem.File)}: {problem.Message}");
             }
         }
 
-        var succeeded = !entries.Any(_ => _.Level >= LogEventLevel.Error);
+        var succeeded = !problems.Any(_ => _.IsFailure);
         return new(succeeded, summary, details.ToString().TrimEnd());
     }
 
-    sealed class CollectingSink : ILogEventSink
+    // The file is the line above, so only what changed in it.
+    static string Describe(PackageChange change)
     {
-        readonly List<LogEvent> events = [];
-
-        public void Emit(LogEvent logEvent)
+        if (change.Kind == PackageChangeKind.Migration)
         {
-            lock (events)
-            {
-                events.Add(logEvent);
-            }
+            return $"{change.Package} {change.From} -> {change.Alternative} {change.To}";
         }
 
-        public List<(LogEventLevel, string, string)> Entries()
+        if (change.Kind == PackageChangeKind.VersionOverride)
         {
-            lock (events)
-            {
-                return events
-                    // Untrimmed: the indent is what tells a whole file's "    Updated" apart.
-                    .Select(_ => (_.Level, _.MessageTemplate.Text, _.RenderMessage()))
-                    .ToList();
-            }
+            return $"{change.Package} VersionOverride: {change.From} -> {change.To}";
         }
+
+        return $"{change.Package}: {change.From} -> {change.To}";
     }
 }
