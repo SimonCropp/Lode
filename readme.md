@@ -1,6 +1,6 @@
 # Lode
 
-Alternative to Windows Explorer, built with Windows Forms.
+Alternative to Windows Explorer with a focus on developers.
 
 ![Lode](src/Lode.Tests/MainFormTests.Default.verified.png)
 
