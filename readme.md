@@ -13,6 +13,7 @@ Lode ships as a [dotnet tool](https://learn.microsoft.com/en-us/dotnet/core/tool
 dotnet tool install -g Lode
 ```
 
+
 ### Updating
 
 Once a day Lode checks nuget.org for a newer version, prereleases included. When it finds one, a link beside the free space at the bottom of each window says so. Click it, or open the **Updates** page of **Options**, and click **Update and restart**. Lode closes, a hidden PowerShell runs `dotnet tool update` for the tool path Lode is installed in, and then starts Lode again with the tabs it had. The tray icon then says whether the update worked. **Check now** on the same page checks straight away.
@@ -22,6 +23,7 @@ Once a day Lode checks nuget.org for a newer version, prereleases included. When
 ![The Updates page of Options](src/Lode.Tests/OptionsFormTests.UpdatesPage.verified.png)
 
 Only a copy installed as a dotnet tool checks for updates. A local build has nothing to update.
+
 
 ## Run
 
@@ -34,6 +36,7 @@ lode D:\Code\readme.md
 Pass a folder to open it, or a file to open its folder with that file selected. With no arguments the tabs from last time are reopened. `lode --help` lists the switches.
 
 From source: `dotnet run --project src/Lode`.
+
 
 ## Replacing File Explorer
 
@@ -51,6 +54,7 @@ The same two actions are buttons on the **File Explorer** page of **Options**, i
  * Explorer's own **Open** stays on every folder's right-click menu.
  * The taskbar's File Explorer button, and apps that start `explorer.exe` themselves or ask it to show a file selected, still open Explorer.
  * Run `lode --restore-explorer` before uninstalling the tool. Otherwise folders keep pointing at a Lode that is no longer there.
+
 
 ### Going back to File Explorer
 
