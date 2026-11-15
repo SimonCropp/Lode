@@ -1,0 +1,10 @@
+﻿{
+  before: {
+    status: Lode 0.4.0 is available. This is 0.3.0.,
+    updateEnabled: true,
+    checkEnabled: true
+  },
+  UpdatesStarted: 1,
+  UpdateStarted: true,
+  closed: true
+}

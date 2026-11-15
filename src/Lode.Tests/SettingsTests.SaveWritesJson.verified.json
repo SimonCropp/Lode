@@ -9,6 +9,8 @@
   "TextEditor": null,
   "CodeDirectory": null,
   "PurgePermanently": false,
+  "LastUpdateCheck": null,
+  "AvailableUpdate": null,
   "Left": 10,
   "Top": 20,
   "Width": 1200,

@@ -69,6 +69,22 @@ public class MainFormTests
     public Task Narrow() =>
         Capture(width: 700);
 
+    // A newer Lode, beside the free space.
+    [Test]
+    public async Task UpdateAvailable()
+    {
+        var previous = Updates.Instance;
+        Updates.Instance = TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" });
+        try
+        {
+            await Capture();
+        }
+        finally
+        {
+            Updates.Instance = previous;
+        }
+    }
+
     // The actions panel under the tree: one command running, one done, one failed.
     [Test]
     public async Task Actions()

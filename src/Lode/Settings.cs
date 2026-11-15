@@ -79,6 +79,11 @@ sealed class Settings
     // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
     public bool PurgePermanently { get; set; }
 
+    // When NuGet was last asked for a newer Lode, and the newer version it had then, if any.
+    // See Updates.
+    public DateTimeOffset? LastUpdateCheck { get; set; }
+    public string? AvailableUpdate { get; set; }
+
     /// <summary>
     /// True when <paramref name="folder"/> is the code folder or inside it.
     /// </summary>
@@ -110,7 +115,7 @@ sealed class Settings
     public List<string> Tabs { get; set; } = [];
     public int ActiveTab { get; set; }
 
-    static string Folder =>
+    internal static string Folder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lode");
 
     // A Debug build keeps its own, so one run from an IDE beside the installed Lode doesn't

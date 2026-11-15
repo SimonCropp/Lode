@@ -1,6 +1,6 @@
 /// <summary>
-/// Lode's options, a page each for General, View, Actions, Code and File Explorer, picked from
-/// the list down the left, as Windows 11's Settings does. A change applies straight away.
+/// Lode's options, a page each for General, View, Actions, Code, File Explorer and Updates, picked
+/// from the list down the left, as Windows 11's Settings does. A change applies straight away.
 /// </summary>
 class OptionsForm : Form
 {
@@ -132,6 +132,40 @@ class OptionsForm : Form
     /// </summary>
     internal Action<string, DefenderExclusion.Outcome> ReportDefenderExclusion;
 
+    readonly Updates updates;
+    readonly Label updateStatus = new()
+    {
+        Name = "updateStatus",
+        AutoSize = true,
+        MaximumSize = new(textWidth, 0),
+        Margin = new(3, 0, 3, 6)
+    };
+    readonly Button applyUpdate = new()
+    {
+        Name = "applyUpdate",
+        Text = "Update and restart",
+        AutoSize = true,
+        Padding = new(6, 0, 6, 0)
+    };
+    readonly Button checkForUpdates = new()
+    {
+        Name = "checkForUpdates",
+        Text = "Check now",
+        AutoSize = true,
+        Padding = new(6, 0, 6, 0)
+    };
+
+    /// <summary>
+    /// Starts the update. Replaced in tests, which must never update anything.
+    /// </summary>
+    internal Action StartUpdate;
+
+    /// <summary>
+    /// The update was started, and waits for Lode to exit, which is the caller's to do once this
+    /// has closed.
+    /// </summary>
+    public bool UpdateStarted { get; private set; }
+
     readonly Settings settings;
     readonly IReadOnlyList<TextEditors.Editor> editors;
 
@@ -172,11 +206,17 @@ class OptionsForm : Form
 
     /// <param name="editors">The text editors installed, Notepad last, from
     /// <see cref="TextEditors.Find()"/>. Passed in so tests show a fixed list.</param>
-    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings, IReadOnlyList<TextEditors.Editor> editors)
+    /// <param name="updates">Whether there is a newer Lode, <see cref="Updates.Instance"/>.</param>
+    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings, IReadOnlyList<TextEditors.Editor> editors, Updates updates)
     {
         this.explorerReplacement = explorerReplacement;
         this.settings = settings;
         this.editors = editors;
+        this.updates = updates;
+        StartUpdate = updates.Apply;
+        applyUpdate.Click += (_, _) => OnApplyUpdate();
+        checkForUpdates.Click += (_, _) => _ = updates.Check();
+        updates.Changed += OnUpdatesChanged;
         BrowseForEditor = ShowBrowseDialog;
         BrowseForCodeDirectory = ShowCodeDirectoryDialog;
         browseCodeDirectory.Click += (_, _) =>
@@ -252,6 +292,7 @@ class OptionsForm : Form
         AddPage("Actions", Icons.Actions, BuildActionsPage());
         AddPage("Code", Icons.Code, BuildCodePage());
         AddPage("File Explorer", Icons.FileExplorer, BuildExplorerPage());
+        AddPage("Updates", Icons.Updates, BuildUpdatesPage());
         pageList.SelectedChanged += ShowSelectedPage;
         ShowSelectedPage();
 
@@ -282,6 +323,7 @@ class OptionsForm : Form
         PerformLayout();
 
         UpdateExplorerState();
+        ShowUpdateState();
     }
 
     // A page: its name as a heading, then its parts one under another. Hidden until picked.
@@ -498,6 +540,105 @@ class OptionsForm : Form
             explorerStatus,
             buttons
         ];
+    }
+
+    Control[] BuildUpdatesPage()
+    {
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            Margin = Padding.Empty
+        };
+        buttons.Controls.Add(applyUpdate);
+        buttons.Controls.Add(checkForUpdates);
+
+        return
+        [
+            Description(
+                "Lode asks NuGet for a newer version once a day, and shows one beside the free " +
+                "space at the bottom of each window. Updating closes Lode, runs dotnet tool " +
+                "update, and starts Lode again with the tabs it had.",
+                new(3, 0, 3, 9)),
+            updateStatus,
+            buttons
+        ];
+    }
+
+    void OnUpdatesChanged()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(ShowUpdateState);
+            return;
+        }
+
+        ShowUpdateState();
+    }
+
+    void ShowUpdateState()
+    {
+        updateStatus.Text = UpdateStatus(updates);
+        applyUpdate.Enabled = updates.Available != null && !updates.Checking;
+        checkForUpdates.Enabled = updates.Tool != null && !updates.Checking;
+    }
+
+    /// <summary>
+    /// Where the update stands, as the Updates page says it.
+    /// </summary>
+    internal static string UpdateStatus(Updates updates)
+    {
+        var current = updates.Current.ToNormalizedString();
+        if (updates.Tool == null)
+        {
+            return $"This is Lode {current}, run from a build rather than installed as a dotnet " +
+                   "tool, so it has nothing to update.";
+        }
+
+        if (updates.Checking)
+        {
+            return "Checking for a newer version…";
+        }
+
+        if (updates.Available is { } available)
+        {
+            return $"Lode {available.ToNormalizedString()} is available. This is {current}.";
+        }
+
+        if (updates.Error is { } error)
+        {
+            return $"Couldn't check for a newer version: {error}";
+        }
+
+        if (updates.LastChecked is { } lastChecked)
+        {
+            var local = TimeZoneInfo.ConvertTime(lastChecked, updates.LocalTimeZone);
+            return $"Lode {current} is the newest version. Last checked {local:g}.";
+        }
+
+        return $"This is Lode {current}. It hasn't checked for a newer version yet.";
+    }
+
+    void OnApplyUpdate()
+    {
+        try
+        {
+            StartUpdate();
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(this, $"Lode couldn't start the update: {exception.Message}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        UpdateStarted = true;
+        Close();
     }
 
     void BrowseDefaultDirectory()
@@ -799,6 +940,7 @@ class OptionsForm : Form
         base.Dispose(disposing);
         if (disposing)
         {
+            updates.Changed -= OnUpdatesChanged;
             headingFont.Dispose();
             sectionFont.Dispose();
         }

@@ -58,6 +58,8 @@ static class Icons
     public const char Actions = '\uE945';
     public const char Code = '\uE943';
     public const char FileExplorer = '\uEC50';
+    // Arrows round in a circle, as Windows Update has.
+    public const char Updates = '\uE777';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

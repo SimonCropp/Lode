@@ -1,0 +1,10 @@
+﻿{
+  same: {
+    checkedAt: DateTimeOffset_1,
+    available: none
+  },
+  older: {
+    checkedAt: DateTimeOffset_1,
+    available: none
+  }
+}

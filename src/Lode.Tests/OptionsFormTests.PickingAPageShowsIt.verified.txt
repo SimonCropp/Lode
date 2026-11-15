@@ -4,11 +4,12 @@
     View,
     Actions,
     Code,
-    File Explorer
+    File Explorer,
+    Updates
   ],
   opened: General,
-  picked: Code,
-  next: File Explorer,
+  picked: File Explorer,
+  next: Updates,
   wrapped: General,
-  back: File Explorer
+  back: Updates
 }

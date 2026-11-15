@@ -34,6 +34,20 @@ class MainForm : Form
         TextAlign = ContentAlignment.MiddleLeft
     };
     ToolStripStatusLabel spaceLabel = new();
+
+    // The instance this window listens to, so it stops listening to that one when it closes.
+    readonly Updates updates = Updates.Instance;
+
+    // Beside the free space: a newer Lode, when there is one. Clicking it opens Options at Updates.
+    ToolStripStatusLabel updateLabel = new()
+    {
+        Name = "update",
+        IsLink = true,
+        LinkBehavior = LinkBehavior.HoverUnderline,
+        ToolTipText = "Open Options to update",
+        Margin = new(0, 3, 12, 2),
+        Visible = false
+    };
     Button backButton;
     Button forwardButton;
     Button upButton;
@@ -95,6 +109,7 @@ class MainForm : Form
         filterBox = filterFrame.Box;
         places.Changed += RebuildTree;
         UndoHistory.Instance.Changed += OnUndoChanged;
+        updates.Changed += OnUpdatesChanged;
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -633,7 +648,10 @@ class MainForm : Form
     {
         var status = new StatusStrip();
         status.Items.Add(statusLabel);
+        status.Items.Add(updateLabel);
         status.Items.Add(spaceLabel);
+        updateLabel.Click += (_, _) => ShowOptions("Updates");
+        ShowUpdate();
         return status;
     }
 
@@ -1064,11 +1082,51 @@ class MainForm : Form
 
     Size NormalSize => WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
 
-    void ShowOptions()
+    void ShowOptions() =>
+        ShowOptions(null);
+
+    void ShowOptions(string? page)
     {
-        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser(), settings, TextEditors.Find());
+        using var options = new OptionsForm(ExplorerReplacement.ForCurrentUser(), settings, TextEditors.Find(), updates);
         options.SettingsChanged += ApplySettingsToAllWindows;
+        if (page != null)
+        {
+            options.ShowPage(page);
+        }
+
         options.ShowDialog(this);
+
+        // The update waits for Lode to exit, so it goes as Exit Lode does, once Options has.
+        if (options.UpdateStarted)
+        {
+            ExitRequested?.Invoke();
+        }
+    }
+
+    void OnUpdatesChanged()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(ShowUpdate);
+            return;
+        }
+
+        ShowUpdate();
+    }
+
+    void ShowUpdate()
+    {
+        var available = updates.Available;
+        updateLabel.Visible = available != null;
+        if (available != null)
+        {
+            updateLabel.Text = $"Lode {available.ToNormalizedString()} is available";
+        }
     }
 
     // A column hidden or shown in one view goes for every tab of every window.
@@ -1521,6 +1579,7 @@ class MainForm : Form
         {
             places.Changed -= RebuildTree;
             UndoHistory.Instance.Changed -= OnUndoChanged;
+            updates.Changed -= OnUpdatesChanged;
             glyphFont.Dispose();
             toolTip.Dispose();
         }

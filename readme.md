@@ -13,6 +13,16 @@ Lode ships as a [dotnet tool](https://learn.microsoft.com/en-us/dotnet/core/tool
 dotnet tool install -g Lode
 ```
 
+### Updating
+
+Once a day Lode checks nuget.org for a newer version, prereleases included. When it finds one, a link beside the free space at the bottom of each window says so. Click it, or open the **Updates** page of **Options**, and click **Update and restart**. Lode closes, a hidden PowerShell runs `dotnet tool update` for the tool path Lode is installed in, and then starts Lode again with the tabs it had. The tray icon then says whether the update worked. **Check now** on the same page checks straight away.
+
+![An update available](src/Lode.Tests/MainFormTests.UpdateAvailable.verified.png)
+
+![The Updates page of Options](src/Lode.Tests/OptionsFormTests.UpdatesPage.verified.png)
+
+Only a copy installed as a dotnet tool checks for updates. A local build has nothing to update.
+
 ## Run
 
 ```

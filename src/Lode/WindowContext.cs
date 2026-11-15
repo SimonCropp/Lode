@@ -52,6 +52,26 @@ sealed class WindowContext : ApplicationContext
         first.Show();
         instance.Listen(OnLaunched);
         WarmUpContextMenu();
+        ReportUpdate();
+        Updates.Instance.Start();
+    }
+
+    // Lode goes away while it updates and comes back, which looks the same whether the update
+    // worked or not, so the Lode it starts says which.
+    void ReportUpdate()
+    {
+        if (Updates.Instance.Report() is not { } report)
+        {
+            return;
+        }
+
+        var icon = ToolTipIcon.Warning;
+        if (report.Kind == PlatformHeads.TrayNotificationKind.Info)
+        {
+            icon = ToolTipIcon.Info;
+        }
+
+        tray.ShowBalloonTip(10000, report.Title, report.Message, icon);
     }
 
     internal enum TrayAction

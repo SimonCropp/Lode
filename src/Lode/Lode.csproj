@@ -23,5 +23,6 @@
     <InternalsVisibleTo Include="Lode.Tests" />
     <PackageReference Include="ProjectDefaults" PrivateAssets="all" />
     <PackageReference Include="PackageUpdateLib" />
+    <PackageReference Include="PlatformHeads.Core" />
   </ItemGroup>
 </Project>

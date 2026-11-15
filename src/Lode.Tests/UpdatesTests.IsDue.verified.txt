@@ -1,0 +1,8 @@
+﻿{
+  neverChecked: true,
+  anHourAgo: false,
+  justUnderADayAgo: false,
+  aDayAgo: true,
+  aWeekAgo: true,
+  inTheFuture: true
+}

@@ -1,0 +1,7 @@
+﻿{
+  available: 0.4.0-beta.1,
+  Checking: false,
+  LastUpdateCheck: DateTimeOffset_1,
+  AvailableUpdate: 0.4.0-beta.1,
+  changes: 2
+}

@@ -1,3 +1,5 @@
+using NuGet.Versioning;
+
 [STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
@@ -253,7 +255,11 @@ public class OptionsFormTests
     public Task LodeInCharge() =>
         VerifyPage("File Explorer", new(), replace: true);
 
-    static async Task VerifyPage(string page, Settings settings, bool replace = false)
+    [Test]
+    public Task UpdatesPage() =>
+        VerifyPage("Updates", new(), updates: TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" }));
+
+    static async Task VerifyPage(string page, Settings settings, bool replace = false, Updates? updates = null)
     {
         using var scratch = new RegistryScratch();
         var replacement = scratch.Replacement();
@@ -262,7 +268,7 @@ public class OptionsFormTests
             replacement.Replace();
         }
 
-        using var form = Show(replacement, settings);
+        using var form = Show(replacement, settings, updates);
         form.ShowPage(page);
         form.Refresh();
         Application.DoEvents();
@@ -280,7 +286,7 @@ public class OptionsFormTests
         var list = (PageList) form.Controls.Find("pages", true)[0];
         var opened = Shown(form);
 
-        list.SelectedIndex = 3;
+        list.SelectedIndex = 4;
         var picked = Shown(form);
         form.Press(Keys.Control | Keys.Tab);
         var next = Shown(form);
@@ -303,6 +309,11 @@ public class OptionsFormTests
     // What shows: the code folder box is on the Code page, the tick for hidden items on View.
     static string Shown(Form form)
     {
+        if (form.Controls.Find("updateStatus", true)[0].Visible)
+        {
+            return "Updates";
+        }
+
         if (form.Controls.Find("codeDirectory", true)[0].Visible)
         {
             return "Code";
@@ -415,6 +426,93 @@ public class OptionsFormTests
             });
     }
 
+    // What the Updates page says, as things stand.
+    [Test]
+    public async Task UpdateStatus()
+    {
+        var failed = TestUpdates.Installed(
+            new(),
+            _ => throw new HttpRequestException("No such host is known. (api.nuget.org:443)"));
+        await failed.Check();
+
+        await Verify(
+            new
+            {
+                build = OptionsForm.UpdateStatus(TestUpdates.Build()),
+                notCheckedYet = OptionsForm.UpdateStatus(TestUpdates.Installed(new())),
+                upToDate = OptionsForm.UpdateStatus(TestUpdates.Installed(new() { LastUpdateCheck = TestUpdates.Now.AddHours(-3) })),
+                available = OptionsForm.UpdateStatus(TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" })),
+                failed = OptionsForm.UpdateStatus(failed)
+            });
+    }
+
+    // Check now asks straight away, and nothing can be clicked again until NuGet answers.
+    [Test]
+    public async Task CheckingNow()
+    {
+        using var scratch = new RegistryScratch();
+        var answer = new TaskCompletionSource<NuGetVersion?>();
+        var updates = TestUpdates.Installed(new(), _ => answer.Task);
+        using var form = Show(scratch.Replacement(), updates: updates);
+        form.ShowPage("Updates");
+        var before = DescribeUpdates(form);
+
+        Click(form, "checkForUpdates");
+        var checking = DescribeUpdates(form);
+        answer.SetResult(NuGetVersion.Parse("0.4.0"));
+        await Pump.Until(() => !updates.Checking);
+        Application.DoEvents();
+
+        await Verify(
+            new
+            {
+                before,
+                checking,
+                answered = DescribeUpdates(form)
+            });
+    }
+
+    // Update starts the update and closes Options, for the window to exit Lode, which the update
+    // waits for.
+    [Test]
+    public async Task UpdatingClosesOptions()
+    {
+        using var scratch = new RegistryScratch();
+        using var form = Show(scratch.Replacement(), updates: TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" }));
+        form.ShowPage("Updates");
+        var before = DescribeUpdates(form);
+
+        Click(form, "applyUpdate");
+
+        await Verify(
+            new
+            {
+                before,
+                form.UpdatesStarted,
+                form.UpdateStarted,
+                closed = !form.Visible
+            });
+    }
+
+    // A build has nothing to update, and doesn't ask.
+    [Test]
+    public async Task ABuildHasNothingToUpdate()
+    {
+        using var scratch = new RegistryScratch();
+        using var form = Show(scratch.Replacement(), updates: TestUpdates.Build(new() { AvailableUpdate = "0.4.0" }));
+        form.ShowPage("Updates");
+
+        await Verify(DescribeUpdates(form));
+    }
+
+    static object DescribeUpdates(Form form) =>
+        new
+        {
+            status = form.Controls.Find("updateStatus", true)[0].Text,
+            updateEnabled = form.Controls.Find("applyUpdate", true)[0].Enabled,
+            checkEnabled = form.Controls.Find("checkForUpdates", true)[0].Enabled
+        };
+
     static readonly TextEditors.Editor[] editors =
     [
         new("Visual Studio Code", @"C:\Programs\VS Code\Code.exe"),
@@ -442,9 +540,9 @@ public class OptionsFormTests
 
     // Shown, off screen and without taking the focus: buttons only click, and forms only draw,
     // once shown.
-    static QuietForm Show(ExplorerReplacement replacement, Settings? settings = null)
+    static QuietForm Show(ExplorerReplacement replacement, Settings? settings = null, Updates? updates = null)
     {
-        var form = new QuietForm(replacement, settings ?? new())
+        var form = new QuietForm(replacement, settings ?? new(), updates ?? TestUpdates.Build())
         {
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000)
@@ -484,9 +582,15 @@ public class OptionsFormTests
             restoreEnabled = form.Controls.Find("restoreExplorer", true)[0].Enabled
         };
 
-    sealed class QuietForm(ExplorerReplacement replacement, Settings settings) :
-        OptionsForm(replacement, settings, editors)
+    sealed class QuietForm : OptionsForm
     {
+        public QuietForm(ExplorerReplacement replacement, Settings settings, Updates updates) :
+            base(replacement, settings, editors, updates) =>
+            // Never the real update, which would update Lode once the tests end.
+            StartUpdate = () => UpdatesStarted++;
+
+        public int UpdatesStarted { get; private set; }
+
         protected override bool ShowWithoutActivation => true;
 
         // As the keys would: the modifiers of a real key press come from the keyboard.
