@@ -22,7 +22,7 @@ class MainForm : Form
     readonly Dictionary<string, ToolStripItem> actionButtons = [];
     FramedTextBox filterFrame = new();
     TextBox filterBox;
-    SplitContainer split = new();
+    PaneSplitContainer split = new();
     Settings settings;
     Places places;
     FolderTree tree;
