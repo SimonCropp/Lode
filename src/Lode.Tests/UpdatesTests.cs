@@ -18,8 +18,9 @@ public class UpdatesTests
                 inTheFuture = Updates.IsDue(now.AddHours(1), now)
             });
 
-    // The shim the update runs and starts again is in the tool path above the store. A build's
-    // output is in no store, and has nothing to update.
+    // The update is by the tool path above the store, and says how it went beside the settings,
+    // outside the store it replaces. ToolUpdateTests has the shim, and a build's output having
+    // none.
     [Test]
     public Task FindsTheToolItIsInstalledAs()
     {
@@ -27,11 +28,8 @@ public class UpdatesTests
         return Verify(
             new
             {
-                update.PackageId,
-                update.Shim,
                 update.ToolPath,
-                outcomeBesideTheSettings = update.Outcome == Updates.OutcomePath,
-                buildHasNone = Updates.Find(@"C:\Code\Lode\src\Lode\bin\Release\net11.0\") == null
+                outcomeBesideTheSettings = update.Outcome == Updates.OutcomePath
             });
     }
 
@@ -152,19 +150,16 @@ public class UpdatesTests
             });
     }
 
-    // The Lode the update starts says how it went, once.
+    // The Lode the update starts says how it went, once. A success says the version rather than
+    // what the tool said, and not as a warning, which would make an update that worked look like
+    // one that had not. A failure says why.
     [Test]
     public async Task ReportsHowTheUpdateWent()
     {
         var outcome = Path.Combine(Path.GetTempPath(), $"UpdatesTests.{Guid.NewGuid():N}.log");
         try
         {
-            var updates = new Updates(
-                new(),
-                new ToolUpdate("Lode", @"C:\Users\Someone\.dotnet\tools\lode.exe", outcome),
-                TestUpdates.Current,
-                _ => Task.FromResult<NuGetVersion?>(null),
-                new Clock(now));
+            var updates = Reporting(outcome);
 
             var none = updates.Report() == null;
             await File.WriteAllTextAsync(outcome, "ok\nTool 'lode' was successfully updated from version '0.2.0' to version '0.3.0'.\n");
@@ -187,6 +182,44 @@ public class UpdatesTests
             File.Delete(outcome);
         }
     }
+
+    // A file that cannot be read says nothing, rather than throwing out of Lode's start, and is
+    // left for the next start. A file open with no sharing is what Windows refuses to read.
+    [Test]
+    public async Task AnOutcomeThatCannotBeReadSaysNothing()
+    {
+        var outcome = Path.Combine(Path.GetTempPath(), $"UpdatesTests.{Guid.NewGuid():N}.log");
+        try
+        {
+            await File.WriteAllTextAsync(outcome, "failed\nUnhandled exception: Access to the path 'lode.dll' is denied.\n");
+            var updates = Reporting(outcome);
+            UpdateNotice? notice;
+            using (new FileStream(outcome, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                notice = updates.Report();
+            }
+
+            await Verify(
+                new
+                {
+                    saysNothing = notice == null,
+                    left = File.Exists(outcome)
+                });
+        }
+        finally
+        {
+            File.Delete(outcome);
+        }
+    }
+
+    // Installed, with how the update went written to outcome.
+    static Updates Reporting(string outcome) =>
+        new(
+            new(),
+            new ToolUpdate(@"C:\Users\Someone\.dotnet\tools\lode.exe", outcome),
+            TestUpdates.Current,
+            _ => Task.FromResult<NuGetVersion?>(null),
+            new Clock(now));
 
     static object Describe(Settings settings) =>
         new

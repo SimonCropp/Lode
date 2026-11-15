@@ -51,45 +51,6 @@ public class ToolUpdateOutcomeTests
         }
     }
 
-    // A success says the version rather than what the tool said, and not as a warning, which
-    // would make an update that worked look like one that had not. A failure says why.
-    [Test]
-    public Task Notice() =>
-        Verify(
-            new
-            {
-                succeeded = ToolUpdateOutcome.Parse("ok\nTool 'lode' was successfully updated.\n").Notice("Lode", "1.2.3"),
-                failed = ToolUpdateOutcome.Parse(locked).Notice("Lode", "1.2.3")
-            });
-
-    // A file that cannot be read says nothing, rather than throwing out of Lode's start, and is
-    // left for the next start. A file open with no sharing is what Windows refuses to read.
-    [Test]
-    public async Task AnOutcomeThatCannotBeReadSaysNothing()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"Lode.Outcome.{Guid.NewGuid():N}.log");
-        try
-        {
-            await File.WriteAllTextAsync(path, locked);
-            UpdateNotice? notice;
-            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-            {
-                notice = ToolUpdateOutcome.Report(path, "Lode", "1.2.3");
-            }
-
-            await Verify(
-                new
-                {
-                    saysNothing = notice == null,
-                    left = File.Exists(path)
-                });
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
     static object Describe(ToolUpdateOutcome outcome) =>
         new
         {

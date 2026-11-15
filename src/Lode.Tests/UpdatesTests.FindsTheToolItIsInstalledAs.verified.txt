@@ -1,7 +1,4 @@
 ﻿{
-  PackageId: Lode,
-  Shim: C:\Users\Someone\.dotnet\tools\lode.exe,
   ToolPath: C:\Users\Someone\.dotnet\tools,
-  outcomeBesideTheSettings: true,
-  buildHasNone: true
+  outcomeBesideTheSettings: true
 }
