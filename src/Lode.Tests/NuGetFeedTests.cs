@@ -112,7 +112,7 @@ public class NuGetFeedTests
     [Test]
     public async Task AFeedWithoutRegistrationsFails()
     {
-        Task<JsonDocument?> Fetch(string url) =>
+        static Task<JsonDocument?> Fetch(string url) =>
             Task.FromResult<JsonDocument?>(JsonDocument.Parse("""{ "resources": [ { "@id": "https://feed.test/query", "@type": "SearchQueryService" } ] }"""));
 
         await Assert.That(() => NuGetFeed.LatestVersion("Lode", Fetch)).Throws<InvalidOperationException>();

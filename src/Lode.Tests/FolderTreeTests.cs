@@ -292,10 +292,10 @@ public class FolderTreeTests
         node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
 
     // Expands a folder, and waits for it to be read, which the tree does off the UI thread.
-    static async Task Expand(FolderTree tree, TreeNode node)
+    static Task Expand(FolderTree tree, TreeNode node)
     {
         node.Expand();
-        await Pump.Loaded(tree);
+        return Pump.Loaded(tree);
     }
 
     // The fixture's Projects folder, under the stand-in drive.
