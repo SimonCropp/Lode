@@ -55,6 +55,7 @@ The same two actions are buttons on the **File Explorer** page of **Options**, i
  * It writes only to `HKEY_CURRENT_USER\Software\Classes`, so it applies to the current Windows account and needs no administrator rights.
  * Folders are pointed at the installed tool (`%USERPROFILE%\.dotnet\tools\lode.exe`) whenever it exists, even when Replace is clicked in a local build, so cleaning a build folder never breaks opening folders. Only without the tool is the running copy registered.
  * Explorer's own **Open** stays on every folder's right-click menu.
+ * Apps that ask the shell to *explore* a folder, rather than open it, get Lode too. Electron and Chromium apps open folders this way, GitHub Desktop's **Show in Explorer** for one. If another file manager has already claimed that verb, it keeps it. A Replace by a Lode from before this was added leaves those apps opening Explorer: the **File Explorer** page of **Options** says so, and replacing again covers them.
  * The taskbar's File Explorer button, and apps that start `explorer.exe` themselves or ask it to show a file selected, still open Explorer.
  * Run `lode --restore-explorer` before uninstalling the tool. Otherwise folders keep pointing at a Lode that is no longer there.
 
@@ -72,10 +73,12 @@ Any one of these works:
    reg delete "HKCU\Software\Classes\Drive\shell\Lode" /f
    reg delete "HKCU\Software\Classes\Directory\shell" /ve /f
    reg delete "HKCU\Software\Classes\Drive\shell" /ve /f
+   reg delete "HKCU\Software\Classes\Directory\shell\explore" /f
+   reg delete "HKCU\Software\Classes\Drive\shell\explore" /f
    reg delete "HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}" /f
    ```
 
-   The first two remove the **Open in Lode** verb. The next two clear the default folder action, which Lode set to itself, so Explorer's **Open** takes over again. The last one removes Lode's Win+E command. Only delete that key if Lode added it: check that `HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow` has a `CreatedBy` value of `Lode`. If another app was the default for folders before Lode, removing the entries by hand does not bring it back, unlike Restore. Its name is in the `LodePreviousDefault` value of the `Lode` key, so read that before deleting the key.
+   The first two remove the **Open in Lode** verb. The next two clear the default folder action, which Lode set to itself, so Explorer's **Open** takes over again. The two after that hand the explore verb back to Explorer, and the last one removes Lode's Win+E command. Only delete those last three keys if Lode added them: check that each `explore` key, and `HKCU\Software\Classes\CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow`, has a `CreatedBy` value of `Lode`. If another app was the default for folders before Lode, removing the entries by hand does not bring it back, unlike Restore. Its name is in the `LodePreviousDefault` value of the `Lode` key, so read that before deleting the key.
 
 After restoring, folders open in Explorer straight away. If one still opens in Lode, sign out and back in, or restart Explorer from Task Manager.
 

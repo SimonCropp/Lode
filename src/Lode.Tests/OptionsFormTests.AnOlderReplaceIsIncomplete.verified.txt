@@ -1,0 +1,12 @@
+﻿{
+  before: {
+    status: Currently Lode opens them, except from apps that ask for File Explorer itself, such as GitHub Desktop. Replace again to cover those.,
+    replaceEnabled: true,
+    restoreEnabled: true
+  },
+  replaced: {
+    status: Currently Lode opens them.,
+    replaceEnabled: false,
+    restoreEnabled: true
+  }
+}

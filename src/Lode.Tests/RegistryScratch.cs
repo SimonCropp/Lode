@@ -30,6 +30,22 @@ sealed class RegistryScratch : IDisposable
     }
 
     /// <summary>
+    /// Deletes a key under the classes key, and everything under it.
+    /// </summary>
+    public void Delete(string keyPath) =>
+        Registry.CurrentUser.DeleteSubKeyTree($@"{ClassesPath}\{keyPath}");
+
+    /// <summary>
+    /// What a Replace by a Lode from before it added the explore verb left.
+    /// </summary>
+    public void OlderReplace(ExplorerReplacement replacement)
+    {
+        replacement.Replace();
+        Delete(@"Directory\shell\explore");
+        Delete(@"Drive\shell\explore");
+    }
+
+    /// <summary>
     /// Everything under the classes key. Subkey names end in a backslash; "(default)" is a
     /// key's default value.
     /// </summary>

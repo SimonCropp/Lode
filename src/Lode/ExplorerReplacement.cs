@@ -1,6 +1,7 @@
 /// <summary>
 /// Makes Lode, rather than File Explorer, what opens folders and drives (double-clicks,
-/// folder shortcuts, other apps asking the shell to open a folder) and what Win+E starts.
+/// folder shortcuts, other apps asking the shell to open or explore a folder) and what Win+E
+/// starts.
 /// </summary>
 /// <remarks>
 /// Writes only to the current user's classes, so it needs no elevation and other accounts keep
@@ -16,11 +17,18 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     // Where Replace keeps a default verb it displaced, so Restore can put it back.
     const string previousDefaultName = "LodePreviousDefault";
 
+    // The verb apps name when they want a folder shown in a file manager, rather than whatever
+    // the default verb does: Chromium and Electron apps use it to open a folder (GitHub
+    // Desktop's Show in Explorer, for one), as does ShellExecute with "explore". Explorer's own
+    // is on Folder, so one on Directory or Drive is found first.
+    const string exploreVerb = "explore";
+
     // The shell object Win+E opens. A command here, with an empty DelegateExecute, runs in
     // place of Explorer's own handler.
     const string winEPath = @"CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow";
 
-    // Marks the Win+E key as Lode's, so Restore never removes another tool's.
+    // Marks the keys Replace adds where another tool could have its own (Win+E, explore) as
+    // Lode's, so Restore never removes another tool's.
     const string ownerName = "CreatedBy";
 
     // Directory covers every file system folder; Drive covers drive roots. Folder is left alone:
@@ -76,6 +84,44 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     /// </summary>
     public bool IsActiveHere => RegisteredCommand == command;
 
+    /// <summary>
+    /// True when Replace has nothing left to add for this copy: apps that ask for the explore
+    /// verb get it too, unless another tool has that verb, which Replace leaves alone. False
+    /// after a Replace by a Lode from before it added the verb.
+    /// </summary>
+    public bool IsComplete
+    {
+        get
+        {
+            if (!IsActiveHere)
+            {
+                return false;
+            }
+
+            foreach (var folderClass in folderClasses)
+            {
+                using var explore = Registry.CurrentUser.OpenSubKey($@"{classesPath}\{folderClass}\shell\{exploreVerb}");
+                if (explore == null)
+                {
+                    return false;
+                }
+
+                if (explore.GetValue(ownerName) as string != verb)
+                {
+                    continue;
+                }
+
+                using var commandKey = explore.OpenSubKey("command");
+                if (commandKey?.GetValue("") as string != FolderCommand)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
     const string folderArgument = " \"%1\"";
 
     string FolderCommand => command + folderArgument;
@@ -103,6 +149,16 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
             }
 
             shell.SetValue("", verb);
+
+            if (!IsOthers(shell, exploreVerb))
+            {
+                using var explore = shell.CreateSubKey(exploreVerb);
+                explore.SetValue(ownerName, verb);
+                // As on Explorer's own, which this one hides: off the right-click menu.
+                explore.SetValue("ProgrammaticAccessOnly", "");
+                using var commandKey = explore.CreateSubKey("command");
+                commandKey.SetValue("", FolderCommand);
+            }
         }
 
         using (var winE = classes.CreateSubKey(winEPath))
@@ -153,24 +209,39 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
                 }
 
                 shell.DeleteSubKeyTree(verb, throwOnMissingSubKey: false);
+
+                if (IsLodes(shell, exploreVerb))
+                {
+                    shell.DeleteSubKeyTree(exploreVerb);
+                }
             }
 
             DeleteEmptyKeys(classes, shellPath);
         }
 
-        bool ownsWinE;
-        using (var winE = classes.OpenSubKey(winEPath))
-        {
-            ownsWinE = winE?.GetValue(ownerName) as string == verb;
-        }
-
-        if (ownsWinE)
+        if (IsLodes(classes, winEPath))
         {
             classes.DeleteSubKeyTree(winEPath);
             DeleteEmptyKeys(classes, Path.GetDirectoryName(winEPath)!);
         }
 
         NotifyShell();
+    }
+
+    // True when the key at path is one Replace added and marked as Lode's.
+    static bool IsLodes(RegistryKey parent, string path)
+    {
+        using var key = parent.OpenSubKey(path);
+        return key?.GetValue(ownerName) as string == verb;
+    }
+
+    // True when the key at path is there but was not added by Replace, so belongs to another
+    // tool.
+    static bool IsOthers(RegistryKey parent, string path)
+    {
+        using var key = parent.OpenSubKey(path);
+        return key != null &&
+               key.GetValue(ownerName) as string != verb;
     }
 
     // Deletes the key at path, then each parent in turn, for as long as they are empty. Stops

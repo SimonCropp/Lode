@@ -85,6 +85,57 @@ public class ExplorerReplacementTests
         await Verify(scratch.Dump());
     }
 
+    // Another file manager already answers the explore verb; Replace takes the default verb but
+    // leaves that tool's explore, and Restore keeps it.
+    [Test]
+    public async Task ReplaceLeavesAnotherToolsExploreAlone()
+    {
+        using var scratch = new RegistryScratch();
+        scratch.Set(
+            @"Directory\shell\explore\command",
+            null,
+            """
+            "C:\Other\other.exe" "%1"
+            """);
+        var replacement = scratch.Replacement();
+        replacement.Replace();
+        var replaced = scratch.Dump();
+        var complete = replacement.IsComplete;
+
+        replacement.Restore();
+
+        await Verify(
+            new
+            {
+                replaced,
+                complete,
+                restored = scratch.Dump()
+            });
+    }
+
+    // A Replace by a Lode from before the explore verb: replacing again adds it, and Restore
+    // removes everything either added.
+    [Test]
+    public async Task ReplacingAfterAnOlderReplaceAddsExplore()
+    {
+        using var scratch = new RegistryScratch();
+        var replacement = scratch.Replacement();
+        scratch.OlderReplace(replacement);
+        var older = Describe(replacement);
+
+        replacement.Replace();
+        var replaced = Describe(replacement);
+        replacement.Restore();
+
+        await Verify(
+            new
+            {
+                older,
+                replaced,
+                restored = scratch.Dump()
+            });
+    }
+
     [Test]
     public async Task State()
     {
@@ -117,6 +168,7 @@ public class ExplorerReplacementTests
         {
             replacement.IsActive,
             replacement.IsActiveHere,
+            replacement.IsComplete,
             RegisteredCommand = replacement.RegisteredCommand ?? "(none)"
         };
 

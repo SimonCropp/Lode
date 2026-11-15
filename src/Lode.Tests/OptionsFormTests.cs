@@ -52,6 +52,27 @@ public class OptionsFormTests
             });
     }
 
+    // Folders point at this copy, but from a Lode that did not yet add the explore verb.
+    // Replace is available again, to add it.
+    [Test]
+    public async Task AnOlderReplaceIsIncomplete()
+    {
+        using var scratch = new RegistryScratch();
+        scratch.OlderReplace(scratch.Replacement());
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("File Explorer");
+        var before = Describe(form);
+
+        Click(form, "replaceExplorer");
+
+        await Verify(
+            new
+            {
+                before,
+                replaced = Describe(form)
+            });
+    }
+
     // Each action has a tick for the actions bar and one for the right-click menus.
     [Test]
     public async Task TickingAnActionChangesWhereItShows()

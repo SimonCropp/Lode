@@ -36,5 +36,6 @@ lode --restore-explorer
 
  * It applies to the current Windows account only, and needs no administrator rights.
  * Explorer's own **Open** stays on every folder's right-click menu.
+ * Apps that ask the shell to *explore* a folder, as Electron apps such as GitHub Desktop do, get Lode too.
  * The taskbar's File Explorer button, and apps that start `explorer.exe` themselves or ask it to show a file selected, still open Explorer.
  * Run `lode --restore-explorer` before `dotnet tool uninstall -g Lode`. Otherwise folders keep pointing at a Lode that is no longer there.

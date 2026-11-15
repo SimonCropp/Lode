@@ -15,6 +15,13 @@
   Directory\: {
     shell\: {
       (default): Lode,
+      explore\: {
+        command\: {
+          (default): "C:\Tools\lode.exe" "%1"
+        },
+        CreatedBy: Lode,
+        ProgrammaticAccessOnly: 
+      },
       Lode\: {
         (default): Open in Lode,
         command\: {
@@ -26,6 +33,13 @@
   Drive\: {
     shell\: {
       (default): Lode,
+      explore\: {
+        command\: {
+          (default): "C:\Tools\lode.exe" "%1"
+        },
+        CreatedBy: Lode,
+        ProgrammaticAccessOnly: 
+      },
       Lode\: {
         (default): Open in Lode,
         command\: {

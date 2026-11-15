@@ -968,21 +968,27 @@ class OptionsForm : Form
     {
         var registered = explorerReplacement.RegisteredCommand;
         var here = explorerReplacement.IsActiveHere;
+        var complete = explorerReplacement.IsComplete;
         if (registered == null)
         {
             explorerStatus.Text = "Currently File Explorer opens them.";
         }
-        else if (here)
+        else if (complete)
         {
             explorerStatus.Text = "Currently Lode opens them.";
+        }
+        else if (here)
+        {
+            explorerStatus.Text = "Currently Lode opens them, except from apps that ask for File Explorer itself, such as GitHub Desktop. Replace again to cover those.";
         }
         else
         {
             explorerStatus.Text = $"Currently another copy of Lode opens them: {registered}";
         }
 
-        // Replace stays available when another copy is registered, to point folders at this one.
-        replaceButton.Enabled = !here;
+        // Replace stays available when another copy is registered, to point folders at this one,
+        // and after a Replace by an older Lode, to add what that one left out.
+        replaceButton.Enabled = !complete;
         restoreButton.Enabled = registered != null;
     }
 

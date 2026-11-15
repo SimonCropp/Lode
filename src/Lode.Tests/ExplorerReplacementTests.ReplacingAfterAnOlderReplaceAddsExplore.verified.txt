@@ -1,0 +1,14 @@
+﻿{
+  older: {
+    IsActive: true,
+    IsActiveHere: true,
+    IsComplete: false,
+    RegisteredCommand: "C:\Tools\lode.exe"
+  },
+  replaced: {
+    IsActive: true,
+    IsActiveHere: true,
+    IsComplete: true,
+    RegisteredCommand: "C:\Tools\lode.exe"
+  }
+}
