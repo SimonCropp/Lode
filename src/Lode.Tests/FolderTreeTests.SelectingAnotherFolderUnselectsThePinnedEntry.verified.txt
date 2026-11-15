@@ -1,0 +1,8 @@
+﻿- Pinned
+    Source
+- This PC
+  - FolderTreeTests.SelectingAnotherFolderUnselectsThePinnedEntry
+    - Projects
+      + Archive
+      + Docs   <- selected
+      + Source

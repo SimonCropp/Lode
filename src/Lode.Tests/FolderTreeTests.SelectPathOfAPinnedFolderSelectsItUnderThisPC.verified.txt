@@ -1,5 +1,8 @@
 ﻿- Pinned
-    Source
+    Source   <- selected
+- Recent
+    Source   <- selected
+    Docs
 - This PC
   - FolderTreeTests.SelectPathOfAPinnedFolderSelectsItUnderThisPC
     - Projects

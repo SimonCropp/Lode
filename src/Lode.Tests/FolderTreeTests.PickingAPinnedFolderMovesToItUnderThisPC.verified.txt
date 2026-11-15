@@ -4,7 +4,7 @@
   ],
   tree:
 - Pinned
-    Source
+    Source   <- selected
 - This PC
   - FolderTreeTests.PickingAPinnedFolderMovesToItUnderThisPC
     - Projects

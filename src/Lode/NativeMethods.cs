@@ -12,6 +12,10 @@ static partial class NativeMethods
 
     public const int TreeViewSetImageList = 0x1109;
     public const int TreeViewSetInsertMark = 0x111A;
+    public const int TreeViewSetItem = 0x113F;
+    public const uint TreeViewItemState = 0x0008;
+    public const uint TreeViewItemHandle = 0x0010;
+    public const uint TreeViewItemSelected = 0x0002;
 
     public const int HeaderGetItem = 0x120B;
     public const int HeaderSetItem = 0x120C;
@@ -105,6 +109,22 @@ static partial class NativeMethods
         public int Group;
     }
 
+    // TVITEMW.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TreeViewItem
+    {
+        public uint Mask;
+        public IntPtr Item;
+        public uint State;
+        public uint StateMask;
+        public IntPtr Text;
+        public int TextLength;
+        public int Image;
+        public int SelectedImage;
+        public int Children;
+        public IntPtr Parameter;
+    }
+
     [LibraryImport("shlwapi.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int StrCmpLogicalW(string first, string second);
 
@@ -119,6 +139,9 @@ static partial class NativeMethods
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref ListViewItemState item);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref TreeViewItem item);
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref NativeRect rect);

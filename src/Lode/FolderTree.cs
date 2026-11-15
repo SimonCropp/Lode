@@ -94,6 +94,7 @@ sealed class FolderTree : TreeView
             }
 
             selectedMoved = SelectMovedPinned();
+            ShowShortcutsSelected(SelectedNode);
         }
         finally
         {
@@ -562,9 +563,46 @@ sealed class FolderTree : TreeView
         }
     }
 
+    // The tree has one selected row, and a picked Pinned or Recent folder hands it on to the
+    // folder under This PC. So that the folder still shows as selected where it is pinned, its
+    // shortcuts are given the selected look too, and every other shortcut loses it.
+    void ShowShortcutsSelected(TreeNode? selected)
+    {
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        var path = selected?.Tag as string;
+        foreach (var shortcut in Shortcuts())
+        {
+            if (shortcut == selected)
+            {
+                continue;
+            }
+
+            var same = Locations.Same((string)shortcut.Tag!, path);
+            var item = new TreeViewItem
+            {
+                Mask = TreeViewItemState | TreeViewItemHandle,
+                Item = shortcut.Handle,
+                StateMask = TreeViewItemSelected,
+                State = same ? TreeViewItemSelected : 0
+            };
+            SendMessage(Handle, TreeViewSetItem, IntPtr.Zero, ref item);
+        }
+    }
+
+    IEnumerable<TreeNode> Shortcuts() =>
+        Nodes
+            .Cast<TreeNode>()
+            .Where(_ => _.Tag is Section)
+            .SelectMany(_ => _.Nodes.Cast<TreeNode>());
+
     protected override void OnAfterSelect(TreeViewEventArgs eventArgs)
     {
         base.OnAfterSelect(eventArgs);
+        ShowShortcutsSelected(eventArgs.Node);
 
         // Unknown means the selection was set from code (SelectPath), not by the user.
         if (eventArgs.Action != TreeViewAction.Unknown && eventArgs.Node is { Tag: string path } node)
@@ -623,11 +661,7 @@ sealed class FolderTree : TreeView
             .MaxBy(_ => ((string)_.Tag!).Length);
         if (current == null)
         {
-            return Nodes
-                .Cast<TreeNode>()
-                .Where(_ => _.Tag is Section)
-                .SelectMany(_ => _.Nodes.Cast<TreeNode>())
-                .FirstOrDefault(_ => Locations.Same((string)_.Tag!, path));
+            return Shortcuts().FirstOrDefault(_ => Locations.Same((string)_.Tag!, path));
         }
 
         var currentPath = (string)current.Tag!;

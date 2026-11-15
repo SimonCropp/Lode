@@ -52,14 +52,28 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
-    // A pinned folder is a shortcut: the selection goes to the folder under This PC.
+    // A pinned folder is a shortcut: the selection goes to the folder under This PC, and the
+    // pinned and recent entries for it show as selected as well.
     [Test]
     public async Task SelectPathOfAPinnedFolderSelectsItUnderThisPC()
     {
         using var fixture = Fixture.Create();
-        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Source"));
+        using var tree = CreateWithRecent(fixture, new() { ShowHidden = false }, [fixture.At("Source")], [fixture.At("Source"), fixture.At("Docs")]);
 
         tree.SelectPath(fixture.At("Source"));
+
+        await Verify(Dump(tree));
+    }
+
+    // Moving on to another folder takes the selected look off the pinned entry.
+    [Test]
+    public async Task SelectingAnotherFolderUnselectsThePinnedEntry()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Source"));
+        tree.SelectPath(fixture.At("Source"));
+
+        tree.SelectPath(fixture.At("Docs"));
 
         await Verify(Dump(tree));
     }
@@ -221,11 +235,11 @@ public class FolderTreeTests
     static string Dump(FolderTree tree)
     {
         var builder = new StringBuilder();
-        Append(builder, tree, tree.Nodes, 0);
+        Append(builder, tree.Nodes, 0);
         return builder.ToString();
     }
 
-    static void Append(StringBuilder builder, FolderTree tree, TreeNodeCollection nodes, int depth)
+    static void Append(StringBuilder builder, TreeNodeCollection nodes, int depth)
     {
         foreach (TreeNode node in nodes)
         {
@@ -236,10 +250,11 @@ public class FolderTreeTests
             }
 
             var marker = node.Nodes.Count == 0 ? " " : node.IsExpanded ? "-" : "+";
-            var selected = node == tree.SelectedNode ? "   <- selected" : "";
+            // Drawn as selected, which a pinned entry for the selected folder is too.
+            var selected = node.IsSelected ? "   <- selected" : "";
             builder.Append(' ', depth * 2);
             builder.AppendLine($"{marker} {node.Text}{selected}");
-            Append(builder, tree, node.Nodes, depth + 1);
+            Append(builder, node.Nodes, depth + 1);
         }
     }
 }
