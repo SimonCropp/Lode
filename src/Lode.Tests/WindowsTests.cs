@@ -147,6 +147,39 @@ public class WindowsTests
         ((TabControl)page.Parent!).SelectedTab = page;
     }
 
+    // In the tray, the tabs nobody was looking at let go of their folders. The one that was
+    // showing keeps its rows. A tab let go is read again when it is picked, with what was
+    // selected in it selected again.
+    [Test]
+    public async Task TabsNobodyWasLookingAtAreLetGoInTheTray()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.At("Source"), fixture.Root);
+        var showing = form.ActiveView!;
+        var other = form.Views.First();
+        Pick(other);
+        other.Reveal(fixture.At("Source", "main.aleph"));
+        await Pump.Loaded(other);
+        Pick(showing);
+        await Pump.Loaded(showing);
+
+        form.Hide();
+        form.ReleaseMemory();
+        var otherHeld = other.Entries.Count;
+        var showingHeld = showing.Entries.Count;
+
+        form.Show();
+        var showingBack = showing.Entries.Count;
+        Pick(other);
+        await Pump.Until(() => other.Entries.Count > 0);
+
+        await Assert.That(otherHeld).IsEqualTo(0);
+        await Assert.That(showingHeld).IsGreaterThan(0);
+        await Assert.That(showingBack).IsEqualTo(showingHeld);
+        await Assert.That(other.CurrentPath).IsEqualTo(fixture.At("Source"));
+        await Assert.That(other.SelectedEntries().Select(_ => _.Name)).IsEquivalentTo(["main.aleph"]);
+    }
+
     // Hidden, as closing the last window to the tray hides it, a window leaves changes on disk
     // unread until it is shown again.
     [Test]

@@ -302,6 +302,7 @@ sealed class FolderView : UserControl
         CurrentPath = normalized;
         filter = "";
         error = null;
+        remembered = null;
         if (!showing)
         {
             // Read when the view shows. Until then it lists nothing, rather than the folder left.
@@ -327,6 +328,48 @@ sealed class FolderView : UserControl
         Watch();
         UpdateFreeSpace();
         Loading = LoadAsync(preserveState);
+    }
+
+    // What was selected, which row had the focus and how far down the list was scrolled, when
+    // the folder was let go, to put back once it has been read again.
+    sealed record Kept(HashSet<string> Selected, string? Focused, int TopIndex);
+
+    Kept? remembered;
+
+    // The most selected items remembered for a folder let go. More than this is most of a big
+    // folder, whose paths would be much of what letting it go saves.
+    const int mostRemembered = 1000;
+
+    /// <summary>
+    /// Lets go of what the view holds of its folder: the entries, the rows and the watch on it.
+    /// For a tab nobody will look at for a while, in a window gone to the tray. The folder is
+    /// read again when the view next shows, and what was selected, and how far down it was
+    /// scrolled, put back.
+    /// </summary>
+    public void Unload()
+    {
+        // Not while it is showing. And a folder not read yet, or with nothing in it, holds
+        // nothing to let go.
+        if (showing ||
+            entries.Count == 0)
+        {
+            return;
+        }
+
+        var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var selection = SelectedEntries();
+        if (selection.Count <= mostRemembered)
+        {
+            foreach (var entry in selection)
+            {
+                selected.Add(entry.FullPath);
+            }
+        }
+
+        remembered = new(selected, (list.FocusedItem?.Tag as FileEntry)?.FullPath, list.TopItem?.Index ?? -1);
+        stale = true;
+        Unwatch();
+        Clear();
     }
 
     // Empties the list, for a folder that is not read until the view shows.
@@ -730,6 +773,15 @@ sealed class FolderView : UserControl
             focused = (list.FocusedItem?.Tag as FileEntry)?.FullPath;
             topIndex = list.TopItem?.Index ?? -1;
         }
+        else if (remembered is { } kept)
+        {
+            // The folder was let go while nobody was looking, and has been read again.
+            selected = kept.Selected;
+            focused = kept.Focused;
+            topIndex = kept.TopIndex;
+        }
+
+        remembered = null;
 
         var reveal = pendingSelection ?? pendingRename;
         if (reveal != null)

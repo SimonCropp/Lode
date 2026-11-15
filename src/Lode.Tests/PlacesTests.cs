@@ -81,6 +81,7 @@ public class PlacesTests
     public async Task OnlyTheLastReadingCounts()
     {
         var settings = new Settings();
+        using var firstStarted = new ManualResetEventSlim();
         using var releaseFirst = new ManualResetEventSlim();
         var readings = 0;
         var changes = 0;
@@ -91,6 +92,7 @@ public class PlacesTests
                 // The first reading is the slow one, and comes back last.
                 if (Interlocked.Increment(ref readings) == 1)
                 {
+                    firstStarted.Set();
                     releaseFirst.Wait();
                     return ([@"C:\Overtaken"], []);
                 }
@@ -99,6 +101,9 @@ public class PlacesTests
             });
         places.Changed += () => changes++;
 
+        // Each reading has a thread of its own, and nothing says the first asked for is the
+        // first to start. This one has, before the next is asked for.
+        firstStarted.Wait();
         places.Reread();
         await Pump.Until(() => changes > 0);
         releaseFirst.Set();

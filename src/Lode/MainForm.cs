@@ -110,6 +110,14 @@ class MainForm : Form
         places.Changed += RebuildTree;
         UndoHistory.Instance.Changed += OnUndoChanged;
         updates.Changed += OnUpdatesChanged;
+        trayTimer.Tick += (_, _) =>
+        {
+            trayTimer.Stop();
+            if (hidden)
+            {
+                ReleaseMemory();
+            }
+        };
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -1036,6 +1044,42 @@ class MainForm : Form
         base.OnVisibleChanged(eventArgs);
         hidden = !Visible;
         UpdateShowing();
+
+        // Once it has been in the tray a little while, not the moment it goes: closed and
+        // brought straight back, it has let go of nothing.
+        if (hidden)
+        {
+            trayTimer.Start();
+        }
+        else
+        {
+            trayTimer.Stop();
+        }
+    }
+
+    readonly Timer trayTimer = new()
+    {
+        Interval = 5000
+    };
+
+    /// <summary>
+    /// For a window gone to the tray, where Lode can sit for days. The tabs nobody was looking
+    /// at let go of their folders, which are read again when one is picked. The tab that was
+    /// showing keeps its rows, so the window comes back just as it was left. Then the memory
+    /// that frees, with whatever else has built up, is handed back to Windows.
+    /// </summary>
+    internal void ReleaseMemory()
+    {
+        var active = ActiveView;
+        foreach (var view in Views)
+        {
+            if (view != active)
+            {
+                view.Unload();
+            }
+        }
+
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
     protected override void OnResize(EventArgs eventArgs)
@@ -1646,6 +1690,7 @@ class MainForm : Form
             updates.Changed -= OnUpdatesChanged;
             glyphFont.Dispose();
             toolTip.Dispose();
+            trayTimer.Dispose();
         }
 
         base.Dispose(disposing);
