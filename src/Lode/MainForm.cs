@@ -1058,7 +1058,7 @@ class MainForm : Form
         ShellIcons.ForgetFileIcons();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();
-        ActiveView?.Reload();
+        ActiveView?.ReloadRows();
     }
 
     void ToggleHidden()

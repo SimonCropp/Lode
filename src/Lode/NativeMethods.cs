@@ -1,11 +1,13 @@
 static partial class NativeMethods
 {
+    public const int WindowMessageNotify = 0x004E;
     public const int WindowMessageContextMenu = 0x007B;
     public const int WindowMessageAppCommand = 0x0319;
     public const int EditSetSelection = 0x00B1;
 
     public const int ListViewSetImageList = 0x1003;
     public const int ListViewImageListSmall = 1;
+    public const int ListViewGetStringWidth = 0x1057;
     public const int ListViewGetEditControl = 0x1018;
     public const int ListViewGetHeader = 0x101F;
     public const int HeaderGetItemRect = 0x1207;
@@ -19,6 +21,8 @@ static partial class NativeMethods
     public const uint TreeViewItemHandle = 0x0010;
     public const uint TreeViewItemSelected = 0x0002;
 
+    public const int HeaderDividerDoubleClick = -325;
+    public const int HeaderDividerDoubleClickAnsi = -305;
     public const int HeaderGetItem = 0x120B;
     public const int HeaderSetItem = 0x120C;
     public const uint HeaderItemFormat = 0x0004;
@@ -135,6 +139,9 @@ static partial class NativeMethods
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string text);
 
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, ref HeaderItem item);

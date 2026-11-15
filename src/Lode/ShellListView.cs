@@ -69,6 +69,16 @@ sealed class ShellListView : ListView
     /// </summary>
     public event Action<Point>? HeaderContextMenuRequested;
 
+    /// <summary>
+    /// The divider at the right of a column's header was double-clicked, which asks for the
+    /// column, by its index, to be sized to fit.
+    /// </summary>
+    public event Action<int>? ColumnFitRequested;
+
+    // NMHDR is a window, an id and a code; NMHEADER follows it with the header item's index.
+    static readonly int notificationCodeOffset = 2 * IntPtr.Size;
+    static readonly int headerNotificationItemOffset = 3 * IntPtr.Size;
+
     public ShellListView() =>
         DoubleBuffered = true;
 
@@ -118,6 +128,18 @@ sealed class ShellListView : ListView
                 ? Point.Empty
                 : new((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));
             ContextMenuRequested?.Invoke(location, fromKeyboard);
+            return;
+        }
+
+        // A double-click on the divider at the right of a column's header sizes the column to
+        // fit. Left to do that itself the list goes by the rows it asks for, which are only those
+        // on screen, so it is handed on instead.
+        if (message.Msg == WindowMessageNotify &&
+            ColumnFitRequested != null &&
+            Marshal.ReadInt32(message.LParam, notificationCodeOffset) is HeaderDividerDoubleClick or HeaderDividerDoubleClickAnsi &&
+            Marshal.ReadIntPtr(message.LParam) == Header)
+        {
+            ColumnFitRequested(Marshal.ReadInt32(message.LParam, headerNotificationItemOffset));
             return;
         }
 
@@ -179,8 +201,15 @@ sealed class ShellListView : ListView
     }
 
     /// <summary>
+    /// How wide the list draws some text, in pixels.
+    /// </summary>
+    public int TextWidth(string text) =>
+        (int)SendMessage(Handle, ListViewGetStringWidth, IntPtr.Zero, text);
+
+    /// <summary>
     /// Widens or narrows a column to fit both its header and the widest of its cells, as
-    /// Explorer's Size Column to Fit does.
+    /// Explorer's Size Column to Fit does. The cells measured are those of the rows the list
+    /// asks for, which in a list that holds no rows of its own are only the ones on screen.
     /// </summary>
     public void SizeColumnToFit(int column)
     {

@@ -85,7 +85,29 @@ sealed class FolderView : UserControl
     /// Where a row is, in the list's coordinates. For tests.
     /// </summary>
     internal Rectangle RowBounds(int index) =>
-        list.Items[index].Bounds;
+        list.GetItemRect(index);
+
+    // The rows the list has asked for lately, by where they are in what is displayed. The list
+    // holds none of its own: it asks for a row whenever it draws it, measures it or reports on
+    // it, a cell at a time, so the ones it asks for are kept. It only wants a screenful or so at
+    // once, so however big the folder, few are ever made.
+    readonly Dictionary<int, ListViewItem> rows = [];
+    const int maximumRows = 512;
+
+    // Stands in for a row that is asked for but not needed: one that has gone, or one of those
+    // being selected again, which the list asks for only to say that it changed. A cell for every
+    // column there could be, so whichever it is asked for is there.
+    readonly ListViewItem blankRow = new(["", "", "", ""]);
+    bool restoring;
+
+    // The rows are to be made again even if the folder turns out not to have changed.
+    bool rowsStale;
+
+    /// <summary>
+    /// How many rows are made at the moment. For tests.
+    /// </summary>
+    internal int RowsMade => rows.Count;
+
     string? pendingRename;
     bool editing;
     bool statusPending;
@@ -130,12 +152,22 @@ sealed class FolderView : UserControl
         list.AllowDrop = true;
         list.HideSelection = false;
         list.BorderStyle = BorderStyle.None;
+
+        // The list holds no rows. It is told how many there are, and asks for each as it needs
+        // it, so a folder of any size costs it only the rows on screen.
+        list.VirtualMode = true;
+        list.RetrieveVirtualItem += (_, eventArgs) => eventArgs.Item = Row(eventArgs.ItemIndex);
+        list.SearchForVirtualItem += OnSearchForVirtualItem;
+        list.ColumnFitRequested += SizeColumnToFit;
         UpdateColumns();
 
         list.ItemActivate += (_, _) => OpenEntries(SelectedEntries());
         list.ColumnClick += OnColumnClick;
         list.KeyDown += OnListKeyDown;
         list.SelectedIndexChanged += (_, _) => QueueStatusChanged();
+
+        // A range selected at once, with Shift say, is reported this way instead.
+        list.VirtualItemsSelectionRangeChanged += (_, _) => QueueStatusChanged();
         list.BeforeLabelEdit += OnBeforeLabelEdit;
         list.AfterLabelEdit += OnAfterLabelEdit;
         list.ContextMenuRequested += OnContextMenuRequested;
@@ -304,9 +336,141 @@ sealed class FolderView : UserControl
         loadVersion++;
         loading = false;
         entries = [];
-        displayed = [];
-        list.Items.Clear();
+        ShowRows([]);
         QueueStatusChanged();
+    }
+
+    // Gives the list the rows to show. It holds none itself, so it is only told how many there
+    // are. Emptied first, which drops the selection, the focus and how far down it was scrolled:
+    // those were for the rows that were.
+    void ShowRows(List<FileEntry> visible)
+    {
+        list.VirtualListSize = 0;
+        rows.Clear();
+        rowsStale = false;
+        displayed = visible;
+        list.VirtualListSize = visible.Count;
+    }
+
+    // The row the list asks for, made the first time and kept while it is likely to be asked for
+    // again.
+    ListViewItem Row(int index)
+    {
+        if (fitting != null)
+        {
+            return fitting;
+        }
+
+        if (restoring ||
+            index >= displayed.Count)
+        {
+            return blankRow;
+        }
+
+        if (rows.TryGetValue(index, out var row))
+        {
+            return row;
+        }
+
+        // Scrolled a long way. What is on screen now is made again as it is asked for.
+        if (rows.Count >= maximumRows)
+        {
+            rows.Clear();
+        }
+
+        row = CreateItem(displayed[index]);
+        rows[index] = row;
+        return row;
+    }
+
+    // Typing the start of a name moves to the next item with it, as it does in a list that
+    // holds its own rows, which this one can't look through for itself.
+    void OnSearchForVirtualItem(object? sender, SearchForVirtualItemEventArgs eventArgs)
+    {
+        if (eventArgs.IsTextSearch)
+        {
+            eventArgs.Index = FindRow(eventArgs.Text ?? "", eventArgs.StartIndex);
+        }
+    }
+
+    /// <summary>
+    /// The first row at or after <paramref name="start"/> whose name starts with
+    /// <paramref name="text"/>, going round to the top after the last. -1 when there is none.
+    /// </summary>
+    internal int FindRow(string text, int start)
+    {
+        if (text.Length == 0)
+        {
+            return -1;
+        }
+
+        var count = displayed.Count;
+        for (var offset = 0; offset < count; offset++)
+        {
+            var index = (Math.Max(start, 0) + offset) % count;
+            if (DisplayName(displayed[index]).StartsWith(text, StringComparison.CurrentCultureIgnoreCase))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    // Selects the rows for these paths again, and gives one the focus.
+    void Restore(HashSet<string> selected, string? focused)
+    {
+        if (selected.Count == 0 &&
+            focused == null)
+        {
+            return;
+        }
+
+        // The list keeps which rows are selected, which it can only do once it has a window.
+        _ = list.Handle;
+        var indexes = new List<int>();
+        var focus = -1;
+        for (var index = 0; index < displayed.Count; index++)
+        {
+            var path = displayed[index].FullPath;
+            if (selected.Count > 0 &&
+                selected.Contains(path))
+            {
+                indexes.Add(index);
+            }
+
+            if (string.Equals(path, focused, StringComparison.OrdinalIgnoreCase))
+            {
+                focus = index;
+            }
+        }
+
+        restoring = true;
+        try
+        {
+            if (indexes.Count > 0 &&
+                indexes.Count == displayed.Count)
+            {
+                list.SelectAll();
+            }
+            else
+            {
+                foreach (var index in indexes)
+                {
+                    list.SelectedIndices.Add(index);
+                }
+            }
+        }
+        finally
+        {
+            restoring = false;
+        }
+
+        // One row, and the real one: it is what a screen reader is told has the focus.
+        if (focus >= 0)
+        {
+            list.Items[focus].Focused = true;
+        }
     }
 
     public void GoBack()
@@ -354,6 +518,17 @@ sealed class FolderView : UserControl
 
         pendingSelection = path;
         Navigate(parent);
+    }
+
+    /// <summary>
+    /// As <see cref="Reload"/>, and the rows showing are made again even when the folder has not
+    /// changed, for Refresh: what a row shows beyond the folder's own listing, a shortcut's icon
+    /// say, may have.
+    /// </summary>
+    public void ReloadRows()
+    {
+        rowsStale = true;
+        Reload();
     }
 
     public void Reload()
@@ -493,6 +668,13 @@ sealed class FolderView : UserControl
 
         if (preserveState && pendingRename == null && !columnsChanged && visible.SequenceEqual(displayed))
         {
+            if (rowsStale)
+            {
+                rowsStale = false;
+                rows.Clear();
+                list.Invalidate();
+            }
+
             list.SetSortArrow(SortArrowColumn, sortAscending);
             QueueStatusChanged();
             return;
@@ -528,33 +710,12 @@ sealed class FolderView : UserControl
         {
             SetColumnText(dateColumn, IsThisPC ? "Free space" : "Date modified");
             SetColumnText(sizeColumn, IsThisPC ? "Total size" : "Size");
-            list.Items.Clear();
+            ShowRows(visible);
+            Restore(selected, focused);
 
-            var items = new ListViewItem[visible.Count];
-            for (var index = 0; index < items.Length; index++)
+            if (topIndex > 0 && visible.Count > 0)
             {
-                items[index] = CreateItem(visible[index]);
-            }
-
-            list.Items.AddRange(items);
-
-            foreach (var item in items)
-            {
-                var path = ((FileEntry)item.Tag!).FullPath;
-                if (selected.Contains(path))
-                {
-                    item.Selected = true;
-                }
-
-                if (string.Equals(path, focused, StringComparison.OrdinalIgnoreCase))
-                {
-                    item.Focused = true;
-                }
-            }
-
-            if (topIndex > 0 && items.Length > 0)
-            {
-                list.TopItem = items[Math.Min(topIndex, items.Length - 1)];
+                list.TopItem = list.Items[Math.Min(topIndex, visible.Count - 1)];
             }
         }
         finally
@@ -562,7 +723,6 @@ sealed class FolderView : UserControl
             list.EndUpdate();
         }
 
-        displayed = visible;
         list.SetSortArrow(SortArrowColumn, sortAscending);
 
         if (reveal != null)
@@ -629,7 +789,12 @@ sealed class FolderView : UserControl
             columnWidths[shownColumns[index]] = list.Columns[index].Width;
         }
 
+        // The list can ask for a row at any time, and a row must have a cell for every column the
+        // list has. So the columns go first, then the rows made for them are forgotten and made
+        // from here on for the columns wanted, and only then are those added.
         list.Columns.Clear();
+        shownColumns = wanted;
+        rows.Clear();
         foreach (var column in wanted)
         {
             var definition = columnDefinitions[column];
@@ -641,7 +806,6 @@ sealed class FolderView : UserControl
             list.Columns.Add(ColumnTitle(column), width, definition.Alignment);
         }
 
-        shownColumns = wanted;
         if (!shownColumns.Contains(sortColumn))
         {
             sortColumn = nameColumn;
@@ -664,12 +828,12 @@ sealed class FolderView : UserControl
     {
         get
         {
-            if (list.Items.Count == 0)
+            if (displayed.Count == 0)
             {
                 return [];
             }
 
-            return list.Items[0].SubItems
+            return Row(0).SubItems
                 .Cast<ListViewItem.ListViewSubItem>()
                 .Select(_ => _.Text)
                 .ToList();
@@ -739,7 +903,7 @@ sealed class FolderView : UserControl
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add(
-            new ToolStripMenuItem("Size column to fit", null, (_, _) => list.SizeColumnToFit(clickedColumn))
+            new ToolStripMenuItem("Size column to fit", null, (_, _) => SizeColumnToFit(clickedColumn))
             {
                 Enabled = clickedColumn >= 0
             });
@@ -748,9 +912,9 @@ sealed class FolderView : UserControl
             null,
             (_, _) =>
             {
-                for (var index = 0; index < list.Columns.Count; index++)
+                for (var index = 0; index < shownColumns.Count; index++)
                 {
-                    list.SizeColumnToFit(index);
+                    SizeColumnToFit(index);
                 }
             });
         menu.Items.Add(new ToolStripSeparator());
@@ -776,27 +940,116 @@ sealed class FolderView : UserControl
         menu.Show(list, list.PointToClient(screen));
     }
 
+    // While the list measures a column: the row it is given, whichever it asks for.
+    ListViewItem? fitting;
+
+    /// <summary>
+    /// Sizes a column to fit its header and the widest of its cells in the whole folder, as
+    /// Explorer's Size Column to Fit does. The list measures the rows it asks for, which are only
+    /// those on screen. So the widest cell is found here, and for as long as the list is
+    /// measuring, every row it asks for has that in the column.
+    /// </summary>
+    void SizeColumnToFit(int shown)
+    {
+        var cells = new string[shownColumns.Count];
+        Array.Fill(cells, "");
+        cells[shown] = WidestCell(shownColumns[shown]);
+        fitting = new(cells);
+        try
+        {
+            list.SizeColumnToFit(shown);
+        }
+        finally
+        {
+            fitting = null;
+
+            // Anything drawn meanwhile showed the row being measured.
+            list.Invalidate();
+        }
+    }
+
+    // The text of the widest cell a column has, in any row.
+    string WidestCell(int column)
+    {
+        var widest = "";
+        var widestWidth = 0;
+
+        // Dates, types and sizes repeat. Each is measured once.
+        var measured = new HashSet<string>();
+        foreach (var entry in displayed)
+        {
+            var text = entry.IsDrive ? DescribeDrive(entry).Cells[column] : Cell(entry, column);
+            if (!measured.Add(text))
+            {
+                continue;
+            }
+
+            var width = list.TextWidth(text);
+            if (width > widestWidth)
+            {
+                widestWidth = width;
+                widest = text;
+            }
+        }
+
+        return widest;
+    }
+
+    /// <summary>
+    /// How wide a column is, by where it is among those shown. For tests.
+    /// </summary>
+    internal int ColumnWidth(int shown) =>
+        list.Columns[shown].Width;
+
+    // A drive's cells, one for every column, and its icon, as the shell describes it.
+    static (string[] Cells, int Icon) DescribeDrive(FileEntry entry)
+    {
+        var (displayName, typeName, icon) = ShellIcons.Describe(entry.FullPath);
+        string[] cells =
+        [
+            displayName,
+            entry.Size > 0 ? Formatting.Size(entry.FreeSpace) : "",
+            typeName,
+            entry.Size > 0 ? Formatting.Size(entry.Size) : ""
+        ];
+        return (cells, icon);
+    }
+
+    // What a file or folder shows in a column.
+    static string Cell(FileEntry entry, int column)
+    {
+        switch (column)
+        {
+            case nameColumn:
+                return DisplayName(entry);
+            case dateColumn:
+                return entry.Modified.ToString("g");
+            case typeColumn:
+                return ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory);
+        }
+
+        if (entry.IsDirectory)
+        {
+            return "";
+        }
+
+        return Formatting.Kilobytes(entry.Size);
+    }
+
     ListViewItem CreateItem(FileEntry entry)
     {
         if (entry.IsDrive)
         {
-            var (displayName, typeName, driveIcon) = ShellIcons.Describe(entry.FullPath);
-            string[] driveCells =
-            [
-                displayName,
-                entry.Size > 0 ? Formatting.Size(entry.FreeSpace) : "",
-                typeName,
-                entry.Size > 0 ? Formatting.Size(entry.Size) : ""
-            ];
+            var (driveCells, driveIcon) = DescribeDrive(entry);
             return new(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) { Tag = entry };
         }
 
         string[] cells =
         [
-            DisplayName(entry),
-            entry.Modified.ToString("g"),
-            ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory),
-            entry.IsDirectory ? "" : Formatting.Kilobytes(entry.Size)
+            Cell(entry, nameColumn),
+            Cell(entry, dateColumn),
+            Cell(entry, typeColumn),
+            Cell(entry, sizeColumn)
         ];
         var icon = ShellListView.PaddedIcon(ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified));
         var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
@@ -864,11 +1117,21 @@ sealed class FolderView : UserControl
         return -result;
     }
 
-    public List<FileEntry> SelectedEntries() =>
-        list.SelectedItems
-            .Cast<ListViewItem>()
-            .Select(_ => (FileEntry)_.Tag!)
-            .ToList();
+    // By index into what is displayed: the list holds which rows are selected, not the rows.
+    public List<FileEntry> SelectedEntries()
+    {
+        var indexes = list.SelectedIndices;
+        var selection = new List<FileEntry>(indexes.Count);
+        foreach (int index in indexes)
+        {
+            if (index < displayed.Count)
+            {
+                selection.Add(displayed[index]);
+            }
+        }
+
+        return selection;
+    }
 
     string[] SelectedPaths() =>
         SelectedEntries()
@@ -1055,12 +1318,14 @@ sealed class FolderView : UserControl
 
     void OnBeforeLabelEdit(object? sender, LabelEditEventArgs eventArgs)
     {
-        var entry = (FileEntry)list.Items[eventArgs.Item].Tag!;
-        if (entry.IsDrive)
+        if (eventArgs.Item >= displayed.Count ||
+            displayed[eventArgs.Item].IsDrive)
         {
             eventArgs.CancelEdit = true;
             return;
         }
+
+        var entry = displayed[eventArgs.Item];
 
         editing = true;
         if (!entry.IsDirectory)
@@ -1104,11 +1369,19 @@ sealed class FolderView : UserControl
         return entry.Name[..^extension.Length];
     }
 
-    void OnAfterLabelEdit(object? sender, LabelEditEventArgs eventArgs)
+    internal void OnAfterLabelEdit(object? sender, LabelEditEventArgs eventArgs)
     {
         editing = false;
-        var item = list.Items[eventArgs.Item];
-        var entry = (FileEntry)item.Tag!;
+        var index = eventArgs.Item;
+
+        // The folder was read again under the edit, and the row is no longer there.
+        if (index >= displayed.Count)
+        {
+            eventArgs.CancelEdit = true;
+            return;
+        }
+
+        var entry = displayed[index];
         var newName = eventArgs.Label?.Trim();
         if (string.IsNullOrEmpty(newName) || newName == DisplayName(entry))
         {
@@ -1146,11 +1419,21 @@ sealed class FolderView : UserControl
             return;
         }
 
-        item.Tag = entry with
+        // The list asks for the row again now the edit is over, so what is displayed takes the
+        // new name, and the row made for the old one is forgotten, until the folder is read again.
+        var renamed = entry with
         {
             Name = newName,
             FullPath = Path.Combine(Path.GetDirectoryName(entry.FullPath)!, newName)
         };
+        displayed[index] = renamed;
+        var position = entries.IndexOf(entry);
+        if (position >= 0)
+        {
+            entries[position] = renamed;
+        }
+
+        rows.Remove(index);
         changes.Raise();
     }
 

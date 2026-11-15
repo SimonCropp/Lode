@@ -65,9 +65,13 @@ sealed class GutterMarquee : IDisposable
     Point ToList(Point hostPoint) =>
         list.PointToClient(host.PointToScreen(hostPoint));
 
-    int RowHeight => list.Items.Count > 0 ? list.Items[0].Bounds.Height : 0;
+    int RowHeight => list.Items.Count > 0 ? list.GetItemRect(0).Height : 0;
 
-    int FirstRowTop => list.Items.Count > 0 ? list.Items[0].Bounds.Top : 0;
+    int FirstRowTop => list.Items.Count > 0 ? list.GetItemRect(0).Top : 0;
+
+    // The rows the rectangle covered when it was last moved: some of them it may since have left.
+    int coveredFirst;
+    int coveredLast = -1;
 
     // The list's header sits above the first visible row.
     int HeaderBottom => list.TopItem?.Bounds.Top ?? 0;
@@ -81,6 +85,8 @@ sealed class GutterMarquee : IDisposable
         tracking = true;
         toggle = add;
         initial = add ? list.SelectedIndices.Cast<int>().ToHashSet() : [];
+        coveredFirst = 0;
+        coveredLast = -1;
         anchor = point with { Y = point.Y - FirstRowTop };
         last = point;
         list.Focus();
@@ -127,7 +133,10 @@ sealed class GutterMarquee : IDisposable
     }
 
     // A row is covered when the rectangle overlaps it from top to bottom, wherever it is across,
-    // so a drag straight down the margin selects the rows beside it.
+    // so a drag straight down the margin selects the rows beside it. The rows are all one height,
+    // so which are covered is worked out rather than looked for, and only those, and the ones
+    // covered last time, are touched: the list may hold a great many, and has to be asked about
+    // each one.
     void SelectRows(Rectangle marquee)
     {
         var height = RowHeight;
@@ -136,16 +145,40 @@ sealed class GutterMarquee : IDisposable
             return;
         }
 
+        // Row n runs from top + n * height to the same again plus height.
         var top = FirstRowTop;
-        for (var index = 0; index < list.Items.Count; index++)
+        var count = list.Items.Count;
+        var first = Math.Max((int)Math.Floor((marquee.Top - top) / (double)height), 0);
+        var last = Math.Min((int)Math.Ceiling((marquee.Bottom - top) / (double)height) - 1, count - 1);
+
+        // Those it covered before, to put back any it has left, then those it covers now.
+        Select(coveredFirst, Math.Min(coveredLast, count - 1), first, last);
+        Select(first, last, first, last);
+        coveredFirst = first;
+        coveredLast = last;
+    }
+
+    // Brings the rows from one to another in line with the rectangle, which covers those from
+    // first to last.
+    void Select(int from, int to, int first, int last)
+    {
+        var selection = list.SelectedIndices;
+        for (var index = from; index <= to; index++)
         {
-            var rowTop = top + index * height;
-            var covered = rowTop < marquee.Bottom && rowTop + height > marquee.Top;
+            var covered = index >= first && index <= last;
             var selected = toggle ? initial.Contains(index) != covered : covered;
-            var item = list.Items[index];
-            if (item.Selected != selected)
+            if (selection.Contains(index) == selected)
             {
-                item.Selected = selected;
+                continue;
+            }
+
+            if (selected)
+            {
+                selection.Add(index);
+            }
+            else
+            {
+                selection.Remove(index);
             }
         }
     }
