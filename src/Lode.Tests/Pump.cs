@@ -38,6 +38,16 @@ static class Pump
         Application.DoEvents();
     }
 
+    /// <summary>
+    /// Until the tree shows every folder it was reading: those it expanded, or went through to
+    /// select one.
+    /// </summary>
+    public static async Task Loaded(FolderTree tree)
+    {
+        await Until(() => tree.Loading.IsCompleted);
+        await tree.Loading;
+    }
+
     public static async Task Loaded(FolderView view)
     {
         await Until(() => view.Loading.IsCompleted);

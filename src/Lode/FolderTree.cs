@@ -38,6 +38,46 @@ sealed class FolderTree : TreeView
     // synced when it shows again.
     bool showing = true;
 
+    /// <summary>
+    /// A subfolder as the tree shows it.
+    /// </summary>
+    readonly record struct Subfolder(string Name, string FullPath);
+
+    // Folders being read because their expander was clicked, so that clicking it again
+    // meanwhile doesn't read them again.
+    readonly HashSet<TreeNode> reading = [];
+
+    // A round of bringing changed folders up to date is under way. The next waits for it, so an
+    // older reading of a folder can't land after a newer one.
+    bool syncing;
+
+    // The folder being selected while the way down to it is read, and which attempt that is, so
+    // one overtaken by another gives up.
+    string? selecting;
+    int selectVersion;
+
+    /// <summary>
+    /// The reading of folders under way, all of it off the UI thread. Completes once the tree
+    /// shows what was read.
+    /// </summary>
+    public Task Loading { get; private set; } = Task.CompletedTask;
+
+    void Track(Task work)
+    {
+        if (work.IsCompleted)
+        {
+            return;
+        }
+
+        if (Loading.IsCompleted)
+        {
+            Loading = work;
+            return;
+        }
+
+        Loading = Task.WhenAll(Loading, work);
+    }
+
     public event Action<string>? PathSelected;
     public event Action<string>? NewTabRequested;
 
@@ -59,13 +99,7 @@ sealed class FolderTree : TreeView
 
         // Explorer's spacing between rows, scaled the same way as the icons.
         ItemHeight = unscaledRowHeight * ShellIcons.SmallIconSize.Height / unscaledIconSize;
-        changes = new(
-            300,
-            () =>
-            {
-                SyncChanged();
-                return true;
-            });
+        changes = new(300, SyncChanged);
         Rebuild();
     }
 
@@ -103,6 +137,11 @@ sealed class FolderTree : TreeView
     public bool Rebuild()
     {
         bool selectedMoved;
+
+        // A folder on its way to being selected was being read for the tree that was, by the
+        // settings that were. Whoever rebuilds selects again.
+        selectVersion++;
+        selecting = null;
         BeginUpdate();
         try
         {
@@ -365,21 +404,35 @@ sealed class FolderTree : TreeView
         node.Nodes.Count == 1 &&
         node.Nodes[0].Tag == placeholder;
 
-    // A folder's subfolders in display order, or null when the folder can't be read.
-    List<DirectoryInfo>? ReadSubfolders(TreeNode node)
+    // A folder's subfolders in display order, or null when the folder can't be read. Never on
+    // the UI thread: finding the folders in a folder means going through everything in it, files
+    // too, however many there are and however slow the drive.
+    static List<Subfolder>? ReadSubfolders(string path, bool showHidden, SystemItems? hiddenSystem)
     {
         try
         {
             var options = new EnumerationOptions
             {
                 IgnoreInaccessible = true,
-                AttributesToSkip = settings.ShowHidden ? default : FileAttributes.Hidden
+                AttributesToSkip = showHidden ? default : FileAttributes.Hidden
             };
-            var hiddenSystem = settings.HiddenSystemItems();
-            var directories = new DirectoryInfo((string)node.Tag!)
-                .EnumerateDirectories("*", options)
-                .Where(_ => hiddenSystem == null || !hiddenSystem.IsSystem(_.FullName, _.Attributes))
-                .ToList();
+            var found = new FileSystemEnumerable<(Subfolder Folder, FileAttributes Attributes)>(
+                path,
+                (ref FileSystemEntry entry) => (new(entry.FileName.ToString(), entry.ToFullPath()), entry.Attributes),
+                options)
+            {
+                ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory
+            };
+            var directories = new List<Subfolder>();
+            foreach (var (folder, attributes) in found)
+            {
+                if (hiddenSystem == null ||
+                    !hiddenSystem.IsSystem(folder.FullPath, attributes))
+                {
+                    directories.Add(folder);
+                }
+            }
+
             directories.Sort((first, second) => StrCmpLogicalW(first.Name, second.Name));
             return directories;
         }
@@ -389,35 +442,114 @@ sealed class FolderTree : TreeView
         }
     }
 
-    void LoadChildren(TreeNode node)
+    // Reads folders' subfolders off the UI thread, by the settings as they are now. One result
+    // for each folder, in the same order.
+    Task<List<List<Subfolder>?>> ReadAsync(IReadOnlyList<string> paths)
     {
-        node.Nodes.Clear();
+        var showHidden = settings.ShowHidden;
+        var hiddenSystem = settings.HiddenSystemItems();
+        return Task.Run(
+            () => paths
+                .Select(_ => ReadSubfolders(_, showHidden, hiddenSystem))
+                .ToList());
+    }
 
-        // An unreadable folder simply has no children to show.
-        foreach (var directory in ReadSubfolders(node) ?? [])
+    // Still in the tree, rather than taken out of it while its folder was being read.
+    bool IsInTree(TreeNode node)
+    {
+        var root = node;
+        while (root.Parent != null)
         {
-            node.Nodes.Add(CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
+            root = root.Parent;
+        }
+
+        return Nodes.Contains(root);
+    }
+
+    void LoadChildren(TreeNode node, List<Subfolder>? directories)
+    {
+        BeginUpdate();
+        try
+        {
+            node.Nodes.Clear();
+
+            // An unreadable folder simply has no children to show.
+            foreach (var directory in directories ?? [])
+            {
+                node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon));
+            }
+        }
+        finally
+        {
+            EndUpdate();
         }
 
         Watch(node);
+    }
+
+    // The expander of a folder not read yet was clicked. It is read, off the UI thread, and
+    // only then expanded: until then there is nothing to show under it.
+    async Task ExpandOnceRead(TreeNode node)
+    {
+        if (!reading.Add(node))
+        {
+            return;
+        }
+
+        try
+        {
+            var read = await ReadAsync([(string)node.Tag!]);
+            if (IsDisposed ||
+                !IsInTree(node))
+            {
+                return;
+            }
+
+            // Unless the way down to a folder being selected got here first.
+            if (NeedsLoading(node))
+            {
+                LoadChildren(node, read[0]);
+            }
+
+            node.Expand();
+        }
+        finally
+        {
+            reading.Remove(node);
+        }
+    }
+
+    // Reads the folders again, off the UI thread, and brings the subfolders each shows in line
+    // with what is there.
+    async Task SyncAsync(List<TreeNode> nodes)
+    {
+        var read = await ReadAsync(nodes.Select(_ => (string)_.Tag!).ToList());
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        for (var index = 0; index < nodes.Count; index++)
+        {
+            // Not folders collapsed or removed since. And not one that could not be read: there
+            // is no telling what is there, and better to leave what is showing than to empty it.
+            // If the folder itself has gone, its parent's sync removes it.
+            if (watched.ContainsKey(nodes[index]) &&
+                read[index] is { } directories)
+            {
+                SyncChildren(nodes[index], directories);
+            }
+        }
     }
 
     /// <summary>
     /// Brings a folder's loaded subfolders in line with the disk. The nodes of subfolders still
     /// there are kept, so whatever is expanded beneath them stays expanded.
     /// </summary>
-    void SyncChildren(TreeNode node)
+    void SyncChildren(TreeNode node, List<Subfolder> directories)
     {
-        // Can't tell what is there; better to leave what is showing than to empty it. If the
-        // folder itself has gone, its parent's sync removes it.
-        var directories = ReadSubfolders(node);
-        if (directories == null)
-        {
-            return;
-        }
-
         var paths = directories
-            .Select(_ => _.FullName)
+            .Select(_ => _.FullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         BeginUpdate();
         try
@@ -447,19 +579,19 @@ sealed class FolderTree : TreeView
                 var directory = directories[i];
                 if (i < nodes.Count &&
                     nodes[i].Tag is string path &&
-                    Locations.Same(path, directory.FullName))
+                    Locations.Same(path, directory.FullPath))
                 {
                     // Renamed to a different case.
                     if (nodes[i].Text != directory.Name)
                     {
                         nodes[i].Text = directory.Name;
-                        nodes[i].Tag = directory.FullName;
+                        nodes[i].Tag = directory.FullPath;
                     }
 
                     continue;
                 }
 
-                nodes.Insert(i, CreateNode(directory.FullName, directory.Name, ShellIcons.FolderIcon));
+                nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon));
             }
         }
         finally
@@ -546,23 +678,51 @@ sealed class FolderTree : TreeView
         changed.Clear();
     }
 
-    void SyncChanged()
+    // Brings the folders watchers have seen change up to date. False while that has to wait for
+    // the round before it.
+    bool SyncChanged()
     {
+        if (syncing)
+        {
+            return false;
+        }
+
         if (!showing ||
             changed.IsEmpty)
         {
-            return;
+            return true;
         }
 
+        var nodes = new List<TreeNode>();
         foreach (var node in changed.Keys)
         {
             changed.TryRemove(node, out _);
 
-            // Skips folders collapsed or removed since, including by an earlier sync this tick.
+            // Not folders collapsed or removed since.
             if (watched.ContainsKey(node))
             {
-                SyncChildren(node);
+                nodes.Add(node);
             }
+        }
+
+        if (nodes.Count > 0)
+        {
+            Track(SyncChangedAsync(nodes));
+        }
+
+        return true;
+    }
+
+    async Task SyncChangedAsync(List<TreeNode> nodes)
+    {
+        syncing = true;
+        try
+        {
+            await SyncAsync(nodes);
+        }
+        finally
+        {
+            syncing = false;
         }
     }
 
@@ -572,13 +732,16 @@ sealed class FolderTree : TreeView
         {
             if (NeedsLoading(node))
             {
-                LoadChildren(node);
+                // Not until it has been read, which is done off the UI thread. It expands then.
+                eventArgs.Cancel = true;
+                Track(ExpandOnceRead(node));
             }
             else if (!watched.ContainsKey(node))
             {
-                // Loaded before, but not watched while collapsed.
-                SyncChildren(node);
+                // Read before, but not watched while collapsed. It expands as it was, and is
+                // brought up to date once it has been read again.
                 Watch(node);
+                Track(SyncAsync([node]));
             }
         }
 
@@ -674,63 +837,138 @@ sealed class FolderTree : TreeView
             Locations.Same(selected, path) &&
             !IsShortcut(current))
         {
+            // Anywhere else on its way to being selected has been overtaken.
+            selectVersion++;
+            selecting = null;
             return;
         }
 
-        var node = FindNode(path);
-        SelectedNode = node;
-        node?.EnsureVisible();
+        // Already on its way there.
+        if (Locations.Same(selecting, path))
+        {
+            return;
+        }
+
+        Track(SelectAsync(path));
     }
 
-    TreeNode? FindNode(string path)
+    // Goes down to the folder as far as the tree has been read, reads the folders still in the
+    // way, off the UI thread and all at once, and goes on from there. With nothing left to read,
+    // which is so from the start for anywhere the tree has already been, the folder is selected
+    // before this returns.
+    async Task SelectAsync(string path)
+    {
+        var version = ++selectVersion;
+        selecting = path;
+        try
+        {
+            var read = new Dictionary<string, List<Subfolder>?>(StringComparer.OrdinalIgnoreCase);
+            while (true)
+            {
+                var (node, unread) = Walk(path, read);
+                if (unread.Count == 0)
+                {
+                    SelectedNode = node;
+                    node?.EnsureVisible();
+                    return;
+                }
+
+                var found = await ReadAsync(unread);
+
+                // Somewhere else was selected meanwhile.
+                if (version != selectVersion ||
+                    IsDisposed)
+                {
+                    return;
+                }
+
+                for (var index = 0; index < unread.Count; index++)
+                {
+                    read[unread[index]] = found[index];
+                }
+            }
+        }
+        finally
+        {
+            if (version == selectVersion)
+            {
+                selecting = null;
+            }
+        }
+    }
+
+    // Walks down from the drive towards the folder, expanding on the way and filling in the
+    // folders that have been read for it. Gives the node it reached, and the folders that must
+    // be read before it can go further: none once it has gone as far as it can.
+    (TreeNode? Node, List<string> Unread) Walk(string path, Dictionary<string, List<Subfolder>?> read)
     {
         if (Locations.IsThisPC(path))
         {
-            return places.ShowComputer ? computerNode : null;
+            if (places.ShowComputer)
+            {
+                return (computerNode, []);
+            }
+
+            return (null, []);
         }
 
-        // Walk down from the drive. Only when no drive holds the path (a network share, say)
-        // does a Pinned or Recent entry for the folder itself stand in; those have no
-        // children, so it has to be the folder exactly.
+        // Only when no drive holds the path (a network share, say) does a Pinned or Recent entry
+        // for the folder itself stand in; those have no children, so it has to be the folder
+        // exactly.
         var current = computerNode.Nodes
             .Cast<TreeNode>()
             .Where(_ => Locations.IsWithin(path, (string)_.Tag!))
             .MaxBy(_ => ((string)_.Tag!).Length);
         if (current == null)
         {
-            return Shortcuts().FirstOrDefault(_ => Locations.Same((string)_.Tag!, path));
+            return (Shortcuts().FirstOrDefault(_ => Locations.Same((string)_.Tag!, path)), []);
         }
 
         var currentPath = (string)current.Tag!;
-        var remainder = path.AsSpan(currentPath.Length);
-        foreach (var range in remainder.Split(Path.DirectorySeparatorChar))
+        var segments = path[currentPath.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        BeginUpdate();
+        try
         {
-            var segment = remainder[range];
-            if (segment.IsEmpty)
+            for (var index = 0; index < segments.Length; index++)
             {
-                continue;
-            }
+                if (NeedsLoading(current))
+                {
+                    if (!read.TryGetValue(currentPath, out var directories))
+                    {
+                        // This folder, and each one below it on the way, none of which has a
+                        // node yet: the last is the parent of the folder being selected.
+                        var unread = new List<string> { currentPath };
+                        for (var below = index; below < segments.Length - 1; below++)
+                        {
+                            unread.Add(Path.Join(unread[^1], segments[below]));
+                        }
 
-            if (NeedsLoading(current))
-            {
-                LoadChildren(current);
-            }
+                        return (current, unread);
+                    }
 
-            currentPath = Path.Join(currentPath, segment);
-            var child = current.Nodes
-                .Cast<TreeNode>()
-                .FirstOrDefault(_ => Locations.Same(_.Tag as string, currentPath));
-            if (child == null)
-            {
-                // Hidden or since-deleted folder: settle for the deepest ancestor we have.
-                break;
-            }
+                    LoadChildren(current, directories);
+                }
 
-            current.Expand();
-            current = child;
+                currentPath = Path.Join(currentPath, segments[index]);
+                var child = current.Nodes
+                    .Cast<TreeNode>()
+                    .FirstOrDefault(_ => Locations.Same(_.Tag as string, currentPath));
+                if (child == null)
+                {
+                    // Hidden or since-deleted folder: settle for the deepest ancestor we have.
+                    break;
+                }
+
+                current.Expand();
+                current = child;
+            }
+        }
+        finally
+        {
+            EndUpdate();
         }
 
-        return current;
+        return (current, []);
     }
 
     protected override void OnNodeMouseClick(TreeNodeMouseClickEventArgs eventArgs)

@@ -22,12 +22,85 @@ public class FolderTreeTests
     {
         using var fixture = Fixture.Create();
         using var tree = Create(fixture, new() { ShowHidden = false });
-        var projects = Projects(tree);
+        var projects = await Projects(tree);
 
-        projects.Expand();
-        projects.Nodes[2].Expand();
+        await Expand(tree, projects);
+        await Expand(tree, projects.Nodes[2]);
 
         await Verify(Dump(tree));
+    }
+
+    // A folder is read off the UI thread, so it is not open the moment it is expanded, only
+    // once it has been read.
+    [Test]
+    public async Task ExpandingWaitsForTheFolderToBeRead()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var projects = await Projects(tree);
+
+        projects.Expand();
+        var openAtOnce = projects.IsExpanded;
+        await Pump.Loaded(tree);
+
+        await Assert.That(openAtOnce).IsFalse();
+        await Assert.That(projects.IsExpanded).IsTrue();
+        await Assert.That(Names(projects)).IsEquivalentTo(["Archive", "Docs", "Source"]);
+    }
+
+    // The way down to somewhere the tree has not been is read, off the UI thread, before it is
+    // selected. Somewhere it has been is selected there and then.
+    [Test]
+    public async Task SelectPathIsImmediateWhereTheTreeHasBeen()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        var unreadAtOnce = tree.SelectedNode?.Tag as string;
+        await Pump.Loaded(tree);
+        var unreadOnceRead = tree.SelectedNode?.Tag as string;
+
+        tree.SelectPath(fixture.At("Docs"));
+        var readAtOnce = tree.SelectedNode?.Tag as string;
+
+        await Assert.That(unreadAtOnce).IsNotEqualTo(fixture.At("Source", "Deep"));
+        await Assert.That(unreadOnceRead).IsEqualTo(fixture.At("Source", "Deep"));
+        await Assert.That(readAtOnce).IsEqualTo(fixture.At("Docs"));
+    }
+
+    // Only the last folder asked for ends up selected, though an earlier one was still being
+    // read its way down to.
+    [Test]
+    public async Task ALaterSelectPathOvertakesAnEarlierOne()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+
+        await Assert.That(tree.SelectedNode?.Tag as string).IsEqualTo(fixture.At("Docs"));
+    }
+
+    // Picking a folder in the tree itself, while another is still being read its way down to,
+    // leaves the one picked selected.
+    [Test]
+    public async Task PickingAFolderOvertakesOneOnItsWayToBeingSelected()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var drive = tree.Nodes.Cast<TreeNode>().Last().Nodes[0];
+
+        tree.SelectPath(fixture.At("Source", "Deep"));
+
+        // As the window does when a folder is picked: the tree is told where the view now is.
+        tree.SelectedNode = drive;
+        tree.SelectPath((string)drive.Tag!);
+        await Pump.Loaded(tree);
+
+        await Assert.That(tree.SelectedNode).IsEqualTo(drive);
     }
 
     [Test]
@@ -36,7 +109,7 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = Create(fixture, new() { ShowHidden = true });
 
-        Projects(tree).Expand();
+        await Expand(tree, await Projects(tree));
 
         await Verify(Dump(tree));
     }
@@ -48,6 +121,7 @@ public class FolderTreeTests
         using var tree = Create(fixture, new() { ShowHidden = false });
 
         tree.SelectPath(fixture.At("Source", "Deep"));
+        await Pump.Loaded(tree);
 
         await Verify(Dump(tree));
     }
@@ -61,6 +135,7 @@ public class FolderTreeTests
         using var tree = CreateWithRecent(fixture, new() { ShowHidden = false }, [fixture.At("Source")], [fixture.At("Source"), fixture.At("Docs")]);
 
         tree.SelectPath(fixture.At("Source"));
+        await Pump.Loaded(tree);
 
         await Verify(Dump(tree));
     }
@@ -72,8 +147,10 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Source"));
         tree.SelectPath(fixture.At("Source"));
+        await Pump.Loaded(tree);
 
         tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
 
         await Verify(Dump(tree));
     }
@@ -107,6 +184,7 @@ public class FolderTreeTests
         using var tree = Create(fixture, new() { ShowHidden = false }, other.Root);
 
         tree.SelectPath(other.Root);
+        await Pump.Loaded(tree);
 
         await Verify(Dump(tree));
     }
@@ -118,6 +196,7 @@ public class FolderTreeTests
         using var tree = Create(fixture, new() { ShowHidden = false });
 
         tree.SelectPath(fixture.At("Cache"));
+        await Pump.Loaded(tree);
 
         await Verify(Dump(tree));
     }
@@ -183,8 +262,9 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = Create(fixture, new() { ShowHidden = false });
         tree.SelectPath(fixture.At("Docs"));
-        var projects = Projects(tree);
-        projects.Nodes[2].Expand();
+        await Pump.Loaded(tree);
+        var projects = await Projects(tree);
+        await Expand(tree, projects.Nodes[2]);
 
         Directory.Delete(fixture.At("Docs"), true);
         Directory.CreateDirectory(fixture.At("Build"));
@@ -198,12 +278,12 @@ public class FolderTreeTests
     {
         using var fixture = Fixture.Create();
         using var tree = Create(fixture, new() { ShowHidden = false });
-        var projects = Projects(tree);
-        projects.Expand();
+        var projects = await Projects(tree);
+        await Expand(tree, projects);
         projects.Collapse();
 
         Directory.Delete(fixture.At("Archive"), true);
-        projects.Expand();
+        await Expand(tree, projects);
 
         await Verify(Dump(tree));
     }
@@ -211,11 +291,18 @@ public class FolderTreeTests
     static List<string> Names(TreeNode node) =>
         node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
 
+    // Expands a folder, and waits for it to be read, which the tree does off the UI thread.
+    static async Task Expand(FolderTree tree, TreeNode node)
+    {
+        node.Expand();
+        await Pump.Loaded(tree);
+    }
+
     // The fixture's Projects folder, under the stand-in drive.
-    static TreeNode Projects(FolderTree tree)
+    static async Task<TreeNode> Projects(FolderTree tree)
     {
         var drive = tree.Nodes.Cast<TreeNode>().Last().Nodes[0];
-        drive.Expand();
+        await Expand(tree, drive);
         return drive.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Projects");
     }
 
