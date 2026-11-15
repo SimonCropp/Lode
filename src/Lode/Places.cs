@@ -24,23 +24,107 @@ sealed record Places(
 
     /// <summary>
     /// Raised on the UI thread once <see cref="Pinned"/> and <see cref="Recent"/> have been read
-    /// again, after a folder was pinned or unpinned from one of Lode's menus.
+    /// again: after a folder was pinned or unpinned from one of Lode's menus, and at the start
+    /// if they are not as they were remembered.
     /// </summary>
     public event Action? Changed;
 
-    public static Places ForThisMachine()
+    // Where what Quick access has is kept for the next start, how it is read, and how to get
+    // back to the UI thread once it has been. None of them for places a test made up, which
+    // are never read again.
+    Settings? settings;
+    Func<(List<string> Pinned, List<string> Recent)>? read;
+    SynchronizationContext? context;
+
+    // Which reading of Quick access is the latest asked for. One overtaken, by a folder pinned
+    // straight after another say, is dropped.
+    int reading;
+
+    public static Places ForThisMachine(Settings settings)
     {
-        var (pinned, recent) = QuickAccessFolders();
-        var places = new Places(pinned, recent, ShowComputer: true, DescribeFreeSpace);
+        var places = Remembering(settings, QuickAccessFolders);
         ShellContextMenu.QuickAccessChanged += places.Reread;
         return places;
     }
 
-    void Reread()
+    /// <summary>
+    /// Starts with what Quick access had when it was last read, so the first window has its
+    /// tree at once. Reading it takes a moment, and is done behind the window, off the UI
+    /// thread; the tree follows if it turns out to have changed. Made on the UI thread.
+    /// </summary>
+    /// <param name="read">Reads Quick access, on a thread of its own. Given in tests.</param>
+    internal static Places Remembering(Settings settings, Func<(List<string> Pinned, List<string> Recent)> read)
     {
-        (Pinned, Recent) = QuickAccessFolders();
-        Changed?.Invoke();
+        var places = new Places(settings.PinnedFolders.ToList(), settings.RecentFolders.ToList(), ShowComputer: true, DescribeFreeSpace)
+        {
+            settings = settings,
+            read = read,
+            context = new WindowsFormsSynchronizationContext()
+        };
+        places.Read(evenIfUnchanged: false);
+        return places;
     }
+
+    /// <summary>
+    /// Reads Quick access again, after a folder was pinned or unpinned. Always says so once it
+    /// has been read, changed or not: the tree is waiting to hear.
+    /// </summary>
+    internal void Reread() =>
+        Read(evenIfUnchanged: true);
+
+    // On a thread of its own, set up for the shell's COM objects as the UI thread is. In the
+    // background, so a slow shell does not keep Lode from exiting.
+    void Read(bool evenIfUnchanged)
+    {
+        var version = ++reading;
+        var thread = new Thread(
+            () =>
+            {
+                var (pinned, recent) = read!();
+                try
+                {
+                    context!.Post(_ => Take(version, pinned, recent, evenIfUnchanged), null);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Lode is exiting, and there is no longer a UI thread to tell.
+                }
+            })
+        {
+            IsBackground = true,
+            Name = "Lode Quick access"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    void Take(int version, List<string> pinned, List<string> recent, bool evenIfUnchanged)
+    {
+        if (version != reading)
+        {
+            return;
+        }
+
+        var unchanged = pinned.SequenceEqual(Pinned, StringComparer.OrdinalIgnoreCase) &&
+                        recent.SequenceEqual(Recent, StringComparer.OrdinalIgnoreCase);
+        Pinned = pinned;
+        Recent = recent;
+        settings!.PinnedFolders = pinned;
+        settings.RecentFolders = recent;
+        if (evenIfUnchanged ||
+            !unchanged)
+        {
+            Changed?.Invoke();
+        }
+    }
+
+    // Calls on a shell automation object by name, as a script makes them. Not through dynamic,
+    // which would load the C# runtime binder, megabytes of it, on every start.
+    static object? Get(object target, string name) =>
+        target.GetType().InvokeMember(name, BindingFlags.GetProperty, null, target, null);
+
+    static object? Call(object target, string name, params object[] arguments) =>
+        target.GetType().InvokeMember(name, BindingFlags.InvokeMethod, null, target, arguments);
 
     /// <summary>
     /// The folders in Explorer's Quick access list, in Explorer's order, split into the ones the
@@ -59,17 +143,19 @@ sealed record Places(
                 return (pinned, recent);
             }
 
-            dynamic shell = Activator.CreateInstance(type)!;
-            foreach (var item in shell.Namespace(quickAccess).Items())
+            var shell = Activator.CreateInstance(type)!;
+            var folder = Call(shell, "Namespace", quickAccess)!;
+            foreach (var item in (IEnumerable)Call(folder, "Items")!)
             {
                 // Quick access also lists recent files, and can hold virtual folders such as
                 // the Recycle Bin, which have no path to browse.
-                if (!(bool)item.IsFolder || !(bool)item.IsFileSystem)
+                if (Get(item, "IsFolder") is not true ||
+                    Get(item, "IsFileSystem") is not true)
                 {
                     continue;
                 }
 
-                string path = item.Path;
+                var path = (string)Get(item, "Path")!;
 
                 // An offline share takes a long time to say it isn't there, so network
                 // folders are taken on trust.
@@ -80,7 +166,7 @@ sealed record Places(
 
                 // Windows 11 says which folders are pinned. Older versions don't, so there every
                 // folder counts as pinned, as Explorer showed them all together.
-                object? isPinned = item.ExtendedProperty("System.Home.IsPinned");
+                var isPinned = Call(item, "ExtendedProperty", "System.Home.IsPinned");
                 (isPinned is false ? recent : pinned).Add(path);
             }
         }

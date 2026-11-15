@@ -49,7 +49,7 @@ static class Program
 
         // Before the first window, which shows a pending update from the start.
         Updates.Instance = Updates.ForThisCopy(settings);
-        var places = Places.ForThisMachine();
+        var places = Places.ForThisMachine(settings);
         Application.Run(new WindowContext(new(commandLine.Paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }

@@ -30,9 +30,18 @@ sealed class ChangeSignal : IDisposable
     public void Raise()
     {
         // Only the first of a burst has a timer to start.
-        if (Interlocked.Exchange(ref raised, 1) == 0)
+        if (Interlocked.Exchange(ref raised, 1) != 0)
+        {
+            return;
+        }
+
+        try
         {
             context.Post(_ => Start(), null);
+        }
+        catch (InvalidOperationException)
+        {
+            // Lode is exiting, and there is no longer a UI thread to tell.
         }
     }
 

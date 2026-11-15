@@ -66,6 +66,11 @@ sealed class Settings
     // The tree's sections (Pinned, Recent) the user collapsed, so they stay that way.
     public List<string> CollapsedSections { get; set; } = [];
 
+    // What Quick access had pinned, and its recent folders, when it was last read. A window
+    // opens with these in its tree, rather than waiting for Quick access to be read. See Places.
+    public List<string> PinnedFolders { get; set; } = [];
+    public List<string> RecentFolders { get; set; } = [];
+
     // Where a new window opens when it is given nothing else to show. Null for the user folder.
     public string? DefaultDirectory { get; set; }
 

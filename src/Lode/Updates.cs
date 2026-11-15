@@ -253,15 +253,6 @@ sealed class Updates
     /// The newest listed version on nuget.org, which is where Lode is published, prereleases
     /// included, as <c>dotnet tool update --prerelease</c> takes them.
     /// </summary>
-    static async Task<NuGetVersion?> Latest(Cancel cancel)
-    {
-        var repository = Repository.Factory.GetCoreV3("https://api.nuget.org/v3/index.json");
-        var metadata = await repository.GetResourceAsync<MetadataResource>(cancel) ??
-                       throw new InvalidOperationException("nuget.org offered no package metadata.");
-        using var cache = new SourceCacheContext
-        {
-            NoCache = true
-        };
-        return await metadata.GetLatestVersion(ToolUpdate.PackageId, includePrerelease: true, includeUnlisted: false, cache, NullLogger.Instance, cancel);
-    }
+    static Task<NuGetVersion?> Latest(Cancel cancel) =>
+        NuGetFeed.LatestVersion(ToolUpdate.PackageId, cancel);
 }

@@ -99,6 +99,9 @@ static class QuickMenu
                 chosen?.Invoke();
             });
         strip.Show(owner, owner.PointToClient(location));
+
+        // After it shows, which is at once: the shell's menu is readied behind it.
+        ShellContextMenu.MenuOpened();
     }
 
     /// <summary>

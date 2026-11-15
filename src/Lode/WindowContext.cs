@@ -46,12 +46,12 @@ sealed class WindowContext : ApplicationContext
         TrayPinning.Pin(Environment.ProcessPath!);
 
         global::MainForm.HideLastWindowOnClose = true;
+        ShellContextMenu.WarmsUpBehindMenus = true;
         global::MainForm.WindowOpened += Track;
         global::MainForm.ExitRequested += Exit;
         Track(first);
         first.Show();
         instance.Listen(OnLaunched);
-        WarmUpContextMenu();
         ReportUpdate();
         Updates.Instance.Start();
     }
@@ -92,18 +92,6 @@ sealed class WindowContext : ApplicationContext
         }
 
         return TrayAction.ShowWindows;
-    }
-
-    // Once the first window has drawn and settled, so the work does not hold up opening it.
-    static void WarmUpContextMenu()
-    {
-        var timer = new Timer { Interval = 1500 };
-        timer.Tick += (_, _) =>
-        {
-            timer.Dispose();
-            ShellContextMenu.WarmUp();
-        };
-        timer.Start();
     }
 
     void Track(MainForm window)

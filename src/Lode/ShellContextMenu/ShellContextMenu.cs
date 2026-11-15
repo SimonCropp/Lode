@@ -539,6 +539,40 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether the first of Lode's own menus to open has the shell's menu warmed up behind it.
+    /// Set by the app; tests leave it off, and load no shell extensions they did not ask for.
+    /// </summary>
+    public static bool WarmsUpBehindMenus { get; set; }
+
+    static int warmUpStarted;
+
+    /// <summary>
+    /// One of Lode's own menus has opened, which is the first sign the shell's might be wanted:
+    /// Show more options is a click away. The first time, <see cref="WarmUp"/> runs behind it.
+    /// Until then nothing of the shell's is loaded, and someone who never opens a menu never
+    /// pays for it. The extensions are loaded into the process whichever thread asks, so this
+    /// one is its own: set up for the shell's COM objects as the UI thread is, so the menu
+    /// being read is not held up, and in the background, so an extension that never returns
+    /// does not keep Lode from exiting.
+    /// </summary>
+    public static void MenuOpened()
+    {
+        if (!WarmsUpBehindMenus ||
+            Interlocked.Exchange(ref warmUpStarted, 1) != 0)
+        {
+            return;
+        }
+
+        var thread = new Thread(WarmUp)
+        {
+            IsBackground = true,
+            Name = "Lode shell menu warm-up"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
     public record MenuEntry(string Text, string? Verb, IReadOnlyList<MenuEntry> Submenu);
 
     /// <summary>
