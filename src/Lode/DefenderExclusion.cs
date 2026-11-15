@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// Excludes the code folder from Microsoft Defender's scanning, as Rider offers to: Defender
 /// scanning every file a build or a git checkout writes slows both down. Changing Defender's

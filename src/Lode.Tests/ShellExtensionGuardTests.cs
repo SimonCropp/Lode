@@ -1,7 +1,7 @@
 /// <summary>
 /// An extension that was being started when a menu timed out is refused from then on.
 /// </summary>
-[TUnit.Core.Executors.STAThreadExecutor]
+[STAThreadExecutor]
 public class ShellExtensionGuardTests
 {
     [Test]

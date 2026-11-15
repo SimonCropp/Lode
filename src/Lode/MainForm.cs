@@ -1486,7 +1486,7 @@ class MainForm : Form
         const int capacity = 64;
         var name = stackalloc char[capacity];
         var length = GetClassNameW(focus, name, capacity);
-        return new ReadOnlySpan<char>(name, Math.Max(length, 0)).Contains("Edit", StringComparison.OrdinalIgnoreCase);
+        return new CharSpan(name, Math.Max(length, 0)).Contains("Edit", StringComparison.OrdinalIgnoreCase);
     }
 
     // The mouse's back and forward buttons arrive as app commands from whichever control is

@@ -1,6 +1,3 @@
-using System.Runtime.CompilerServices;
-using Microsoft.Win32.SafeHandles;
-
 /// <summary>
 /// Tells when a drive is about to go: Safely remove (or another query to remove it), a lock
 /// (formatting, a disk check) or a dismount, and when that was called off. Anything holding a

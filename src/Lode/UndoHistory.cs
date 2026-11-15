@@ -170,15 +170,15 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     /// was nothing to undo.
     /// </summary>
     public Task<string?> Undo(IntPtr owner) =>
-        Step(owner, undoable, redoable, (entry, actionsToUse) => entry.Undo(actionsToUse, owner));
+        Step(undoable, redoable, (entry, actionsToUse) => entry.Undo(actionsToUse, owner));
 
     public Task<string?> Redo(IntPtr owner) =>
-        Step(owner, redoable, undoable, (entry, actionsToUse) => entry.Redo(actionsToUse, owner));
+        Step(redoable, undoable, (entry, actionsToUse) => entry.Redo(actionsToUse, owner));
 
     // Takes the entry off one list for the work, which can show Windows' progress and conflict
     // dialogs, so runs on a thread of its own. It goes on the other list when done, or back
     // where it was when it could not be done.
-    async Task<string?> Step(IntPtr owner, List<Entry> from, List<Entry> to, Func<Entry, IFileActions, string?> work)
+    async Task<string?> Step(List<Entry> from, List<Entry> to, Func<Entry, IFileActions, string?> work)
     {
         Entry entry;
         lock (gate)

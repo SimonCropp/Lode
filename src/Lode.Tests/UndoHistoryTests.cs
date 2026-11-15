@@ -2,7 +2,7 @@
 /// Undo and redo: what each kind of change does to undo and redo it, against a made-up file
 /// system, and a rename and a move undone on disk.
 /// </summary>
-[TUnit.Core.Executors.STAThreadExecutor]
+[STAThreadExecutor]
 public class UndoHistoryTests
 {
     // Records what it was asked to do, and does it on paper.
@@ -12,7 +12,7 @@ public class UndoHistoryTests
         public List<string> MissingFromBin { get; } = [];
         int binCounter;
 
-        public string? Rename(IntPtr owner, string path, string newName)
+        public string Rename(IntPtr owner, string path, string newName)
         {
             Calls.Add($"rename {path} to {newName}");
             return Path.Combine(Path.GetDirectoryName(path)!, newName);

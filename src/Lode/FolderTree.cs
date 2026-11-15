@@ -73,7 +73,7 @@ sealed class FolderTree : TreeView
     /// </summary>
     public bool Rebuild()
     {
-        var selectedMoved = false;
+        bool selectedMoved;
         BeginUpdate();
         try
         {
@@ -181,8 +181,7 @@ sealed class FolderTree : TreeView
     protected override void OnItemDrag(ItemDragEventArgs eventArgs)
     {
         base.OnItemDrag(eventArgs);
-        if (eventArgs.Button == MouseButtons.Left &&
-            eventArgs.Item is TreeNode node &&
+        if (eventArgs is {Button: MouseButtons.Left, Item: TreeNode node} &&
             IsPinnedEntry(node))
         {
             var data = new DataObject();
@@ -466,7 +465,7 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        FolderWatcher? watcher = null;
+        FolderWatcher? watcher;
         try
         {
             watcher = new((string)node.Tag!, NotifyFilters.DirectoryName, () => changed[node] = true);

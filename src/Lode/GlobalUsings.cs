@@ -12,5 +12,6 @@ global using System.Runtime.Versioning;
 global using System.Security;
 global using System.Text.Json;
 global using Microsoft.Win32;
+global using Microsoft.Win32.SafeHandles;
 global using static NativeMethods;
 global using Timer = System.Windows.Forms.Timer;
