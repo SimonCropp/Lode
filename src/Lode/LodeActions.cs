@@ -7,7 +7,7 @@
 /// </summary>
 static class LodeActions
 {
-    /// <param name="Submenu">Opens a list of its own (New, Git): a drop-down on the bar.</param>
+    /// <param name="Submenu">Opens a list of its own (New, Open with, Git): a drop-down on the bar.</param>
     public sealed record Definition(
         string Id,
         string Text,
@@ -37,6 +37,7 @@ static class LodeActions
         new("open", "Open", Icons.Open, 2, Button: false, Menu: true),
         new("openInNewTab", "Open in new tab", Icons.OpenInNewTab, 2, Button: false, Menu: true),
         new("edit", "Edit", Icons.Edit, 2, Button: false, Menu: true),
+        new("openWith", "Open with", Icons.OpenWith, 2, Button: false, Menu: true, Submenu: true),
         new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true),
         new("terminalAdmin", "Terminal (admin)", Icons.AdminTerminal, 2, Button: true, Menu: true),
         new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true),

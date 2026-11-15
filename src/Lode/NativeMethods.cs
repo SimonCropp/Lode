@@ -167,6 +167,9 @@ static partial class NativeMethods
     [LibraryImport("shell32.dll", EntryPoint = "SHGetFileInfoW")]
     public static partial IntPtr SHGetFileInfo(IntPtr itemIdList, uint fileAttributes, ref ShellFileInfo info, uint infoSize, uint flags);
 
+    [LibraryImport("shell32.dll", EntryPoint = "Shell_GetCachedImageIndexW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int Shell_GetCachedImageIndex(string iconPath, int iconIndex, uint flags);
+
     [LibraryImport("shell32.dll")]
     public static partial int SHGetSpecialFolderLocation(IntPtr window, int folder, out IntPtr itemIdList);
 

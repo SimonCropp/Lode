@@ -5,6 +5,7 @@
   Open,
   Open in new tab (disabled),
   Edit (disabled),
+  Open with,
   ----,
   Pin to Quick access (disabled),
   Create shortcut,

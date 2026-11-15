@@ -39,6 +39,55 @@ public class QuickMenuTests
         await Verify(Describe(view.ItemCommands([Entry(view, "todo.txt")])));
     }
 
+    // The apps Windows recommends, then Choose another app, which takes one file. Nothing for
+    // files of different types, programs or shortcuts.
+    [Test]
+    public async Task OpenWithMenu()
+    {
+        using var fixture = Fixture.Create();
+        foreach (var name in new[] { "todo.aleph", "setup.exe", "Notepad.lnk" })
+        {
+            await File.WriteAllTextAsync(fixture.At(name), "");
+        }
+
+        using var view = await Open(fixture.Root);
+        view.FindApps = extension =>
+        {
+            if (extension == ".beta")
+            {
+                return [new("Firefox", @"C:\Firefox\firefox.exe", 0), new("GIMP 3.2.6", @"C:\GIMP\gimp.exe", 0)];
+            }
+
+            return [];
+        };
+
+        List<string> OpenWithEntries(params string[] names)
+        {
+            var lines = Describe(view.ItemCommands(names.Select(_ => Entry(view, _)).ToList()))
+                .SkipWhile(_ => !_.StartsWith("Open with"))
+                .TakeWhile(_ => _.StartsWith("Open with") || _.StartsWith("  "))
+                .ToList();
+            if (lines.Count == 0)
+            {
+                return ["none"];
+            }
+
+            return lines;
+        }
+
+        await Verify(
+            new
+            {
+                oneFile = OpenWithEntries("report2.beta"),
+                twoFiles = OpenWithEntries("report2.beta", "report10.beta"),
+                twoFilesNoApps = OpenWithEntries("notes.aleph", "todo.aleph"),
+                oneFileNoApps = OpenWithEntries("notes.aleph"),
+                differentTypes = OpenWithEntries("notes.aleph", "report2.beta"),
+                program = OpenWithEntries("setup.exe"),
+                shortcut = OpenWithEntries("Notepad.lnk")
+            });
+    }
+
     [Test]
     public async Task FolderMenu()
     {
@@ -255,7 +304,11 @@ public class QuickMenuTests
 
     static async Task<FolderView> Open(string path, Settings? settings = null)
     {
-        var view = new FolderView(settings ?? new() { ShowHidden = false }, noPlaces);
+        var view = new FolderView(settings ?? new() { ShowHidden = false }, noPlaces)
+        {
+            // What Open with lists depends on what is installed.
+            FindApps = _ => []
+        };
         view.Navigate(path);
         await Pump.Loaded(view);
         return view;

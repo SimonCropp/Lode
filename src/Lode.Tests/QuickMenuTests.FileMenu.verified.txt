@@ -1,5 +1,7 @@
 ﻿[
   Open,
+  Open with,
+    Choose another app,
   ----,
   Cut,
   Copy,

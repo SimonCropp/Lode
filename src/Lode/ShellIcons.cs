@@ -219,6 +219,13 @@ static class ShellIcons
         return result == IntPtr.Zero ? FolderIcon : info.IconIndex;
     }
 
+    /// <summary>
+    /// The icon a program or library holds among its resources, at <paramref name="index"/>
+    /// (a resource id when negative), as file types and apps name theirs.
+    /// </summary>
+    public static int GetResourceIcon(string path, int index) =>
+        Shell_GetCachedImageIndex(path, index, 0);
+
     public static string GetTypeName(string path, bool isDirectory)
     {
         if (isDirectory)

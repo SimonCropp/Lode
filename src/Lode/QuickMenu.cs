@@ -51,6 +51,28 @@ static class QuickMenu
         };
 
     /// <summary>
+    /// A submenu's entries, found the first time something reads them: when the menu shows,
+    /// rather than each time the actions bar builds the commands for a new selection.
+    /// </summary>
+    public static IReadOnlyList<Command?> Deferred(Func<IReadOnlyList<Command?>> find) =>
+        new DeferredCommands(find);
+
+    sealed class DeferredCommands(Func<IReadOnlyList<Command?>> find) : IReadOnlyList<Command?>
+    {
+        readonly Lazy<IReadOnlyList<Command?>> commands = new(find, LazyThreadSafetyMode.None);
+
+        public int Count => commands.Value.Count;
+
+        public Command? this[int index] => commands.Value[index];
+
+        public IEnumerator<Command?> GetEnumerator() =>
+            commands.Value.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+            GetEnumerator();
+    }
+
+    /// <summary>
     /// Shows the menu at <paramref name="location"/>, in screen coordinates, owned by
     /// <paramref name="owner"/> so it closes when that window loses focus or hides. Unowned, it
     /// could be left on screen. A null entry is a separator. Shift+right-click runs
@@ -146,8 +168,10 @@ static class QuickMenu
             }
             else
             {
-                // Clicking a submenu's own entry only opens it.
+                // Clicking a submenu's own entry only opens it. One with nothing in it has
+                // nothing to open.
                 AddItems(item.DropDownItems, command.Children, choose, iconSize, images);
+                item.Enabled = command.Enabled && command.Children.Count > 0;
             }
 
             items.Add(item);

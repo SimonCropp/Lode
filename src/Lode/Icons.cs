@@ -25,6 +25,7 @@ static class Icons
     public const char Open = '\uE8E5';
     public const char OpenInNewTab = '\uE8A7';
     public const char Edit = '\uE70F';
+    public const char OpenWith = '\uE7AC';
     // A window with a shield, as Windows marks what runs elevated.
     public const char AdminTerminal = '\uE7EF';
     public const char Shortcut = '\uE71B';

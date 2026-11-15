@@ -32,6 +32,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     static readonly Guid shellFolderId = new("000214E6-0000-0000-C000-000000000046");
     static readonly Guid contextMenuId = new("000214E4-0000-0000-C000-000000000046");
+    static readonly Guid dataObjectId = new("0000010E-0000-0000-C000-000000000046");
 
     IContextMenu2? menu2;
     IContextMenu3? menu3;
@@ -656,6 +657,27 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     static IContextMenu? CreateForItems(IntPtr owner, IReadOnlyList<string> paths)
     {
+        var pointer = CreateForItems(owner, paths, contextMenuId);
+        if (pointer == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        return Wrap(pointer);
+    }
+
+    /// <summary>
+    /// The shell's data object for items that share a parent folder, as dragging them carries:
+    /// how an app is handed files to open. Zero when the shell does not know them; otherwise
+    /// the caller releases it.
+    /// </summary>
+    public static IntPtr CreateDataObject(IntPtr owner, IReadOnlyList<string> paths) =>
+        CreateForItems(owner, paths, dataObjectId);
+
+    // What the items' folder offers for them, as the interface asked for, or zero when it
+    // offers nothing. The caller releases it.
+    static IntPtr CreateForItems(IntPtr owner, IReadOnlyList<string> paths, Guid interfaceId)
+    {
         var identifiers = new List<IntPtr>();
         try
         {
@@ -669,13 +691,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
             if (identifiers.Count == 0)
             {
-                return null;
+                return IntPtr.Zero;
             }
 
             var folderId = shellFolderId;
             if (SHBindToParent(identifiers[0], ref folderId, out var folderPointer, out _) != 0)
             {
-                return null;
+                return IntPtr.Zero;
             }
 
             var folder = (IShellFolder)Marshal.GetObjectForIUnknown(folderPointer);
@@ -683,15 +705,19 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             try
             {
                 var children = identifiers.Select(ILFindLastID).ToArray();
-                var menuId = contextMenuId;
                 var result = folder.GetUIObjectOf(
                     owner,
                     (uint)children.Length,
                     children,
-                    ref menuId,
+                    ref interfaceId,
                     IntPtr.Zero,
-                    out var menuPointer);
-                return result == 0 ? Wrap(menuPointer) : null;
+                    out var pointer);
+                if (result != 0)
+                {
+                    return IntPtr.Zero;
+                }
+
+                return pointer;
             }
             finally
             {

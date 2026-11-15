@@ -61,6 +61,12 @@ sealed class FolderView : UserControl
     internal Action<string, bool> SetPinned;
 
     /// <summary>
+    /// The apps Windows recommends for an extension, for Open with. Replaced in tests, which
+    /// must not depend on what is installed.
+    /// </summary>
+    internal Func<string, IReadOnlyList<OpenWith.App>> FindApps = OpenWith.Find;
+
+    /// <summary>
     /// The selection rectangle dragged from the margin left of the list. For tests.
     /// </summary>
     internal GutterMarquee Marquee => marquee;
@@ -1050,6 +1056,15 @@ sealed class FolderView : UserControl
             commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
         }
 
+        if (selection.All(_ => !_.IsDirectory))
+        {
+            var paths = selection.Select(_ => _.FullPath).ToList();
+            if (OpenWith.Extension(paths) is { } extension)
+            {
+                commands.Add(LodeActions.Submenu("openWith", QuickMenu.Deferred(() => OpenWithCommands(extension, paths))));
+            }
+        }
+
         commands.AddRange(
         [
             null,
@@ -1065,6 +1080,28 @@ sealed class FolderView : UserControl
         if (selection is [{ IsDirectory: true } folder])
         {
             commands.AddRange(CodeMenu.Commands(this, settings, folder.FullPath));
+        }
+
+        return commands;
+    }
+
+    // The apps Windows recommends for the files, each with its icon, then its dialog for
+    // choosing another, which takes one file.
+    List<QuickMenu.Command?> OpenWithCommands(string extension, List<string> paths)
+    {
+        var commands = new List<QuickMenu.Command?>();
+        foreach (var app in FindApps(extension))
+        {
+            commands.Add(
+                new(app.Name, () => OpenWith.Open(this, app, paths))
+                {
+                    ShellIcon = app.Icon
+                });
+        }
+
+        if (paths is [var path])
+        {
+            commands.Add(new("Choose another app", () => OpenWith.Choose(Owner, path)));
         }
 
         return commands;

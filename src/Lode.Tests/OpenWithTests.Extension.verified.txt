@@ -1,0 +1,9 @@
+﻿{
+  different types: no Open with,
+  no extension: "",
+  one file: ".png",
+  program: no Open with,
+  same type, any case: ".png",
+  script: no Open with,
+  shortcut: no Open with
+}
