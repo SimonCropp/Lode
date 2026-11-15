@@ -11,9 +11,6 @@
 /// </summary>
 sealed class Updates
 {
-    const string packageId = "Lode";
-    const string command = "lode";
-
     static readonly TimeSpan interval = TimeSpan.FromDays(1);
 
     // The first check waits until Lode has started and settled; after that, whether a day has
@@ -61,13 +58,13 @@ sealed class Updates
     /// </summary>
     internal static ToolUpdate? Find(string directory)
     {
-        var shim = ToolUpdate.ShimFor(directory, command);
+        var shim = ToolUpdate.ShimFor(directory);
         if (shim == null)
         {
             return null;
         }
 
-        return new(packageId, shim, OutcomePath);
+        return new(shim, OutcomePath);
     }
 
     /// <summary>
@@ -226,8 +223,10 @@ sealed class Updates
 
     /// <summary>
     /// What to say about the update that started this Lode, or null when none did, which is every
-    /// start but the one after an update. Said once, since reading it removes it, so only the
-    /// first instance asks.
+    /// start but the one after an update, or when how it went could not be read or removed, which
+    /// is no reason to stop Lode starting. Said once, since reading it removes it, so only the
+    /// first instance asks: a second instance handing over and leaving at once would take it from
+    /// the one that stays.
     /// </summary>
     public UpdateNotice? Report()
     {
@@ -236,7 +235,18 @@ sealed class Updates
             return null;
         }
 
-        return ToolUpdateOutcome.Report(Tool.Outcome, "Lode", Current.ToNormalizedString());
+        ToolUpdateOutcome? outcome;
+        try
+        {
+            outcome = ToolUpdateOutcome.Take(Tool.Outcome);
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        return outcome?.Notice(Current.ToNormalizedString());
     }
 
     /// <summary>
@@ -252,6 +262,6 @@ sealed class Updates
         {
             NoCache = true
         };
-        return await metadata.GetLatestVersion(packageId, includePrerelease: true, includeUnlisted: false, cache, NullLogger.Instance, cancel);
+        return await metadata.GetLatestVersion(ToolUpdate.PackageId, includePrerelease: true, includeUnlisted: false, cache, NullLogger.Instance, cancel);
     }
 }

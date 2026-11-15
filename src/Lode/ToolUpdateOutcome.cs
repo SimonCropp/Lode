@@ -37,48 +37,21 @@ sealed record ToolUpdateOutcome(bool Succeeded, string Output)
     }
 
     /// <summary>
-    /// What the Lode the update started says about it, or null where no update started it, which
-    /// is every start but the one after an update, or the outcome could not be read or removed,
-    /// which is no reason to stop Lode starting.
-    /// <para>
-    /// Only the first instance should ask, since asking removes the outcome, and a second instance
-    /// handing over and leaving at once would take it from the one that stays.
-    /// </para>
-    /// </summary>
-    /// <param name="path">Where the update wrote how it went, the <see cref="ToolUpdate"/>'s outcome.</param>
-    /// <param name="app">The app's name, as the notice's title says it.</param>
-    /// <param name="version">The version running, which is the installed one.</param>
-    public static UpdateNotice? Report(string path, string app, string version)
-    {
-        ToolUpdateOutcome? outcome;
-        try
-        {
-            outcome = Take(path);
-        }
-        catch (Exception exception)
-            when (exception is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-
-        return outcome?.Notice(app, version);
-    }
-
-    /// <summary>
     /// The notice about this outcome. A success says the version rather than what the tool said,
     /// because the Lode showing it is the one the update started: it is the installed one, whether
     /// the update moved it or found it already current. And it is not shown as a warning, which
     /// would make an update that worked look like one that had not. A failure says the
     /// <see cref="Reason"/>.
     /// </summary>
-    public UpdateNotice Notice(string app, string version)
+    /// <param name="version">The version running, which is the installed one.</param>
+    public UpdateNotice Notice(string version)
     {
         if (Succeeded)
         {
-            return new($"{app} updated", $"Now running {version}.", ToolTipIcon.Info);
+            return new("Lode updated", $"Now running {version}.", ToolTipIcon.Info);
         }
 
-        return new($"{app} did not update", Reason, ToolTipIcon.Warning);
+        return new("Lode did not update", Reason, ToolTipIcon.Warning);
     }
 
     /// <summary>

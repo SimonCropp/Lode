@@ -11,22 +11,10 @@ public class ToolUpdateTests
         Verify(
             new
             {
-                ridSpecific = ToolUpdate.ShimFor(@"C:\Users\Someone\.dotnet\tools\.store\lode\1.0.0\lode.win-x64\1.0.0\tools\net11.0\win-x64\Lode.dll", "lode"),
-                portable = ToolUpdate.ShimFor(@"C:\Users\Someone\.dotnet\tools\.store\lode\1.0.0\lode\1.0.0\tools\net11.0\any\Lode.dll", "lode"),
-                buildHasNone = ToolUpdate.ShimFor(@"C:\Code\Lode\src\Lode\bin\Release\net11.0\Lode.dll", "lode") == null
+                ridSpecific = ToolUpdate.ShimFor(@"C:\Users\Someone\.dotnet\tools\.store\lode\1.0.0\lode.win-x64\1.0.0\tools\net11.0\win-x64\Lode.dll"),
+                portable = ToolUpdate.ShimFor(@"C:\Users\Someone\.dotnet\tools\.store\lode\1.0.0\lode\1.0.0\tools\net11.0\any\Lode.dll"),
+                buildHasNone = ToolUpdate.ShimFor(@"C:\Code\Lode\src\Lode\bin\Release\net11.0\Lode.dll") == null
             });
-
-    [Test]
-    public Task TheToolPathIsTheShimsFolder()
-    {
-        var update = new ToolUpdate("Lode", @"C:\Users\Someone\.dotnet\tools\lode.exe", "outcome");
-        return Verify(
-            new
-            {
-                update.ToolPath,
-                update.StoreDirectory
-            });
-    }
 
     // Hidden, from anywhere but the store, whose folders the update deletes, and Windows will not
     // delete one that a running process is sitting in. The script goes encoded, so no quoting of
@@ -34,7 +22,7 @@ public class ToolUpdateTests
     [Test]
     public Task PowerShellIsStarted()
     {
-        var update = new ToolUpdate("Lode", @"C:\Users\Someone\.dotnet\tools\lode.exe", "outcome");
+        var update = new ToolUpdate(@"C:\Users\Someone\.dotnet\tools\lode.exe", "outcome");
 
         var info = update.StartInfo(4242);
 
@@ -50,11 +38,12 @@ public class ToolUpdateTests
             });
     }
 
-    // Under a user name with a quote in it, so the quoting is pinned as well.
+    // Under a user name with a quote in it, so the quoting is pinned as well, along with the tool
+    // path the update is by and the store whose processes it stops.
     [Test]
     public Task Script()
     {
-        var update = new ToolUpdate("Lode", @"C:\Users\O'Brien\.dotnet\tools\lode.exe", @"C:\Users\O'Brien\AppData\Roaming\Lode\update-outcome.log")
+        var update = new ToolUpdate(@"C:\Users\O'Brien\.dotnet\tools\lode.exe", @"C:\Users\O'Brien\AppData\Roaming\Lode\update-outcome.log")
         {
             Dotnet = @"C:\Program Files\dotnet\dotnet.exe"
         };
@@ -88,7 +77,7 @@ public class ToolUpdateTests
         using var lode = StandInForLode();
         try
         {
-            var update = new ToolUpdate("Lode", shim, outcome)
+            var update = new ToolUpdate(shim, outcome)
             {
                 Dotnet = dotnet
             };

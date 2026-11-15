@@ -33,7 +33,7 @@ static class DefenderExclusion
             startInfo.ArgumentList.Add("-ExecutionPolicy");
             startInfo.ArgumentList.Add("Bypass");
             startInfo.ArgumentList.Add("-EncodedCommand");
-            startInfo.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(Script(folder, resultFile))));
+            startInfo.ArgumentList.Add(PowerShell.Encode(Script(folder, resultFile)));
 
             using var process = Process.Start(startInfo);
             if (process == null)
@@ -87,8 +87,8 @@ static class DefenderExclusion
     internal static string Script(string folder, string resultFile) =>
         $$"""
           $ErrorActionPreference = 'Stop'
-          $folder = '{{Quote(folder)}}'
-          $result = '{{Quote(resultFile)}}'
+          $folder = {{PowerShell.Quote(folder)}}
+          $result = {{PowerShell.Quote(resultFile)}}
           try {
               $root = $folder.TrimEnd('\') + '\'
               $under = @((Get-MpPreference).ExclusionPath | Where-Object {
@@ -108,8 +108,4 @@ static class DefenderExclusion
               exit 1
           }
           """;
-
-    // A PowerShell single-quoted string doubles its quotes.
-    static string Quote(string value) =>
-        value.Replace("'", "''", StringComparison.Ordinal);
 }
