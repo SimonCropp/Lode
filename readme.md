@@ -1,4 +1,7 @@
-# Lode
+#  <img src='/src/icon.png' height='30px'> Lode
+
+[![Build status](https://github.com/SimonCropp/Lode/actions/workflows/build.yml/badge.svg)](https://github.com/SimonCropp/Lode/actions/workflows/build.yml)
+[![NuGet Status](https://img.shields.io/nuget/v/Lode.svg)](https://www.nuget.org/packages/Lode/)
 
 Alternative to Windows Explorer with a focus on developers.
 
