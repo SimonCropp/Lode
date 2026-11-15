@@ -148,13 +148,13 @@ static partial class OpenWith
     /// Windows' Open with dialog for the file, which opens it in the app picked there, and can
     /// make that app the default for its type.
     /// </summary>
-    public static unsafe void Choose(IntPtr owner, string path)
+    public static void Choose(IntPtr owner, string path)
     {
         fixed (char* file = path)
         {
             var info = new OpenAsInfo
             {
-                File = (IntPtr)file,
+                File = (IntPtr) file,
                 Flags = allowRegistration | execute
             };
             SHOpenWithDialog(owner, in info);

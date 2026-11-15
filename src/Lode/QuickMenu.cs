@@ -68,7 +68,7 @@ static class QuickMenu
         public IEnumerator<Command?> GetEnumerator() =>
             commands.Value.GetEnumerator();
 
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+        IEnumerator IEnumerable.GetEnumerator() =>
             GetEnumerator();
     }
 
