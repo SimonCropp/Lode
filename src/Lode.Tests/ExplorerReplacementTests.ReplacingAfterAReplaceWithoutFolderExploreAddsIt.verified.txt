@@ -1,0 +1,26 @@
+﻿{
+  older: {
+    IsActive: true,
+    IsActiveHere: true,
+    IsComplete: false,
+    RegisteredCommand: "C:\Tools\lode.exe"
+  },
+  replaced: {
+    IsActive: true,
+    IsActiveHere: true,
+    IsComplete: true,
+    RegisteredCommand: "C:\Tools\lode.exe"
+  },
+  folder: {
+    shell\: {
+      explore\: {
+        command\: {
+          (default): "C:\Tools\lode.exe" "%1",
+          DelegateExecute: 
+        },
+        CreatedBy: Lode,
+        ProgrammaticAccessOnly: 
+      }
+    }
+  }
+}

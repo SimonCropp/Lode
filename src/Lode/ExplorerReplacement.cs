@@ -7,7 +7,8 @@
 /// Writes only to the current user's classes, so it needs no elevation and other accounts keep
 /// Explorer. Explorer is still the shell: its taskbar button, and apps that start explorer.exe
 /// themselves or ask it to show a file selected, still open Explorer. Explorer's own Open verb
-/// stays on every folder's right-click menu.
+/// stays on every folder's right-click menu. The explore verb on Folder brings Lode virtual
+/// folders too, which it passes on to Explorer (see <see cref="CommandLine.ForExplorer"/>).
 /// </remarks>
 sealed class ExplorerReplacement(string classesPath, string command, bool notifyShell = false)
 {
@@ -19,8 +20,7 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
 
     // The verb apps name when they want a folder shown in a file manager, rather than whatever
     // the default verb does: Chromium and Electron apps use it to open a folder (GitHub
-    // Desktop's Show in Explorer, for one), as does ShellExecute with "explore". Explorer's own
-    // is on Folder, so one on Directory or Drive is found first.
+    // Desktop's Show in Explorer, for one), as does ShellExecute with "explore".
     const string exploreVerb = "explore";
 
     // The shell object Win+E opens. A command here, with an empty DelegateExecute, runs in
@@ -31,9 +31,16 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     // Lode's, so Restore never removes another tool's.
     const string ownerName = "CreatedBy";
 
-    // Directory covers every file system folder; Drive covers drive roots. Folder is left alone:
-    // it also covers virtual folders (Control Panel, Recycle Bin) that Lode cannot show.
+    // Where Lode is made the default verb. Directory covers every file system folder; Drive
+    // covers drive roots. Folder is left alone: it also covers virtual folders (Control Panel,
+    // Recycle Bin) that Lode cannot show.
     static readonly string[] folderClasses = ["Directory", "Drive"];
+
+    // Where the explore verb is added. An app that names just a folder finds the one on
+    // Directory or Drive before Explorer's own on Folder. Chromium, and so Electron, names the
+    // Folder class outright as well, which finds only one on Folder. That one is asked for
+    // virtual folders too, and Lode passes those on to Explorer.
+    static readonly string[] exploreClasses = ["Directory", "Drive", "Folder"];
 
     public static ExplorerReplacement ForCurrentUser() =>
         new(@"Software\Classes", PreferredCommand(), notifyShell: true);
@@ -87,7 +94,7 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     /// <summary>
     /// True when Replace has nothing left to add for this copy: apps that ask for the explore
     /// verb get it too, unless another tool has that verb, which Replace leaves alone. False
-    /// after a Replace by a Lode from before it added the verb.
+    /// after a Replace by a Lode from before it added the verb, or added it on Folder.
     /// </summary>
     public bool IsComplete
     {
@@ -98,9 +105,9 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
                 return false;
             }
 
-            foreach (var folderClass in folderClasses)
+            foreach (var exploreClass in exploreClasses)
             {
-                using var explore = Registry.CurrentUser.OpenSubKey($@"{classesPath}\{folderClass}\shell\{exploreVerb}");
+                using var explore = Registry.CurrentUser.OpenSubKey($@"{classesPath}\{exploreClass}\shell\{exploreVerb}");
                 if (explore == null)
                 {
                     return false;
@@ -149,16 +156,25 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
             }
 
             shell.SetValue("", verb);
+        }
 
-            if (!IsOthers(shell, exploreVerb))
+        foreach (var exploreClass in exploreClasses)
+        {
+            using var shell = classes.CreateSubKey($@"{exploreClass}\shell");
+            if (IsOthers(shell, exploreVerb))
             {
-                using var explore = shell.CreateSubKey(exploreVerb);
-                explore.SetValue(ownerName, verb);
-                // As on Explorer's own, which this one hides: off the right-click menu.
-                explore.SetValue("ProgrammaticAccessOnly", "");
-                using var commandKey = explore.CreateSubKey("command");
-                commandKey.SetValue("", FolderCommand);
+                continue;
             }
+
+            using var explore = shell.CreateSubKey(exploreVerb);
+            explore.SetValue(ownerName, verb);
+            // As on Explorer's own, which this one hides: off the right-click menu.
+            explore.SetValue("ProgrammaticAccessOnly", "");
+            using var commandKey = explore.CreateSubKey("command");
+            commandKey.SetValue("", FolderCommand);
+            // The user's classes and the machine's merge value by value, and the machine's
+            // explore on Folder names Explorer's handler here, which would win over the command.
+            commandKey.SetValue("DelegateExecute", "");
         }
 
         using (var winE = classes.CreateSubKey(winEPath))
@@ -182,35 +198,41 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
 
         foreach (var folderClass in folderClasses)
         {
-            var shellPath = $@"{folderClass}\shell";
+            using var shell = classes.OpenSubKey($@"{folderClass}\shell", writable: true);
+            if (shell == null)
+            {
+                continue;
+            }
+
+            string? previous;
+            using (var verbKey = shell.OpenSubKey(verb))
+            {
+                previous = verbKey?.GetValue(previousDefaultName) as string;
+            }
+
+            if (shell.GetValue("") as string == verb)
+            {
+                if (previous == null)
+                {
+                    shell.DeleteValue("", throwOnMissingValue: false);
+                }
+                else
+                {
+                    shell.SetValue("", previous);
+                }
+            }
+
+            shell.DeleteSubKeyTree(verb, throwOnMissingSubKey: false);
+        }
+
+        // Every class Replace writes to is among these, so this tidies away all it left empty.
+        foreach (var exploreClass in exploreClasses)
+        {
+            var shellPath = $@"{exploreClass}\shell";
             using (var shell = classes.OpenSubKey(shellPath, writable: true))
             {
-                if (shell == null)
-                {
-                    continue;
-                }
-
-                string? previous;
-                using (var verbKey = shell.OpenSubKey(verb))
-                {
-                    previous = verbKey?.GetValue(previousDefaultName) as string;
-                }
-
-                if (shell.GetValue("") as string == verb)
-                {
-                    if (previous == null)
-                    {
-                        shell.DeleteValue("", throwOnMissingValue: false);
-                    }
-                    else
-                    {
-                        shell.SetValue("", previous);
-                    }
-                }
-
-                shell.DeleteSubKeyTree(verb, throwOnMissingSubKey: false);
-
-                if (IsLodes(shell, exploreVerb))
+                if (shell != null &&
+                    IsLodes(shell, exploreVerb))
                 {
                     shell.DeleteSubKeyTree(exploreVerb);
                 }

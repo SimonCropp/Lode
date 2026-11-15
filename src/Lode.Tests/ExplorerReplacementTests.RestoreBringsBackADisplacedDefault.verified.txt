@@ -18,7 +18,8 @@
         (default): Lode,
         explore\: {
           command\: {
-            (default): "C:\Tools\lode.exe" "%1"
+            (default): "C:\Tools\lode.exe" "%1",
+            DelegateExecute: 
           },
           CreatedBy: Lode,
           ProgrammaticAccessOnly: 
@@ -42,7 +43,8 @@
         (default): Lode,
         explore\: {
           command\: {
-            (default): "C:\Tools\lode.exe" "%1"
+            (default): "C:\Tools\lode.exe" "%1",
+            DelegateExecute: 
           },
           CreatedBy: Lode,
           ProgrammaticAccessOnly: 
@@ -52,6 +54,18 @@
           command\: {
             (default): "C:\Tools\lode.exe" "%1"
           }
+        }
+      }
+    },
+    Folder\: {
+      shell\: {
+        explore\: {
+          command\: {
+            (default): "C:\Tools\lode.exe" "%1",
+            DelegateExecute: 
+          },
+          CreatedBy: Lode,
+          ProgrammaticAccessOnly: 
         }
       }
     }

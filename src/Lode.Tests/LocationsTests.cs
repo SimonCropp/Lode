@@ -16,6 +16,8 @@ public class LocationsTests
         @"\\server\share\folder\",
         "This PC",
         "this pc",
+        // This PC as the explore verb on Folder names it.
+        "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}",
         "",
         "   "
     ];

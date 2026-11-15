@@ -1,8 +1,17 @@
 /// <summary>
-/// What Lode was started to do. Arguments that are not switches are folders or files to open.
+/// What Lode was started to do. Arguments that are not switches are folders or files to open,
+/// apart from virtual folders Lode cannot show.
 /// </summary>
 sealed record CommandLine(CommandKind Kind, IReadOnlyList<string> Paths, string? Error = null)
 {
+    /// <summary>
+    /// Virtual folders, Control Panel or the Recycle Bin say, named as the shell names them
+    /// ("::{CLSID}" and what follows), which open in File Explorer. Replace takes the explore
+    /// verb on Folder, which apps also ask for these, so they reach Lode beside real folders.
+    /// This PC is not one of them: Lode shows it.
+    /// </summary>
+    public IReadOnlyList<string> ForExplorer { get; init; } = [];
+
     public const string Usage =
         """
         Usage: lode [folder or file ...]
@@ -22,7 +31,10 @@ sealed record CommandLine(CommandKind Kind, IReadOnlyList<string> Paths, string?
         var switches = arguments.Where(IsSwitch).ToList();
         if (switches.Count == 0)
         {
-            return new(CommandKind.Open, arguments);
+            return new(CommandKind.Open, arguments.Where(_ => !Locations.IsVirtual(_)).ToList())
+            {
+                ForExplorer = arguments.Where(Locations.IsVirtual).ToList()
+            };
         }
 
         if (arguments.Count > 1)

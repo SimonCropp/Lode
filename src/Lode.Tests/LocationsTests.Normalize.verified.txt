@@ -1,6 +1,7 @@
 ﻿{
   [   ]: (rejected),
   [  "C:\Program Files\dotnet"  ]: C:\Program Files\dotnet,
+  [::{20D04FE0-3AEA-1069-A2D8-08002B30309D}]: This PC,
   [C:"]: C:\,
   [C:/Windows/System32]: C:\Windows\System32,
   [C:\Windows\System32\..\Fonts]: C:\Windows\Fonts,

@@ -40,9 +40,19 @@ sealed class RegistryScratch : IDisposable
     /// </summary>
     public void OlderReplace(ExplorerReplacement replacement)
     {
-        replacement.Replace();
+        ReplaceWithoutFolderExplore(replacement);
         Delete(@"Directory\shell\explore");
         Delete(@"Drive\shell\explore");
+    }
+
+    /// <summary>
+    /// What a Replace by a Lode from before it added the explore verb on Folder left: the verb
+    /// on Directory and Drive only.
+    /// </summary>
+    public void ReplaceWithoutFolderExplore(ExplorerReplacement replacement)
+    {
+        replacement.Replace();
+        Delete("Folder");
     }
 
     /// <summary>

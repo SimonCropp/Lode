@@ -36,6 +36,17 @@ static class Program
                 return 0;
         }
 
+        foreach (var folder in commandLine.ForExplorer)
+        {
+            OpenInExplorer(folder);
+        }
+
+        // Nothing for Lode: handing over no folders would bring its windows back.
+        if (commandLine is { Paths.Count: 0, ForExplorer.Count: > 0 })
+        {
+            return 0;
+        }
+
         using var instance = new SingleInstance();
         if (!instance.IsFirst &&
             instance.TryHandOff(commandLine.Paths))
@@ -52,6 +63,21 @@ static class Program
         var places = Places.ForThisMachine(settings);
         Application.Run(new WindowContext(new(commandLine.Paths.ToArray(), settings, places), settings, places, instance));
         return 0;
+    }
+
+    // Explorer opens a folder named on its command line itself, not through the explore verb,
+    // so this never comes back to Lode.
+    static void OpenInExplorer(string folder)
+    {
+        var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        try
+        {
+            using var process = Process.Start(explorer, [folder]);
+        }
+        catch (Exception)
+        {
+            // Explorer will not start: nothing else would show the folder either.
+        }
     }
 
     static int Change(Action<ExplorerReplacement> change, string done)

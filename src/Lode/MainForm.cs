@@ -669,13 +669,15 @@ class MainForm : Form
     }
 
     /// <summary>
-    /// The folders and files among a launch's <paramref name="arguments"/>, as full paths.
+    /// The folders and files among a launch's <paramref name="arguments"/>, as full paths, and
+    /// This PC.
     /// </summary>
     internal static List<string> Openable(IEnumerable<string> arguments) =>
         arguments
             .Select(_ => Locations.Normalize(_))
             .OfType<string>()
-            .Where(_ => Directory.Exists(_) ||
+            .Where(_ => Locations.IsThisPC(_) ||
+                        Directory.Exists(_) ||
                         File.Exists(_))
             .ToList();
 

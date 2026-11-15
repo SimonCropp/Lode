@@ -136,6 +136,31 @@ public class ExplorerReplacementTests
             });
     }
 
+    // A Replace by a Lode that added the explore verb to Directory and Drive but not to Folder,
+    // which Chromium and Electron apps name: it is not complete, and replacing again adds it.
+    [Test]
+    public async Task ReplacingAfterAReplaceWithoutFolderExploreAddsIt()
+    {
+        using var scratch = new RegistryScratch();
+        var replacement = scratch.Replacement();
+        scratch.ReplaceWithoutFolderExplore(replacement);
+        var older = Describe(replacement);
+
+        replacement.Replace();
+        var replaced = Describe(replacement);
+        var folder = scratch.Dump()[@"Folder\"];
+        replacement.Restore();
+
+        await Verify(
+            new
+            {
+                older,
+                replaced,
+                folder,
+                restored = scratch.Dump()
+            });
+    }
+
     [Test]
     public async Task State()
     {
