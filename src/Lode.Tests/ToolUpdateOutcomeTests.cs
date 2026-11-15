@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// The report an update leaves for the Lode it starts again. Ported from PlatformHeads' tests,
 /// with ToolUpdateOutcome.

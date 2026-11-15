@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// Updates Lode, installed as a dotnet tool, and starts it again. The update has to run once Lode
 /// has exited, since a running executable cannot be replaced, and since the Lode it then starts

@@ -180,7 +180,7 @@ sealed class Updates
         try
         {
             using var cancel = new CancelSource(TimeSpan.FromMinutes(1));
-            var latest = await Task.Run(() => fetchLatest(cancel.Token));
+            var latest = await Task.Run(() => fetchLatest(cancel.Token), cancel.Token);
             Available = Newer(latest);
             settings.LastUpdateCheck = time.GetUtcNow();
             settings.AvailableUpdate = Available?.ToNormalizedString();

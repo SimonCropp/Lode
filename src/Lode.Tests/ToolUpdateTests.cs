@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// The update Lode runs on itself, with stand-ins for dotnet and for the shim, so nothing is
 /// installed or updated. Ported from PlatformHeads' tests, with ToolUpdate.
