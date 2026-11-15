@@ -1,7 +1,7 @@
 ﻿- This PC
   - FolderTreeTests.SelectPathExpandsDownToTheFolder
     - Projects
-      + Archive
-      + Docs
+        Archive
+        Docs
       - Source
-        + Deep   <- selected
+          Deep   <- selected

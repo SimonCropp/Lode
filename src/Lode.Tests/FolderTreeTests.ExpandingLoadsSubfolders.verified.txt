@@ -1,7 +1,7 @@
 ﻿- This PC
   - FolderTreeTests.ExpandingLoadsSubfolders
     - Projects
-      + Archive
-      + Docs
+        Archive
+        Docs
       - Source
-        + Deep
+          Deep

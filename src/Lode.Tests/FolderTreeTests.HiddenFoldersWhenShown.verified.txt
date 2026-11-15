@@ -1,7 +1,7 @@
 ﻿- This PC
   - FolderTreeTests.HiddenFoldersWhenShown
     - Projects
-      + Archive
-      + Cache
-      + Docs
+        Archive
+        Cache
+        Docs
       + Source

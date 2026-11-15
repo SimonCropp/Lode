@@ -288,6 +288,69 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // A folder whose only subfolders are hidden has nothing to expand to while hidden folders
+    // aren't shown.
+    [Test]
+    public async Task OnlyHiddenSubfoldersGiveAnExpanderWhenHiddenAreShown()
+    {
+        using var fixture = Fixture.Create();
+        var secret = Directory.CreateDirectory(fixture.At("Docs", "Secret"));
+        secret.Attributes |= FileAttributes.Hidden;
+
+        await Assert.That(await DocsHasExpander(fixture, showHidden: false)).IsFalse();
+        await Assert.That(await DocsHasExpander(fixture, showHidden: true)).IsTrue();
+    }
+
+    static async Task<bool> DocsHasExpander(Fixture fixture, bool showHidden)
+    {
+        using var tree = Create(fixture, new() { ShowHidden = showHidden });
+        var projects = await Projects(tree);
+        await Expand(tree, projects);
+        var docs = projects.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Docs");
+        return docs.Nodes.Count > 0;
+    }
+
+    // The selected folder is kept up to date though it is not expanded, so making a folder in
+    // an empty one, as New folder in the list does, gives it an expander, and taking that away
+    // takes the expander too.
+    [Test]
+    public async Task SelectedFolderGetsAnExpanderOnceItHasASubfolder()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+        var docs = tree.SelectedNode!;
+        var expanderAtFirst = docs.Nodes.Count > 0;
+
+        Directory.CreateDirectory(fixture.At("Docs", "Drafts"));
+        await Pump.Until(() => Names(docs).Contains("Drafts"));
+
+        Directory.Delete(fixture.At("Docs", "Drafts"));
+        await Pump.Until(() => docs.Nodes.Count == 0);
+
+        await Assert.That(expanderAtFirst).IsFalse();
+    }
+
+    // Reading an expanded folder again brings the expanders of the folders in it in line with
+    // what is in them now.
+    [Test]
+    public async Task ReadingAFolderAgainUpdatesTheExpandersInIt()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var projects = await Projects(tree);
+        await Expand(tree, projects);
+
+        Directory.CreateDirectory(fixture.At("Archive", "2025"));
+        Directory.Delete(fixture.At("Source", "Deep"), true);
+        // A change Projects' own watcher sees, which has it read again.
+        Directory.CreateDirectory(fixture.At("Build"));
+        await Pump.Until(() => Names(projects).Contains("Build"));
+
+        await Verify(Dump(tree));
+    }
+
     static List<string> Names(TreeNode node) =>
         node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
 

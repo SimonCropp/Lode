@@ -1,5 +1,5 @@
 ﻿- This PC
   - FolderTreeTests.ExpandingAgainPicksUpChangesMadeWhileCollapsed
     - Projects
-      + Docs
+        Docs
       + Source

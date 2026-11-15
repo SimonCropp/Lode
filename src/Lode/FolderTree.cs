@@ -39,9 +39,15 @@ sealed class FolderTree : TreeView
     bool showing = true;
 
     /// <summary>
-    /// A subfolder as the tree shows it.
+    /// A subfolder as the tree shows it, and whether it has subfolders the tree would show
+    /// beneath it, which is what gives it an expander.
     /// </summary>
-    readonly record struct Subfolder(string Name, string FullPath);
+    readonly record struct Subfolder(string Name, string FullPath, bool HasSubfolders);
+
+    // The selected folder, when it is watched only for being selected: kept up to date while it
+    // is, as an expanded folder is, so that one with no subfolders gets its expander as soon as
+    // it has one (New folder in the list, say), and one whose last goes loses it.
+    TreeNode? watchedForSelection;
 
     // Folders being read because their expander was clicked, so that clicking it again
     // meanwhile doesn't read them again.
@@ -384,8 +390,8 @@ sealed class FolderTree : TreeView
             SelectedImageIndex = icon
         };
 
-        // Every folder starts with a placeholder child so it shows an expander without the
-        // cost of checking for subfolders. The real children load on first expand.
+        // A folder with subfolders starts with a placeholder child, so it shows an expander
+        // before they are read. The real children load on first expand.
         if (expandable)
         {
             node.Nodes.Add(new TreeNode { Tag = placeholder });
@@ -414,21 +420,15 @@ sealed class FolderTree : TreeView
                 IgnoreInaccessible = true,
                 AttributesToSkip = showHidden ? default : FileAttributes.Hidden
             };
-            var found = new FileSystemEnumerable<(Subfolder Folder, FileAttributes Attributes)>(
-                path,
-                (ref FileSystemEntry entry) => (new(entry.FileName.ToString(), entry.ToFullPath()), entry.Attributes),
-                options)
-            {
-                ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory
-            };
+
+            // As File Explorer does, every folder on a share gets an expander, rather than a trip
+            // across the network into each one to see whether it should.
+            var lookInside = !IsRemote(path);
             var directories = new List<Subfolder>();
-            foreach (var (folder, attributes) in found)
+            foreach (var (name, fullPath) in FindSubfolders(path, options, hiddenSystem))
             {
-                if (hiddenSystem == null ||
-                    !hiddenSystem.IsSystem(folder.FullPath, attributes))
-                {
-                    directories.Add(folder);
-                }
+                var hasSubfolders = !lookInside || HasSubfolders(fullPath, options, hiddenSystem);
+                directories.Add(new(name, fullPath, hasSubfolders));
             }
 
             directories.Sort((first, second) => StrCmpLogicalW(first.Name, second.Name));
@@ -437,6 +437,67 @@ sealed class FolderTree : TreeView
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    // The folders in a folder that the tree shows, as they are found: hidden ones only when the
+    // options do not skip them, and Windows' own only when those are shown.
+    static IEnumerable<(string Name, string FullPath)> FindSubfolders(string path, EnumerationOptions options, SystemItems? hiddenSystem)
+    {
+        var found = new FileSystemEnumerable<(string Name, string FullPath, FileAttributes Attributes)>(
+            path,
+            (ref FileSystemEntry entry) => (entry.FileName.ToString(), entry.ToFullPath(), entry.Attributes),
+            options)
+        {
+            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory
+        };
+        foreach (var (name, fullPath, attributes) in found)
+        {
+            if (hiddenSystem == null ||
+                !hiddenSystem.IsSystem(fullPath, attributes))
+            {
+                yield return (name, fullPath);
+            }
+        }
+    }
+
+    // Stops at the first, so only a folder with none, or with only folders the tree leaves out,
+    // is gone all the way through. A folder Lode is denied reads as empty, and gets no expander,
+    // as expanding it would show nothing. One that fails to be read some other way keeps its
+    // expander, and expanding it reads it again.
+    static bool HasSubfolders(string path, EnumerationOptions options, SystemItems? hiddenSystem)
+    {
+        try
+        {
+            return FindSubfolders(path, options, hiddenSystem).Any();
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
+    // A share, by its \\server\share path or by a drive letter mapped to it.
+    static bool IsRemote(string path)
+    {
+        if (Locations.IsNetwork(path))
+        {
+            return true;
+        }
+
+        var root = Path.GetPathRoot(path);
+        if (string.IsNullOrEmpty(root))
+        {
+            return false;
+        }
+
+        try
+        {
+            return new DriveInfo(root).DriveType == DriveType.Network;
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 
@@ -474,7 +535,7 @@ sealed class FolderTree : TreeView
             // An unreadable folder simply has no children to show.
             foreach (var directory in directories ?? [])
             {
-                node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon));
+                node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
             }
         }
         finally
@@ -586,15 +647,41 @@ sealed class FolderTree : TreeView
                         nodes[i].Tag = directory.FullPath;
                     }
 
+                    ShowExpander(nodes[i], directory.HasSubfolders);
                     continue;
                 }
 
-                nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon));
+                nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
             }
         }
         finally
         {
             EndUpdate();
+        }
+    }
+
+    // Gives a folder whose subfolders have not been read an expander when it has some, and
+    // takes it away when it has none. A folder being kept up to date is left to that.
+    void ShowExpander(TreeNode node, bool hasSubfolders)
+    {
+        if (watched.ContainsKey(node))
+        {
+            return;
+        }
+
+        if (hasSubfolders)
+        {
+            if (node.Nodes.Count == 0)
+            {
+                node.Nodes.Add(new TreeNode { Tag = placeholder });
+            }
+
+            return;
+        }
+
+        if (NeedsLoading(node))
+        {
+            node.Nodes.Clear();
         }
     }
 
@@ -674,6 +761,30 @@ sealed class FolderTree : TreeView
 
         watched.Clear();
         changed.Clear();
+        watchedForSelection = null;
+    }
+
+    // Keeps the selected folder up to date while it is selected, if nothing else does, and lets
+    // go of the one before unless it has been expanded since.
+    void WatchSelected(TreeNode? node)
+    {
+        if (watchedForSelection is { } previous &&
+            previous != node)
+        {
+            watchedForSelection = null;
+            if (!previous.IsExpanded)
+            {
+                Unwatch(previous);
+            }
+        }
+
+        if (node != null &&
+            IsFolder(node) &&
+            !watched.ContainsKey(node))
+        {
+            Watch(node);
+            watchedForSelection = node;
+        }
     }
 
     // Brings the folders watchers have seen change up to date. False while that has to wait for
@@ -801,6 +912,7 @@ sealed class FolderTree : TreeView
     {
         base.OnAfterSelect(eventArgs);
         ShowShortcutsSelected(eventArgs.Node);
+        WatchSelected(eventArgs.Node);
 
         // Unknown means the selection was set from code (SelectPath), not by the user.
         if (eventArgs.Action != TreeViewAction.Unknown && eventArgs.Node is { Tag: string path } node)

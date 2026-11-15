@@ -6,6 +6,6 @@
 - This PC
   - FolderTreeTests.SelectPathOfAPinnedFolderSelectsItUnderThisPC
     - Projects
-      + Archive
-      + Docs
+        Archive
+        Docs
       + Source   <- selected

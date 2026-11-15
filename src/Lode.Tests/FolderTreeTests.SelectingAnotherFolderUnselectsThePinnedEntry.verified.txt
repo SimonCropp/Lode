@@ -3,6 +3,6 @@
 - This PC
   - FolderTreeTests.SelectingAnotherFolderUnselectsThePinnedEntry
     - Projects
-      + Archive
-      + Docs   <- selected
+        Archive
+        Docs   <- selected
       + Source

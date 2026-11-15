@@ -1,6 +1,6 @@
 ﻿- This PC
   - FolderTreeTests.SelectPathSettlesForTheParentOfAHiddenFolder
     + Projects   <- selected
-      + Archive
-      + Docs
+        Archive
+        Docs
       + Source

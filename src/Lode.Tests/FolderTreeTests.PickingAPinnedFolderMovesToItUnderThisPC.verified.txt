@@ -8,8 +8,8 @@
 - This PC
   - FolderTreeTests.PickingAPinnedFolderMovesToItUnderThisPC
     - Projects
-      + Archive
-      + Docs
+        Archive
+        Docs
       + Source   <- selected
 
 }
