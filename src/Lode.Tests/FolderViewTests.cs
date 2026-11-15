@@ -193,6 +193,41 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // A folder slow to read is left a while after each read before a change has it read
+    // again, rather than being read over and over while something in it keeps changing.
+    [Test]
+    public async Task ASlowFolderIsNotReadAgainStraightAway()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+
+        // As if the read just finished had taken this long, which leaves it ten times as long.
+        view.ReadTook(TimeSpan.FromMilliseconds(300));
+        var wait = FolderView.WaitAfter(TimeSpan.FromMilliseconds(300));
+        var watch = Stopwatch.StartNew();
+
+        await File.WriteAllBytesAsync(fixture.At("arrived.aleph"), new byte[3_000]);
+
+        // Well past when a folder quick to read would have been read again.
+        await Pump.For(TimeSpan.FromSeconds(1.5));
+        var readEarly = Names(view).Contains("arrived.aleph");
+        await Pump.Until(() => Names(view).Contains("arrived.aleph"));
+
+        await Assert.That(readEarly).IsFalse();
+        await Assert.That(watch.Elapsed).IsGreaterThanOrEqualTo(wait - TimeSpan.FromMilliseconds(100));
+    }
+
+    [Test]
+    public async Task HowLongAFolderIsLeftAfterARead()
+    {
+        // Quick to read: no longer than changes are already held back.
+        await Assert.That(FolderView.WaitAfter(TimeSpan.FromMilliseconds(20))).IsEqualTo(TimeSpan.FromMilliseconds(200));
+        await Assert.That(FolderView.WaitAfter(TimeSpan.FromMilliseconds(250))).IsEqualTo(TimeSpan.FromSeconds(2.5));
+
+        // However slow, still read again in the end.
+        await Assert.That(FolderView.WaitAfter(TimeSpan.FromSeconds(30))).IsEqualTo(TimeSpan.FromSeconds(10));
+    }
+
     // A view nobody can see, such as a tab in the background, leaves changes on disk unread
     // until it shows again.
     [Test]

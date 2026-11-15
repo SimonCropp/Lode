@@ -551,6 +551,7 @@ sealed class FolderView : UserControl
         var hiddenSystem = settings.HiddenSystemItems();
         var column = sortColumn;
         var ascending = sortAscending;
+        var started = Stopwatch.GetTimestamp();
         List<FileEntry> loaded;
         string? failure = null;
         loading = true;
@@ -581,7 +582,43 @@ sealed class FolderView : UserControl
         entriesSort = (column, ascending);
         error = failure;
         Populate(preserveState);
+        ReadTook(Stopwatch.GetElapsedTime(started));
     }
+
+    // A folder that takes long to read is not read again the moment it changes, but only once
+    // this many times as long as its last read took has gone by since. Otherwise a big folder
+    // with a file being written in it is read over and over, each read starting as the last
+    // ends. The first change after a quiet spell is still read at once, and so is a folder
+    // quick to read, whose changes are already no more than an interval apart.
+    const int readsApart = 10;
+
+    // However long the read, a folder that keeps changing is read again this often.
+    static readonly TimeSpan longestWait = TimeSpan.FromSeconds(10);
+
+    // When the folder may next be read for a change, by Environment.TickCount64.
+    long readAgainAt;
+
+    /// <summary>
+    /// How long after a read that took <paramref name="read"/> the folder is left before a
+    /// change has it read again.
+    /// </summary>
+    internal static TimeSpan WaitAfter(TimeSpan read)
+    {
+        var wait = read * readsApart;
+        if (wait > longestWait)
+        {
+            return longestWait;
+        }
+
+        return wait;
+    }
+
+    /// <summary>
+    /// Notes how long reading the folder took, which sets how soon a change may have it read
+    /// again. Tests call it to stand in for a folder slow to read.
+    /// </summary>
+    internal void ReadTook(TimeSpan read) =>
+        readAgainAt = Environment.TickCount64 + (long)WaitAfter(read).TotalMilliseconds;
 
     static List<FileEntry> Enumerate(string path, bool showHidden, SystemItems? hiddenSystem)
     {
@@ -1872,6 +1909,12 @@ sealed class FolderView : UserControl
             stale = true;
             Unwatch();
             return true;
+        }
+
+        // Too soon after the last read, for how long that took. Looked at again next interval.
+        if (Environment.TickCount64 < readAgainAt)
+        {
+            return false;
         }
 
         Reload();
