@@ -155,3 +155,8 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 | Ctrl+N                            | New window                    |
 
 Click a tab's cross or middle-click the tab to close it. The mouse back and forward buttons work too.
+
+
+## Icon
+
+https://thenounproject.com/icon/navigation-4075063/
