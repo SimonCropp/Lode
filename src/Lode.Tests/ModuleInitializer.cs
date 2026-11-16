@@ -26,7 +26,7 @@ public static class ModuleInitializer
         ActionsPanel.Clock = () => 0;
 
         // Every machine's drives are called something else; the address bar's are all the same.
-        Breadcrumb.DriveName = _ => $"Local Disk ({_.TrimEnd('\\')})";
+        Breadcrumb.DriveName = (drive, _) => $"Local Disk ({drive.TrimEnd('\\')})";
 
         // Every machine's accent is its own. Captures use Windows' highlight blue, which they
         // were drawn in before Lode took the accent.

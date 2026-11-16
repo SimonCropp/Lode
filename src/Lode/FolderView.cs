@@ -456,6 +456,11 @@ sealed class FolderView : UserControl
 
             Open(normalized, record);
             revealIfFile = revealFile;
+            if (revealFile)
+            {
+                _ = FindWhetherFile(normalized);
+            }
+
             return;
         }
 
@@ -521,6 +526,29 @@ sealed class FolderView : UserControl
         FileOperations.Open(this, normalized);
     }
 
+    // A tab started somewhere on the network, and not yet shown, finds out behind the window
+    // whether that is a file, so that it is named for the file's folder, and goes there with the
+    // file to select, before it shows rather than once it does. Showing first, or going somewhere
+    // else, overtakes it, as both ask again.
+    async Task FindWhetherFile(string path)
+    {
+        var asking = finding;
+        var found = await Task.Run(() => Find(path));
+        if (asking != finding ||
+            IsDisposed ||
+            showing ||
+            !revealIfFile ||
+            found != Found.File)
+        {
+            return;
+        }
+
+        revealIfFile = false;
+        history.Clear();
+        historyIndex = -1;
+        Reveal(path);
+    }
+
     // A view that was taken somewhere on the network while nobody could see it, or left there,
     // has just shown. It is asked after first, off the UI thread: watching the folder and
     // reading its free space ask too, and would keep the window waiting if it has gone.
@@ -584,6 +612,7 @@ sealed class FolderView : UserControl
             historyIndex = history.Count - 1;
         }
 
+        var sameDrive = Locations.SameRoot(CurrentPath, normalized);
         CurrentPath = normalized;
         filter = "";
         StopSearch();
@@ -602,7 +631,12 @@ sealed class FolderView : UserControl
 
         stale = false;
         Watch();
-        UpdateFreeSpace();
+        if (!sameDrive)
+        {
+            // The drive left's, until the drive's own has been read with the folder.
+            FreeSpaceText = "";
+        }
+
         PathChanged?.Invoke();
         Loading = LoadAsync(false);
     }
@@ -612,7 +646,6 @@ sealed class FolderView : UserControl
     {
         stale = false;
         Watch();
-        UpdateFreeSpace();
         Loading = LoadAsync(preserveState);
         if (searchStale)
         {
@@ -917,7 +950,6 @@ sealed class FolderView : UserControl
             return;
         }
 
-        UpdateFreeSpace();
         Loading = LoadAsync(true);
     }
 
@@ -930,25 +962,26 @@ sealed class FolderView : UserControl
         var column = sortColumn;
         var ascending = sortAscending;
         var started = Stopwatch.GetTimestamp();
-        List<FileEntry> loaded;
-        string? failure = null;
+        var freeSpace = places.FreeSpace;
         loading = true;
-        try
-        {
-            // Sorted there too, which leaves the UI thread only the rows to make.
-            loaded = await Task.Run(
-                () =>
+
+        // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
+        // space is read there as well, as asking a drive mapped to a share waits on the network.
+        var (loaded, free, failure) = await Task.Run(
+            () =>
+            {
+                var space = FreeSpaceOf(path, freeSpace);
+                try
                 {
                     var found = Enumerate(path, showHidden, hiddenSystem);
                     found.Sort((first, second) => Compare(first, second, column, ascending));
-                    return found;
-                });
-        }
-        catch (Exception exception)
-        {
-            loaded = [];
-            failure = exception.Message;
-        }
+                    return (found, space, null);
+                }
+                catch (Exception exception)
+                {
+                    return (new List<FileEntry>(), space, (string?)exception.Message);
+                }
+            });
 
         if (version != loadVersion || IsDisposed)
         {
@@ -956,6 +989,7 @@ sealed class FolderView : UserControl
         }
 
         loading = false;
+        FreeSpaceText = free;
         entries = loaded;
         entriesSort = (column, ascending);
         error = failure;
@@ -1730,10 +1764,11 @@ sealed class FolderView : UserControl
     internal int ColumnWidth(int shown) =>
         list.Columns[shown].Width;
 
-    // A drive's cells, one for every column, and its icon, as the shell describes it.
-    static (string[] Cells, int Icon) DescribeDrive(FileEntry entry)
+    // A drive's cells, one for every column, and its icon, as the shell describes it. A drive
+    // mapped to a share is described off the UI thread, and its row made again once it has been.
+    (string[] Cells, int Icon) DescribeDrive(FileEntry entry)
     {
-        var (displayName, typeName, icon) = ShellIcons.Describe(entry.FullPath);
+        var (displayName, typeName, icon) = ShellIcons.DescribeDrive(entry.FullPath, DriveDescribed);
         string[] cells =
         [
             displayName,
@@ -1743,6 +1778,18 @@ sealed class FolderView : UserControl
             entry.Size > 0 ? Formatting.Size(entry.Size) : ""
         ];
         return (cells, icon);
+    }
+
+    void DriveDescribed()
+    {
+        if (IsDisposed ||
+            !IsThisPC)
+        {
+            return;
+        }
+
+        rows.Clear();
+        list.Invalidate();
     }
 
     // What a file or folder shows in a column.
@@ -2719,8 +2766,15 @@ sealed class FolderView : UserControl
         return true;
     }
 
-    void UpdateFreeSpace() =>
-        FreeSpaceText = IsThisPC ? "" : places.FreeSpace(CurrentPath);
+    static string FreeSpaceOf(string path, Func<string, string> freeSpace)
+    {
+        if (Locations.IsThisPC(path))
+        {
+            return "";
+        }
+
+        return freeSpace(path);
+    }
 
     // Selecting a range raises one event per item; coalesce them into a single update.
     void QueueStatusChanged()

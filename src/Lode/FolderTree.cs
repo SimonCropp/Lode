@@ -327,12 +327,7 @@ sealed class FolderTree : TreeView
             return ShellIcons.NetworkIcon;
         }
 
-        if (Locations.IsNetwork(folder))
-        {
-            return ShellIcons.FolderIcon;
-        }
-
-        return ShellIcons.GetActualIcon(folder);
+        return ShellIcons.GetPlaceIcon(folder);
     }
 
     void AddSection(string name, int icon, IReadOnlyList<string> folders, Dictionary<string, string> labels)
@@ -387,6 +382,13 @@ sealed class FolderTree : TreeView
         if (!current.SequenceEqual(actual, StringComparer.OrdinalIgnoreCase))
         {
             LoadDrives();
+            return;
+        }
+
+        // The same drives, described again: one can have been renamed, or mapped elsewhere.
+        foreach (TreeNode drive in computerNode.Nodes)
+        {
+            DescribeDrive(drive);
         }
     }
 
@@ -400,9 +402,29 @@ sealed class FolderTree : TreeView
         computerNode.Nodes.Clear();
         foreach (var drive in places.DrivePaths())
         {
-            var (displayName, _, icon) = ShellIcons.Describe(drive);
-            computerNode.Nodes.Add(CreateNode(drive, displayName, icon));
+            var node = CreateNode(drive, "", ShellIcons.FolderIcon);
+            DescribeDrive(node);
+            computerNode.Nodes.Add(node);
         }
+    }
+
+    // A drive mapped to a share is named by its letter until the shell has described it, off
+    // the UI thread, and then again once it has, if it is still in the tree.
+    void DescribeDrive(TreeNode node)
+    {
+        var (displayName, _, icon) = ShellIcons.DescribeDrive(
+            (string)node.Tag!,
+            () =>
+            {
+                if (!IsDisposed &&
+                    IsInTree(node))
+                {
+                    DescribeDrive(node);
+                }
+            });
+        node.Text = displayName;
+        node.ImageIndex = icon;
+        node.SelectedImageIndex = icon;
     }
 
     static TreeNode CreateNode(string path, string text, int icon, bool expandable = true)

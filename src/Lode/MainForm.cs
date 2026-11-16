@@ -1117,12 +1117,7 @@ class MainForm : Form
             return ShellIcons.NetworkIcon;
         }
 
-        if (Locations.IsNetwork(path))
-        {
-            return ShellIcons.FolderIcon;
-        }
-
-        return ShellIcons.GetActualIcon(path);
+        return ShellIcons.GetPlaceIcon(path);
     }
 
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
@@ -1247,6 +1242,7 @@ class MainForm : Form
     void Reload()
     {
         ShellIcons.ForgetFileIcons();
+        ShellIcons.ForgetNetworkDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();
         ActiveView?.ReloadRows();

@@ -394,6 +394,29 @@ public class FolderViewTests
         await Assert.That(view.CanGoBack).IsFalse();
     }
 
+    // Not yet shown, it finds out behind the window that it was started at a file, so its tab
+    // is named for the file's folder before it shows, and reads nothing until it does.
+    [Test]
+    public async Task ATabStartedAtAFileOnTheNetworkIsInItsFolderBeforeItShows()
+    {
+        using var fixture = Fixture.Create();
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        {
+            Showing = false,
+            IsRemote = _ => true
+        };
+
+        view.OpenAt(fixture.At("report10.beta"));
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        var hidden = Names(view).Count;
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(hidden).IsEqualTo(0);
+        await Assert.That(Selected(view)).IsEquivalentTo(["report10.beta"]);
+        await Assert.That(view.CanGoBack).IsFalse();
+    }
+
     // Started somewhere that turns out not to be there, a share that is offline say, the tab
     // stays, and says so, rather than Lode waiting on it before it opens.
     [Test]
