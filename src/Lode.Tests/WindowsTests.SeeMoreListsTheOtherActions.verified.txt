@@ -6,6 +6,7 @@
   Open in new tab (disabled),
   Edit (disabled),
   Open with,
+  Open in Claude,
   ----,
   Pin to Quick access (disabled),
   Create shortcut,

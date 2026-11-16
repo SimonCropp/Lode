@@ -180,6 +180,32 @@ public class QuickMenuTests
         await Verify(Describe(tree.NodeCommands(fixture.At("Docs"))));
     }
 
+    // Without the Claude desktop app, no menu offers Open in Claude, nor does Options.
+    [Test]
+    public async Task NoClaudeWithoutTheDesktopApp()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        using var tree = CreateTree([fixture.Root], []);
+        ClaudeDesktop.IsInstalled = () => false;
+        try
+        {
+            List<string> offered =
+            [
+                .. Describe(view.ItemCommands([Entry(view, "Docs")])),
+                .. Describe(view.BackgroundCommands(canPaste: false, newTypes)),
+                .. Describe(tree.NodeCommands(fixture.At("Docs"))),
+                .. LodeActions.Offered().Select(_ => _.Text)
+            ];
+
+            await Assert.That(offered.Where(_ => _.Contains("Claude"))).IsEmpty();
+        }
+        finally
+        {
+            ClaudeDesktop.IsInstalled = () => true;
+        }
+    }
+
     // A drive can't be cut, renamed, deleted or given a shortcut.
     [Test]
     public async Task TreeMenuOnADrive()

@@ -134,6 +134,14 @@ static partial class NativeMethods
     [LibraryImport("shlwapi.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int StrCmpLogicalW(string first, string second);
 
+    // ASSOCF_IS_PROTOCOL: the association is a link's scheme ("claude"), not a file extension.
+    public const int AssocIsProtocol = 0x1000;
+    public const int AssocFriendlyAppName = 4;
+
+    // With no output buffer, only says how long the answer would be: S_FALSE when there is one.
+    [LibraryImport("shlwapi.dll", EntryPoint = "AssocQueryStringW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int AssocQueryString(int flags, int what, string association, string? extra, IntPtr output, ref int length);
+
     [LibraryImport("uxtheme.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int SetWindowTheme(IntPtr window, string? application, string? idList);
 

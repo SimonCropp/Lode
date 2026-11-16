@@ -2098,6 +2098,7 @@ sealed class FolderView : UserControl
             commands.Add(LodeActions.Command("openInNewTab", () => OpenInNewTabs(selection)));
             commands.Add(LodeActions.Command("terminal", () => FileOperations.OpenTerminal(folders)));
             commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(folders, admin: true)));
+            commands.AddRange(ClaudeDesktop.Commands(this, folders));
             commands.Add(LodeActions.Pin(folders, places, SetPinned));
         }
 
@@ -2203,6 +2204,7 @@ sealed class FolderView : UserControl
         null,
         LodeActions.Command("terminal", () => FileOperations.OpenTerminal(CurrentPath)),
         LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
+        .. ClaudeDesktop.Commands(this, [CurrentPath]),
         LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath])),
         LodeActions.Command("properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, [CurrentPath])

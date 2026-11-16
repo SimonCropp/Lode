@@ -385,6 +385,32 @@ public class WindowsTests
         await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand));
     }
 
+    // Without the Claude desktop app, neither See more nor the palette offers Open in Claude,
+    // even greyed out.
+    [Test]
+    public async Task NoClaudeWithoutTheDesktopApp()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("Docs"));
+        await Pump.Loaded(form.ActiveView);
+        ClaudeDesktop.IsInstalled = () => false;
+        try
+        {
+            List<string> offered =
+            [
+                .. form.OverflowCommands(Point.Empty).Select(DescribeCommand),
+                .. form.PaletteCommands().Select(_ => _.Name)
+            ];
+
+            await Assert.That(offered.Where(_ => _.Contains("Claude"))).IsEmpty();
+        }
+        finally
+        {
+            ClaudeDesktop.IsInstalled = () => true;
+        }
+    }
+
     // The ⋯ menu at the right of the address bar: Lode's own commands, none of the actions.
     [Test]
     public async Task WindowMenu()

@@ -241,7 +241,7 @@ class MainForm : Form
         var iconSize = LogicalToDeviceUnits(16);
         actionsBar.ImageScalingSize = new(iconSize, iconSize);
         int? group = null;
-        foreach (var action in LodeActions.All.Where(_ => settings.ShowsAsButton(_.Id)))
+        foreach (var action in LodeActions.Offered().Where(_ => settings.ShowsAsButton(_.Id)))
         {
             if (group != null &&
                 group != action.Group)
@@ -255,7 +255,7 @@ class MainForm : Form
             actionsBar.Items.Add(button);
         }
 
-        if (LodeActions.All.Any(_ => !settings.ShowsAsButton(_.Id)))
+        if (LodeActions.Offered().Any(_ => !settings.ShowsAsButton(_.Id)))
         {
             if (actionsBar.Items.Count > 0)
             {
@@ -319,7 +319,7 @@ class MainForm : Form
         var commands = ContextCommands();
         var result = new List<QuickMenu.Command?>();
         int? group = null;
-        foreach (var action in LodeActions.All.Where(_ => !settings.ShowsAsButton(_.Id)))
+        foreach (var action in LodeActions.Offered().Where(_ => !settings.ShowsAsButton(_.Id)))
         {
             if (group != null &&
                 group != action.Group)
@@ -1279,6 +1279,14 @@ class MainForm : Form
         }
     }
 
+    void OpenInClaude()
+    {
+        if (PinnablePath() is { } path)
+        {
+            ClaudeDesktop.Open(this, path);
+        }
+    }
+
     string? PinnablePath()
     {
         if (ActiveView is not { } view ||
@@ -1595,6 +1603,11 @@ class MainForm : Form
         Add(settings.ShowSystem ? "Hide system files" : "Show system files", ToggleSystem);
         Add("Terminal", OpenTerminal, enabled: PinnablePath() != null);
         Add("Terminal (admin)", OpenAdminTerminal, enabled: PinnablePath() != null);
+        if (ClaudeDesktop.IsInstalled())
+        {
+            Add("Open in Claude", OpenInClaude, enabled: PinnablePath() != null);
+        }
+
         if (PinMenuText() is { } pinText)
         {
             Add(pinText, TogglePinned);

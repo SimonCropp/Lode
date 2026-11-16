@@ -40,6 +40,7 @@ static class LodeActions
         new("openWith", "Open with", Icons.OpenWith, 2, Button: false, Menu: true, Submenu: true),
         new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true),
         new("terminalAdmin", "Terminal (admin)", Icons.AdminTerminal, 2, Button: true, Menu: true),
+        new("claude", "Open in Claude", Icons.Claude, 2, Button: false, Menu: true),
         new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true),
         new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true),
         new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true),
@@ -49,6 +50,16 @@ static class LodeActions
         new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true),
         new(More, "Show more options", Icons.MoreOptions, 5, Button: false, Menu: true)
     ];
+
+    /// <summary>
+    /// The actions this machine can offer, for the bar, See more and Options: all of them, less
+    /// Open in Claude without the Claude desktop app.
+    /// </summary>
+    public static IEnumerable<Definition> Offered()
+    {
+        var claude = ClaudeDesktop.IsInstalled();
+        return All.Where(_ => claude || _.Id != "claude");
+    }
 
     static readonly Dictionary<string, Definition> byId = All.ToDictionary(_ => _.Id);
 

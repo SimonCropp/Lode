@@ -32,6 +32,10 @@ public static class ModuleInitializer
         // were drawn in before Lode took the accent.
         ExplorerStyle.UserAccent = () => Color.FromArgb(0x00, 0x78, 0xD7);
 
+        // Only some machines have the Claude desktop app; the menus and captures offer Open in
+        // Claude, as they would with it.
+        ClaudeDesktop.IsInstalled = () => true;
+
         // What tests do to files would otherwise show as Undo in each other's menus.
         UndoHistory.Instance = new(new UndoHistory.ShellFileActions())
         {

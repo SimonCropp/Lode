@@ -690,7 +690,7 @@ class OptionsForm : Form
 
         var iconSize = LogicalToDeviceUnits(16);
         var row = 1;
-        foreach (var action in LodeActions.All)
+        foreach (var action in LodeActions.Offered())
         {
             var icon = new PictureBox
             {
