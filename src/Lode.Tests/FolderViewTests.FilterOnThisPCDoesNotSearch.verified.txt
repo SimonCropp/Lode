@@ -1,0 +1,10 @@
+﻿{
+  narrowed: true,
+  emptyText: No items match your search.,
+  columns: [
+    Name,
+    Free space,
+    Type,
+    Total size
+  ]
+}

@@ -5,18 +5,21 @@
 sealed class FolderView : UserControl
 {
     const int nameColumn = 0;
-    const int dateColumn = 1;
-    const int typeColumn = 2;
-    const int sizeColumn = 3;
+    const int folderColumn = 1;
+    const int dateColumn = 2;
+    const int typeColumn = 3;
+    const int sizeColumn = 4;
 
     // The list's columns, in order, by the index sorting and the cells use. Name is always
     // shown; the others can be hidden from the header's right-click menu, in every view at once.
-    // On This PC, Date modified and Size show each drive's free space and total size.
+    // On This PC, Date modified and Size show each drive's free space and total size. Folder,
+    // where each item is, only a search has, whose items come from all through the folder.
     sealed record ColumnDefinition(string Key, string Title, string ThisPCTitle, int Width, HorizontalAlignment Alignment);
 
     static readonly ColumnDefinition[] columnDefinitions =
     [
         new("Name", "Name", "Name", 380, HorizontalAlignment.Left),
+        new("Folder", "Folder", "Folder", 220, HorizontalAlignment.Left),
         new("Date", "Date modified", "Free space", 150, HorizontalAlignment.Left),
         new("Type", "Type", "Type", 180, HorizontalAlignment.Left),
         new("Size", "Size", "Total size", 110, HorizontalAlignment.Right)
@@ -60,6 +63,36 @@ sealed class FolderView : UserControl
     (int Column, bool Ascending) entriesSort;
     string filter = "";
     string? error;
+
+    // How long the filter is left as it is before the subfolders are searched for it, so that
+    // typing a name searches once, for all of it, rather than once for each letter.
+    const int searchDelay = 300;
+
+    // How often what the search has found so far is added to the list.
+    static readonly TimeSpan searchBatch = TimeSpan.FromMilliseconds(250);
+
+    // What the search of the subfolders has found: everything beneath them whose name the filter
+    // matches, ordered as the entries are. The folder's own matches are taken from its entries,
+    // which are kept up to date as it changes; these are as they were when found.
+    List<FileEntry> found = [];
+    (int Column, bool Ascending) foundSort;
+    CancelSource? search;
+    bool searching;
+
+    // The search is to start again once the view shows: it was let go, or asked for again, while
+    // nobody could see the view.
+    bool searchStale;
+
+    // Found while a name was being edited, which showing it would have ended.
+    bool foundPending;
+
+    /// <summary>
+    /// The search of the subfolders under way. Completes once the list shows all it found.
+    /// </summary>
+    public Task Searching { get; private set; } = Task.CompletedTask;
+
+    // Whether the filter searches the subfolders too, as it does everywhere but This PC.
+    bool IsSearch => filter.Length > 0 && !IsThisPC;
 
     string? pendingSelection;
     readonly GutterMarquee marquee;
@@ -105,7 +138,7 @@ sealed class FolderView : UserControl
     // Stands in for a row that is asked for but not needed: one that has gone, or one of those
     // being selected again, which the list asks for only to say that it changed. A cell for every
     // column there could be, so whichever it is asked for is there.
-    readonly ListViewItem blankRow = new(["", "", "", ""]);
+    readonly ListViewItem blankRow = new(["", "", "", "", ""]);
     bool restoring;
 
     // The rows are to be made again even if the folder turns out not to have changed.
@@ -115,6 +148,11 @@ sealed class FolderView : UserControl
     /// How many rows are made at the moment. For tests.
     /// </summary>
     internal int RowsMade => rows.Count;
+
+    /// <summary>
+    /// What the list says while it has no rows. For tests.
+    /// </summary>
+    internal string? EmptyText => list.EmptyText;
 
     string? pendingRename;
     bool editing;
@@ -211,10 +249,19 @@ sealed class FolderView : UserControl
             }
 
             showing = value;
-            if (value && stale && !IsDisposed)
+            if (!value || IsDisposed)
+            {
+                return;
+            }
+
+            if (stale)
             {
                 // The rows are still the folder's, a read behind, unless it was never read.
                 ReadFolder(entries.Count > 0);
+            }
+            else if (searchStale)
+            {
+                SearchAgain();
             }
         }
     }
@@ -232,7 +279,12 @@ sealed class FolderView : UserControl
             }
 
             filter = trimmed;
+
+            // What the folder itself has that matches shows at once; what is beneath its
+            // subfolders, once they are searched.
+            StopSearch();
             Populate(true);
+            SearchAgain();
         }
     }
 
@@ -250,7 +302,11 @@ sealed class FolderView : UserControl
         }
 
         var text = displayed.Count == 1 ? "1 item" : $"{displayed.Count:N0} items";
-        if (filter.Length > 0)
+        if (IsSearch)
+        {
+            text += searching ? " found so far, searching subfolders" : " found";
+        }
+        else if (filter.Length > 0)
         {
             text += $" (filtered from {entries.Count:N0})";
         }
@@ -314,6 +370,7 @@ sealed class FolderView : UserControl
 
         CurrentPath = normalized;
         filter = "";
+        StopSearch();
         error = null;
         remembered = null;
         if (!showing)
@@ -341,6 +398,10 @@ sealed class FolderView : UserControl
         Watch();
         UpdateFreeSpace();
         Loading = LoadAsync(preserveState);
+        if (searchStale)
+        {
+            SearchAgain();
+        }
     }
 
     // What was selected, which row had the focus and how far down the list was scrolled, when
@@ -383,6 +444,13 @@ sealed class FolderView : UserControl
         stale = true;
         Unwatch();
         Clear();
+
+        // What a search found goes too, and is searched for again.
+        if (IsSearch)
+        {
+            StopSearch();
+            searchStale = true;
+        }
     }
 
     // Empties the list, for a folder that is not read until the view shows.
@@ -406,6 +474,21 @@ sealed class FolderView : UserControl
         rowsStale = false;
         displayed = visible;
         list.VirtualListSize = visible.Count;
+        UpdateEmptyText();
+    }
+
+    // What the list says while it has no rows: that the filter matches nothing, or that the
+    // subfolders are still being searched for it.
+    void UpdateEmptyText()
+    {
+        if (filter.Length == 0 ||
+            error != null)
+        {
+            list.EmptyText = null;
+            return;
+        }
+
+        list.EmptyText = searching ? "Searching subfolders..." : "No items match your search.";
     }
 
     // The row the list asks for, made the first time and kept while it is likely to be asked for
@@ -596,7 +679,21 @@ sealed class FolderView : UserControl
         Reload();
     }
 
+    /// <summary>
+    /// Reads the folder again, and searches its subfolders again for the filter, if it has one.
+    /// </summary>
     public void Reload()
+    {
+        ReadAgain();
+        if (IsSearch)
+        {
+            SearchAgain();
+        }
+    }
+
+    // Reads the folder again, leaving what a search found as it is: for a change seen in the
+    // folder, which is all that is watched.
+    void ReadAgain()
     {
         if (!showing)
         {
@@ -723,23 +820,7 @@ sealed class FolderView : UserControl
         // IgnoreInaccessible is set, so probe first to surface a real error message.
         _ = Directory.EnumerateFileSystemEntries(path).Any();
 
-        // Made straight from what the file system reports, without a FileInfo or DirectoryInfo
-        // for each on the way.
-        var found = new FileSystemEnumerable<FileEntry>(
-            path,
-            (ref FileSystemEntry entry) =>
-            {
-                var isDirectory = (entry.Attributes & FileAttributes.Directory) != 0;
-                long size = 0;
-                if (!isDirectory)
-                {
-                    size = entry.Length;
-                }
-
-                return new(entry.FileName.ToString(), entry.ToFullPath(), isDirectory, size, entry.LastWriteTimeUtc.LocalDateTime, entry.Attributes);
-            },
-            options);
-        foreach (var entry in found)
+        foreach (var entry in new FileSystemEnumerable<FileEntry>(path, ToEntry, options))
         {
             if (hiddenSystem != null &&
                 hiddenSystem.IsSystem(entry.FullPath, entry.Attributes))
@@ -751,6 +832,286 @@ sealed class FolderView : UserControl
         }
 
         return result;
+    }
+
+    // Made straight from what the file system reports, without a FileInfo or DirectoryInfo for
+    // each on the way.
+    static FileEntry ToEntry(ref FileSystemEntry entry)
+    {
+        var isDirectory = (entry.Attributes & FileAttributes.Directory) != 0;
+        long size = 0;
+        if (!isDirectory)
+        {
+            size = entry.Length;
+        }
+
+        return new(entry.FileName.ToString(), entry.ToFullPath(), isDirectory, size, entry.LastWriteTimeUtc.LocalDateTime, entry.Attributes);
+    }
+
+    // Lets go of the search of the subfolders, and of what it found.
+    void StopSearch()
+    {
+        search?.Cancel();
+        search = null;
+        searching = false;
+        searchStale = false;
+        foundPending = false;
+        found = [];
+        Searching = Task.CompletedTask;
+    }
+
+    // Searches the subfolders for what the filter matches, from the start. A view nobody can
+    // see searches once it shows.
+    void SearchAgain()
+    {
+        StopSearch();
+        if (IsSearch)
+        {
+            if (showing)
+            {
+                var cancel = new CancelSource();
+                search = cancel;
+                searching = true;
+                Searching = SearchAsync(cancel.Token);
+            }
+            else
+            {
+                searchStale = true;
+            }
+        }
+
+        UpdateEmptyText();
+        QueueStatusChanged();
+    }
+
+    async Task SearchAsync(Cancel cancel)
+    {
+        var root = CurrentPath;
+        var pattern = filter;
+        var showHidden = settings.ShowHidden;
+        var hiddenSystem = settings.HiddenSystemItems();
+        var sort = (sortColumn, sortAscending);
+
+        // Reported on the UI thread, each in turn, and all of them before the search ends here.
+        var progress = new Progress<FoundBatch>(_ => AddFound(_, cancel));
+        try
+        {
+            await Task.Delay(searchDelay, cancel);
+            await Task.Run(() => SearchSubfolders(root, pattern, showHidden, hiddenSystem, sort, progress, cancel), cancel);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            // The folder went, or a subfolder could not be read part way through. What was
+            // found before that stays.
+        }
+
+        if (cancel.IsCancellationRequested ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        searching = false;
+        UpdateEmptyText();
+        QueueStatusChanged();
+    }
+
+    /// <summary>
+    /// Some of what the search found, and the order it was put in, which is the list's when the
+    /// search started.
+    /// </summary>
+    sealed record FoundBatch(List<FileEntry> Entries, (int Column, bool Ascending) Sort);
+
+    void AddFound(FoundBatch batch, Cancel cancel)
+    {
+        if (cancel.IsCancellationRequested ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        // The list may have been sorted another way since the search started.
+        var sort = (sortColumn, sortAscending);
+        var compare = Order(sortColumn, sortAscending);
+        if (foundSort != sort)
+        {
+            found.Sort(compare);
+            foundSort = sort;
+        }
+
+        var entries = batch.Entries;
+        if (batch.Sort != sort)
+        {
+            entries.Sort(compare);
+        }
+
+        found = Merge(found, entries, compare);
+        ShowFound();
+    }
+
+    // Shows what the search has found, unless a name is being edited, which a new set of rows
+    // would end: then once the edit is over.
+    void ShowFound()
+    {
+        if (editing)
+        {
+            foundPending = true;
+            return;
+        }
+
+        foundPending = false;
+        Populate(true);
+    }
+
+    // Everything beneath the folder's subfolders whose name the filter matches, reported a batch
+    // at a time, each sorted. Not the folder's own items, which its entries have. Leaves out what
+    // the folder's own listing would: hidden items, unless they are shown, and system ones.
+    static void SearchSubfolders(
+        string root,
+        string pattern,
+        bool showHidden,
+        SystemItems? hiddenSystem,
+        (int Column, bool Ascending) sort,
+        IProgress<FoundBatch> progress,
+        Cancel cancel)
+    {
+        var options = new EnumerationOptions
+        {
+            IgnoreInaccessible = true,
+            AttributesToSkip = showHidden ? default : FileAttributes.Hidden
+        };
+        var recursive = new EnumerationOptions
+        {
+            IgnoreInaccessible = true,
+            AttributesToSkip = options.AttributesToSkip,
+            RecurseSubdirectories = true
+        };
+        var compare = Order(sort.Column, sort.Ascending);
+        var batch = new List<FileEntry>();
+        var sent = Stopwatch.GetTimestamp();
+
+        void Send()
+        {
+            batch.Sort(compare);
+            progress.Report(new(batch, sort));
+            batch = [];
+            sent = Stopwatch.GetTimestamp();
+        }
+
+        var subfolders = new FileSystemEnumerable<string>(root, (ref FileSystemEntry entry) => entry.ToFullPath(), options)
+        {
+            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory && CanSearch(ref entry, hiddenSystem)
+        };
+        foreach (var subfolder in subfolders)
+        {
+            var matches = new FileSystemEnumerable<FileEntry>(subfolder, ToEntry, recursive)
+            {
+                // Asked of every item, matching or not, so it is where the search notices it has
+                // been let go of, and sends what it has found once it has been holding it a while.
+                ShouldIncludePredicate = (ref FileSystemEntry entry) =>
+                {
+                    cancel.ThrowIfCancellationRequested();
+                    if (batch.Count > 0 &&
+                        Stopwatch.GetElapsedTime(sent) >= searchBatch)
+                    {
+                        Send();
+                    }
+
+                    return Matches(pattern, entry.FileName) &&
+                           !IsSystem(ref entry, hiddenSystem);
+                },
+                ShouldRecursePredicate = (ref FileSystemEntry entry) => CanSearch(ref entry, hiddenSystem)
+            };
+            try
+            {
+                foreach (var match in matches)
+                {
+                    batch.Add(match);
+                }
+            }
+            catch (IOException)
+            {
+                // The subfolder went while it was being searched, or its drive did.
+            }
+        }
+
+        if (batch.Count > 0)
+        {
+            Send();
+        }
+    }
+
+    // Whether Show system files would leave an item out. That takes its full path, so is only
+    // asked of folders, and of what is marked system, which are all it could leave out.
+    static bool IsSystem(ref FileSystemEntry entry, SystemItems? hiddenSystem) =>
+        hiddenSystem != null &&
+        (entry.IsDirectory || (entry.Attributes & FileAttributes.System) != 0) &&
+        hiddenSystem.IsSystem(entry.ToFullPath(), entry.Attributes);
+
+    // Whether the search goes into a folder: not one Show system files leaves out, nor a link to
+    // another folder, a junction or symbolic link, which can lead round in a circle, or to
+    // folders searched already. Other folders the file system marks the same way, as cloud
+    // storage can, are not links, and are gone into.
+    static bool CanSearch(ref FileSystemEntry entry, SystemItems? hiddenSystem)
+    {
+        if (IsSystem(ref entry, hiddenSystem))
+        {
+            return false;
+        }
+
+        if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            return new DirectoryInfo(entry.ToFullPath()).LinkTarget == null;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    // Whether the filter matches a name: by its wildcards, where it has any, and otherwise by
+    // being anywhere in the name.
+    static bool Matches(string filter, CharSpan name)
+    {
+        if (filter.AsSpan().IndexOfAny('*', '?') >= 0)
+        {
+            return FileSystemName.MatchesSimpleExpression(filter, name);
+        }
+
+        return name.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Two lists in the same order, as one, still in it.
+    static List<FileEntry> Merge(List<FileEntry> first, List<FileEntry> second, Comparison<FileEntry> compare)
+    {
+        var merged = new List<FileEntry>(first.Count + second.Count);
+        var firstIndex = 0;
+        var secondIndex = 0;
+        while (firstIndex < first.Count &&
+               secondIndex < second.Count)
+        {
+            if (compare(second[secondIndex], first[firstIndex]) < 0)
+            {
+                merged.Add(second[secondIndex++]);
+            }
+            else
+            {
+                merged.Add(first[firstIndex++]);
+            }
+        }
+
+        merged.AddRange(first.Skip(firstIndex));
+        merged.AddRange(second.Skip(secondIndex));
+        return merged;
     }
 
     void Populate(bool preserveState)
@@ -765,8 +1126,14 @@ sealed class FolderView : UserControl
             entriesSort = (column, ascending);
         }
 
-        // In order already, as the entries it is taken from are.
-        var visible = ApplyFilter().ToList();
+        if (foundSort != (sortColumn, sortAscending))
+        {
+            found.Sort(Order(sortColumn, sortAscending));
+            foundSort = (sortColumn, sortAscending);
+        }
+
+        // In order already, as what it is taken from is.
+        var visible = ApplyFilter();
 
         if (preserveState && pendingRename == null && pendingSelection == null && !columnsChanged && visible.SequenceEqual(displayed))
         {
@@ -879,9 +1246,21 @@ sealed class FolderView : UserControl
         return definition.Title;
     }
 
-    bool IsColumnShown(int column) =>
-        column == nameColumn ||
-        !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
+    bool IsColumnShown(int column)
+    {
+        if (column == nameColumn)
+        {
+            return true;
+        }
+
+        if (column == folderColumn &&
+            !IsSearch)
+        {
+            return false;
+        }
+
+        return !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
+    }
 
     // Brings the list's columns in line with the setting. True when they changed, in which case
     // every row needs building again, since a row holds a cell per column shown.
@@ -1031,6 +1410,13 @@ sealed class FolderView : UserControl
         menu.Items.Add(new ToolStripSeparator());
         for (var column = 0; column < columnDefinitions.Length; column++)
         {
+            // Hidden or shown only while there is a search to show it for.
+            if (column == folderColumn &&
+                !IsSearch)
+            {
+                continue;
+            }
+
             var current = column;
             var shown = IsColumnShown(column);
             menu.Items.Add(
@@ -1119,6 +1505,7 @@ sealed class FolderView : UserControl
         string[] cells =
         [
             displayName,
+            "",
             entry.Size > 0 ? Formatting.Size(entry.FreeSpace) : "",
             typeName,
             entry.Size > 0 ? Formatting.Size(entry.Size) : ""
@@ -1127,12 +1514,14 @@ sealed class FolderView : UserControl
     }
 
     // What a file or folder shows in a column.
-    static string Cell(FileEntry entry, int column)
+    string Cell(FileEntry entry, int column)
     {
         switch (column)
         {
             case nameColumn:
                 return DisplayName(entry);
+            case folderColumn:
+                return FolderCell(entry);
             case dateColumn:
                 return entry.Modified.ToString("g");
             case typeColumn:
@@ -1147,6 +1536,20 @@ sealed class FolderView : UserControl
         return Formatting.Kilobytes(entry.Size);
     }
 
+    // Where a search found an item: its folder, from the one open. Nothing for an item in the
+    // folder open itself.
+    string FolderCell(FileEntry entry)
+    {
+        var folder = Path.GetDirectoryName(entry.FullPath);
+        if (folder == null ||
+            Locations.Same(folder, CurrentPath))
+        {
+            return "";
+        }
+
+        return Path.GetRelativePath(CurrentPath, folder);
+    }
+
     ListViewItem CreateItem(FileEntry entry)
     {
         if (entry.IsDrive)
@@ -1158,6 +1561,7 @@ sealed class FolderView : UserControl
         string[] cells =
         [
             Cell(entry, nameColumn),
+            Cell(entry, folderColumn),
             Cell(entry, dateColumn),
             Cell(entry, typeColumn),
             Cell(entry, sizeColumn)
@@ -1172,20 +1576,26 @@ sealed class FolderView : UserControl
         return item;
     }
 
-    IEnumerable<FileEntry> ApplyFilter()
+    // What the list shows: the entries, or those the filter matches, with what the search of the
+    // subfolders has found among them. A new list, in order.
+    List<FileEntry> ApplyFilter()
     {
         if (filter.Length == 0)
         {
-            return entries;
+            return [.. entries];
         }
 
-        if (filter.Contains('*') || filter.Contains('?'))
+        var matches = entries.Where(_ => Matches(filter, _.Name)).ToList();
+        if (found.Count == 0)
         {
-            return entries.Where(_ => FileSystemName.MatchesSimpleExpression(filter, _.Name));
+            return matches;
         }
 
-        return entries.Where(_ => _.Name.Contains(filter, StringComparison.OrdinalIgnoreCase));
+        return Merge(matches, found, Order(sortColumn, sortAscending));
     }
+
+    static Comparison<FileEntry> Order(int column, bool ascending) =>
+        (first, second) => Compare(first, second, column, ascending);
 
     // Static, with the column and direction handed in, so a folder can be sorted off the UI
     // thread as it is read.
@@ -1204,6 +1614,11 @@ sealed class FolderView : UserControl
 
         var result = column switch
         {
+            // Every item is beneath the folder open, so ordering by where they are from there is
+            // ordering by their whole paths.
+            folderColumn => StrCmpLogicalW(
+                Path.GetDirectoryName(first.FullPath) ?? "",
+                Path.GetDirectoryName(second.FullPath) ?? ""),
             dateColumn => first.IsDrive
                 ? first.FreeSpace.CompareTo(second.FreeSpace)
                 : first.Modified.CompareTo(second.Modified),
@@ -1358,8 +1773,49 @@ sealed class FolderView : UserControl
         }
     }
 
-    public void Delete(bool permanent) =>
-        FileOperations.Delete(Owner, SelectedPaths(), permanent);
+    public void Delete(bool permanent)
+    {
+        var paths = SelectedPaths();
+        var deleting = FileOperations.Delete(Owner, paths, permanent);
+        if (found.Count > 0)
+        {
+            _ = DropDeletedFound(deleting, paths);
+        }
+    }
+
+    // What a search found is not watched, as the folder's own items are. So what is deleted from
+    // the list leaves it once the deletion is done, with all that was found inside it.
+    async Task DropDeletedFound(Task deleting, string[] paths)
+    {
+        await deleting;
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        var gone = paths
+            .Where(_ => !Path.Exists(_))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (gone.Count > 0 &&
+            found.RemoveAll(_ => IsWithin(_.FullPath, gone)) > 0)
+        {
+            ShowFound();
+        }
+    }
+
+    // Whether a path is one of these, or inside one.
+    static bool IsWithin(string path, HashSet<string> paths)
+    {
+        for (var current = path; current != null; current = Path.GetDirectoryName(current))
+        {
+            if (paths.Contains(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public void BeginRename()
     {
@@ -1483,6 +1939,12 @@ sealed class FolderView : UserControl
     internal void OnAfterLabelEdit(object? sender, LabelEditEventArgs eventArgs)
     {
         editing = false;
+        if (foundPending)
+        {
+            // Once the list is done with the edit, and with the name changed below, if it is.
+            BeginInvoke(ShowFound);
+        }
+
         var index = eventArgs.Item;
 
         // The folder was read again under the edit, and the row is no longer there.
@@ -1542,6 +2004,14 @@ sealed class FolderView : UserControl
         if (position >= 0)
         {
             entries[position] = renamed;
+        }
+
+        var foundPosition = found.IndexOf(entry);
+        if (foundPosition >= 0)
+        {
+            // Sorted again when next shown: by its new name it may belong elsewhere.
+            found[foundPosition] = renamed;
+            foundSort = (-1, true);
         }
 
         rows.Remove(index);
@@ -1991,7 +2461,7 @@ sealed class FolderView : UserControl
             return false;
         }
 
-        Reload();
+        ReadAgain();
         return true;
     }
 
@@ -2024,6 +2494,7 @@ sealed class FolderView : UserControl
     {
         if (disposing)
         {
+            search?.Cancel();
             changes.Dispose();
             watcher?.Dispose();
             marquee.Dispose();

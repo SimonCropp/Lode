@@ -1,0 +1,34 @@
+﻿{
+  searched: [
+    Name,
+    Folder,
+    Date modified,
+    Type,
+    Size
+  ],
+  firstRow: [
+    leaf.aleph,
+    Source\Deep,
+    3/23/2025 10:26 AM,
+    ALEPH File,
+    1 KB
+  ],
+  sorted: [
+    file    notes.aleph  12 bytes,
+    file    guide.aleph  900 bytes  in Docs,
+    file    main.aleph  5,000 bytes  in Source,
+    file    leaf.aleph  40 bytes  in Source\Deep
+  ],
+  descending: [
+    file    leaf.aleph  40 bytes  in Source\Deep,
+    file    main.aleph  5,000 bytes  in Source,
+    file    guide.aleph  900 bytes  in Docs,
+    file    notes.aleph  12 bytes
+  ],
+  cleared: [
+    Name,
+    Date modified,
+    Type,
+    Size
+  ]
+}

@@ -2,7 +2,7 @@
   Up (Alt+Up),
   Refresh (F5),
   Go to address (Ctrl+L),
-  Filter this folder (Ctrl+F),
+  Search this folder (Ctrl+F),
   New tab (Ctrl+T),
   New window (Ctrl+N),
   Duplicate tab,

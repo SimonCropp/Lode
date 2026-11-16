@@ -161,10 +161,10 @@ class MainForm : Form
         addressBox.Enter += (_, _) => BeginInvoke(addressBox.SelectAll);
 
         filterBox.Name = "filter";
-        filterBox.AccessibleName = "Filter";
+        filterBox.AccessibleName = "Search";
         filterFrame.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         filterFrame.Margin = new(4, 0, 4, 0);
-        filterBox.PlaceholderText = "Filter this folder (Ctrl+F)";
+        filterBox.PlaceholderText = "Search this folder (Ctrl+F)";
         filterBox.TextChanged += OnFilterTextChanged;
         filterBox.KeyDown += OnFilterKeyDown;
 
@@ -1535,7 +1535,7 @@ class MainForm : Form
         Add("Up", () => ActiveView?.GoUp(), "Alt+Up", view?.CanGoUp == true);
         Add("Refresh", Reload, "F5");
         Add("Go to address", FocusAddress, "Ctrl+L");
-        Add("Filter this folder", FocusFilter, "Ctrl+F");
+        Add("Search this folder", FocusFilter, "Ctrl+F");
         Add("New tab", NewTab, "Ctrl+T");
         Add("New window", NewWindow, "Ctrl+N");
         if (page != null)

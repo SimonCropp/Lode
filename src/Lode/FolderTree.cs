@@ -8,7 +8,8 @@ sealed class FolderTree : TreeView
     /// The tag of a section heading. Every other node's tag is the folder's path.
     /// </summary>
     public sealed record Section(string Name);
-    const int unscaledRowHeight = 26;
+    const int unscaledRowHeight = 32;
+    const int unscaledIndent = 8;
     const int unscaledIconSize = 16;
 
     static readonly object placeholder = new();
@@ -139,6 +140,9 @@ sealed class FolderTree : TreeView
         base.OnHandleCreated(eventArgs);
         SetWindowTheme(Handle, "Explorer", null);
         SendMessage(Handle, TreeViewSetImageList, IntPtr.Zero, ShellIcons.SmallImageList);
+        // Explorer's step in from one level to the next, scaled the same way as the icons: far
+        // less than the tree's own, which is a little wider than an icon.
+        Indent = unscaledIndent * ShellIcons.SmallIconSize.Width / unscaledIconSize;
     }
 
     /// <summary>

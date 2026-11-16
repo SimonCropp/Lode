@@ -810,6 +810,18 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     // offers nothing. The caller releases it.
     static IntPtr CreateForItems(IntPtr owner, IReadOnlyList<string> paths, Guid interfaceId)
     {
+        // Each item is named to the folder by its own name alone, so they must all be in the one
+        // folder, as a search's items need not be: named to the first one's, the others would
+        // name whatever is there by their names, if anything.
+        if (paths
+            .Select(_ => Path.GetDirectoryName(_) ?? "")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Skip(1)
+            .Any())
+        {
+            return IntPtr.Zero;
+        }
+
         var identifiers = new List<IntPtr>();
         try
         {

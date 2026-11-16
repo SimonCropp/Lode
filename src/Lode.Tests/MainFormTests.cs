@@ -9,7 +9,7 @@
 [NotInParallel("windows")]
 public class MainFormTests
 {
-    const int sizeColumn = 3;
+    const int sizeColumn = 4;
 
     [Test]
     public Task Default() =>
@@ -42,9 +42,10 @@ public class MainFormTests
             // Taking the focus away would end the editing.
             keepFocus: true);
 
+    // Searched all the way down, with where each is from beside its name.
     [Test]
     public Task Filtered() =>
-        Capture((form, _) => form.Controls.Find("filter", true)[0].Text = "report");
+        Capture((form, _) => form.Controls.Find("filter", true)[0].Text = "*.aleph");
 
     [Test]
     public Task SortedBySizeDescending() =>

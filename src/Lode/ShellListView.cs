@@ -65,6 +65,41 @@ sealed class ShellListView : ListView
     int sortArrowColumn = -1;
     bool sortArrowAscending;
 
+    // Asked for by the list while it has no rows, for the text it shows in their place.
+    const int reflectedNotify = 0x2000 + WindowMessageNotify;
+    const int listViewGetEmptyMarkup = -187;
+    const int emptyMarkupCentered = 0x1;
+    const int emptyMarkupLength = 2084;
+    const int listViewResetEmptyText = 0x1054;
+
+    string? emptyText;
+
+    /// <summary>
+    /// What the list says while it has no rows, in the middle of it. Nothing when null.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? EmptyText
+    {
+        get => emptyText;
+        set
+        {
+            if (emptyText == value)
+            {
+                return;
+            }
+
+            emptyText = value;
+            if (!IsHandleCreated)
+            {
+                return;
+            }
+
+            // The list asks for the text once, and keeps it until told to ask again.
+            SendMessage(Handle, listViewResetEmptyText, IntPtr.Zero, IntPtr.Zero);
+            Invalidate();
+        }
+    }
+
     public event Action<Point, bool>? ContextMenuRequested;
 
     /// <summary>
@@ -187,6 +222,25 @@ sealed class ShellListView : ListView
             Marshal.ReadIntPtr(message.LParam) == Header)
         {
             ColumnFitRequested(Marshal.ReadInt32(message.LParam, headerNotificationItemOffset));
+            return;
+        }
+
+        // NMLVEMPTYMARKUP is NMHDR, then flags, then the text, as markup, which plain text is.
+        if (message.Msg == reflectedNotify &&
+            Marshal.ReadInt32(message.LParam, notificationCodeOffset) == listViewGetEmptyMarkup)
+        {
+            if (emptyText == null)
+            {
+                message.Result = IntPtr.Zero;
+                return;
+            }
+
+            var flagsOffset = 3 * IntPtr.Size;
+            var text = emptyText.ToCharArray(0, Math.Min(emptyText.Length, emptyMarkupLength - 1));
+            Marshal.WriteInt32(message.LParam, flagsOffset, emptyMarkupCentered);
+            Marshal.Copy(text, 0, message.LParam + flagsOffset + sizeof(int), text.Length);
+            Marshal.WriteInt16(message.LParam, flagsOffset + sizeof(int) + text.Length * sizeof(char), 0);
+            message.Result = 1;
             return;
         }
 

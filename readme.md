@@ -131,7 +131,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
  * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work.
  * **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z), across every window: renames, moves, copies, deletes to the Recycle Bin, and new folders, files and shortcuts. Lode reverses each itself: a rename or move is done back, a copy or new item goes to the Recycle Bin, a deleted item is restored from it. Also on the right-click menu of empty space, under See more, and in the command palette, worded for what they would do ("Undo rename"). Permanent deletes can't be undone.
  * Drag and drop to and from Explorer and other apps.
- * Filter box: type part of a name, or a wildcard such as `*.cs`.
+ * Search box: type part of a name, or a wildcard such as `*.csproj`. What the folder itself has that matches shows at once. Then its subfolders are searched, all the way down, and what they hold that matches is added as it is found, with a **Folder** column saying where each is. Hidden and system items are left out, as they are from the list, and links to other folders (junctions and symbolic links) aren't followed. What the subfolders hold is as it was when found: F5 searches again. **Show more options** and **Properties** need everything selected to be in the one folder. On This PC the box narrows the drives.
 
    ![Filtered](src/Lode.Tests/MainFormTests.Filtered.verified.png)
 
@@ -150,7 +150,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 | Ctrl+Shift+P                      | Command palette               |
 | Ctrl+Tab, Ctrl+Shift+Tab          | Next tab, previous tab        |
 | Ctrl+L, Alt+D, F4                 | Address bar                   |
-| Ctrl+F, F3                        | Filter box                    |
+| Ctrl+F, F3                        | Search box                    |
 | F5                                | Refresh                       |
 | F2                                | Rename                        |
 | Delete, Shift+Delete              | Recycle, delete permanently   |

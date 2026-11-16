@@ -48,11 +48,15 @@ static class Pump
         await tree.Loading;
     }
 
+    /// <summary>
+    /// Until the list shows the folder, and all that a search of its subfolders found.
+    /// </summary>
     public static async Task Loaded(FolderView view)
     {
-        await Until(() => view.Loading.IsCompleted);
+        await Until(() => view.Loading.IsCompleted && view.Searching.IsCompleted);
 
         // Surfaces a failed load as the failure, rather than as an oddly empty list later.
         await view.Loading;
+        await view.Searching;
     }
 }

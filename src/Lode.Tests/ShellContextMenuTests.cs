@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 /// <summary>
 /// The entries Lode leaves off the shell's menu. What else is on it depends on the
 /// software installed, so only the absences are checked. The text checks assume English
@@ -22,6 +24,24 @@ public class ShellContextMenuTests
                 File.WriteAllText(path, "notes");
                 return path;
             });
+
+    // Items from more than one folder, as a search finds, are each named to their folder by their
+    // own name alone, so the shell is asked for nothing for them, rather than for whatever the
+    // first one's folder has by the others' names.
+    [Test]
+    public async Task ItemsFromDifferentFoldersAreRefused()
+    {
+        using var fixture = Fixture.Create();
+        var together = ShellContextMenu.CreateDataObject(IntPtr.Zero, [fixture.At("notes.aleph"), fixture.At("Docs")]);
+        var apart = ShellContextMenu.CreateDataObject(IntPtr.Zero, [fixture.At("notes.aleph"), fixture.At("Docs", "guide.aleph")]);
+        if (together != IntPtr.Zero)
+        {
+            Marshal.Release(together);
+        }
+
+        await Assert.That(together).IsNotEqualTo(IntPtr.Zero);
+        await Assert.That(apart).IsEqualTo(IntPtr.Zero);
+    }
 
     // Takes the caller's name so each test gets its own fixture folder and they can run side by side.
     static async Task VerifyAbsences(Func<Fixture, string> pathFor, [CallerMemberName] string member = "")

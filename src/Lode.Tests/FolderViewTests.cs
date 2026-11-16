@@ -10,9 +10,10 @@ using System.Runtime.InteropServices;
 [NotInParallel("windows")]
 public class FolderViewTests
 {
-    const int dateColumn = 1;
-    const int typeColumn = 2;
-    const int sizeColumn = 3;
+    const int folderColumn = 1;
+    const int dateColumn = 2;
+    const int typeColumn = 3;
+    const int sizeColumn = 4;
 
     static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
 
@@ -84,19 +85,139 @@ public class FolderViewTests
         using var view = await Open(fixture.Root);
 
         view.Filter = "REPORT";
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
+    // Everything beneath the folder is searched, all the way down, but for hidden folders.
+    [Test]
+    public async Task FilterByWildcard()
+    {
+        using var fixture = Fixture.Create();
+        File.WriteAllText(fixture.At("Cache", "cached.aleph"), "");
+        using var view = await Open(fixture.Root);
+
+        view.Filter = "*.aleph";
+        await Pump.Loaded(view);
 
         await Verify(Describe(view, fixture));
     }
 
     [Test]
-    public async Task FilterByWildcard()
+    public async Task SearchFindsInHiddenFoldersWhenShown()
+    {
+        using var fixture = Fixture.Create();
+        File.WriteAllText(fixture.At("Cache", "cached.aleph"), "");
+        using var view = await Open(fixture.Root, new() { ShowHidden = true });
+
+        view.Filter = "*.aleph";
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
+    // A search shows where each item is, beside its name, and can be sorted by it. Clearing it
+    // takes the column away.
+    [Test]
+    public async Task SearchShowsTheFolderOfEachItem()
     {
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
         view.Filter = "*.aleph";
+        await Pump.Loaded(view);
+        var searched = view.ColumnTitles.ToList();
+        view.SortBy(folderColumn);
+        var sorted = view.Entries.Select(_ => Row(_, view.CurrentPath)).ToList();
+        view.SortBy(folderColumn);
+        var descending = view.Entries.Select(_ => Row(_, view.CurrentPath)).ToList();
+        var cells = view.FirstRowCells.ToList();
 
-        await Verify(Describe(view, fixture));
+        view.Filter = "";
+
+        await Verify(
+            new
+            {
+                searched,
+                firstRow = cells,
+                sorted,
+                descending,
+                cleared = view.ColumnTitles
+            });
+    }
+
+    // A search doesn't go through a junction, which here leads back up to the folder searched.
+    [Test]
+    public async Task SearchDoesNotFollowLinks()
+    {
+        using var fixture = Fixture.Create();
+        var link = fixture.At("Source", "Loop");
+        using (var junction = Process.Start(
+                   new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{fixture.Root}\"")
+                   {
+                       CreateNoWindow = true,
+                       UseShellExecute = false
+                   })!)
+        {
+            await junction.WaitForExitAsync();
+        }
+
+        using var view = await Open(fixture.Root);
+
+        view.Filter = "*.aleph";
+        await Pump.Loaded(view);
+
+        await Verify(
+            new
+            {
+                linked = Directory.Exists(Path.Combine(link, "Docs")),
+                rows = view.Entries.Select(_ => Row(_, view.CurrentPath))
+            });
+    }
+
+    [Test]
+    public async Task SearchThatFindsNothing()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+
+        view.Filter = "nothing";
+        var searching = new
+        {
+            status = view.StatusText,
+            emptyText = view.EmptyText
+        };
+        await Pump.Loaded(view);
+
+        await Verify(
+            new
+            {
+                searching,
+                status = view.StatusText,
+                emptyText = view.EmptyText
+            });
+    }
+
+    // On This PC the box narrows the drives, rather than searching every one of them.
+    [Test]
+    public async Task FilterOnThisPCDoesNotSearch()
+    {
+        using var view = new FolderView(new(), noPlaces);
+        view.Navigate(Locations.ThisPC);
+        await Pump.Loaded(view);
+
+        view.Filter = "no drive is called this";
+        await Pump.Loaded(view);
+
+        // How many drives there are depends on the machine.
+        await Verify(
+            new
+            {
+                narrowed = view.StatusText.StartsWith("0 items (filtered from "),
+                emptyText = view.EmptyText,
+                columns = view.ColumnTitles
+            });
     }
 
     [Test]
@@ -698,15 +819,23 @@ public class FolderViewTests
             path = fixture.Relative(view.CurrentPath),
             status = view.StatusText,
             filter = view.Filter,
-            rows = view.Entries.Select(Row),
+            rows = view.Entries.Select(_ => Row(_, view.CurrentPath)),
             selected = view.SelectedEntries().Select(_ => _.Name)
         };
 
-    static string Row(FileEntry entry)
+    // Where an item a search found in a subfolder is, from the folder open.
+    static string Row(FileEntry entry, string folder)
     {
         var kind = entry.IsDirectory ? "folder" : "file  ";
         var hidden = entry.IsHidden ? "  (hidden)" : "";
         var size = entry.IsDirectory ? "" : $"  {entry.Size:N0} bytes";
-        return $"{kind}  {entry.Name}{size}{hidden}";
+        var parent = Path.GetDirectoryName(entry.FullPath)!;
+        var where = "";
+        if (!string.Equals(parent, folder, StringComparison.OrdinalIgnoreCase))
+        {
+            where = $"  in {Path.GetRelativePath(folder, parent)}";
+        }
+
+        return $"{kind}  {entry.Name}{size}{hidden}{where}";
     }
 }
