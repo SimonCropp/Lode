@@ -97,7 +97,8 @@ public class ActionsPanelTests
         var whileRunning = new
         {
             panel.Visible,
-            clearEnabled = Clear(panel).Enabled
+            clearEnabled = Clear(panel).Enabled,
+            panel.Spinning
         };
 
         finish.SetResult(new(true, "5 packages updated", ""));
@@ -106,6 +107,7 @@ public class ActionsPanelTests
         {
             panel.Visible,
             clearEnabled = Clear(panel).Enabled,
+            panel.Spinning,
             lines = Lines(panel)
         };
 

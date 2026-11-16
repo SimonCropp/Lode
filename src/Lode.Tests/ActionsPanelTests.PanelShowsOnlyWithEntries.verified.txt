@@ -2,11 +2,13 @@
   empty: false,
   whileRunning: {
     Visible: true,
-    clearEnabled: false
+    clearEnabled: false,
+    Spinning: true
   },
   finished: {
     Visible: true,
     clearEnabled: true,
+    Spinning: false,
     lines: [
       Update NuGets – Busy: 5 packages updated
     ]

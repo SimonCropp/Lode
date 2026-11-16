@@ -2,16 +2,63 @@
 /// A split container whose splitter works like File Explorer's: dragging it resizes the panes as
 /// the mouse moves, and pressing it leaves the focus where it was, so a click that does not drag
 /// changes nothing. SplitContainer's own splitter takes the focus when pressed and is dragged as
-/// a hatched bar, and a click without a drag left it focused and drawn as selected.
+/// a hatched bar, and a click without a drag left it focused and drawn as selected. Over the
+/// splitter it shows Explorer's resize arrows too, rather than SplitContainer's split cursor, the
+/// arrows with a bar between them.
 /// </summary>
 sealed class PaneSplitContainer : SplitContainer
 {
+    const int setCursorMessage = 0x0020;
+    const int clientArea = 1;
+    const uint redrawAllChildren = 0x0080;
+    const uint redrawUpdateNow = 0x0100;
+
     // While the splitter is being dragged, how far into it the mouse pressed it.
     int? grip;
 
     // Nor does Tab stop on the splitter.
     public PaneSplitContainer() =>
         TabStop = false;
+
+    /// <summary>
+    /// The cursor over a point of the container: Explorer's resize arrows over the splitter, and
+    /// null elsewhere, for whatever SplitContainer would show.
+    /// </summary>
+    internal Cursor? CursorAt(Point point)
+    {
+        if (IsSplitterFixed ||
+            !SplitterRectangle.Contains(point))
+        {
+            return null;
+        }
+
+        if (Orientation == Orientation.Vertical)
+        {
+            return Cursors.SizeWE;
+        }
+
+        return Cursors.SizeNS;
+    }
+
+    // SplitContainer picks its split cursor whenever the mouse moves over the splitter, and
+    // keeps it to itself, so the cursor is put right as Windows asks for it instead. Not asked
+    // for while the mouse is captured, so the arrows stay through a drag, as in Explorer.
+    protected override void WndProc(ref Message message)
+    {
+        // Only when the mouse is over the container itself, not over a pane inside it, which
+        // asks its parents too.
+        if (message.Msg == setCursorMessage &&
+            message.WParam == message.HWnd &&
+            (message.LParam & 0xFFFF) == clientArea &&
+            CursorAt(PointToClient(Cursor.Position)) is { } cursor)
+        {
+            Cursor.Current = cursor;
+            message.Result = 1;
+            return;
+        }
+
+        base.WndProc(ref message);
+    }
 
     protected override void OnMouseDown(MouseEventArgs eventArgs)
     {
@@ -41,10 +88,19 @@ sealed class PaneSplitContainer : SplitContainer
         var length = Orientation == Orientation.Vertical ? Width : Height;
         var furthest = Math.Max(Panel1MinSize, length - SplitterWidth - Panel2MinSize);
         var distance = Math.Clamp(Along(eventArgs.Location) - offset, Panel1MinSize, furthest);
-        if (distance != SplitterDistance)
+        if (distance == SplitterDistance)
         {
-            SplitterDistance = distance;
+            return;
         }
+
+        SplitterDistance = distance;
+        // The panes painted now, before the next move is taken. Windows paints only once no
+        // other message is waiting, and while the mouse keeps moving one always is, so until it
+        // stopped, what a pane grew into showed what was there before: for the folder tree,
+        // which paints through a buffer and so does not wipe its background first, its
+        // scrollbar at every width it passed through. Only what the resize left to be painted,
+        // in the container and every pane in it.
+        RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, redrawUpdateNow | redrawAllChildren);
     }
 
     protected override void OnMouseUp(MouseEventArgs eventArgs)

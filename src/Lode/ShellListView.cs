@@ -9,6 +9,10 @@ sealed class ShellListView : ListView
     const int paddingBeforeIcon = 10;
     const int paddingAfterIcon = 4;
     const int unscaledIconSize = 16;
+    const int printMessage = 0x0317;
+    const int printNonClient = 0x0002;
+    const int printClient = 0x0004;
+    const int printBackground = 0x0008;
 
     /// <summary>
     /// A list has no setting for row height or left margin: a row is as tall as its icon and
@@ -74,6 +78,49 @@ sealed class ShellListView : ListView
     /// column, by its index, to be sized to fit.
     /// </summary>
     public event Action<int>? ColumnFitRequested;
+
+    /// <summary>
+    /// The horizontal scrollbar showed or went, or its range, page or position changed, or the
+    /// list was moved or resized, which moves it.
+    /// </summary>
+    public event Action? HorizontalScrollChanged;
+
+    /// <summary>
+    /// The range, page and position of a scrollbar, as Windows has them.
+    /// </summary>
+    internal readonly record struct ScrollState(int Minimum, int Maximum, int Page, int Position);
+
+    // The horizontal scrollbar, and where the list was, when last looked at.
+    (ScrollState?, Rectangle, Size) horizontalScroll;
+
+    /// <summary>
+    /// A scrollbar lying over the list's own horizontal one, in its place.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Control? HorizontalScrollBarCover { get; set; }
+
+    /// <summary>
+    /// The horizontal scrollbar, or null while it does not show.
+    /// </summary>
+    internal ScrollState? HorizontalScrollBar
+    {
+        get
+        {
+            if (!IsHandleCreated ||
+                (GetWindowLong(Handle, WindowStyle) & WindowStyleHorizontalScroll) == 0)
+            {
+                return null;
+            }
+
+            var info = new ScrollInfo
+            {
+                Size = (uint)Marshal.SizeOf<ScrollInfo>(),
+                Mask = ScrollInfoRange | ScrollInfoPage | ScrollInfoPosition
+            };
+            GetScrollInfo(Handle, ScrollBarHorizontal, ref info);
+            return new(info.Minimum, info.Maximum, (int)info.Page, info.Position);
+        }
+    }
 
     // NMHDR is a window, an id and a code; NMHEADER follows it with the header item's index.
     static readonly int notificationCodeOffset = 2 * IntPtr.Size;
@@ -154,6 +201,22 @@ sealed class ShellListView : ListView
             return;
         }
 
+        // DrawToBitmap, which captures a window as an image, prints windows that overlap in the
+        // opposite order to how they are stacked, so the list's own horizontal scrollbar prints
+        // over the one lying on it, which on screen hides it. So that one is printed again, over
+        // the list, where it is.
+        if (message.Msg == printMessage &&
+            HorizontalScrollBarCover is { Visible: true, IsHandleCreated: true } cover)
+        {
+            base.WndProc(ref message);
+            var dc = message.WParam;
+            var saved = SaveDC(dc);
+            OffsetViewportOrgEx(dc, cover.Left - Left, cover.Top - Top, IntPtr.Zero);
+            SendMessage(cover.Handle, printMessage, dc, printClient | printNonClient | printBackground);
+            RestoreDC(dc, saved);
+            return;
+        }
+
         try
         {
             base.WndProc(ref message);
@@ -164,6 +227,19 @@ sealed class ShellListView : ListView
             // (selection changes as items go), and ListView answers some by posting work back
             // with BeginInvoke, which throws once WinForms counts the handle as gone. There is
             // nothing left to update, so the notification is dropped.
+        }
+
+        // Whatever showed, moved or resized the horizontal scrollbar did it in answer to a
+        // message to the list: a key, the wheel, a column widened, rows put in, the list resized.
+        // So it is looked at after each, which costs two quick questions of Windows.
+        if (HorizontalScrollChanged != null)
+        {
+            var state = (HorizontalScrollBar, Bounds, ClientSize);
+            if (state != horizontalScroll)
+            {
+                horizontalScroll = state;
+                HorizontalScrollChanged();
+            }
         }
     }
 

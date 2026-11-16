@@ -183,6 +183,49 @@ static partial class NativeMethods
     public static partial int SHGetSpecialFolderLocation(IntPtr window, int folder, out IntPtr itemIdList);
 
     [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RedrawWindow(IntPtr window, IntPtr updateRect, IntPtr updateRegion, uint flags);
+
+    public const int WindowStyle = -16;
+    public const int WindowStyleHorizontalScroll = 0x00100000;
+    public const int ScrollBarHorizontal = 0;
+    public const uint ScrollInfoRange = 0x0001;
+    public const uint ScrollInfoPage = 0x0002;
+    public const uint ScrollInfoPosition = 0x0004;
+
+    // SCROLLINFO.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ScrollInfo
+    {
+        public uint Size;
+        public uint Mask;
+        public int Minimum;
+        public int Maximum;
+        public uint Page;
+        public int Position;
+        public int TrackPosition;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetScrollInfo(IntPtr window, int bar, ref ScrollInfo info);
+
+    // The 32 bit form, which every user32 has, and which holds a window's style whole.
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    public static partial int GetWindowLong(IntPtr window, int index);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial int SaveDC(IntPtr dc);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RestoreDC(IntPtr dc, int saved);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool OffsetViewportOrgEx(IntPtr dc, int x, int y, IntPtr previous);
+
+    [LibraryImport("user32.dll")]
     public static partial IntPtr WindowFromPoint(ScreenPoint point);
 
     [LibraryImport("user32.dll")]

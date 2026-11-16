@@ -81,6 +81,14 @@ sealed class FolderView : UserControl
     /// </summary>
     internal GutterMarquee Marquee => marquee;
 
+    // The list's horizontal scrollbar, run across the margin too.
+    readonly GutterScrollBar scrollBar;
+
+    /// <summary>
+    /// The horizontal scrollbar. For tests.
+    /// </summary>
+    internal ScrollBar ScrollBar => scrollBar;
+
     /// <summary>
     /// Where a row is, in the list's coordinates. For tests.
     /// </summary>
@@ -177,6 +185,11 @@ sealed class FolderView : UserControl
         list.DragOver += OnDragOver;
         list.DragDrop += OnDragDrop;
         Controls.Add(list);
+
+        // Over the list's own scrollbar, so in front of it.
+        scrollBar = new(list);
+        Controls.Add(scrollBar);
+        scrollBar.BringToFront();
 
         changes = new(400, OnChanged);
     }

@@ -171,7 +171,9 @@ static partial class TaskbarIdentity
 
     // PROPERTYKEY.
     [StructLayout(LayoutKind.Sequential)]
+    // ReSharper disable NotAccessedPositionalProperty.Local
     record struct PropertyKey(Guid FormatId, uint PropertyId);
+    // ReSharper restore NotAccessedPositionalProperty.Local
 
     // PROPVARIANT, for the types used here: empty, and a string, which is a pointer in the union.
     [StructLayout(LayoutKind.Sequential)]

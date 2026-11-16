@@ -540,6 +540,50 @@ public class FolderViewTests
             });
     }
 
+    // The horizontal scrollbar runs from the left edge of the view, across the margin, as
+    // Explorer's does, rather than from where the list starts. It goes with the list's own:
+    // moved, it scrolls the list, and the list scrolled another way, it follows.
+    [Test]
+    public async Task HorizontalScrollBarRunsAcrossTheMargin()
+    {
+        const int horizontalScrollMessage = 0x0114;
+        const int lineRight = 1;
+        const int listViewScroll = 0x1014;
+        using var fixture = Fixture.Create();
+        using var form = Host();
+        form.ClientSize = new(300, 400);
+        var view = await OpenIn(form, fixture.Root);
+        var list = view.Controls.OfType<ShellListView>().Single();
+        var bar = view.ScrollBar;
+
+        await Assert.That(list.Left).IsGreaterThan(0);
+        await Assert.That(bar.Visible).IsTrue();
+        await Assert.That(bar.Bounds).IsEqualTo(
+            Rectangle.FromLTRB(0, list.Top + list.ClientSize.Height, list.Left + list.ClientSize.Width, list.Bottom));
+        await Assert.That(bar.Maximum).IsEqualTo(list.HorizontalScrollBar!.Value.Maximum);
+        await Assert.That(bar.LargeChange).IsEqualTo(list.HorizontalScrollBar!.Value.Page);
+
+        // A click on its right arrow, which it tells the view about.
+        NativeMethods.SendMessage(view.Handle, horizontalScrollMessage, lineRight, bar.Handle);
+        var clicked = list.HorizontalScrollBar!.Value.Position;
+
+        await Assert.That(clicked).IsGreaterThan(0);
+        await Assert.That(bar.Value).IsEqualTo(clicked);
+
+        // The list scrolled as the keyboard would.
+        NativeMethods.SendMessage(list.Handle, listViewScroll, 30, IntPtr.Zero);
+        var scrolled = list.HorizontalScrollBar!.Value.Position;
+
+        await Assert.That(scrolled).IsGreaterThan(clicked);
+        await Assert.That(bar.Value).IsEqualTo(scrolled);
+
+        // Wide enough for every column, the list has no scrollbar, and so neither has the view.
+        form.ClientSize = new(1500, 400);
+
+        await Assert.That(list.HorizontalScrollBar).IsNull();
+        await Assert.That(bar.Visible).IsFalse();
+    }
+
     // Hiding a column takes it and its cells out of the list, and sorting by it falls back to
     // the name. Showing it again puts it back in its place.
     [Test]

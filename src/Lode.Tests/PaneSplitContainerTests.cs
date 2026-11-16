@@ -44,6 +44,34 @@ public class PaneSplitContainerTests
         await Assert.That(split.ActiveControl).IsSameReferenceAs(box);
     }
 
+    // Each move paints the panes before the next is taken, not once the mouse stops, so what a
+    // pane grows into is drawn straight away rather than left showing what was there before,
+    // which for the folder tree, painted through a buffer, was its scrollbar at every width it
+    // passed through.
+    [Test]
+    public async Task DraggingTheSplitterPaintsThePanesAsItGoes()
+    {
+        using var form = Create(out var split, out _);
+        var pane = new PaintedWidth
+        {
+            Dock = DockStyle.Fill
+        };
+        split.Panel1.Controls.Add(pane);
+        // Windows paints nothing of a window wholly off the screen, as the form is, unless it
+        // is layered, which any opacity short of full makes it.
+        form.Opacity = 0.99;
+        Application.DoEvents();
+        var grip = Grip(split);
+        var moved = grip with { X = grip.X + 60 };
+
+        Send(split, leftButtonDown, grip);
+        Send(split, mouseMove, moved);
+        var painted = pane.Painted;
+        Send(split, leftButtonUp, moved);
+
+        await Assert.That(painted).IsEqualTo(distance + 60);
+    }
+
     // Past where a pane stops shrinking, the splitter stays at the limit.
     [Test]
     public async Task DraggingPastThePaneMinimumStopsAtIt()
@@ -71,6 +99,17 @@ public class PaneSplitContainerTests
         Send(split, mouseMove, grip with { X = grip.X + 60 });
 
         await Assert.That(split.SplitterDistance).IsEqualTo(distance);
+    }
+
+    // Explorer's resize arrows over the splitter, not SplitContainer's split cursor, which has a
+    // bar between them, and nothing of its own over the panes.
+    [Test]
+    public async Task TheSplitterShowsExplorersResizeCursor()
+    {
+        using var form = Create(out var split, out _);
+
+        await Assert.That(split.CursorAt(Grip(split))).IsSameReferenceAs(Cursors.SizeWE);
+        await Assert.That(split.CursorAt(new(10, 10))).IsNull();
     }
 
     static Form Create(out PaneSplitContainer split, out TextBox box)
@@ -108,5 +147,17 @@ public class PaneSplitContainerTests
     sealed class QuietForm : Form
     {
         protected override bool ShowWithoutActivation => true;
+    }
+
+    // How wide it was when last painted.
+    sealed class PaintedWidth : Control
+    {
+        public int Painted { get; private set; }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            Painted = Width;
+            base.OnPaint(eventArgs);
+        }
     }
 }

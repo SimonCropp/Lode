@@ -361,7 +361,7 @@ class MainForm : Form
                 strip.Dispose();
                 chosen?.Invoke();
             });
-        strip.Show(button, new Point(0, button.Height));
+        strip.Show(button, new(0, button.Height));
     }
 
     /// <summary>
@@ -895,7 +895,7 @@ class MainForm : Form
         else
         {
             // A folder that had the same name as this one's may go back to its name alone.
-            RetitleAll();
+            Retitle();
         }
     }
 
@@ -1029,7 +1029,7 @@ class MainForm : Form
         }
         else
         {
-            RetitleAll();
+            Retitle();
         }
     }
 
@@ -1054,41 +1054,19 @@ class MainForm : Form
         }
         else
         {
-            RetitleAll();
+            Retitle();
         }
     }
-
-    // Closed, though perhaps not yet gone from the open forms, so its tabs no longer count when
-    // the others are named.
-    bool closed;
 
     /// <summary>
-    /// Names the tabs, and titles the windows, of every window: a folder is called by its name,
-    /// unless another folder open in any window has the same name, when both take in as much of
-    /// their paths as tells them apart, "Lode\src" and "Other\src". The taskbar shows the
-    /// windows' titles side by side, so the folders in two windows need telling apart as much as
-    /// those in two tabs do.
+    /// Names the tabs, and titles the window: a folder is called by its name, unless another tab
+    /// in this window has a folder with the same name, when both take in as much of their paths
+    /// as tells them apart, "Lode\src" and "Other\src". Tabs in other windows don't count: each
+    /// window is seen on its own.
     /// </summary>
-    void RetitleAll()
+    void Retitle()
     {
-        // This one too while it is being built, before it is among the open forms.
-        var windows = Application.OpenForms
-            .OfType<MainForm>()
-            .Append(this)
-            .Distinct()
-            .Where(_ => !_.closed &&
-                        !_.Disposing &&
-                        !_.IsDisposed)
-            .ToList();
-        var labels = Locations.Labels(windows.SelectMany(_ => _.Views).Select(_ => _.CurrentPath));
-        foreach (var window in windows)
-        {
-            window.Retitle(labels);
-        }
-    }
-
-    void Retitle(Dictionary<string, string> labels)
-    {
+        var labels = Locations.Labels(Views.Select(_ => _.CurrentPath));
         foreach (var view in Views)
         {
             var page = (TabPage)view.Parent!;
@@ -1109,13 +1087,6 @@ class MainForm : Form
         }
     }
 
-    protected override void OnFormClosed(FormClosedEventArgs eventArgs)
-    {
-        closed = true;
-        RetitleAll();
-        base.OnFormClosed(eventArgs);
-    }
-
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
     // tab is showing.
     void SyncToActiveView()
@@ -1133,7 +1104,7 @@ class MainForm : Form
         updatingFilter = true;
         filterBox.Text = view.Filter;
         updatingFilter = false;
-        RetitleAll();
+        Retitle();
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;

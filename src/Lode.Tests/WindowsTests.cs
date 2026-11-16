@@ -93,9 +93,9 @@ public class WindowsTests
             });
     }
 
-    // Two folders with the same name are told apart by the folder each is in: in two tabs, and
-    // in two windows, whose titles the taskbar shows side by side. Each goes back to its name
-    // alone once the other is no longer open.
+    // Two folders with the same name are told apart by the folder each is in when they are tabs
+    // in one window. In two windows they are not: each window is seen on its own. Each goes back
+    // to its name alone once the other is no longer beside it.
     [Test]
     public async Task FoldersWithTheSameNameAreToldApart()
     {
@@ -104,38 +104,32 @@ public class WindowsTests
         using var first = await Show(fixture, fixture.At("Source", "Deep"), fixture.At("Docs", "Deep"));
         var twoTabs = Describe(first);
 
-        first.CloseTabsToTheRight((TabPage)first.Views.First().Parent!);
-        var oneTab = Describe(first);
-
-        using var second = await Show(fixture, fixture.At("Docs", "Deep"));
+        using var second = await Show(fixture, fixture.Root);
+        var moved = (TabPage)first.Views.Last().Parent!;
+        first.MoveTab(moved, second);
         var twoWindows = new
         {
             first = Describe(first),
             second = Describe(second)
         };
 
-        second.ActiveView!.Navigate(fixture.At("Docs"));
-        await Pump.Loaded(second.ActiveView);
-        var navigatedAway = new
-        {
-            first = Describe(first),
-            second = Describe(second)
-        };
+        second.MoveTab(moved, first);
+        var movedBack = Describe(first);
 
-        second.ActiveView.GoBack();
-        await Pump.Loaded(second.ActiveView);
-        var navigatedBack = Describe(first);
-        second.Close();
+        first.ActiveView!.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(first.ActiveView);
+        var navigatedAway = Describe(first);
+
+        first.CloseTabsToTheRight((TabPage)first.Views.First().Parent!);
 
         await Verify(
             new
             {
                 twoTabs,
-                oneTab,
                 twoWindows,
+                movedBack,
                 navigatedAway,
-                navigatedBack,
-                secondClosed = Describe(first)
+                oneTab = Describe(first)
             });
     }
 

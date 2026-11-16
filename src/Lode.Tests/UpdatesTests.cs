@@ -216,7 +216,7 @@ public class UpdatesTests
     static Updates Reporting(string outcome) =>
         new(
             new(),
-            new ToolUpdate(@"C:\Users\Someone\.dotnet\tools\lode.exe", outcome),
+            new(@"C:\Users\Someone\.dotnet\tools\lode.exe", outcome),
             TestUpdates.Current,
             _ => Task.FromResult<NuGetVersion?>(null),
             new Clock(now));

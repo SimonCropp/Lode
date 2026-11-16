@@ -41,11 +41,27 @@ sealed class ActionsPanel : Panel
         Dock = DockStyle.Top
     };
 
+    // Turns the rings beside running actions, only while there are any and the panel shows.
+    readonly Timer spinner = new()
+    {
+        Interval = 30
+    };
+
+    /// <summary>
+    /// Milliseconds from some fixed point, by which the ring beside a running action turns.
+    /// Tests hold it still.
+    /// </summary>
+    internal static Func<long> Clock { get; set; } = () => Environment.TickCount64;
+
     public ActionsPanel()
     {
         Dock = DockStyle.Bottom;
         Visible = false;
         BackColor = SystemColors.Window;
+        // The top row of pixels is the line between the tree and the panel, which the header
+        // would otherwise cover.
+        Padding = new(0, 1, 0, 0);
+        spinner.Tick += (_, _) => Spin();
 
         headerRow.Controls.Add(header);
         headerRow.Controls.Add(clear);
@@ -126,6 +142,82 @@ sealed class ActionsPanel : Panel
         clear.Enabled = ActionLog.Entries.Any(_ => _.State != ActionLog.State.Running);
         Fit();
         list.Invalidate();
+        UpdateSpinner();
+    }
+
+    // Also when the window goes to the tray, or comes back.
+    protected override void OnVisibleChanged(EventArgs eventArgs)
+    {
+        base.OnVisibleChanged(eventArgs);
+        UpdateSpinner();
+    }
+
+    void UpdateSpinner() =>
+        spinner.Enabled = Visible && ActionLog.Entries.Any(_ => _.State == ActionLog.State.Running);
+
+    internal bool Spinning => spinner.Enabled;
+
+    // Each running action's ring drawn at its next turn, straight onto the list. Invalidated, the
+    // list would wipe the ring to the background before drawing it again, a flicker thirty times
+    // a second.
+    void Spin()
+    {
+        using var graphics = list.CreateGraphics();
+        for (var index = list.TopIndex; index < list.Items.Count; index++)
+        {
+            var bounds = list.GetItemRectangle(index);
+            if (bounds.Top >= list.ClientSize.Height)
+            {
+                break;
+            }
+
+            if (list.Items[index] is ActionLog.Entry { State: ActionLog.State.Running })
+            {
+                DrawRing(graphics, MarkBounds(bounds, list.Font), index == list.SelectedIndex);
+            }
+        }
+    }
+
+    // Where an entry's tick, cross or ring goes: beside its first line.
+    Rectangle MarkBounds(Rectangle entry, Font font) =>
+        new(entry.Left, entry.Top + LogicalToDeviceUnits(4), LogicalToDeviceUnits(20), font.Height);
+
+    /// <summary>
+    /// Windows' progress ring: an arc in the accent colour that turns, growing and shrinking as
+    /// it goes. Drawn through a bitmap with the entry's background, so it never shows half drawn.
+    /// </summary>
+    void DrawRing(Graphics graphics, Rectangle mark, bool selected)
+    {
+        var background = list.BackColor;
+        var colour = SystemColors.Highlight;
+        if (selected)
+        {
+            background = SystemColors.Highlight;
+            colour = SystemColors.HighlightText;
+        }
+
+        using var bitmap = new Bitmap(mark.Width, mark.Height);
+        using (var canvas = Graphics.FromImage(bitmap))
+        {
+            canvas.Clear(background);
+            canvas.SmoothingMode = SmoothingMode.AntiAlias;
+            var thickness = LogicalToDeviceUnits(2);
+            var diameter = Math.Min(mark.Width, mark.Height) * 0.75f - thickness;
+            var circle = new RectangleF((mark.Width - diameter) / 2, (mark.Height - diameter) / 2, diameter, diameter);
+
+            // A turn a second, the arc growing and shrinking over two.
+            var milliseconds = Clock();
+            var turn = milliseconds % 1000 / 1000f * 360;
+            var sweep = 140 + 100 * MathF.Sin(milliseconds % 2000 / 2000f * 2 * MathF.PI);
+            using var pen = new Pen(colour, thickness)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round
+            };
+            canvas.DrawArc(pen, circle, turn - 90, sweep);
+        }
+
+        graphics.DrawImageUnscaled(bitmap, mark.Location);
     }
 
     // Tall enough for every entry, up to a few; the list scrolls beyond that. Each entry is two
@@ -158,34 +250,42 @@ sealed class ActionsPanel : Panel
 
         var selected = (eventArgs.State & DrawItemState.Selected) != 0;
         var bounds = eventArgs.Bounds;
-        var markWidth = LogicalToDeviceUnits(20);
         var font = eventArgs.Font ?? Font;
 
-        // Green tick, red cross, or an ellipsis while it runs.
-        var (mark, colour) = entry.State switch
+        // Green tick, red cross, or the progress ring while it runs.
+        var mark = MarkBounds(bounds, font);
+        if (entry.State == ActionLog.State.Running)
         {
-            ActionLog.State.Succeeded => ("✓", Color.ForestGreen),
-            ActionLog.State.Failed => ("✗", Color.Firebrick),
-            _ => ("…", SystemColors.GrayText)
-        };
-        if (selected)
-        {
-            colour = SystemColors.HighlightText;
+            DrawRing(eventArgs.Graphics, mark, selected);
         }
+        else
+        {
+            var glyph = "✓";
+            var colour = Color.ForestGreen;
+            if (entry.State == ActionLog.State.Failed)
+            {
+                glyph = "✗";
+                colour = Color.Firebrick;
+            }
 
-        // Beside the first line.
-        TextRenderer.DrawText(
-            eventArgs.Graphics,
-            mark,
-            font,
-            new Rectangle(bounds.Left, bounds.Top + LogicalToDeviceUnits(4), markWidth, font.Height),
-            colour,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            if (selected)
+            {
+                colour = SystemColors.HighlightText;
+            }
+
+            TextRenderer.DrawText(
+                eventArgs.Graphics,
+                glyph,
+                font,
+                mark,
+                colour,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
 
         // What and where on the first line, how it went on the second.
         var padding = LogicalToDeviceUnits(4);
         var lineHeight = font.Height;
-        var left = bounds.Left + markWidth;
+        var left = mark.Right;
         var right = bounds.Right - 2;
         var flags = TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
 
@@ -266,6 +366,7 @@ sealed class ActionsPanel : Panel
         {
             ActionLog.Changed -= Refill;
             ActionLog.Progressed -= Repaint;
+            spinner.Dispose();
         }
 
         base.Dispose(disposing);

@@ -138,7 +138,7 @@ public class MenuTests
     {
         using (menu)
         {
-            menu.Show(new Point(-20000, -20000));
+            menu.Show(new(-20000, -20000));
             Application.DoEvents();
             using var bitmap = new Bitmap(menu.Width, menu.Height);
             menu.DrawToBitmap(bitmap, new(Point.Empty, menu.Size));

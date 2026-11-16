@@ -199,7 +199,7 @@ public class CodeCommandsTests
             [new(UpdateProblemKind.ManifestUnreadable, @"C:\Code\CountryData\.config\dotnet-tools.json", "Failed to parse tool manifest. Error: bad json")]);
 
         await Assert.That(outcome).IsEqualTo(
-            new ActionLog.Outcome(
+            new(
                 true,
                 "Nothing to update, 1 problem",
                 @".config\dotnet-tools.json: Failed to parse tool manifest. Error: bad json"));
@@ -230,7 +230,7 @@ public class CodeCommandsTests
 
         var outcome = await CodeCommands.UpdateNugets(code.Root);
 
-        await Assert.That(outcome).IsEqualTo(new ActionLog.Outcome(true, "Nothing to update", ""));
+        await Assert.That(outcome).IsEqualTo(new(true, "Nothing to update", ""));
     }
 
     internal sealed class Scratch : IDisposable

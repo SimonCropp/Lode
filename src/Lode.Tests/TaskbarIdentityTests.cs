@@ -23,7 +23,7 @@ public class TaskbarIdentityTests
         var identity = TaskbarIdentity.Read(form.Handle);
 
         await Assert.That(identity).IsEqualTo(
-            new TaskbarIdentity.Identity(
+            new(
                 "Lode",
                 ExplorerReplacement.PreferredCommand(),
                 "Lode",

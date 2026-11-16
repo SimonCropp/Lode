@@ -12,13 +12,22 @@ sealed class WindowContext : ApplicationContext
     NotifyIcon tray;
     Icon trayIcon = ShellIcons.FolderWindowIcon();
 
+    // After the tray icon's tooltip and its menu's header: " (Debug)" in a Debug build, so its
+    // icon is easy to tell from the installed Lode's beside it, as its window titles are.
+    const string buildSuffix =
+#if DEBUG
+        " (Debug)";
+#else
+        "";
+#endif
+
     public WindowContext(MainForm first, Settings settings, Places places, SingleInstance instance)
     {
         this.settings = settings;
         this.places = places;
 
         var menu = new ContextMenuStrip();
-        var open = new ToolStripMenuItem("Open Lode", null, (_, _) => ShowWindows());
+        var open = new ToolStripMenuItem("Open Lode" + buildSuffix, null, (_, _) => ShowWindows());
         open.Font = new(open.Font, FontStyle.Bold);
         menu.Items.Add(open);
         menu.Items.Add("New window", null, (_, _) => OpenWindow([settings.StartLocation()]));
@@ -27,7 +36,7 @@ sealed class WindowContext : ApplicationContext
         tray = new()
         {
             Icon = trayIcon,
-            Text = "Lode",
+            Text = "Lode" + buildSuffix,
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -148,7 +157,7 @@ sealed class WindowContext : ApplicationContext
     /// tabs in the first window. Returns the window the last of them ended up in, to bring to
     /// the front.
     /// </summary>
-    internal static global::MainForm OpenInTabs(IReadOnlyList<global::MainForm> windows, IReadOnlyList<string> paths)
+    internal static MainForm OpenInTabs(IReadOnlyList<MainForm> windows, IReadOnlyList<string> paths)
     {
         var last = windows[0];
         foreach (var path in paths)

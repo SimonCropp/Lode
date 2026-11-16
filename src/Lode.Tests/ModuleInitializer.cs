@@ -22,6 +22,9 @@ public static class ModuleInitializer
         // The app's Debug builds mark their window titles; tests run in both builds.
         MainForm.TitleSuffix = "";
 
+        // The ring beside a running action stands still, so captures of it match each run.
+        ActionsPanel.Clock = () => 0;
+
         // What tests do to files would otherwise show as Undo in each other's menus.
         UndoHistory.Instance = new(new UndoHistory.ShellFileActions())
         {

@@ -142,7 +142,7 @@ public class GitPurgeTests
 
         var outcome = await GitPurge.Run([repo], permanent: true, IntPtr.Zero);
 
-        await Assert.That(outcome).IsEqualTo(new ActionLog.Outcome(true, "Nothing to purge", ""));
+        await Assert.That(outcome).IsEqualTo(new(true, "Nothing to purge", ""));
     }
 
     // Git's complaint is passed on, and the other folders are still purged.

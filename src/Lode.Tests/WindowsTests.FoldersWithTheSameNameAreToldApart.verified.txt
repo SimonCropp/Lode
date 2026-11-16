@@ -7,30 +7,7 @@
     ],
     active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
   },
-  oneTab: {
-    title: Deep,
-    tabs: [
-      Deep
-    ],
-    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Source\Deep
-  },
   twoWindows: {
-    first: {
-      title: Source\Deep,
-      tabs: [
-        Source\Deep
-      ],
-      active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Source\Deep
-    },
-    second: {
-      title: Docs\Deep,
-      tabs: [
-        Docs\Deep
-      ],
-      active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
-    }
-  },
-  navigatedAway: {
     first: {
       title: Deep,
       tabs: [
@@ -39,21 +16,31 @@
       active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Source\Deep
     },
     second: {
-      title: Docs,
+      title: Deep,
       tabs: [
-        Docs
+        Projects,
+        Deep
       ],
-      active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs
+      active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
     }
   },
-  navigatedBack: {
-    title: Source\Deep,
+  movedBack: {
+    title: Docs\Deep,
     tabs: [
-      Source\Deep
+      Source\Deep,
+      Docs\Deep
     ],
-    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Source\Deep
+    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
   },
-  secondClosed: {
+  navigatedAway: {
+    title: Docs,
+    tabs: [
+      Deep,
+      Docs
+    ],
+    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs
+  },
+  oneTab: {
     title: Deep,
     tabs: [
       Deep
