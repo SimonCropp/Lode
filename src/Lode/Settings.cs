@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 sealed class Settings
 {
     static JsonSerializerOptions serializerOptions = new()
@@ -56,11 +58,41 @@ sealed class Settings
         return LodeActions.Find(id)?.Menu ?? true;
     }
 
-    public void SetPlacement(string id, bool button, bool menu) =>
+    // Whether an action shown as a button is in its parent's drop-down on the bar, rather than a
+    // button of its own.
+    public bool NestsButton(string id)
+    {
+        if (Actions.TryGetValue(id, out var placement) &&
+            placement.ButtonNested is { } nested)
+        {
+            return nested;
+        }
+
+        return false;
+    }
+
+    // Whether an action in the right-click menus is in its parent's submenu, rather than an
+    // entry of its own.
+    public bool NestsInMenu(string id)
+    {
+        if (Actions.TryGetValue(id, out var placement) &&
+            placement.MenuNested is { } nested)
+        {
+            return nested;
+        }
+
+        return LodeActions.Find(id)?.MenuNested ?? false;
+    }
+
+    /// <param name="buttonNested">Null for LodeActions' default, as for an action without a parent.</param>
+    /// <param name="menuNested">Null for LodeActions' default, as for an action without a parent.</param>
+    public void SetPlacement(string id, bool button, bool menu, bool? buttonNested = null, bool? menuNested = null) =>
         Actions[id] = new()
         {
             Button = button,
-            Menu = menu
+            Menu = menu,
+            ButtonNested = buttonNested,
+            MenuNested = menuNested
         };
 
     // The file list's columns hidden from its header's right-click menu: Date, Type or Size.
@@ -202,10 +234,18 @@ sealed class Settings
 }
 
 /// <summary>
-/// Whether an action shows as a button on the actions bar, in the right-click menu, or both.
+/// Whether an action shows as a button on the actions bar, in the right-click menu, or both, and
+/// in each, whether under its parent.
 /// </summary>
 sealed class ActionPlacement
 {
     public bool Button { get; set; }
     public bool Menu { get; set; }
+
+    // Null takes LodeActions' default, as a placement saved before actions had parents does.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ButtonNested { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MenuNested { get; set; }
 }

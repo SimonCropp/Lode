@@ -1,0 +1,22 @@
+﻿{
+  buttons: [
+    New,
+    ----,
+    Clipboard,
+    Paste,
+    Rename,
+    Delete,
+    ----,
+    Terminal,
+    Terminal (admin),
+    ----,
+    Properties,
+    ----,
+    See more
+  ],
+  clipboard: [
+    Cut,
+    Copy,
+    Copy as path
+  ]
+}

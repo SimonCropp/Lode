@@ -104,6 +104,42 @@ public class OptionsFormTests
             });
     }
 
+    // A Nested box nests the action under its parent there. It is greyed out while the action
+    // doesn't show there, keeping what it says, and only an action with a parent has one.
+    [Test]
+    public async Task TickingNestedNestsTheAction()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        CheckBox Box(string name) => (CheckBox) form.Controls.Find(name, true)[0];
+        var before = new
+        {
+            cutButtonNested = settings.NestsButton("cut"),
+            terminalMenuNested = settings.NestsInMenu("terminal"),
+            openButtonNestedEnabled = Box("buttonNested.open").Enabled
+        };
+
+        Box("buttonNested.cut").Checked = true;
+        Box("menuNested.terminal").Checked = false;
+        Box("button.cut").Checked = false;
+
+        await Verify(
+            new
+            {
+                before,
+                after = new
+                {
+                    cutButtonNested = settings.NestsButton("cut"),
+                    cutButtonNestedEnabled = Box("buttonNested.cut").Enabled,
+                    terminalMenuNested = settings.NestsInMenu("terminal"),
+                    // Terminal (admin)'s nesting is untouched.
+                    terminalAdminMenuNested = settings.NestsInMenu("terminalAdmin")
+                },
+                newHasNestedBoxes = form.Controls.Find("buttonNested.new", true).Length > 0
+            });
+    }
+
     // Only with a code folder set. Excluding asks first, then hands over the folder and says
     // how it went; the real exclusion never runs in a test.
     [Test]

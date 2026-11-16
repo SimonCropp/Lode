@@ -35,6 +35,8 @@ static class Icons
     public const char Claude = '\u2733';
     // A robot, for the coding agents.
     public const char Agent = '\uE99A';
+    // A page, for the actions on files themselves.
+    public const char Document = '\uE8A5';
     public const char Shortcut = '\uE71B';
     public const char CopyAsPath = '\uE62F';
     public const char Folder = '\uE8B7';

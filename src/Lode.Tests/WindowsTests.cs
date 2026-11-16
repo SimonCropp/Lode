@@ -372,6 +372,32 @@ public class WindowsTests
             });
     }
 
+    // Buttons nested under a parent share its drop-down, which stands where the first of them
+    // would have, and lists them as See more would: here Copy as path, not a button by default,
+    // joins Cut and Copy under Clipboard.
+    [Test]
+    public async Task NestedButtonsShareTheirParentsDropDown()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        foreach (var id in new[] { "cut", "copy", "copyAsPath" })
+        {
+            settings.SetPlacement(id, button: true, menu: true, buttonNested: true);
+        }
+
+        using var form = await Show(fixture, settings, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("Docs"));
+        await Pump.Loaded(form.ActiveView);
+        form.UpdateActions();
+
+        await Verify(
+            new
+            {
+                buttons = form.DescribeActions().ToList(),
+                clipboard = form.ParentEntries("Clipboard").Select(DescribeCommand).ToList()
+            });
+    }
+
     // See more, at the end of the bar, lists the actions that are not buttons, greyed where
     // they do not apply: here, to a file.
     [Test]

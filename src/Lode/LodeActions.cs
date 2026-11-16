@@ -8,6 +8,9 @@
 static class LodeActions
 {
     /// <param name="Submenu">Opens a list of its own (New, Open with, Git): a drop-down on the bar.</param>
+    /// <param name="Parent">What it can be nested under, in the right-click menus and on the bar.</param>
+    /// <param name="MenuNested">Whether it is nested under its parent in the right-click menus
+    /// unless Options says otherwise. On the bar, nothing is nested unless Options says so.</param>
     public sealed record Definition(
         string Id,
         string Text,
@@ -16,7 +19,23 @@ static class LodeActions
         bool Button,
         bool Menu,
         string Shortcut = "",
-        bool Submenu = false);
+        bool Submenu = false,
+        Parent? Parent = null,
+        bool MenuNested = false);
+
+    /// <summary>
+    /// A submenu in the right-click menus, and a drop-down on the bar, that actions can be nested
+    /// under, each as Options says.
+    /// </summary>
+    public sealed record Parent(string Text, char Glyph);
+
+    static readonly Parent clipboard = new("Clipboard", Icons.Paste);
+    static readonly Parent undoAndRedo = new("Undo and redo", Icons.Undo);
+    static readonly Parent file = new("File", Icons.Document);
+    static readonly Parent open = new("Open", Icons.Open);
+    static readonly Parent terminal = new("Terminal", Icons.Terminal);
+    static readonly Parent ai = new("AI", Icons.Agent);
+    static readonly Parent packages = new("Packages", Icons.Package);
 
     /// <summary>
     /// Show more options: the full Windows menu. Not a command of its own in the menus, which
@@ -24,31 +43,34 @@ static class LodeActions
     /// </summary>
     public const string More = "more";
 
+    // The right-click menus start with the less used nested: both terminals, so there is never a
+    // Terminal entry beside a Terminal submenu, the AI actions, and the NuGet updates. Git is a
+    // submenu of its own, so has no parent.
     public static IReadOnlyList<Definition> All { get; } =
     [
         new("new", "New", Icons.New, 0, Button: true, Menu: true, Submenu: true),
-        new("undo", "Undo", Icons.Undo, 1, Button: false, Menu: true, "Ctrl+Z"),
-        new("redo", "Redo", Icons.Redo, 1, Button: false, Menu: true, "Ctrl+Y"),
-        new("cut", "Cut", Icons.Cut, 1, Button: true, Menu: true, "Ctrl+X"),
-        new("copy", "Copy", Icons.Copy, 1, Button: true, Menu: true, "Ctrl+C"),
-        new("paste", "Paste", Icons.Paste, 1, Button: true, Menu: true, "Ctrl+V"),
-        new("rename", "Rename", Icons.Rename, 1, Button: true, Menu: true, "F2"),
-        new("delete", "Delete", Icons.Delete, 1, Button: true, Menu: true, "Delete"),
-        new("open", "Open", Icons.Open, 2, Button: false, Menu: true),
-        new("openInNewTab", "Open in new tab", Icons.OpenInNewTab, 2, Button: false, Menu: true),
-        new("edit", "Edit", Icons.Edit, 2, Button: false, Menu: true),
-        new("openWith", "Open with", Icons.OpenWith, 2, Button: false, Menu: true, Submenu: true),
-        new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true),
-        new("terminalAdmin", "Terminal (admin)", Icons.AdminTerminal, 2, Button: true, Menu: true),
-        new("claude", "Open in Claude", Icons.Claude, 2, Button: false, Menu: true),
-        new("agent", "Coding agent", Icons.Agent, 2, Button: false, Menu: true, Submenu: true),
-        new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true),
-        new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true),
-        new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true),
+        new("undo", "Undo", Icons.Undo, 1, Button: false, Menu: true, "Ctrl+Z", Parent: undoAndRedo),
+        new("redo", "Redo", Icons.Redo, 1, Button: false, Menu: true, "Ctrl+Y", Parent: undoAndRedo),
+        new("cut", "Cut", Icons.Cut, 1, Button: true, Menu: true, "Ctrl+X", Parent: clipboard),
+        new("copy", "Copy", Icons.Copy, 1, Button: true, Menu: true, "Ctrl+C", Parent: clipboard),
+        new("paste", "Paste", Icons.Paste, 1, Button: true, Menu: true, "Ctrl+V", Parent: clipboard),
+        new("rename", "Rename", Icons.Rename, 1, Button: true, Menu: true, "F2", Parent: file),
+        new("delete", "Delete", Icons.Delete, 1, Button: true, Menu: true, "Delete", Parent: file),
+        new("open", "Open", Icons.Open, 2, Button: false, Menu: true, Parent: open),
+        new("openInNewTab", "Open in new tab", Icons.OpenInNewTab, 2, Button: false, Menu: true, Parent: open),
+        new("edit", "Edit", Icons.Edit, 2, Button: false, Menu: true, Parent: open),
+        new("openWith", "Open with", Icons.OpenWith, 2, Button: false, Menu: true, Submenu: true, Parent: open),
+        new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true, Parent: terminal, MenuNested: true),
+        new("terminalAdmin", "Terminal (admin)", Icons.AdminTerminal, 2, Button: true, Menu: true, Parent: terminal, MenuNested: true),
+        new("claude", "Open in Claude", Icons.Claude, 2, Button: false, Menu: true, Parent: ai, MenuNested: true),
+        new("agent", "Coding agent", Icons.Agent, 2, Button: false, Menu: true, Submenu: true, Parent: ai, MenuNested: true),
+        new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true, Parent: file),
+        new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true, Parent: file),
+        new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true, Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
         new("git", "Git", Icons.Git, 4, Button: false, Menu: true, Submenu: true),
-        new("updateNugets", "Update NuGets", Icons.Package, 4, Button: false, Menu: true),
-        new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true),
+        new("updateNugets", "Update NuGets", Icons.Package, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
+        new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new(More, "Show more options", Icons.MoreOptions, 5, Button: false, Menu: true)
     ];
 
@@ -132,15 +154,65 @@ static class LodeActions
         };
 
     /// <summary>
-    /// The commands without those Options keeps off the right-click menu, and without the
-    /// separators that leaves doubled or at either end.
+    /// A parent's submenu or drop-down: <paramref name="children"/> under its name and icon,
+    /// greyed out when none of them applies.
+    /// </summary>
+    public static QuickMenu.Command Submenu(Parent parent, IReadOnlyList<QuickMenu.Command?> children) =>
+        QuickMenu.Submenu(parent.Text, children) with
+        {
+            Glyph = parent.Glyph,
+            Enabled = children.Any(_ => _ is { Enabled: true })
+        };
+
+    /// <summary>
+    /// The commands without those Options keeps off the right-click menu, those Options nests in
+    /// their parent's submenu, and without the separators that leaves doubled or at either end.
+    /// A parent's submenu stands where its first member was, and takes in the rest in the
+    /// menu's own order.
     /// </summary>
     public static List<QuickMenu.Command?> ForMenu(IEnumerable<QuickMenu.Command?> commands, Settings settings)
     {
-        var result = new List<QuickMenu.Command?>();
+        // Each entry is a command, a separator (neither), or the place of a parent's submenu,
+        // which is made once all its members are known.
+        var placed = new List<(QuickMenu.Command? Command, Parent? Parent)>();
+        var nested = new Dictionary<Parent, List<QuickMenu.Command?>>();
         foreach (var command in commands)
         {
-            if (command == null)
+            if (command?.Id is { } id)
+            {
+                if (!settings.ShowsInMenu(id))
+                {
+                    continue;
+                }
+
+                if (Find(id)?.Parent is { } parent &&
+                    settings.NestsInMenu(id))
+                {
+                    if (!nested.TryGetValue(parent, out var members))
+                    {
+                        members = [];
+                        nested[parent] = members;
+                        placed.Add((null, parent));
+                    }
+
+                    members.Add(command);
+                    continue;
+                }
+            }
+
+            placed.Add((command, null));
+        }
+
+        var result = new List<QuickMenu.Command?>();
+        foreach (var (command, parent) in placed)
+        {
+            var entry = command;
+            if (parent != null)
+            {
+                entry = Submenu(parent, nested[parent]);
+            }
+
+            if (entry == null)
             {
                 if (result.Count > 0 &&
                     result[^1] != null)
@@ -151,13 +223,7 @@ static class LodeActions
                 continue;
             }
 
-            if (command.Id is { } id &&
-                !settings.ShowsInMenu(id))
-            {
-                continue;
-            }
-
-            result.Add(command);
+            result.Add(entry);
         }
 
         if (result.Count > 0 &&

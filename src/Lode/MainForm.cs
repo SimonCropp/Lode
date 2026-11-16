@@ -19,6 +19,10 @@ class MainForm : Form
 
     // The actions bar's buttons, by action id.
     readonly Dictionary<string, ToolStripItem> actionButtons = [];
+
+    // The actions bar's drop-downs for parents that Options nests buttons under, each with the
+    // actions in it, in LodeActions' order.
+    readonly Dictionary<LodeActions.Parent, (ToolStripItem Button, List<LodeActions.Definition> Members)> parentButtons = [];
     FramedTextBox filterFrame = new();
     TextBox filterBox;
     PaneSplitContainer split = new();
@@ -237,12 +241,23 @@ class MainForm : Form
 
         actionsBar.Items.Clear();
         actionButtons.Clear();
+        parentButtons.Clear();
         // Explorer's size for its command bar's icons.
         var iconSize = LogicalToDeviceUnits(16);
         actionsBar.ImageScalingSize = new(iconSize, iconSize);
         int? group = null;
         foreach (var action in LodeActions.Offered().Where(_ => settings.ShowsAsButton(_.Id)))
         {
+            // A nested button is in its parent's drop-down, which stands where its first member
+            // would have.
+            var parent = settings.NestsButton(action.Id) ? action.Parent : null;
+            if (parent != null &&
+                parentButtons.TryGetValue(parent, out var known))
+            {
+                known.Members.Add(action);
+                continue;
+            }
+
             if (group != null &&
                 group != action.Group)
             {
@@ -250,6 +265,15 @@ class MainForm : Form
             }
 
             group = action.Group;
+            if (parent != null)
+            {
+                List<LodeActions.Definition> members = [action];
+                var dropDown = CreateDropDown(parent.Text, parent.Glyph, parent.Text, iconSize, () => ParentEntries(members));
+                parentButtons[parent] = (dropDown, members);
+                actionsBar.Items.Add(dropDown);
+                continue;
+            }
+
             var button = CreateActionButton(action, iconSize);
             actionButtons[action.Id] = button;
             actionsBar.Items.Add(button);
@@ -338,17 +362,37 @@ class MainForm : Form
                 continue;
             }
 
-            if (commands.TryGetValue(action.Id, out var command))
-            {
-                result.Add(command);
-                continue;
-            }
-
-            result.Add(LodeActions.Command(action.Id, () => { }, enabled: false));
+            result.Add(ActionEntry(action, commands));
         }
 
         return result;
     }
+
+    // An action as the right-click menu would offer it now, out of its commands, or greyed out
+    // where it does not apply.
+    static QuickMenu.Command ActionEntry(LodeActions.Definition action, Dictionary<string, QuickMenu.Command> commands)
+    {
+        if (commands.TryGetValue(action.Id, out var command))
+        {
+            return command;
+        }
+
+        return LodeActions.Command(action.Id, () => { }, enabled: false);
+    }
+
+    // What a parent's drop-down on the bar lists: each action nested in it, as See more would.
+    List<QuickMenu.Command?> ParentEntries(IReadOnlyList<LodeActions.Definition> members)
+    {
+        var commands = ContextCommands();
+        return [.. members.Select(_ => ActionEntry(_, commands))];
+    }
+
+    /// <summary>
+    /// What the drop-down on the bar for the parent named <paramref name="text"/> lists, for
+    /// tests.
+    /// </summary>
+    internal List<QuickMenu.Command?> ParentEntries(string text) =>
+        ParentEntries(parentButtons.Single(_ => _.Key.Text == text).Value.Members);
 
     // The ⋯ menu at the right of the address bar: Lode's own commands, apart from the actions,
     // which are buttons or under See more.
@@ -441,50 +485,58 @@ class MainForm : Form
     // the rest show theirs as a tooltip. Disabled buttons grey their icon themselves.
     ToolStripItem CreateActionButton(LodeActions.Definition action, int iconSize)
     {
-        ToolStripItem item;
-        if (action.Submenu)
-        {
-            var dropDown = new ChevronDropDownButton(action.Text);
-            // Without an item it would not open; filled with the real ones as it opens.
-            dropDown.DropDownItems.Add(action.Text);
-            dropDown.DropDownOpening += (_, _) => FillDropDown(dropDown, action.Id);
-            ExplorerRenderer.Style(dropDown.DropDown);
-            item = dropDown;
-        }
-        else
-        {
-            item = new ToolStripButton(action.Text);
-            item.Click += (_, _) => RunAction(action.Id, item);
-        }
-
-        item.Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText);
-        item.ImageScaling = ToolStripItemImageScaling.None;
-        // Spaced as Explorer's are, about 48 pixels apart at 100%, and as tall as the bar needs.
-        item.Padding = new(LogicalToDeviceUnits(13), LogicalToDeviceUnits(7), LogicalToDeviceUnits(13), LogicalToDeviceUnits(7));
-        item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
-        item.ToolTipText = action.Text;
+        var toolTip = action.Text;
         if (action.Shortcut.Length > 0)
         {
-            item.ToolTipText = $"{action.Text} ({action.Shortcut})";
+            toolTip = $"{action.Text} ({action.Shortcut})";
         }
 
-        if (item is ChevronDropDownButton chevron)
+        if (action.Submenu)
         {
-            item.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
-            item.TextImageRelation = TextImageRelation.ImageBeforeText;
-            item.Padding = item.Padding with
-            {
-                Right = item.Padding.Right + chevron.ChevronWidth
-            };
-            // Its name as far from its icon as Explorer's New is.
-            item.Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText, LogicalToDeviceUnits(6));
-        }
-        else
-        {
-            item.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            return CreateDropDown(action.Text, action.Glyph, toolTip, iconSize, () => SubmenuEntries(action.Id));
         }
 
+        var item = new ToolStripButton(action.Text)
+        {
+            Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText),
+            DisplayStyle = ToolStripItemDisplayStyle.Image,
+            ToolTipText = toolTip
+        };
+        item.Click += (_, _) => RunAction(action.Id, item);
+        SpaceActionButton(item);
         return item;
+    }
+
+    // Spaced as Explorer's are, about 48 pixels apart at 100%, and as tall as the bar needs.
+    void SpaceActionButton(ToolStripItem item)
+    {
+        item.ImageScaling = ToolStripItemImageScaling.None;
+        item.Padding = new(LogicalToDeviceUnits(13), LogicalToDeviceUnits(7), LogicalToDeviceUnits(13), LogicalToDeviceUnits(7));
+        item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
+    }
+
+    // A drop-down on the bar, for a submenu action (New, Git) or a parent of nested buttons: its
+    // name beside its icon, then a chevron, filled with <paramref name="entries"/> as it opens.
+    ChevronDropDownButton CreateDropDown(string text, char glyph, string toolTip, int iconSize, Func<IReadOnlyList<QuickMenu.Command?>> entries)
+    {
+        var dropDown = new ChevronDropDownButton(text)
+        {
+            DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
+            TextImageRelation = TextImageRelation.ImageBeforeText,
+            ToolTipText = toolTip,
+            // Its name as far from its icon as Explorer's New is.
+            Image = Icons.Bitmap(glyph, iconSize, SystemColors.ControlText, LogicalToDeviceUnits(6))
+        };
+        // Without an item it would not open; filled with the real ones as it opens.
+        dropDown.DropDownItems.Add(text);
+        dropDown.DropDownOpening += (_, _) => FillDropDown(dropDown, entries());
+        ExplorerRenderer.Style(dropDown.DropDown);
+        SpaceActionButton(dropDown);
+        dropDown.Padding = dropDown.Padding with
+        {
+            Right = dropDown.Padding.Right + dropDown.ChevronWidth
+        };
+        return dropDown;
     }
 
     ToolStripSeparator ActionsSeparator() =>
@@ -493,8 +545,19 @@ class MainForm : Form
             Margin = new(LogicalToDeviceUnits(4), 0, LogicalToDeviceUnits(4), 0)
         };
 
-    // The drop-down's entries are the submenu the right-click menu would show now.
-    void FillDropDown(ChevronDropDownButton dropDown, string id)
+    // A submenu action's drop-down lists the submenu the right-click menu would show now.
+    IReadOnlyList<QuickMenu.Command?> SubmenuEntries(string id)
+    {
+        if (ContextCommands().TryGetValue(id, out var command) &&
+            command.Children != null)
+        {
+            return command.Children;
+        }
+
+        return [];
+    }
+
+    void FillDropDown(ChevronDropDownButton dropDown, IReadOnlyList<QuickMenu.Command?> entries)
     {
         foreach (var image in dropDownImages)
         {
@@ -503,13 +566,9 @@ class MainForm : Form
 
         dropDownImages.Clear();
         dropDown.DropDownItems.Clear();
-        if (ContextCommands().TryGetValue(id, out var command) &&
-            command.Children != null)
-        {
-            var iconSize = LogicalToDeviceUnits(16);
-            dropDown.DropDown.ImageScalingSize = new(iconSize, iconSize);
-            QuickMenu.AddItems(dropDown.DropDownItems, command.Children, RunOnList, iconSize, dropDownImages);
-        }
+        var iconSize = LogicalToDeviceUnits(16);
+        dropDown.DropDown.ImageScalingSize = new(iconSize, iconSize);
+        QuickMenu.AddItems(dropDown.DropDownItems, entries, RunOnList, iconSize, dropDownImages);
     }
 
     // Icons drawn for the open drop-down's entries.
@@ -602,7 +661,8 @@ class MainForm : Form
     // For a selection the caller has already read from the active view's list.
     void UpdateActions(List<FileEntry>? selection)
     {
-        if (actionButtons.Count == 0)
+        if (actionButtons.Count == 0 &&
+            parentButtons.Count == 0)
         {
             return;
         }
@@ -616,11 +676,21 @@ class MainForm : Form
                 continue;
             }
 
-            button.Enabled = commands.TryGetValue(id, out var command) &&
-                             command.Enabled &&
-                             (command.Children == null || command.Children.Any(_ => _ is { Enabled: true }));
+            button.Enabled = Applies(commands, id);
+        }
+
+        // A parent's drop-down while any action in it applies.
+        foreach (var (button, members) in parentButtons.Values)
+        {
+            button.Enabled = members.Any(_ => Applies(commands, _.Id));
         }
     }
+
+    // Whether the action has a command now that can run, or a submenu with one in it.
+    static bool Applies(Dictionary<string, QuickMenu.Command> commands, string id) =>
+        commands.TryGetValue(id, out var command) &&
+        command.Enabled &&
+        (command.Children == null || command.Children.Any(_ => _ is { Enabled: true }));
 
     /// <summary>
     /// The actions bar's buttons and whether each is enabled, for tests.

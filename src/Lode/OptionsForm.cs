@@ -516,7 +516,8 @@ class OptionsForm : Form
     [
         Description(
             "Show each action as a button on the bar under the address bar, in the right-click " +
-            "menus, or both. The menus only offer what applies to what was clicked.",
+            "menus, or both, and in each, on its own or nested under its parent. The menus only " +
+            "offer what applies to what was clicked.",
             new(3, 0, 3, 9)),
         BuildActionsTable()
     ];
@@ -696,21 +697,29 @@ class OptionsForm : Form
     }
 
     // Where each action shows: a button on the actions bar, an entry in the right-click menus,
-    // both or neither. A tick changes every window at once.
+    // both or neither, and in each, whether nested under its parent. A tick changes every window
+    // at once.
     TableLayoutPanel BuildActionsTable()
     {
         var table = new TableLayoutPanel
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 4,
+            ColumnCount = 7,
             Margin = Padding.Empty
         };
         // Empty, and sized to it, so they leave the icon and name columns as narrow as their rows.
         table.Controls.Add(new Label { AutoSize = true }, 0, 0);
         table.Controls.Add(new Label { AutoSize = true }, 1, 0);
-        table.Controls.Add(ColumnHeading("Button"), 2, 0);
-        table.Controls.Add(ColumnHeading("Right-click"), 3, 0);
+        // Over names, so to their left, as they are.
+        var parentHeading = ColumnHeading("Parent");
+        parentHeading.Anchor = AnchorStyles.Left;
+        parentHeading.Margin = new(0, 0, 12, 3);
+        table.Controls.Add(parentHeading, 2, 0);
+        table.Controls.Add(ColumnHeading("Button"), 3, 0);
+        table.Controls.Add(ColumnHeading("Nested"), 4, 0);
+        table.Controls.Add(ColumnHeading("Right-click"), 5, 0);
+        table.Controls.Add(ColumnHeading("Nested"), 6, 0);
 
         var iconSize = LogicalToDeviceUnits(16);
         var row = 1;
@@ -749,23 +758,68 @@ class OptionsForm : Form
                 Margin = new(3, 1, 3, 1),
                 Checked = settings.ShowsInMenu(action.Id)
             };
+            table.Controls.Add(icon, 0, row);
+            table.Controls.Add(name, 1, row);
+            table.Controls.Add(button, 3, row);
+            table.Controls.Add(menu, 5, row);
             var id = action.Id;
+            if (action.Parent is not { } parent)
+            {
+                EventHandler placed = (_, _) =>
+                {
+                    settings.SetPlacement(id, button.Checked, menu.Checked);
+                    SettingsChanged?.Invoke();
+                };
+                button.CheckedChanged += placed;
+                menu.CheckedChanged += placed;
+                row++;
+                continue;
+            }
+
+            var buttonNested = NestedCheckBox($"buttonNested.{id}", $"{action.Text} under {parent.Text} on the bar", settings.NestsButton(id), button.Checked);
+            var menuNested = NestedCheckBox($"menuNested.{id}", $"{action.Text} under {parent.Text} in the right-click menu", settings.NestsInMenu(id), menu.Checked);
             EventHandler changed = (_, _) =>
             {
-                settings.SetPlacement(id, button.Checked, menu.Checked);
+                // Nesting only means anything where the action shows.
+                buttonNested.Enabled = button.Checked;
+                menuNested.Enabled = menu.Checked;
+                settings.SetPlacement(id, button.Checked, menu.Checked, buttonNested.Checked, menuNested.Checked);
                 SettingsChanged?.Invoke();
             };
             button.CheckedChanged += changed;
             menu.CheckedChanged += changed;
-            table.Controls.Add(icon, 0, row);
-            table.Controls.Add(name, 1, row);
-            table.Controls.Add(button, 2, row);
-            table.Controls.Add(menu, 3, row);
+            buttonNested.CheckedChanged += changed;
+            menuNested.CheckedChanged += changed;
+            table.Controls.Add(
+                new Label
+                {
+                    Text = parent.Text,
+                    AutoSize = true,
+                    Anchor = AnchorStyles.Left,
+                    ForeColor = SystemColors.GrayText,
+                    Margin = new(0, 1, 12, 1)
+                },
+                2,
+                row);
+            table.Controls.Add(buttonNested, 4, row);
+            table.Controls.Add(menuNested, 6, row);
             row++;
         }
 
         return table;
     }
+
+    static CheckBox NestedCheckBox(string name, string accessibleName, bool nested, bool shown) =>
+        new()
+        {
+            Name = name,
+            AccessibleName = accessibleName,
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            Margin = new(3, 1, 3, 1),
+            Checked = nested,
+            Enabled = shown
+        };
 
     static Label ColumnHeading(string text) =>
         new()

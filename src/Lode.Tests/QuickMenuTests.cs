@@ -171,6 +171,46 @@ public class QuickMenuTests
         await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "notes.aleph")]), settings)));
     }
 
+    // The menus start with the terminals, the AI actions and the code folder's nested under
+    // their parents, each submenu where its first member was.
+    [Test]
+    public async Task NestedByDefault()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false, CodeDirectory = fixture.Root };
+        using var view = await Open(fixture.Root, settings);
+
+        await Verify(
+            new
+            {
+                folder = Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)),
+                background = Describe(LodeActions.ForMenu(view.BackgroundCommands(canPaste: false, newTypes), settings))
+            });
+    }
+
+    // Nesting follows Options. With Clipboard's and File's actions nested and the terminals not,
+    // File's submenu stands where Pin was, the first of them in this menu, and Rename and Delete
+    // join it from further down.
+    [Test]
+    public async Task NestingFollowsOptions()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false };
+        foreach (var id in new[] { "cut", "copy", "copyAsPath", "rename", "delete", "pin", "createShortcut" })
+        {
+            settings.SetPlacement(id, settings.ShowsAsButton(id), menu: true, menuNested: true);
+        }
+
+        foreach (var id in new[] { "terminal", "terminalAdmin" })
+        {
+            settings.SetPlacement(id, settings.ShowsAsButton(id), menu: true, menuNested: false);
+        }
+
+        using var view = await Open(fixture.Root, settings);
+
+        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)));
+    }
+
     [Test]
     public async Task TreeMenu()
     {

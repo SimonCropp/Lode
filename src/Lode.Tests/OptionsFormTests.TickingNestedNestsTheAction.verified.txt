@@ -1,0 +1,14 @@
+﻿{
+  before: {
+    cutButtonNested: false,
+    terminalMenuNested: true,
+    openButtonNestedEnabled: false
+  },
+  after: {
+    cutButtonNested: true,
+    cutButtonNestedEnabled: false,
+    terminalMenuNested: false,
+    terminalAdminMenuNested: true
+  },
+  newHasNestedBoxes: false
+}
