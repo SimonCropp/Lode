@@ -1,5 +1,3 @@
-using NuGet.Versioning;
-
 /// <summary>
 /// <see cref="Updates"/> for tests: running 0.3.0, as a copy installed as a dotnet tool or as a
 /// build's output, with NuGet's answer and the clock given rather than asked for.

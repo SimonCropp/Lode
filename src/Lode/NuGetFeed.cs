@@ -1,5 +1,3 @@
-using System.Net;
-
 /// <summary>
 /// What nuget.org says the newest version of a package is, asked over HTTP as its API
 /// documents. Not through NuGet's client libraries: Lode asks once a day and then sits in the

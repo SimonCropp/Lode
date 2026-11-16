@@ -1005,7 +1005,7 @@ sealed class FolderView : UserControl
     const int readsApart = 10;
 
     // However long the read, a folder that keeps changing is read again this often.
-    static readonly TimeSpan longestWait = TimeSpan.FromSeconds(10);
+    static TimeSpan longestWait = TimeSpan.FromSeconds(10);
 
     // When the folder may next be read for a change, by Environment.TickCount64.
     long readAgainAt;

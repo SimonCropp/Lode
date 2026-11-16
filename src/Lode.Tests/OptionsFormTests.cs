@@ -1,5 +1,3 @@
-using NuGet.Versioning;
-
 [STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.

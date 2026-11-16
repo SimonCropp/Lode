@@ -1,6 +1,3 @@
-using System.Text.Json;
-using NuGet.Versioning;
-
 /// <summary>
 /// The newest version nuget.org has of a package, from its answers as its API documents them,
 /// which are given here rather than asked for.

@@ -1,5 +1,3 @@
-using NuGet.Versioning;
-
 /// <summary>
 /// The git commands, run for real against throwaway repositories in the temp folder. A bare
 /// repository stands in for origin, so nothing leaves the machine.

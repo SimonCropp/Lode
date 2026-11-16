@@ -1,5 +1,3 @@
-using NuGet.Versioning;
-
 public class UpdatesTests
 {
     static readonly DateTimeOffset now = TestUpdates.Now;

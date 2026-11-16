@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 /// <summary>
 /// The entries Lode leaves off the shell's menu. What else is on it depends on the
 /// software installed, so only the absences are checked. The text checks assume English

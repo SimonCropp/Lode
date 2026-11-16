@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 /// <summary>
 /// What the file list shows and selects, as text. These don't depend on how anything is
 /// drawn, so they hold on any machine.
