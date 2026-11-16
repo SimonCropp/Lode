@@ -307,10 +307,10 @@ sealed class Breadcrumb : Control
             // Windows 11's shades of gray, its corners rounded, in place of Windows 10's blue.
             if (index == pressed || index == hovered)
             {
-                var shade = ExplorerStyle.Hover(SystemColors.Window);
+                var shade = ExplorerStyle.Hover(ExplorerStyle.Window);
                 if (index == pressed)
                 {
-                    shade = ExplorerStyle.Pressed(SystemColors.Window);
+                    shade = ExplorerStyle.Pressed(ExplorerStyle.Window);
                 }
 
                 using var brush = new SolidBrush(shade);

@@ -196,7 +196,7 @@ sealed class FolderView : UserControl
 
         // Explorer's margin left of the list, which a selection rectangle can be dragged from.
         Padding = new(LogicalToDeviceUnits(12), 0, 0, 0);
-        BackColor = SystemColors.Window;
+        BackColor = ExplorerStyle.Window;
         marquee = new(this, list);
         list.Dock = DockStyle.Fill;
         list.View = View.Details;

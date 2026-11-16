@@ -30,7 +30,7 @@ sealed class GutterScrollBar : HScrollBar
 
         // Drawn as the list's own is: a thin thumb, which widens and shows its arrows under the
         // mouse.
-        SetWindowTheme(Handle, "Explorer", null);
+        SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
     }
 
     void Follow()

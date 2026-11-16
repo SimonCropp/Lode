@@ -68,6 +68,9 @@ static class Program
         Settings.SeedFromInstalled();
         var settings = Settings.Load(Settings.DefaultPath);
 
+        // Before the first window, which takes its colours from it.
+        ExplorerStyle.Use(settings.Theme);
+
         // Before the first window, which shows a pending update from the start.
         Updates.Instance = Updates.ForThisCopy(settings);
         var places = Places.ForThisMachine(settings);

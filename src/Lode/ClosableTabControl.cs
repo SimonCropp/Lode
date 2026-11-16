@@ -264,7 +264,7 @@ sealed class ClosableTabControl : TabControl
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         if (index == SelectedIndex)
         {
-            background = SystemColors.Window;
+            background = ExplorerStyle.Window;
             using var outline = SelectedOutline(tab, baseline, radius);
 
             // Filled down over the line the tabs sit on, which the outline only reaches.
@@ -272,7 +272,8 @@ sealed class ClosableTabControl : TabControl
             var foot = LogicalToDeviceUnits(footRadius);
             body.AddLine(tab.Right + foot, baseline + 1, tab.Left - foot, baseline + 1);
             body.CloseFigure();
-            graphics.FillPath(SystemBrushes.Window, body);
+            using var window = new SolidBrush(ExplorerStyle.Window);
+            graphics.FillPath(window, body);
             graphics.DrawPath(border, outline);
         }
         else if (index == hoveredTab)

@@ -26,6 +26,9 @@ sealed class Settings
         return SystemItems.ForThisMachine;
     }
 
+    // Light or dark, or whichever Windows is set to. See Theme.
+    public Theme Theme { get; set; }
+
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
 

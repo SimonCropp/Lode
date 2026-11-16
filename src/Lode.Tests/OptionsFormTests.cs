@@ -191,6 +191,31 @@ public class OptionsFormTests
             });
     }
 
+    // Same as Windows by default. Picking another is kept for the next start, which is when it
+    // takes effect.
+    [Test]
+    public async Task PickingAThemeChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var theme = (ComboBox) form.Controls.Find("theme", true)[0];
+        var before = new
+        {
+            settings.Theme,
+            shown = theme.SelectedItem
+        };
+
+        theme.SelectedIndex = (int) Theme.Dark;
+
+        await Verify(
+            new
+            {
+                before,
+                after = settings.Theme
+            });
+    }
+
     // Saved as the dialog closes, not only when the last window does.
     [Test]
     public async Task ClosingSavesTheSettings()
