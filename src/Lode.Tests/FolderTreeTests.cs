@@ -368,6 +368,22 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // Painted through a buffer, as Explorer's own tree is, so dragging the splitter, which has
+    // every row drawn again as the tree is resized, doesn't flicker. Asked of the window itself
+    // (TVM_GETEXTENDEDSTYLE), since it paints itself, and TVS_EX_DOUBLEBUFFER is what buffers it.
+    [Test]
+    public async Task PaintsThroughABuffer()
+    {
+        const int getExtendedStyle = 0x112D;
+        const nint doubleBuffer = 0x0004;
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+
+        var style = NativeMethods.SendMessage(tree.Handle, getExtendedStyle, IntPtr.Zero, IntPtr.Zero);
+
+        await Assert.That(style & doubleBuffer).IsEqualTo(doubleBuffer);
+    }
+
     static List<string> Names(TreeNode node) =>
         node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
 

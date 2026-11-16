@@ -100,6 +100,10 @@ sealed class FolderTree : TreeView
         HotTracking = true;
         AllowDrop = true;
         BorderStyle = BorderStyle.None;
+        // Painted through a buffer, as Explorer's tree is. Resizing it, as dragging the splitter
+        // does, has every row drawn again, and drawn straight to the screen they flicker, wiped
+        // to the background and drawn back each time the mouse moves.
+        DoubleBuffered = true;
         // Only for Rename on the right-click menu; a click on the selected folder does not
         // start editing, as it would by default.
         LabelEdit = true;
