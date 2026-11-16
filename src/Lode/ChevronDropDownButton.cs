@@ -21,7 +21,7 @@ sealed class ChevronDropDownButton : ToolStripDropDownButton
     {
         base.OnPaint(eventArgs);
         var size = Scale(8);
-        var color = Enabled ? ForeColor : SystemColors.GrayText;
+        var color = Enabled ? ForeColor : ExplorerStyle.DisabledText;
         var chevron = Icons.Bitmap(Icons.ChevronDown, size, color);
         var right = Width - Padding.Right + ChevronWidth - Scale(2);
         eventArgs.Graphics.DrawImage(chevron, right - size, (Height - size) / 2, size, size);

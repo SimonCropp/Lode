@@ -89,7 +89,33 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             return;
         }
 
+        if (!eventArgs.Item.Enabled &&
+            eventArgs.Image is { } image)
+        {
+            DrawDisabled(eventArgs.Graphics, image, eventArgs.ImageRectangle);
+            return;
+        }
+
         base.OnRenderItemImage(eventArgs);
+    }
+
+    // A command bar icon that does nothing now, in Explorer's light gray. Windows' grayed
+    // version of the icon is much darker. Each pixel takes the gray, keeping how opaque it was,
+    // so the icon's smoothed edges stay smooth.
+    static void DrawDisabled(Graphics graphics, Image image, Rectangle bounds)
+    {
+        var color = ExplorerStyle.DisabledIcon;
+        var matrix = new ColorMatrix(
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 1, 0],
+            [color.R / 255f, color.G / 255f, color.B / 255f, 0, 1]
+        ]);
+        using var attributes = new ImageAttributes();
+        attributes.SetColorMatrix(matrix);
+        graphics.DrawImage(image, bounds, 0, 0, bounds.Width, bounds.Height, GraphicsUnit.Pixel, attributes);
     }
 
     static void Shade(Graphics graphics, Rectangle bounds, Color color, int radius)
@@ -193,6 +219,13 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             }
 
             eventArgs.TextColor = color;
+        }
+        else if (!eventArgs.Item.Enabled)
+        {
+            // New's name while there is nothing to make, as light as Explorer has it. Drawn
+            // here, as Windows' toolbar drawing has its own gray for disabled text.
+            TextRenderer.DrawText(eventArgs.Graphics, eventArgs.Text, eventArgs.TextFont, eventArgs.TextRectangle, ExplorerStyle.DisabledText, eventArgs.TextFormat);
+            return;
         }
 
         base.OnRenderItemText(eventArgs);

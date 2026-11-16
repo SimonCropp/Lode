@@ -17,5 +17,10 @@
     This PC => This PC,
     \\server\share => share,
     \\server\share\folder => folder
+  ],
+  named: [
+    This PC => This PC,
+    D:\ => Data (D:),
+    D:\Projects => Projects
   ]
 }

@@ -37,6 +37,11 @@ static class ExplorerStyle
     public static Color DisabledText => Pick(Color.FromArgb(0xA4, 0xA4, 0xA4), SystemColors.GrayText);
 
     /// <summary>
+    /// A command bar icon while it does nothing: lighter still than disabled text.
+    /// </summary>
+    public static Color DisabledIcon => Pick(Color.FromArgb(0xC2, 0xC2, 0xC2), SystemColors.GrayText);
+
+    /// <summary>
     /// Behind a menu's entries: off white, as Windows 11's menus are.
     /// </summary>
     public static Color MenuBackground => Pick(Color.FromArgb(0xF9, 0xF9, 0xF9), SystemColors.Menu);

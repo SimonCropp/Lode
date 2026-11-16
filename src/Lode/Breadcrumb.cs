@@ -74,26 +74,48 @@ sealed class Breadcrumb : Control
     }
 
     /// <summary>
-    /// The folders from the top of <paramref name="location"/> down to it, with the name each
-    /// shows. Drives show without their trailing backslash.
+    /// What a drive shows as: its label with its letter, "Windows (C:)", as Windows names it
+    /// and Explorer shows it, or its letter alone when Windows has no name for it. Tests pin it,
+    /// so captures don't depend on what the drives of the machine running them are called.
     /// </summary>
-    internal static List<(string Path, string Name)> Segments(string location)
+    internal static Func<string, string> DriveName { get; set; } = drive =>
+    {
+        var name = ShellIcons.Describe(drive).DisplayName;
+        if (name == drive)
+        {
+            return drive.TrimEnd(System.IO.Path.DirectorySeparatorChar);
+        }
+
+        return name;
+    };
+
+    /// <summary>
+    /// The folders from the top of <paramref name="location"/> down to it, with the name each
+    /// shows. A drive shows as <paramref name="driveName"/> names it, and without one, as its
+    /// letter alone.
+    /// </summary>
+    internal static List<(string Path, string Name)> Segments(string location, Func<string, string>? driveName = null)
     {
         var segments = new List<(string, string)>();
         for (var current = location; current != null; current = Locations.Parent(current))
         {
-            segments.Add((current, SegmentName(current)));
+            segments.Add((current, SegmentName(current, driveName)));
         }
 
         segments.Reverse();
         return segments;
     }
 
-    static string SegmentName(string location)
+    static string SegmentName(string location, Func<string, string>? driveName)
     {
         var name = Locations.DisplayName(location);
         if (name.Length > 1 && name.EndsWith(System.IO.Path.DirectorySeparatorChar) && !Locations.IsNetwork(name))
         {
+            if (driveName != null)
+            {
+                return driveName(location);
+            }
+
             return name.TrimEnd(System.IO.Path.DirectorySeparatorChar);
         }
 
@@ -168,7 +190,7 @@ sealed class Breadcrumb : Control
 
     void Rebuild()
     {
-        segments = Segments(path);
+        segments = Segments(path, DriveName);
         hovered = -1;
         pressed = -1;
         Arrange();

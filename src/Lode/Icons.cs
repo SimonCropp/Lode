@@ -97,6 +97,24 @@ static class Icons
     public static Bitmap Bitmap(char glyph, int size, Color color) =>
         cache.GetOrAdd((glyph, size, color.ToArgb()), _ => Draw(glyph, size, color));
 
+    static readonly ConcurrentDictionary<(char, int, int, int), Bitmap> spacedCache = new();
+
+    /// <summary>
+    /// The glyph as <see cref="Bitmap(char, int, Color)"/> draws it, with <paramref name="gap"/>
+    /// transparent pixels after it: for a button that shows text beside its icon, which a tool
+    /// strip puts closer than Explorer does. Cached: do not dispose it.
+    /// </summary>
+    public static Bitmap Bitmap(char glyph, int size, Color color, int gap) =>
+        spacedCache.GetOrAdd(
+            (glyph, size, color.ToArgb(), gap),
+            _ =>
+            {
+                var bitmap = new Bitmap(size + gap, size);
+                using var graphics = Graphics.FromImage(bitmap);
+                graphics.DrawImageUnscaled(Bitmap(glyph, size, color), 0, 0);
+                return bitmap;
+            });
+
     static Bitmap Draw(char glyph, int size, Color color)
     {
         var bitmap = new Bitmap(size, size);
