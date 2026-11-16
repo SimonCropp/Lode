@@ -106,6 +106,26 @@ public class MainFormTests
         }
     }
 
+    // More actions than the panel shows at once: the list scrolls, and Clear stays in line with
+    // its rows rather than over its scrollbar.
+    [Test]
+    public async Task ActionsScrolling()
+    {
+        try
+        {
+            for (var index = 1; index <= 8; index++)
+            {
+                await ActionLog.Run($"Git pull {index}", @"C:\Code\Lode", () => Task.FromResult(new ActionLog.Outcome(true, "Done", "")));
+            }
+
+            await Capture();
+        }
+        finally
+        {
+            ActionLog.Reset();
+        }
+    }
+
     static async Task Capture(Action<MainForm, Fixture>? arrange = null, bool showHidden = false, int width = 1200, bool keepFocus = false)
     {
         using var fixture = Fixture.CreateAtFixedPath();

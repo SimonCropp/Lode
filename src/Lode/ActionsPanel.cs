@@ -67,6 +67,12 @@ sealed class ActionsPanel : Panel
         // shows its arrows under the mouse.
         list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, "Explorer", null);
 
+        // Clear ends where the rows below it do, which is short of the panel's edge once the
+        // list has more entries than fit and shows its scrollbar. Docked to the edge regardless,
+        // it sat over the scrollbar.
+        list.ClientSizeChanged += (_, _) =>
+            headerRow.Padding = new(0, 0, list.Width - list.ClientSize.Width, 0);
+
         headerRow.Controls.Add(header);
         headerRow.Controls.Add(clear);
         Controls.Add(list);
