@@ -152,6 +152,10 @@ sealed class FolderTree : TreeView
     public bool Rebuild()
     {
         bool selectedMoved;
+        if (pinnedMove is { IsCompleted: true })
+        {
+            pinnedMove = null;
+        }
 
         // A folder on its way to being selected was being read for the tree that was, by the
         // settings that were. Whoever rebuilds selects again.
@@ -227,6 +231,13 @@ sealed class FolderTree : TreeView
     /// </summary>
     internal void MovePinned(string folder, int index)
     {
+        // Each move is worked out from Quick access as last read, so none starts until the
+        // one before has finished and Quick access has been read again after it.
+        if (pinnedMove != null)
+        {
+            return;
+        }
+
         var desired = PinnedOrder.Move(places.Pinned, folder, index);
         var toMove = PinnedOrder.ToMoveToEnd(places.Pinned, desired);
         if (toMove.Count == 0)
@@ -236,7 +247,30 @@ sealed class FolderTree : TreeView
 
         movingPinned = folder;
         movingOrder = desired;
-        MovePinnedToEnd(toMove);
+        ShowPinnedMoved(folder, index);
+        pinnedMove = MovePinnedToEnd(toMove);
+    }
+
+    // The shell moving pinned folders, until the tree is rebuilt from Quick access read again
+    // after it.
+    Task? pinnedMove;
+
+    // The shell takes a moment to move a pinned folder, and Quick access is only read again
+    // after that, so the folder is shown in its new place, and selected, before it starts.
+    void ShowPinnedMoved(string folder, int index)
+    {
+        var node = PinnedSection?.Nodes.Cast<TreeNode>().FirstOrDefault(_ => Locations.Same(_.Tag as string, folder));
+        if (node?.Parent is not { } section)
+        {
+            return;
+        }
+
+        using (this.SuspendPainting())
+        {
+            node.Remove();
+            section.Nodes.Insert(Math.Clamp(index, 0, section.Nodes.Count), node);
+            SelectedNode = node;
+        }
     }
 
     // Alt+Shift+Up and Down move the selected pinned folder up or down the list.
@@ -1241,10 +1275,10 @@ sealed class FolderTree : TreeView
     internal Action<string, bool> SetPinned;
 
     /// <summary>
-    /// Moves pinned folders to the end of the Pinned list, one after another. Replaced in tests,
-    /// which must not change the real list.
+    /// Moves pinned folders to the end of the Pinned list, one after another, completing once
+    /// they have moved. Replaced in tests, which must not change the real list.
     /// </summary>
-    internal Action<IReadOnlyList<string>> MovePinnedToEnd;
+    internal Func<IReadOnlyList<string>, Task> MovePinnedToEnd;
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
     {
@@ -1393,9 +1427,10 @@ sealed class FolderTree : TreeView
         var owner = FindForm()?.Handle ?? Handle;
         if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
         {
+            // Once the drag is over, so the tree it reorders is no longer the drag's target.
             if (PinnedDropTarget(eventArgs) is { } target)
             {
-                MovePinned(target.Folder, target.Index);
+                BeginInvoke(() => MovePinned(target.Folder, target.Index));
             }
 
             return;
