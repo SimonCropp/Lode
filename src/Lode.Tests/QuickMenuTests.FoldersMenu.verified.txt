@@ -1,0 +1,18 @@
+﻿[
+  Open,
+  Open in new tab,
+  Terminal,
+  Terminal (admin),
+  Pin to Quick access,
+  ----,
+  Cut,
+  Copy,
+  Rename (disabled),
+  Delete,
+  ----,
+  Create shortcut,
+  Copy as path,
+  Properties,
+  ----,
+  Show more options
+]

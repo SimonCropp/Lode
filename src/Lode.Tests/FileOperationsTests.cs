@@ -1,5 +1,14 @@
 public class FileOperationsTests
 {
+    // Several folders open as tabs of one Windows Terminal window.
+    [Test]
+    public async Task TerminalArguments()
+    {
+        await Assert.That(FileOperations.TerminalArguments([@"C:\Code\Lode"])).IsEquivalentTo(["-d", @"C:\Code\Lode"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(FileOperations.TerminalArguments([@"C:\Code\Lode", @"C:\Code\Two Words"]))
+            .IsEquivalentTo(["-d", @"C:\Code\Lode", ";", "new-tab", "-d", @"C:\Code\Two Words"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     [Test]
     public async Task CopyToAnotherFolder()
     {

@@ -391,7 +391,7 @@ sealed class ActionsPanel : Panel
             Entry = entry;
             AutoScaleDimensions = new(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            Text = $"{entry.Title} – {entry.Folder}";
+            Text = $"{entry.Title} – {entry.Where}";
             ShowInTaskbar = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;

@@ -251,7 +251,15 @@ static class FileOperations
     /// Windows Terminal in <paramref name="directory"/>, or a command prompt where it is not
     /// installed. With <paramref name="admin"/>, elevated, after the UAC prompt.
     /// </summary>
-    public static void OpenTerminal(string directory, bool admin = false)
+    public static void OpenTerminal(string directory, bool admin = false) =>
+        OpenTerminal([directory], admin);
+
+    /// <summary>
+    /// One Windows Terminal window with a tab in each of <paramref name="directories"/>, so
+    /// there is one UAC prompt for the lot with <paramref name="admin"/>; or a command prompt
+    /// in each where it is not installed.
+    /// </summary>
+    public static void OpenTerminal(IReadOnlyList<string> directories, bool admin = false)
     {
         var verb = admin ? "runas" : "";
         try
@@ -261,8 +269,11 @@ static class FileOperations
                 UseShellExecute = true,
                 Verb = verb
             };
-            startInfo.ArgumentList.Add("-d");
-            startInfo.ArgumentList.Add(directory);
+            foreach (var argument in TerminalArguments(directories))
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
             Process.Start(startInfo)?.Dispose();
         }
         catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
@@ -272,26 +283,53 @@ static class FileOperations
         }
         catch (Exception)
         {
-            // An elevated process starts in System32 whatever its working directory, so the
-            // prompt changes to the folder itself.
-            var fallback = new ProcessStartInfo("cmd.exe")
+            foreach (var directory in directories)
             {
-                UseShellExecute = true,
-                Verb = verb,
-                WorkingDirectory = directory
-            };
-            fallback.ArgumentList.Add("/k");
-            fallback.ArgumentList.Add("cd");
-            fallback.ArgumentList.Add("/d");
-            fallback.ArgumentList.Add(directory);
-            try
-            {
-                Process.Start(fallback)?.Dispose();
-            }
-            catch (Win32Exception fallbackException) when (fallbackException.NativeErrorCode == cancelledByUser)
-            {
+                // An elevated process starts in System32 whatever its working directory, so the
+                // prompt changes to the folder itself.
+                var fallback = new ProcessStartInfo("cmd.exe")
+                {
+                    UseShellExecute = true,
+                    Verb = verb,
+                    WorkingDirectory = directory
+                };
+                fallback.ArgumentList.Add("/k");
+                fallback.ArgumentList.Add("cd");
+                fallback.ArgumentList.Add("/d");
+                fallback.ArgumentList.Add(directory);
+                try
+                {
+                    Process.Start(fallback)?.Dispose();
+                }
+                catch (Win32Exception fallbackException) when (fallbackException.NativeErrorCode == cancelledByUser)
+                {
+                    // No to one prompt is no to the rest.
+                    return;
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// What Windows Terminal is started with: the first folder, then a new tab for each of the
+    /// rest, the commands split by semicolons.
+    /// </summary>
+    internal static List<string> TerminalArguments(IReadOnlyList<string> directories)
+    {
+        var arguments = new List<string>();
+        foreach (var directory in directories)
+        {
+            if (arguments.Count > 0)
+            {
+                arguments.Add(";");
+                arguments.Add("new-tab");
+            }
+
+            arguments.Add("-d");
+            arguments.Add(directory);
+        }
+
+        return arguments;
     }
 
     public static void CopyToClipboard(IReadOnlyCollection<string> paths, bool cut)

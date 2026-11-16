@@ -2093,20 +2093,17 @@ sealed class FolderView : UserControl
         {
             LodeActions.Command("open", () => OpenEntries(selection))
         };
+
+        // What applies to a folder applies to each of several: a terminal tab for each, git
+        // across the repositories of them all.
+        List<string> folders = [];
         if (allFolders)
         {
+            folders = selection.Select(_ => _.FullPath).ToList();
             commands.Add(LodeActions.Command("openInNewTab", () => OpenInNewTabs(selection)));
-        }
-
-        if (selection is [{ IsDirectory: true } terminalFolder])
-        {
-            commands.Add(LodeActions.Command("terminal", () => FileOperations.OpenTerminal(terminalFolder.FullPath)));
-            commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(terminalFolder.FullPath, admin: true)));
-        }
-
-        if (allFolders)
-        {
-            commands.Add(LodeActions.Pin(selection.Select(_ => _.FullPath).ToList(), places, SetPinned));
+            commands.Add(LodeActions.Command("terminal", () => FileOperations.OpenTerminal(folders)));
+            commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(folders, admin: true)));
+            commands.Add(LodeActions.Pin(folders, places, SetPinned));
         }
 
         if (allFiles &&
@@ -2136,11 +2133,7 @@ sealed class FolderView : UserControl
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             LodeActions.Command("properties", ShowProperties)
         ]);
-        if (selection is [{ IsDirectory: true } folder])
-        {
-            commands.AddRange(CodeMenu.Commands(this, settings, folder.FullPath));
-        }
-
+        commands.AddRange(CodeMenu.Commands(this, settings, folders));
         return commands;
     }
 
@@ -2217,7 +2210,7 @@ sealed class FolderView : UserControl
         LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
         LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath])),
         LodeActions.Command("properties", ShowProperties),
-        .. CodeMenu.Commands(this, settings, CurrentPath)
+        .. CodeMenu.Commands(this, settings, [CurrentPath])
     ];
 
     /// <summary>

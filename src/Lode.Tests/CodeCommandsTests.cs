@@ -34,6 +34,36 @@ public class CodeCommandsTests
         await Assert.That(repos.Select(code.Relative)).IsEquivalentTo(["One"]);
     }
 
+    // Several folders: the repositories of each, once each, in order.
+    [Test]
+    public async Task FindsReposAcrossFolders()
+    {
+        using var code = new Scratch();
+        Directory.CreateDirectory(code.At("One", ".git"));
+        Directory.CreateDirectory(code.At("Group", "Two", ".git"));
+        Directory.CreateDirectory(code.At("Group", "Three", ".git"));
+
+        var repos = CodeCommands.FindRepos([code.At("One"), code.At("Group"), code.At("Group", "Two")]);
+
+        await Assert.That(repos.Select(code.Relative)).IsEquivalentTo(["Group/Three", "Group/Two", "One"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
+    public async Task OutermostLeavesOutFoldersInsideOthers()
+    {
+        var folders = CodeCommands.Outermost([@"C:\Code\Lode", @"C:\Code\Lode\src", @"C:\Code\Lodestar", @"C:\Code\lode"]);
+
+        await Assert.That(folders).IsEquivalentTo([@"C:\Code\Lode", @"C:\Code\Lodestar"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
+    public async Task CommonFolderHoldsThemAll()
+    {
+        await Assert.That(CodeCommands.CommonFolder([@"C:\Code\One", @"C:\Code\Two"])).IsEqualTo(@"C:\Code");
+        await Assert.That(CodeCommands.CommonFolder([@"C:\Code\One", @"C:\Code\Group\Two"])).IsEqualTo(@"C:\Code");
+        await Assert.That(CodeCommands.CommonFolder([@"C:\Code\Group\One", @"C:\Code\Group\Two"])).IsEqualTo(@"C:\Code\Group");
+    }
+
     [Test]
     public async Task DiscardRestoresAndCleans()
     {
@@ -231,6 +261,24 @@ public class CodeCommandsTests
         var outcome = await CodeCommands.UpdateNugets(code.Root);
 
         await Assert.That(outcome).IsEqualTo(new(true, "Nothing to update", ""));
+    }
+
+    // One folder that can't be updated is a failure, but the others are still updated, and
+    // each is reported as it is reached.
+    [Test]
+    public async Task UpdateNugetsInSeveralFolders()
+    {
+        using var code = new Scratch();
+        Directory.CreateDirectory(code.At("One"));
+        Directory.CreateDirectory(code.At("Two"));
+
+        var fine = await CodeCommands.UpdateNugets([code.At("One"), code.At("Two")]);
+        var oneMissing = await CodeCommands.UpdateNugets([code.At("Missing"), code.At("One")]);
+
+        await Assert.That(fine).IsEqualTo(new(true, "Nothing to update", ""));
+        await Assert.That(oneMissing.Succeeded).IsFalse();
+        await Assert.That(oneMissing.Summary).IsEqualTo("Nothing to update, 1 problem");
+        await Assert.That(oneMissing.Details).StartsWith("Missing: ");
     }
 
     internal sealed class Scratch : IDisposable

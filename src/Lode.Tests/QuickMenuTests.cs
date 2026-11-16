@@ -97,7 +97,8 @@ public class QuickMenuTests
         await Verify(Describe(view.ItemCommands([Entry(view, "Docs")])));
     }
 
-    // A folder under the code folder gets the git and NuGet commands; a file there doesn't.
+    // A folder under the code folder gets the git and NuGet commands, and so do several; a
+    // file there doesn't, nor does a folder selected with one.
     [Test]
     public async Task FolderUnderTheCodeFolderMenu()
     {
@@ -108,9 +109,21 @@ public class QuickMenuTests
             new
             {
                 folder = Describe(view.ItemCommands([Entry(view, "Docs")])),
+                folders = Describe(view.ItemCommands([Entry(view, "Archive"), Entry(view, "Docs")])),
                 file = Describe(view.ItemCommands([Entry(view, "notes.aleph")])),
+                folderAndFile = Describe(view.ItemCommands([Entry(view, "Docs"), Entry(view, "notes.aleph")])),
                 background = Describe(view.BackgroundCommands(canPaste: false, newTypes))
             });
+    }
+
+    // Outside the code folder, several folders still get a terminal, a tab for each.
+    [Test]
+    public async Task FoldersMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+
+        await Verify(Describe(view.ItemCommands([Entry(view, "Archive"), Entry(view, "Docs")])));
     }
 
     // No Open in new tab once a file is in the mix, and Rename needs a single item.

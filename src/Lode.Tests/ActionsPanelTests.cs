@@ -13,6 +13,24 @@ public class ActionsPanelTests
     public void Empty() =>
         ActionLog.Reset();
 
+    // An entry for several folders names both of two, or the first of more and how many others;
+    // its details name every one.
+    [Test]
+    public async Task AnEntryForSeveralFolders()
+    {
+        var one = new ActionLog.Entry("Git pull", [@"C:\Code\Lode"]);
+        var drive = new ActionLog.Entry("Git pull", [@"D:\"]);
+        var two = new ActionLog.Entry("Git pull", [@"C:\Code\Lode", @"C:\Code\Verify"]);
+        var three = new ActionLog.Entry("Git pull", [@"C:\Code\Lode", @"C:\Code\Verify", @"C:\Code\Polyfill"]);
+
+        await Assert.That(one.FolderName).IsEqualTo("Lode");
+        await Assert.That(one.Where).IsEqualTo(@"C:\Code\Lode");
+        await Assert.That(drive.FolderName).IsEqualTo(@"D:\");
+        await Assert.That(two.FolderName).IsEqualTo("Lode and Verify");
+        await Assert.That(three.FolderName).IsEqualTo("Lode and 2 more");
+        await Assert.That(three.Where).IsEqualTo("Lode, Verify, Polyfill");
+    }
+
     [Test]
     public async Task AnEntryRunsThenRecordsTheOutcome()
     {

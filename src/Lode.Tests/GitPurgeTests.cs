@@ -44,6 +44,31 @@ public class GitPurgeTests
         await Assert.That(GitPurge.Folders(codeFolder, codeFolder).Select(scratch.Relative)).IsEquivalentTo(["Code/Repo"]);
     }
 
+    // Several folders: what each would purge, less what purging another already covers. A
+    // repository nested in another isn't covered, as a purge leaves it alone.
+    [Test]
+    public async Task SeveralFoldersArePurgedOnceEach()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        Directory.CreateDirectory(code.At("Repo", ".git"));
+        Directory.CreateDirectory(code.At("Repo", "src", "Deep"));
+        Directory.CreateDirectory(code.At("Repo", "Nested", ".git"));
+        Directory.CreateDirectory(code.At("Group", "One", ".git"));
+        Directory.CreateDirectory(code.At("Group", "Two", ".git"));
+
+        var folders = GitPurge.Folders(
+            [
+                code.At("Repo", "src", "Deep"),
+                code.At("Repo"),
+                code.At("Repo", "Nested"),
+                code.At("Group"),
+                code.At("Group", "One")
+            ],
+            code.Root);
+
+        await Assert.That(folders.Select(code.Relative)).IsEquivalentTo(["Group/One", "Group/Two", "Repo", "Repo/Nested"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     static List<string> Folders(CodeCommandsTests.Scratch code, params string[] parts) =>
         GitPurge.Folders(code.At(parts), code.Root)
             .Select(code.Relative)

@@ -24,6 +24,24 @@ static class CodeCommands
         return repos;
     }
 
+    /// <summary>
+    /// The repositories of every one of <paramref name="folders"/>, each once.
+    /// </summary>
+    public static List<string> FindRepos(IReadOnlyList<string> folders)
+    {
+        if (folders is [var folder])
+        {
+            return FindRepos(folder);
+        }
+
+        var repos = folders
+            .SelectMany(FindRepos)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        repos.Sort(StringComparer.OrdinalIgnoreCase);
+        return repos;
+    }
+
     static void Collect(string folder, int depth, List<string> repos)
     {
         if (depth == 0)
@@ -211,13 +229,7 @@ static class CodeCommands
         UpdateResult result;
         try
         {
-            IProgress<UpdateProgress>? updateProgress = null;
-            if (progress != null)
-            {
-                updateProgress = new Forward<UpdateProgress>(_ => progress.Report(NugetProgress(_)));
-            }
-
-            result = await Task.Run(() => PackageUpdater.Run(folder, null, build, updateProgress));
+            result = await Task.Run(() => PackageUpdater.Run(folder, null, build, ForwardProgress(progress, "")));
         }
         catch (Exception exception)
         {
@@ -229,6 +241,83 @@ static class CodeCommands
         }
 
         return NugetOutcome(folder, result.Changes, result.Problems);
+    }
+
+    /// <summary>
+    /// Updates every one of <paramref name="folders"/> in turn, as one update. One inside
+    /// another is left out, as updating that one updates it too. A folder that can't be updated
+    /// is a problem, and the rest are still updated.
+    /// </summary>
+    public static async Task<ActionLog.Outcome> UpdateNugets(IReadOnlyList<string> folders, IProgress<string>? progress = null, bool build = false)
+    {
+        folders = Outermost(folders);
+        if (folders is [var only])
+        {
+            return await UpdateNugets(only, progress, build);
+        }
+
+        var changes = new List<PackageChange>();
+        var problems = new List<UpdateProblem>();
+        await nugetGate.WaitAsync();
+        try
+        {
+            for (var index = 0; index < folders.Count; index++)
+            {
+                var folder = folders[index];
+                var updateProgress = ForwardProgress(progress, $"{index + 1} of {folders.Count}: ");
+                try
+                {
+                    var result = await Task.Run(() => PackageUpdater.Run(folder, null, build, updateProgress));
+                    changes.AddRange(result.Changes);
+                    problems.AddRange(result.Problems);
+                }
+                catch (Exception exception)
+                {
+                    problems.Add(new(UpdateProblemKind.Failed, folder, exception.Message));
+                }
+            }
+        }
+        finally
+        {
+            nugetGate.Release();
+        }
+
+        return NugetOutcome(CommonFolder(folders), changes, problems);
+    }
+
+    static IProgress<UpdateProgress>? ForwardProgress(IProgress<string>? progress, string prefix)
+    {
+        if (progress == null)
+        {
+            return null;
+        }
+
+        return new Forward<UpdateProgress>(_ => progress.Report(prefix + NugetProgress(_)));
+    }
+
+    /// <summary>
+    /// The folders, each once, without any inside another of them.
+    /// </summary>
+    internal static List<string> Outermost(IReadOnlyList<string> folders) =>
+        folders
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(folder => !folders.Any(other => !Locations.Same(other, folder) && Locations.IsWithin(folder, other)))
+            .ToList();
+
+    /// <summary>
+    /// The folder holding every one of <paramref name="folders"/>, which an update of them
+    /// shows its files relative to, so each starts with the name of the folder it is in.
+    /// </summary>
+    internal static string CommonFolder(IReadOnlyList<string> folders)
+    {
+        var common = Path.GetDirectoryName(folders[0]);
+        while (common != null &&
+               !folders.All(_ => Locations.IsWithin(_, common)))
+        {
+            common = Path.GetDirectoryName(common);
+        }
+
+        return common ?? Path.GetPathRoot(folders[0])!;
     }
 
     /// <summary>

@@ -1145,7 +1145,7 @@ sealed class FolderTree : TreeView
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
             LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
             LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties")),
-            .. CodeMenu.Commands(this, settings, path)
+            .. CodeMenu.Commands(this, settings, [path])
         ];
     }
 

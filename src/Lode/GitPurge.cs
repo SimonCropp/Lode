@@ -47,6 +47,50 @@ static class GitPurge
         return repos;
     }
 
+    /// <summary>
+    /// The folders a purge of every one of <paramref name="folders"/> works on, each once,
+    /// without any that purging another already covers.
+    /// </summary>
+    public static List<string> Folders(IReadOnlyList<string> folders, string codeFolder)
+    {
+        if (folders is [var folder])
+        {
+            return Folders(folder, codeFolder);
+        }
+
+        var all = folders
+            .SelectMany(_ => Folders(_, codeFolder))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var result = all
+            .Where(inner => !all.Any(outer => Covers(outer, inner)))
+            .ToList();
+        result.Sort(StringComparer.OrdinalIgnoreCase);
+        return result;
+    }
+
+    // Purging outer purges inner too when inner is inside it with no repository between them,
+    // since a purge leaves nested repositories alone. Two purges of the same files would each
+    // find, and try to delete, what the other had.
+    static bool Covers(string outer, string inner)
+    {
+        if (Locations.Same(outer, inner) ||
+            !Locations.IsWithin(inner, outer))
+        {
+            return false;
+        }
+
+        for (var current = inner; !Locations.Same(current, outer); current = Path.GetDirectoryName(current)!)
+        {
+            if (CodeCommands.IsRepo(current))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     static bool InRepo(string folder, string codeFolder)
     {
         for (var current = folder; current != null; current = Path.GetDirectoryName(current))

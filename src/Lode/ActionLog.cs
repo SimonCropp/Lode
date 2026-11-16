@@ -16,29 +16,63 @@ static class ActionLog
     /// </summary>
     public sealed record Outcome(bool Succeeded, string Summary, string Details);
 
-    public sealed class Entry(string title, string folder)
+    /// <param name="folders">What it acts on: one folder, or several selected together.</param>
+    public sealed class Entry(string title, IReadOnlyList<string> folders)
     {
         public string Title { get; } = title;
-        public string Folder { get; } = folder;
+        public IReadOnlyList<string> Folders { get; } = folders;
         public State State { get; internal set; } = State.Running;
         public string Summary { get; internal set; } = "Running…";
         public string Details { get; internal set; } = "";
 
         /// <summary>
-        /// The folder's own name, or the whole path for a drive root.
+        /// The folder's own name, or the whole path for a drive root. Of several, both names,
+        /// or the first's and how many more.
         /// </summary>
         public string FolderName
         {
             get
             {
-                var name = Path.GetFileName(Folder.TrimEnd(Path.DirectorySeparatorChar));
-                if (name.Length == 0)
+                var first = Name(Folders[0]);
+                if (Folders.Count == 1)
                 {
-                    return Folder;
+                    return first;
                 }
 
-                return name;
+                if (Folders.Count == 2)
+                {
+                    return $"{first} and {Name(Folders[1])}";
+                }
+
+                return $"{first} and {Folders.Count - 1} more";
             }
+        }
+
+        /// <summary>
+        /// The folder's whole path, or the names of every one of several.
+        /// </summary>
+        public string Where
+        {
+            get
+            {
+                if (Folders.Count == 1)
+                {
+                    return Folders[0];
+                }
+
+                return string.Join(", ", Folders.Select(Name));
+            }
+        }
+
+        static string Name(string folder)
+        {
+            var name = Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar));
+            if (name.Length == 0)
+            {
+                return folder;
+            }
+
+            return name;
         }
 
         /// <summary>
@@ -64,16 +98,19 @@ static class ActionLog
     public static event Action<Entry>? Progressed;
 
     public static Task<Entry> Run(string title, string folder, Func<Task<Outcome>> work) =>
-        Run(title, folder, _ => work());
+        Run(title, [folder], _ => work());
+
+    public static Task<Entry> Run(string title, string folder, Func<IProgress<string>, Task<Outcome>> work) =>
+        Run(title, [folder], work);
 
     /// <summary>
     /// Adds a running entry, then records how the work ended. Never throws: a failure becomes
     /// a failed entry. The work may report, from any thread, how far it has got; that is the
     /// entry's summary until it ends.
     /// </summary>
-    public static async Task<Entry> Run(string title, string folder, Func<IProgress<string>, Task<Outcome>> work)
+    public static async Task<Entry> Run(string title, IReadOnlyList<string> folders, Func<IProgress<string>, Task<Outcome>> work)
     {
-        var entry = new Entry(title, folder);
+        var entry = new Entry(title, folders);
         entries.Add(entry);
         Changed?.Invoke();
 

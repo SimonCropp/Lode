@@ -1,20 +1,22 @@
 /// <summary>
-/// The right-click entries for a folder under the code folder: git pull, push, discard and
-/// purge across its repositories, and Update NuGets (optionally then building). Each runs in
-/// the background and shows in the actions panel under the tree, without holding up the rest
-/// of Lode. Push, discard and purge ask first.
+/// The right-click entries for folders under the code folder: git pull, push, discard and
+/// purge across their repositories, and Update NuGets (optionally then building). With several
+/// folders selected, each command takes in all of them at once, as one entry in the actions
+/// panel. Each runs in the background and shows in the actions panel under the tree, without
+/// holding up the rest of Lode. Push, discard and purge ask first.
 /// </summary>
 static class CodeMenu
 {
     const string defaultCommitMessage = "refs or cleanup";
 
     /// <summary>
-    /// The entries for the folder, after a separator, or none when it is not under the code
-    /// folder.
+    /// The entries for the folders, after a separator, or none unless every one is under the
+    /// code folder.
     /// </summary>
-    public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, string folder)
+    public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders)
     {
-        if (!settings.IsCode(folder))
+        if (folders.Count == 0 ||
+            !folders.All(settings.IsCode))
         {
             return [];
         }
@@ -25,46 +27,46 @@ static class CodeMenu
             LodeActions.Submenu(
                 "git",
                 [
-                    new("Pull", () => Pull(folder))
+                    new("Pull", () => Pull(folders))
                     {
                         Glyph = Icons.Pull
                     },
-                    new("Push…", () => Push(owner, folder))
+                    new("Push…", () => Push(owner, folders))
                     {
                         Glyph = Icons.Push
                     },
-                    new("Discard…", () => Discard(owner, folder))
+                    new("Discard…", () => Discard(owner, folders))
                     {
                         Glyph = Icons.Discard
                     },
-                    new("Purge…", () => Purge(owner, settings, folder))
+                    new("Purge…", () => Purge(owner, settings, folders))
                     {
                         Glyph = Icons.Purge
                     }
                 ]),
-            LodeActions.Command("updateNugets", () => UpdateNugets(folder)),
-            LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folder))
+            LodeActions.Command("updateNugets", () => UpdateNugets(folders)),
+            LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folders))
         ];
     }
 
     // Each runs in the background and shows in the actions panel; Lode stays usable.
-    static void Pull(string folder) =>
+    static void Pull(IReadOnlyList<string> folders) =>
         _ = ActionLog.Run(
             "Git pull",
-            folder,
+            folders,
             async progress =>
             {
                 // Looking for repositories reads folders, so that is off the UI thread too.
-                var repos = await Task.Run(() => CodeCommands.FindRepos(folder));
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folders));
                 return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress));
             });
 
-    static void Push(Control owner, string folder)
+    static void Push(Control owner, IReadOnlyList<string> folders)
     {
-        var repos = CodeCommands.FindRepos(folder);
+        var repos = CodeCommands.FindRepos(folders);
         if (repos.Count == 0)
         {
-            NoRepos("Git push", folder);
+            NoRepos("Git push", folders);
             return;
         }
 
@@ -76,16 +78,16 @@ static class CodeMenu
 
         _ = ActionLog.Run(
             "Git push",
-            folder,
+            folders,
             async progress => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress)));
     }
 
-    static void Discard(Control owner, string folder)
+    static void Discard(Control owner, IReadOnlyList<string> folders)
     {
-        var repos = CodeCommands.FindRepos(folder);
+        var repos = CodeCommands.FindRepos(folders);
         if (repos.Count == 0)
         {
-            NoRepos("Git discard", folder);
+            NoRepos("Git discard", folders);
             return;
         }
 
@@ -103,19 +105,19 @@ static class CodeMenu
 
         _ = ActionLog.Run(
             "Git discard",
-            folder,
+            folders,
             async progress => CodeCommands.GitOutcome(await CodeCommands.Discard(repos, progress)));
     }
 
     // Deletes what git doesn't track, ignored files too. Finding the repositories can mean
     // reading a whole tree of folders, so that is off the UI thread; then it asks, saying where
     // the files go.
-    static async void Purge(Control owner, Settings settings, string folder)
+    static async void Purge(Control owner, Settings settings, IReadOnlyList<string> selected)
     {
-        var folders = await Task.Run(() => GitPurge.Folders(folder, settings.CodeDirectory ?? folder));
+        var folders = await Task.Run(() => GitPurge.Folders(selected, settings.CodeDirectory ?? selected[0]));
         if (folders.Count == 0)
         {
-            NoRepos("Git purge", folder);
+            NoRepos("Git purge", selected);
             return;
         }
 
@@ -146,19 +148,19 @@ static class CodeMenu
         var window = owner.FindForm()?.Handle ?? owner.Handle;
         _ = ActionLog.Run(
             "Git purge",
-            folder,
+            selected,
             progress => GitPurge.Run(folders, permanent, window, progress));
     }
 
-    static void UpdateNugets(string folder) =>
-        _ = ActionLog.Run("Update NuGets", folder, progress => CodeCommands.UpdateNugets(folder, progress));
+    static void UpdateNugets(IReadOnlyList<string> folders) =>
+        _ = ActionLog.Run("Update NuGets", folders, progress => CodeCommands.UpdateNugets(folders, progress));
 
-    static void UpdateNugetsAndBuild(string folder) =>
-        _ = ActionLog.Run("Update NuGets and build", folder, progress => CodeCommands.UpdateNugets(folder, progress, build: true));
+    static void UpdateNugetsAndBuild(IReadOnlyList<string> folders) =>
+        _ = ActionLog.Run("Update NuGets and build", folders, progress => CodeCommands.UpdateNugets(folders, progress, build: true));
 
     // Nothing to ask about, but still worth a line in the panel saying so.
-    static void NoRepos(string title, string folder) =>
-        _ = ActionLog.Run(title, folder, () => Task.FromResult(CodeCommands.GitOutcome([])));
+    static void NoRepos(string title, IReadOnlyList<string> folders) =>
+        _ = ActionLog.Run(title, folders, _ => Task.FromResult(CodeCommands.GitOutcome([])));
 
     // "Lode", or "12 repositories" with the first few named.
     internal static string Describe(IReadOnlyList<string> repos)
