@@ -91,8 +91,9 @@ sealed class FolderView : UserControl
     /// </summary>
     public Task Searching { get; private set; } = Task.CompletedTask;
 
-    // Whether the filter searches the subfolders too, as it does everywhere but This PC.
-    bool IsSearch => filter.Length > 0 && !IsThisPC;
+    // Whether the filter searches the subfolders too, as it does everywhere but This PC and a
+    // machine on the network.
+    bool IsSearch => filter.Length > 0 && !ListsPlaces;
 
     string? pendingSelection;
     readonly GutterMarquee marquee;
@@ -179,6 +180,12 @@ sealed class FolderView : UserControl
     public IReadOnlyList<FileEntry> Entries => displayed;
 
     bool IsThisPC => Locations.IsThisPC(CurrentPath);
+
+    /// <summary>
+    /// This PC, listing drives, or a machine on the network, listing its shares: places to go,
+    /// not a folder that holds anything, so nothing can be made, pasted or dropped there.
+    /// </summary>
+    public bool ListsPlaces => IsThisPC || Locations.IsServer(CurrentPath);
     IntPtr Owner => FindForm()?.Handle ?? Handle;
 
     public FolderView(Settings settings, Places places)
@@ -189,7 +196,7 @@ sealed class FolderView : UserControl
 
         // Explorer's margin left of the list, which a selection rectangle can be dragged from.
         Padding = new(LogicalToDeviceUnits(12), 0, 0, 0);
-        BackColor = SystemColors.Window;
+        BackColor = ExplorerStyle.Window;
         marquee = new(this, list);
         list.Dock = DockStyle.Fill;
         list.View = View.Details;
@@ -257,7 +264,15 @@ sealed class FolderView : UserControl
             if (stale)
             {
                 // The rows are still the folder's, a read behind, unless it was never read.
-                ReadFolder(entries.Count > 0);
+                var preserveState = entries.Count > 0;
+                if (IsRemote(CurrentPath))
+                {
+                    Loading = FindThenRead(preserveState);
+                }
+                else
+                {
+                    ReadFolder(preserveState);
+                }
             }
             else if (searchStale)
             {
@@ -296,6 +311,11 @@ sealed class FolderView : UserControl
     /// </summary>
     public string StatusFor(IReadOnlyList<FileEntry> selection)
     {
+        if (looking != null)
+        {
+            return $"Looking for {looking}...";
+        }
+
         if (error != null)
         {
             return error;
@@ -336,7 +356,81 @@ sealed class FolderView : UserControl
     public void FocusList() =>
         list.Focus();
 
-    public void Navigate(string target, bool record = true)
+    /// <summary>
+    /// Whether somewhere is on the network, where asking if it is there can take a long time.
+    /// Replaced in tests, to send a folder on this machine the way one on the network goes.
+    /// </summary>
+    internal Func<string, bool> IsRemote = Locations.IsRemote;
+
+    // Somewhere on the network being asked after, off the UI thread, and which asking that is:
+    // one overtaken, by going somewhere else meanwhile, is not acted on.
+    string? looking;
+    int finding;
+
+    // The view was started at what may be a file, taken on trust. Found to be one, its folder is
+    // shown with it selected.
+    bool revealIfFile;
+
+    enum Found
+    {
+        Folder,
+        File,
+        Nothing
+    }
+
+    static Found Find(string path)
+    {
+        if (Locations.IsServer(path))
+        {
+            if (Shares.Answers(path))
+            {
+                return Found.Folder;
+            }
+
+            return Found.Nothing;
+        }
+
+        if (Directory.Exists(path))
+        {
+            return Found.Folder;
+        }
+
+        if (File.Exists(path))
+        {
+            return Found.File;
+        }
+
+        return Found.Nothing;
+    }
+
+    public void Navigate(string target) =>
+        Go(target, null, revealFile: false);
+
+    /// <summary>
+    /// Where a tab starts: a folder, or a file, which means "show me this file", so its folder
+    /// with the file selected. Somewhere on the network is taken on trust until the view shows,
+    /// and asked after then, off the UI thread.
+    /// </summary>
+    public void OpenAt(string path)
+    {
+        if (IsRemote(path))
+        {
+            Go(path, null, revealFile: true);
+            return;
+        }
+
+        if (File.Exists(path))
+        {
+            Reveal(path);
+            return;
+        }
+
+        Navigate(path);
+    }
+
+    /// <param name="position">Where in the history the target is, when going back or forward
+    /// to it. Null for somewhere new, which is added to the history.</param>
+    void Go(string target, int? position, bool revealFile)
     {
         var normalized = Locations.Normalize(target);
         if (normalized == null)
@@ -344,30 +438,189 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!Locations.IsThisPC(normalized) && !Directory.Exists(normalized))
+        if (Locations.IsThisPC(normalized))
         {
-            if (File.Exists(normalized))
-            {
-                FileOperations.Open(this, normalized);
-                return;
-            }
-
-            MessageBox.Show(
-                this,
-                $"Lode can't find '{target}'. Check the spelling and try again.",
-                "Lode",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            Open(normalized, position);
             return;
         }
 
-        if (record)
+        // Whether somewhere on the network is there can take a long time to hear when it is
+        // not, and the window would wait all that time. So a view showing asks off the UI
+        // thread, and goes there once it has heard. One nobody can see takes it on trust, and
+        // asks when it shows.
+        if (IsRemote(normalized))
+        {
+            if (showing)
+            {
+                Loading = FindThenOpen(target, normalized, position, revealFile);
+                return;
+            }
+
+            Open(normalized, position);
+            revealIfFile = revealFile;
+            if (revealFile)
+            {
+                _ = FindWhetherFile(normalized);
+            }
+
+            return;
+        }
+
+        if (Directory.Exists(normalized))
+        {
+            Open(normalized, position);
+            return;
+        }
+
+        if (File.Exists(normalized))
+        {
+            FileOperations.Open(this, normalized);
+            return;
+        }
+
+        SayNotFound(target);
+    }
+
+    void SayNotFound(string target) =>
+        MessageBox.Show(
+            this,
+            $"Lode can't find '{target}'. Check the spelling and try again.",
+            "Lode",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+
+    // Asks after somewhere on the network, off the UI thread, then does what Go does at once
+    // for somewhere on this machine.
+    async Task FindThenOpen(string target, string normalized, int? position, bool revealFile)
+    {
+        var asking = ++finding;
+        looking = normalized;
+        QueueStatusChanged();
+        var found = await Task.Run(() => Find(normalized));
+
+        // Gone somewhere else meanwhile.
+        if (asking != finding ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        looking = null;
+        if (found == Found.Folder)
+        {
+            Open(normalized, position);
+            return;
+        }
+
+        QueueStatusChanged();
+        if (found == Found.Nothing)
+        {
+            SayNotFound(target);
+            return;
+        }
+
+        if (revealFile)
+        {
+            Reveal(normalized);
+            return;
+        }
+
+        FileOperations.Open(this, normalized);
+    }
+
+    // A tab started somewhere on the network, and not yet shown, finds out behind the window
+    // whether that is a file, so that it is named for the file's folder, and goes there with the
+    // file to select, before it shows rather than once it does. Showing first, or going somewhere
+    // else, overtakes it, as both ask again.
+    async Task FindWhetherFile(string path)
+    {
+        var asking = finding;
+        var found = await Task.Run(() => Find(path));
+        if (asking != finding ||
+            IsDisposed ||
+            showing ||
+            !revealIfFile ||
+            found != Found.File)
+        {
+            return;
+        }
+
+        revealIfFile = false;
+        history.Clear();
+        historyIndex = -1;
+        Reveal(path);
+    }
+
+    // A view that was taken somewhere on the network while nobody could see it, or left there,
+    // has just shown. It is asked after first, off the UI thread: watching the folder and
+    // reading its free space ask too, and would keep the window waiting if it has gone.
+    async Task FindThenRead(bool preserveState)
+    {
+        var asking = ++finding;
+        var path = CurrentPath;
+        looking = path;
+        QueueStatusChanged();
+        var found = await Task.Run(() => Find(path));
+        if (asking != finding ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        looking = null;
+        QueueStatusChanged();
+
+        // Out of sight again meanwhile. Still to be read, the next time it shows.
+        if (!showing)
+        {
+            return;
+        }
+
+        if (found == Found.Folder)
+        {
+            ReadFolder(preserveState);
+            return;
+        }
+
+        if (found == Found.File &&
+            revealIfFile)
+        {
+            // Where the tab started is the file, which is nowhere to go back to.
+            history.Clear();
+            historyIndex = -1;
+            Reveal(path);
+            return;
+        }
+
+        // Not there. The tab stays where it was, and says so.
+        stale = false;
+        Unwatch();
+        StopSearch();
+        error = $"Lode can't find '{path}'.";
+        Clear();
+    }
+
+    // Takes the view to a folder known to be there, or taken on trust. Only here does where it
+    // is in the history change: going back to somewhere that has gone, or that the view is taken
+    // away from while it is still being asked after, leaves the history as it was.
+    void Open(string normalized, int? position)
+    {
+        // Anywhere being asked after has been overtaken.
+        finding++;
+        looking = null;
+        revealIfFile = false;
+        if (position is { } index)
+        {
+            historyIndex = index;
+        }
+        else
         {
             history.RemoveRange(historyIndex + 1, history.Count - historyIndex - 1);
             history.Add(normalized);
             historyIndex = history.Count - 1;
         }
 
+        var sameDrive = Locations.SameRoot(CurrentPath, normalized);
         CurrentPath = normalized;
         filter = "";
         StopSearch();
@@ -386,7 +639,12 @@ sealed class FolderView : UserControl
 
         stale = false;
         Watch();
-        UpdateFreeSpace();
+        if (!sameDrive)
+        {
+            // The drive left's, until the drive's own has been read with the folder.
+            FreeSpaceText = "";
+        }
+
         PathChanged?.Invoke();
         Loading = LoadAsync(false);
     }
@@ -396,7 +654,6 @@ sealed class FolderView : UserControl
     {
         stale = false;
         Watch();
-        UpdateFreeSpace();
         Loading = LoadAsync(preserveState);
         if (searchStale)
         {
@@ -616,8 +873,7 @@ sealed class FolderView : UserControl
     {
         if (CanGoBack)
         {
-            historyIndex--;
-            Navigate(history[historyIndex], false);
+            GoTo(historyIndex - 1);
         }
     }
 
@@ -625,10 +881,13 @@ sealed class FolderView : UserControl
     {
         if (CanGoForward)
         {
-            historyIndex++;
-            Navigate(history[historyIndex], false);
+            GoTo(historyIndex + 1);
         }
     }
+
+    // Back or forward, to somewhere in the history.
+    void GoTo(int position) =>
+        Go(history[position], position, revealFile: false);
 
     public void GoUp()
     {
@@ -701,7 +960,6 @@ sealed class FolderView : UserControl
             return;
         }
 
-        UpdateFreeSpace();
         Loading = LoadAsync(true);
     }
 
@@ -714,25 +972,26 @@ sealed class FolderView : UserControl
         var column = sortColumn;
         var ascending = sortAscending;
         var started = Stopwatch.GetTimestamp();
-        List<FileEntry> loaded;
-        string? failure = null;
+        var freeSpace = places.FreeSpace;
         loading = true;
-        try
-        {
-            // Sorted there too, which leaves the UI thread only the rows to make.
-            loaded = await Task.Run(
-                () =>
+
+        // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
+        // space is read there as well, as asking a drive mapped to a share waits on the network.
+        var (loaded, late, free, failure) = await Task.Run(
+            () =>
+            {
+                var space = FreeSpaceOf(path, freeSpace);
+                try
                 {
-                    var found = Enumerate(path, showHidden, hiddenSystem);
+                    var found = Enumerate(path, showHidden, hiddenSystem, out var late);
                     found.Sort((first, second) => Compare(first, second, column, ascending));
-                    return found;
-                });
-        }
-        catch (Exception exception)
-        {
-            loaded = [];
-            failure = exception.Message;
-        }
+                    return (found, late, space, null);
+                }
+                catch (Exception exception)
+                {
+                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message);
+                }
+            });
 
         if (version != loadVersion || IsDisposed)
         {
@@ -740,11 +999,40 @@ sealed class FolderView : UserControl
         }
 
         loading = false;
+        FreeSpaceText = free;
         entries = loaded;
         entriesSort = (column, ascending);
         error = failure;
         Populate(preserveState);
         ReadTook(Stopwatch.GetElapsedTime(started));
+        foreach (var drive in late)
+        {
+            _ = SizeLate(version, drive);
+        }
+    }
+
+    // A drive of This PC's that said how big it is only after it was listed without, put in the
+    // list as it now is, unless the list has been read again, or left, meanwhile.
+    async Task SizeLate(int version, Task<FileEntry> sizing)
+    {
+        var sized = await sizing;
+        if (version != loadVersion ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        var index = entries.FindIndex(_ => Locations.Same(_.FullPath, sized.FullPath));
+        if (index < 0)
+        {
+            return;
+        }
+
+        entries[index] = sized;
+
+        // Sorted again, as its size may move it.
+        entriesSort = (-1, false);
+        Populate(true);
     }
 
     // A folder that takes long to read is not read again the moment it changes, but only once
@@ -755,7 +1043,7 @@ sealed class FolderView : UserControl
     const int readsApart = 10;
 
     // However long the read, a folder that keeps changing is read again this often.
-    static readonly TimeSpan longestWait = TimeSpan.FromSeconds(10);
+    static TimeSpan longestWait = TimeSpan.FromSeconds(10);
 
     // When the folder may next be read for a change, by Environment.TickCount64.
     long readAgainAt;
@@ -782,29 +1070,76 @@ sealed class FolderView : UserControl
     internal void ReadTook(TimeSpan read) =>
         readAgainAt = Environment.TickCount64 + (long)WaitAfter(read).TotalMilliseconds;
 
-    static List<FileEntry> Enumerate(string path, bool showHidden, SystemItems? hiddenSystem)
+    static FileEntry DriveEntry(DriveInfo drive)
+    {
+        long total = 0;
+        long free = 0;
+        try
+        {
+            if (drive.IsReady)
+            {
+                total = drive.TotalSize;
+                free = drive.AvailableFreeSpace;
+            }
+        }
+        catch (IOException)
+        {
+            // The drive went away between listing and querying it.
+        }
+
+        return new(drive.Name, drive.Name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free);
+    }
+
+    // How long This PC's read waits for its drives' sizes. A drive that answers later, one mapped
+    // to a share that is offline or a disk that has to spin up, is listed without its size, which
+    // follows once it has answered.
+    static readonly TimeSpan drivesWait = TimeSpan.FromMilliseconds(250);
+
+    /// <param name="late">This PC's drives that had not said how big they are in time, each as
+    /// it will be listed once it has.</param>
+    static List<FileEntry> Enumerate(string path, bool showHidden, SystemItems? hiddenSystem, out List<Task<FileEntry>> late)
     {
         var result = new List<FileEntry>();
+        late = [];
         if (Locations.IsThisPC(path))
         {
-            foreach (var drive in DriveInfo.GetDrives())
+            // Asked all at once, each on its own, so a slow drive holds up only itself.
+            var drives = DriveInfo.GetDrives();
+            var sizing = drives
+                .Select(_ => Task.Run(() => DriveEntry(_)))
+                .ToArray();
+            Task.WaitAll(sizing, drivesWait);
+            foreach (var (drive, sized) in drives.Zip(sizing))
             {
-                long total = 0;
-                long free = 0;
-                try
+                if (sized.IsCompletedSuccessfully)
                 {
-                    if (drive.IsReady)
-                    {
-                        total = drive.TotalSize;
-                        free = drive.AvailableFreeSpace;
-                    }
-                }
-                catch (IOException)
-                {
-                    // The drive went away between listing and querying it.
+                    result.Add(sized.Result);
+                    continue;
                 }
 
-                result.Add(new(drive.Name, drive.Name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free));
+                result.Add(new(drive.Name, drive.Name, true, 0, default, FileAttributes.Directory, IsDrive: true));
+                late.Add(sized);
+            }
+
+            return result;
+        }
+
+        if (Locations.IsServer(path))
+        {
+            foreach (var (name, hidden) in Shares.List(path))
+            {
+                if (hidden && !showHidden)
+                {
+                    continue;
+                }
+
+                var attributes = FileAttributes.Directory;
+                if (hidden)
+                {
+                    attributes |= FileAttributes.Hidden;
+                }
+
+                result.Add(new(name, Path.Join(path, name), true, 0, default, attributes, IsShare: true));
             }
 
             return result;
@@ -1470,7 +1805,7 @@ sealed class FolderView : UserControl
         var measured = new HashSet<string>();
         foreach (var entry in displayed)
         {
-            var text = entry.IsDrive ? DescribeDrive(entry).Cells[column] : Cell(entry, column);
+            var text = entry.IsDrive ? DriveCell(entry, column) : Cell(entry, column);
             if (!measured.Add(text))
             {
                 continue;
@@ -1493,19 +1828,60 @@ sealed class FolderView : UserControl
     internal int ColumnWidth(int shown) =>
         list.Columns[shown].Width;
 
-    // A drive's cells, one for every column, and its icon, as the shell describes it.
-    static (string[] Cells, int Icon) DescribeDrive(FileEntry entry)
+    // A drive's cells, one for every column, and its icon, as the shell describes it. A drive
+    // mapped to a share is described off the UI thread, and its row made again once it has been.
+    (string[] Cells, int Icon) DescribeDrive(FileEntry entry)
     {
-        var (displayName, typeName, icon) = ShellIcons.Describe(entry.FullPath);
+        var (displayName, typeName, icon) = ShellIcons.DescribeDrive(entry.FullPath, DriveDescribed);
         string[] cells =
         [
             displayName,
             "",
-            entry.Size > 0 ? Formatting.Size(entry.FreeSpace) : "",
+            DriveSize(entry, entry.FreeSpace),
             typeName,
-            entry.Size > 0 ? Formatting.Size(entry.Size) : ""
+            DriveSize(entry, entry.Size)
         ];
         return (cells, icon);
+    }
+
+    // What a drive shows in a column, asking the shell only for the columns it names: sizing
+    // the size columns to fit asks nothing of it.
+    string DriveCell(FileEntry entry, int column)
+    {
+        switch (column)
+        {
+            case folderColumn:
+                return "";
+            case dateColumn:
+                return DriveSize(entry, entry.FreeSpace);
+            case sizeColumn:
+                return DriveSize(entry, entry.Size);
+        }
+
+        return DescribeDrive(entry).Cells[column];
+    }
+
+    // Nothing for a drive that has not said how big it is.
+    static string DriveSize(FileEntry entry, long size)
+    {
+        if (entry.Size > 0)
+        {
+            return Formatting.Size(size);
+        }
+
+        return "";
+    }
+
+    void DriveDescribed()
+    {
+        if (IsDisposed ||
+            !IsThisPC)
+        {
+            return;
+        }
+
+        rows.Clear();
+        list.Invalidate();
     }
 
     // What a file or folder shows in a column.
@@ -1518,6 +1894,12 @@ sealed class FolderView : UserControl
             case folderColumn:
                 return FolderCell(entry);
             case dateColumn:
+                // A share has no date of its own.
+                if (entry.Modified == default)
+                {
+                    return "";
+                }
+
                 return entry.Modified.ToString("g");
             case typeColumn:
                 return ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory);
@@ -1672,7 +2054,7 @@ sealed class FolderView : UserControl
 
     string[] SelectedPaths() =>
         SelectedEntries()
-            .Where(_ => !_.IsDrive)
+            .Where(_ => !_.IsPlace)
             .Select(_ => _.FullPath)
             .ToArray();
 
@@ -1766,7 +2148,7 @@ sealed class FolderView : UserControl
 
     public void Paste()
     {
-        if (IsThisPC)
+        if (ListsPlaces)
         {
             return;
         }
@@ -1863,7 +2245,7 @@ sealed class FolderView : UserControl
     // Makes the item, then shows it with its name ready to edit.
     void Create(Func<string, string> create)
     {
-        if (IsThisPC)
+        if (ListsPlaces)
         {
             return;
         }
@@ -1888,7 +2270,7 @@ sealed class FolderView : UserControl
         {
             ShellContextMenu.InvokeVerb(Owner, selection.Select(_ => _.FullPath).ToArray(), "properties");
         }
-        else if (!IsThisPC)
+        else if (!ListsPlaces)
         {
             ShellContextMenu.InvokeVerb(Owner, [CurrentPath], "properties");
         }
@@ -1897,7 +2279,7 @@ sealed class FolderView : UserControl
     void OnBeforeLabelEdit(object? sender, LabelEditEventArgs eventArgs)
     {
         if (eventArgs.Item >= displayed.Count ||
-            displayed[eventArgs.Item].IsDrive)
+            displayed[eventArgs.Item].IsPlace)
         {
             eventArgs.CancelEdit = true;
             return;
@@ -2044,7 +2426,7 @@ sealed class FolderView : UserControl
         {
             ShowQuickItemMenu(selection, location);
         }
-        else if (!IsThisPC)
+        else if (!ListsPlaces)
         {
             ShowQuickBackgroundMenu(location);
         }
@@ -2068,12 +2450,12 @@ sealed class FolderView : UserControl
     internal List<QuickMenu.Command?> ItemCommands(List<FileEntry> selection)
     {
         // Worked out in one pass: the actions bar asks for these each time the selection changes.
-        var anyDrive = false;
+        var anyPlace = false;
         var allFolders = true;
         var allFiles = true;
         foreach (var entry in selection)
         {
-            anyDrive |= entry.IsDrive;
+            anyPlace |= entry.IsPlace;
             if (entry.IsDirectory)
             {
                 allFiles = false;
@@ -2121,12 +2503,12 @@ sealed class FolderView : UserControl
         commands.AddRange(
         [
             null,
-            LodeActions.Command("cut", () => Copy(true), !anyDrive),
-            LodeActions.Command("copy", () => Copy(false), !anyDrive),
-            LodeActions.Command("rename", BeginRename, selection.Count == 1 && !anyDrive),
-            LodeActions.Command("delete", () => Delete(false), !anyDrive),
+            LodeActions.Command("cut", () => Copy(true), !anyPlace),
+            LodeActions.Command("copy", () => Copy(false), !anyPlace),
+            LodeActions.Command("rename", BeginRename, selection.Count == 1 && !anyPlace),
+            LodeActions.Command("delete", () => Delete(false), !anyPlace),
             null,
-            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyDrive),
+            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyPlace),
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             LodeActions.Command("properties", ShowProperties)
         ]);
@@ -2182,7 +2564,7 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!IsThisPC)
+        if (!ListsPlaces)
         {
             ShowBackgroundMenu(menu, location);
         }
@@ -2192,7 +2574,7 @@ sealed class FolderView : UserControl
     /// Whether there is anything for <see cref="ShowShellMenu"/> to show a menu for.
     /// </summary>
     public bool CanShowShellMenu =>
-        list.SelectedIndices.Count > 0 || !IsThisPC;
+        list.SelectedIndices.Count > 0 || !ListsPlaces;
 
     /// <summary>
     /// The fixed right-click menu for the empty part of the list. A null entry is a separator.
@@ -2408,7 +2790,12 @@ sealed class FolderView : UserControl
             return target.FullPath;
         }
 
-        return IsThisPC ? null : CurrentPath;
+        if (ListsPlaces)
+        {
+            return null;
+        }
+
+        return CurrentPath;
     }
 
     void OnDragOver(object? sender, DragEventArgs eventArgs) =>
@@ -2421,7 +2808,7 @@ sealed class FolderView : UserControl
     {
         Unwatch();
         changes.Reset();
-        if (IsThisPC)
+        if (ListsPlaces)
         {
             return;
         }
@@ -2473,8 +2860,15 @@ sealed class FolderView : UserControl
         return true;
     }
 
-    void UpdateFreeSpace() =>
-        FreeSpaceText = IsThisPC ? "" : places.FreeSpace(CurrentPath);
+    static string FreeSpaceOf(string path, Func<string, string> freeSpace)
+    {
+        if (Locations.IsThisPC(path))
+        {
+            return "";
+        }
+
+        return freeSpace(path);
+    }
 
     // Selecting a range raises one event per item; coalesce them into a single update.
     void QueueStatusChanged()

@@ -94,14 +94,31 @@ static class CodeCommands
                 var commit = Git(repo, "commit", "-am", message);
 
                 // Nothing to commit is fine: there may still be commits to push.
-                if (!commit.Succeeded && !commit.Output.Contains("nothing to commit", StringComparison.OrdinalIgnoreCase))
+                if (!commit.Succeeded && !NothingToCommit(repo))
                 {
                     return commit;
                 }
 
                 var push = Git(repo, "push", "origin");
-                return push with { Output = $"{commit.Output}\n{push.Output}".Trim() };
+                return push with
+                {
+                    Output = $"{commit.Output}\n{push.Output}".Trim()
+                };
             });
+
+    // Whether commit -a had nothing to commit: no tracked file changed, staged or not. Asked of
+    // git, rather than read from what the commit said, which it words one way for a clean
+    // folder and another for one with files it doesn't track. Those don't count, as commit -a
+    // leaves them, and nor do changes inside a submodule, which it leaves too.
+    static bool NothingToCommit(string repo)
+    {
+        var status = Git(repo, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty");
+        return status is
+        {
+            Succeeded: true,
+            Output.Length: 0
+        };
+    }
 
     /// <summary>
     /// Throws away changes to tracked files and deletes untracked ones. Cannot be undone.
@@ -119,7 +136,10 @@ static class CodeCommands
                 }
 
                 var clean = Git(repo, "clean", "-f");
-                return clean with { Output = $"{restore.Output}\n{clean.Output}".Trim() };
+                return clean with
+                {
+                    Output = $"{restore.Output}\n{clean.Output}".Trim()
+                };
             });
 
     // With more than one repository, reports which it is on. With one, the entry's folder

@@ -1,5 +1,3 @@
-using NuGet.Versioning;
-
 [STAThreadExecutor]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
@@ -190,6 +188,31 @@ public class OptionsFormTests
             {
                 before,
                 after = settings.PurgePermanently
+            });
+    }
+
+    // Same as Windows by default. Picking another is kept for the next start, which is when it
+    // takes effect.
+    [Test]
+    public async Task PickingAThemeChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var theme = (ComboBox) form.Controls.Find("theme", true)[0];
+        var before = new
+        {
+            settings.Theme,
+            shown = theme.SelectedItem
+        };
+
+        theme.SelectedIndex = (int) Theme.Dark;
+
+        await Verify(
+            new
+            {
+                before,
+                after = settings.Theme
             });
     }
 

@@ -138,7 +138,8 @@ sealed class FolderTree : TreeView
     protected override void OnHandleCreated(EventArgs eventArgs)
     {
         base.OnHandleCreated(eventArgs);
-        SetWindowTheme(Handle, "Explorer", null);
+        BackColor = ExplorerStyle.Window;
+        SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
         SendMessage(Handle, TreeViewSetImageList, IntPtr.Zero, ShellIcons.SmallImageList);
         // Explorer's step in from one level to the next, scaled the same way as the icons: far
         // less than the tree's own, which is a little wider than an icon.
@@ -152,6 +153,10 @@ sealed class FolderTree : TreeView
     public bool Rebuild()
     {
         bool selectedMoved;
+        if (pinnedMove is { IsCompleted: true })
+        {
+            pinnedMove = null;
+        }
 
         // A folder on its way to being selected was being read for the tree that was, by the
         // settings that were. Whoever rebuilds selects again.
@@ -227,6 +232,13 @@ sealed class FolderTree : TreeView
     /// </summary>
     internal void MovePinned(string folder, int index)
     {
+        // Each move is worked out from Quick access as last read, so none starts until the
+        // one before has finished and Quick access has been read again after it.
+        if (pinnedMove != null)
+        {
+            return;
+        }
+
         var desired = PinnedOrder.Move(places.Pinned, folder, index);
         var toMove = PinnedOrder.ToMoveToEnd(places.Pinned, desired);
         if (toMove.Count == 0)
@@ -236,7 +248,30 @@ sealed class FolderTree : TreeView
 
         movingPinned = folder;
         movingOrder = desired;
-        MovePinnedToEnd(toMove);
+        ShowPinnedMoved(folder, index);
+        pinnedMove = MovePinnedToEnd(toMove);
+    }
+
+    // The shell moving pinned folders, until the tree is rebuilt from Quick access read again
+    // after it.
+    Task? pinnedMove;
+
+    // The shell takes a moment to move a pinned folder, and Quick access is only read again
+    // after that, so the folder is shown in its new place, and selected, before it starts.
+    void ShowPinnedMoved(string folder, int index)
+    {
+        var node = PinnedSection?.Nodes.Cast<TreeNode>().FirstOrDefault(_ => Locations.Same(_.Tag as string, folder));
+        if (node?.Parent is not { } section)
+        {
+            return;
+        }
+
+        using (this.SuspendPainting())
+        {
+            node.Remove();
+            section.Nodes.Insert(Math.Clamp(index, 0, section.Nodes.Count), node);
+            SelectedNode = node;
+        }
     }
 
     // Alt+Shift+Up and Down move the selected pinned folder up or down the list.
@@ -317,6 +352,19 @@ sealed class FolderTree : TreeView
         SendMessage(Handle, TreeViewSetInsertMark, IntPtr.Zero, IntPtr.Zero);
 
     // A heading with the folders beneath it, open. Nothing at all when there are no folders.
+    // Asking the shell for a network folder's own icon can stall on a share that is offline, so
+    // a machine gets Network's and a folder on one the plain folder icon.
+    static int PinnedIcon(string folder)
+    {
+        if (Locations.IsServer(folder) ||
+            Locations.IsShare(folder))
+        {
+            return ShellIcons.NetworkIcon;
+        }
+
+        return ShellIcons.GetPlaceIcon(folder);
+    }
+
     void AddSection(string name, int icon, IReadOnlyList<string> folders, Dictionary<string, string> labels)
     {
         if (folders.Count == 0)
@@ -332,9 +380,7 @@ sealed class FolderTree : TreeView
         };
         foreach (var folder in folders)
         {
-            // Asking the shell for a network folder's own icon can stall on a share that
-            // is offline, so those get the plain folder icon.
-            var folderIcon = Locations.IsNetwork(folder) ? ShellIcons.FolderIcon : ShellIcons.GetActualIcon(folder);
+            var folderIcon = PinnedIcon(folder);
             // Shortcuts, not a second copy of the folder tree: they have no children, and
             // picking one selects the folder in the tree under This PC.
             section.Nodes.Add(CreateNode(folder, labels[folder], folderIcon, expandable: false));
@@ -371,6 +417,13 @@ sealed class FolderTree : TreeView
         if (!current.SequenceEqual(actual, StringComparer.OrdinalIgnoreCase))
         {
             LoadDrives();
+            return;
+        }
+
+        // The same drives, described again: one can have been renamed, or mapped elsewhere.
+        foreach (TreeNode drive in computerNode.Nodes)
+        {
+            DescribeDrive(drive);
         }
     }
 
@@ -384,9 +437,29 @@ sealed class FolderTree : TreeView
         computerNode.Nodes.Clear();
         foreach (var drive in places.DrivePaths())
         {
-            var (displayName, _, icon) = ShellIcons.Describe(drive);
-            computerNode.Nodes.Add(CreateNode(drive, displayName, icon));
+            var node = CreateNode(drive, "", ShellIcons.FolderIcon);
+            DescribeDrive(node);
+            computerNode.Nodes.Add(node);
         }
+    }
+
+    // A drive mapped to a share is named by its letter until the shell has described it, off
+    // the UI thread, and then again once it has, if it is still in the tree.
+    void DescribeDrive(TreeNode node)
+    {
+        var (displayName, _, icon) = ShellIcons.DescribeDrive(
+            (string)node.Tag!,
+            () =>
+            {
+                if (!IsDisposed &&
+                    IsInTree(node))
+                {
+                    DescribeDrive(node);
+                }
+            });
+        node.Text = displayName;
+        node.ImageIndex = icon;
+        node.SelectedImageIndex = icon;
     }
 
     static TreeNode CreateNode(string path, string text, int icon, bool expandable = true)
@@ -431,7 +504,7 @@ sealed class FolderTree : TreeView
 
             // As File Explorer does, every folder on a share gets an expander, rather than a trip
             // across the network into each one to see whether it should.
-            var lookInside = !IsRemote(path);
+            var lookInside = !Locations.IsRemote(path);
             var directories = new List<Subfolder>();
             foreach (var (name, fullPath) in FindSubfolders(path, options, hiddenSystem))
             {
@@ -482,30 +555,6 @@ sealed class FolderTree : TreeView
         catch (Exception)
         {
             return true;
-        }
-    }
-
-    // A share, by its \\server\share path or by a drive letter mapped to it.
-    static bool IsRemote(string path)
-    {
-        if (Locations.IsNetwork(path))
-        {
-            return true;
-        }
-
-        var root = Path.GetPathRoot(path);
-        if (string.IsNullOrEmpty(root))
-        {
-            return false;
-        }
-
-        try
-        {
-            return new DriveInfo(root).DriveType == DriveType.Network;
-        }
-        catch (ArgumentException)
-        {
-            return false;
         }
     }
 
@@ -1106,7 +1155,9 @@ sealed class FolderTree : TreeView
     internal List<QuickMenu.Command?> NodeCommands(string path, bool canPaste = false, TreeNode? node = null)
     {
         var owner = FindForm()?.Handle ?? Handle;
-        var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "");
+        // A drive, a machine on the network, or a share on one.
+        var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "") ||
+                      Locations.IsShare(path);
         var canRename = !isDrive && node is { Parent.Tag: not Section };
         return
         [
@@ -1226,10 +1277,10 @@ sealed class FolderTree : TreeView
     internal Action<string, bool> SetPinned;
 
     /// <summary>
-    /// Moves pinned folders to the end of the Pinned list, one after another. Replaced in tests,
-    /// which must not change the real list.
+    /// Moves pinned folders to the end of the Pinned list, one after another, completing once
+    /// they have moved. Replaced in tests, which must not change the real list.
     /// </summary>
-    internal Action<IReadOnlyList<string>> MovePinnedToEnd;
+    internal Func<IReadOnlyList<string>, Task> MovePinnedToEnd;
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
     {
@@ -1378,9 +1429,10 @@ sealed class FolderTree : TreeView
         var owner = FindForm()?.Handle ?? Handle;
         if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
         {
+            // Once the drag is over, so the tree it reorders is no longer the drag's target.
             if (PinnedDropTarget(eventArgs) is { } target)
             {
-                MovePinned(target.Folder, target.Index);
+                BeginInvoke(() => MovePinned(target.Folder, target.Index));
             }
 
             return;

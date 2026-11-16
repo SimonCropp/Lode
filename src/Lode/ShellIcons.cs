@@ -13,6 +13,7 @@ static class ShellIcons
     const uint directoryAttribute = 0x10;
     const uint normalAttribute = 0x80;
     const int computerFolder = 0x11;
+    const int networkFolder = 0x12;
     const uint imageListDrawTransparent = 0x1;
 
     static uint infoSize = (uint)Marshal.SizeOf<ShellFileInfo>();
@@ -44,6 +45,12 @@ static class ShellIcons
     public static string FolderTypeName { get; }
     public static int ComputerIcon { get; }
 
+    /// <summary>
+    /// The Network folder's icon, for a share. Network is a virtual folder, so asking for its
+    /// icon asks nothing of the network.
+    /// </summary>
+    public static int NetworkIcon { get; }
+
     static ShellIcons()
     {
         var info = new ShellFileInfo();
@@ -55,7 +62,8 @@ static class ShellIcons
             systemIconIndexFlag | smallIconFlag | useFileAttributesFlag | typeNameFlag);
         FolderIcon = info.IconIndex;
         FolderTypeName = info.TypeName;
-        ComputerIcon = GetComputerIcon();
+        ComputerIcon = GetSpecialFolderIcon(computerFolder);
+        NetworkIcon = GetSpecialFolderIcon(networkFolder);
         QuickAccessIcon = GetShellFolderIcon("shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}");
         RecentIcon = GetShellFolderIcon("shell:::{22877a6d-37a1-461a-91b0-dbda5aaebc99}");
     }
@@ -91,9 +99,9 @@ static class ShellIcons
         }
     }
 
-    static int GetComputerIcon()
+    static int GetSpecialFolderIcon(int folder)
     {
-        if (SHGetSpecialFolderLocation(IntPtr.Zero, computerFolder, out var itemIdList) != 0)
+        if (SHGetSpecialFolderLocation(IntPtr.Zero, folder, out var itemIdList) != 0)
         {
             return FolderIcon;
         }
@@ -305,4 +313,98 @@ static class ShellIcons
 
         return (string.IsNullOrEmpty(info.DisplayName) ? path : info.DisplayName, info.TypeName, info.IconIndex);
     }
+
+    /// <summary>
+    /// A folder's own icon, as a tab or the tree shows it: a drive's, Downloads' arrow. A folder
+    /// on the network gets the plain folder icon, since asking for its own could keep the window
+    /// waiting on the network, and a drive mapped to a share its icon once it has been described.
+    /// </summary>
+    public static int GetPlaceIcon(string path)
+    {
+        if (!Locations.IsRemote(path))
+        {
+            return GetActualIcon(path);
+        }
+
+        if (!Locations.IsNetwork(path) &&
+            Path.GetPathRoot(path) is { } root &&
+            Locations.Same(root, path))
+        {
+            return DescribeDrive(path, null).Icon;
+        }
+
+        return FolderIcon;
+    }
+
+    // Drives mapped to a share, as the shell describes them, or is still describing them. The
+    // shell asks the share for the drive's name, which waits on the network, long when the share
+    // is offline, so they are described off the UI thread.
+    static readonly ConcurrentDictionary<string, Task<(string DisplayName, string TypeName, int Icon)>> networkDrives =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // How each was last described, to show while it is being described again.
+    static readonly ConcurrentDictionary<string, (string DisplayName, string TypeName, int Icon)> describedNetworkDrives =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// As <see cref="Describe"/>, for a drive. A drive mapped to a share is described off the UI
+    /// thread: until it has been, it is named by its letter with Network's icon, or as it was last
+    /// described, and <paramref name="described"/> is called, on the calling thread, once it has.
+    /// </summary>
+    public static (string DisplayName, string TypeName, int Icon) DescribeDrive(string drive, Action? described)
+    {
+        if (!Locations.IsRemote(drive))
+        {
+            return Describe(drive);
+        }
+
+        var describing = networkDrives.GetOrAdd(
+            drive,
+            static _ => Task.Run(
+                () =>
+                {
+                    var description = Describe(_);
+                    describedNetworkDrives[_] = description;
+                    return description;
+                }));
+        if (describing.IsCompletedSuccessfully)
+        {
+            return describing.Result;
+        }
+
+        if (described != null)
+        {
+            Tell(describing, described);
+        }
+
+        if (describedNetworkDrives.TryGetValue(drive, out var last))
+        {
+            return last;
+        }
+
+        return (drive.TrimEnd(Path.DirectorySeparatorChar), "", NetworkIcon);
+
+        // Back on the thread that asked, as awaiting there returns to it.
+        static async void Tell(Task describing, Action described)
+        {
+            try
+            {
+                await describing;
+            }
+            catch (Exception)
+            {
+                // Still named by its letter.
+                return;
+            }
+
+            described();
+        }
+    }
+
+    /// <summary>
+    /// Describes drives mapped to shares again when next asked, for Refresh and when drives come
+    /// and go: a drive can be mapped to another share, or the share renamed.
+    /// </summary>
+    public static void ForgetNetworkDrives() =>
+        networkDrives.Clear();
 }

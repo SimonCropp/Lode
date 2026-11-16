@@ -10,6 +10,7 @@ public class BreadcrumbTests
                 drive = Describe(@"D:\"),
                 thisPC = Describe(Locations.ThisPC),
                 share = Describe(@"\\server\share\folder"),
+                server = Describe(@"\\server"),
                 // A drive Windows has a name for, as the address bar asks for them.
                 named = Describe(@"D:\Projects", _ => "Data (D:)")
             });

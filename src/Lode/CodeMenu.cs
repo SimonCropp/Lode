@@ -194,7 +194,7 @@ static class CodeMenu
 
     internal sealed class CommitMessageForm : Form
     {
-        readonly TextBox message = new()
+        TextBox message = new()
         {
             Name = "message",
             Width = 380

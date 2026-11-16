@@ -27,7 +27,11 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
     {
         menu.Renderer = new ExplorerRenderer();
         var vertical = menu.LogicalToDeviceUnits(menuPadding);
-        menu.Padding = menu.Padding with { Top = vertical, Bottom = vertical };
+        menu.Padding = menu.Padding with
+        {
+            Top = vertical,
+            Bottom = vertical
+        };
         menu.HandleCreated += (_, _) => RoundCorners(menu);
         if (menu.IsHandleCreated)
         {
@@ -145,7 +149,8 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             return;
         }
 
-        eventArgs.Graphics.FillRectangle(SystemBrushes.Window, eventArgs.AffectedBounds);
+        using var window = new SolidBrush(ExplorerStyle.Window);
+        eventArgs.Graphics.FillRectangle(window, eventArgs.AffectedBounds);
     }
 
     // In place of the raised edge Windows draws round a toolbar, and the frame round a menu,
@@ -343,11 +348,11 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         if (item.Pressed ||
             item is ToolStripButton { Checked: true })
         {
-            shade = ExplorerStyle.Pressed(SystemColors.Window);
+            shade = ExplorerStyle.Pressed(ExplorerStyle.Window);
         }
         else if (item.Selected)
         {
-            shade = ExplorerStyle.Hover(SystemColors.Window);
+            shade = ExplorerStyle.Hover(ExplorerStyle.Window);
         }
         else
         {

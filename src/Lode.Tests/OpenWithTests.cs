@@ -52,7 +52,7 @@ public class OpenWithTests
         var created = dataObject != IntPtr.Zero;
         if (created)
         {
-            System.Runtime.InteropServices.Marshal.Release(dataObject);
+            Marshal.Release(dataObject);
         }
 
         await Assert.That(created).IsTrue();

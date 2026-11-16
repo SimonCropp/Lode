@@ -8,7 +8,10 @@
   C:\Worktrees\Lode\src\Lode: Worktrees\Lode\src\Lode,
   D:\Notes: D:\Notes,
   This PC: This PC,
-  \\other\share: \\other\share,
-  \\server\share: \\server\share,
-  \\server\share\Notes: \\server\share\Notes
+  \\other\share: share (\\other),
+  \\server\backup\tv: backup\tv (\\server),
+  \\server\share: share (\\server),
+  \\server\share\Notes: Notes (\\server),
+  \\server\video\movies: movies (\\server),
+  \\server\video\tv: video\tv (\\server)
 }

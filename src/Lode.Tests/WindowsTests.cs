@@ -454,6 +454,25 @@ public class WindowsTests
         await Verify(commands);
     }
 
+    // The tabs from last time, less one whose folder has gone since. The tab that was active
+    // still is, a place earlier than it was.
+    [Test]
+    public async Task RestoresTheActiveTabWhenAnEarlierOneHasGone()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings
+        {
+            Tabs = [fixture.At("Gone"), fixture.At("Source"), fixture.At("Docs")],
+            ActiveTab = 1
+        };
+        using var form = await Show(fixture, settings);
+
+        await Assert.That(form.Views.Select(_ => _.CurrentPath)).IsEquivalentTo(
+            [fixture.At("Source"), fixture.At("Docs")],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source"));
+    }
+
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
         Show(fixture, new(), paths);
 

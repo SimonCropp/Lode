@@ -191,7 +191,8 @@ sealed class ShellListView : ListView
         // every ListView asks it to.
         SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle);
         base.OnHandleCreated(eventArgs);
-        SetWindowTheme(Handle, "Explorer", null);
+        BackColor = ExplorerStyle.Window;
+        SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
 
         // The arrow lives in the native header, which is new whenever the window is recreated.
         if (sortArrowColumn >= 0)

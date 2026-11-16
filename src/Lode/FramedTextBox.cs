@@ -181,7 +181,8 @@ static class TextFrame
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var radius = control.LogicalToDeviceUnits(4);
         using var shape = ExplorerStyle.RoundedRectangle(bounds, radius);
-        graphics.FillPath(SystemBrushes.Window, shape);
+        using var window = new SolidBrush(ExplorerStyle.Window);
+        graphics.FillPath(window, shape);
         if (focused)
         {
             using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), radius);

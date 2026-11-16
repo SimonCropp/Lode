@@ -134,7 +134,7 @@ static class ActionLog
     // Created on the UI thread, so it can post reports made on other threads back to it.
     sealed class EntryProgress(Entry entry) : IProgress<string>
     {
-        readonly SynchronizationContext? context = SynchronizationContext.Current;
+        SynchronizationContext? context = SynchronizationContext.Current;
 
         public void Report(string value)
         {

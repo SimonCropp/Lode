@@ -24,7 +24,7 @@ sealed class PaneSplitContainer : SplitContainer
         // The splitter white, as the panes either side are, with only a faint line down it
         // (see OnPaint), as Explorer has between its panes. In the window's gray, it joined
         // the gray track of the tree's scrollbar into a wide gray bar.
-        BackColor = SystemColors.Window;
+        BackColor = ExplorerStyle.Window;
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)

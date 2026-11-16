@@ -90,7 +90,9 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     // The shell folder behind Explorer's Quick access list.
     const string quickAccess = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
-    const uint fileSystemPathName = 0x80058000;
+    // A folder's path, or for a machine on the network, which has none in the file system,
+    // its \\server name, as Quick access gives it.
+    const uint parsingName = 0x80028000;
 
     static IContextMenu? CreateForQuickAccessItem(IntPtr owner, string path)
     {
@@ -173,7 +175,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         var full = ILCombine(parentId, child);
         try
         {
-            if (SHGetNameFromIDList(full, fileSystemPathName, out var name) != 0)
+            if (SHGetNameFromIDList(full, parsingName, out var name) != 0)
             {
                 return null;
             }
@@ -247,9 +249,54 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     /// <summary>
     /// Moves pinned folders to the end of the Pinned list one after another, so they end up
     /// last in this order: each is unpinned and pinned again, which puts it at the end. Quick
-    /// access is read again once, after them all.
+    /// access is read again once, after them all, back on the calling thread, when the task
+    /// completes. The shell shows its busy cursor while it pins or unpins, which on the UI
+    /// thread made the pointer flicker twice for each folder moved, so they are moved on a
+    /// thread of their own, set up for the shell's COM objects as the UI thread is, and in the
+    /// background, so a slow shell does not keep Lode from exiting.
     /// </summary>
-    public static void MoveToEnd(IntPtr owner, IReadOnlyList<string> folders)
+    public static Task MoveToEnd(IntPtr owner, IReadOnlyList<string> folders)
+    {
+        var context = SynchronizationContext.Current ?? new SynchronizationContext();
+        var done = new TaskCompletionSource();
+        var thread = new Thread(
+            () =>
+            {
+                try
+                {
+                    MoveEachToEnd(owner, folders);
+                }
+                catch (Exception)
+                {
+                    // Left as far as it got. Quick access is read again regardless, so the
+                    // tree shows that.
+                }
+
+                try
+                {
+                    context.Post(
+                        _ =>
+                        {
+                            QuickAccessChanged?.Invoke();
+                            done.SetResult();
+                        },
+                        null);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Lode is exiting, and there is no longer a UI thread to tell.
+                }
+            })
+        {
+            IsBackground = true,
+            Name = "Lode pinned order"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return done.Task;
+    }
+
+    static void MoveEachToEnd(IntPtr owner, IReadOnlyList<string> folders)
     {
         foreach (var folder in folders)
         {
@@ -259,11 +306,9 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             if (Unpin(owner, folder) &&
                 !TogglePinned(folder))
             {
-                break;
+                return;
             }
         }
-
-        QuickAccessChanged?.Invoke();
     }
 
     // Unpin is only offered by the folder's Quick access entry, so it is asked for that. True

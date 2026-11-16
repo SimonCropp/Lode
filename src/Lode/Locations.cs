@@ -21,6 +21,78 @@ static class Locations
     public static bool IsNetwork(CharSpan location) =>
         location.StartsWith(@"\\", StringComparison.Ordinal);
 
+    /// <summary>
+    /// The machine a share is on, "\\server" for "\\server\share\folder", or null for somewhere
+    /// not on the network.
+    /// </summary>
+    public static string? Server(string location)
+    {
+        if (!IsNetwork(location))
+        {
+            return null;
+        }
+
+        var end = location.IndexOf(Path.DirectorySeparatorChar, 2);
+        if (end < 0)
+        {
+            return location;
+        }
+
+        return location[..end];
+    }
+
+    /// <summary>
+    /// True for a machine on the network itself, "\\server", which lists the folders it shares.
+    /// </summary>
+    public static bool IsServer(string location) =>
+        IsNetwork(location) &&
+        location.Length > 2 &&
+        location.IndexOf(Path.DirectorySeparatorChar, 2) < 0;
+
+    /// <summary>
+    /// True for a share itself, "\\server\share", rather than a folder in one.
+    /// </summary>
+    public static bool IsShare(string location) =>
+        IsNetwork(location) &&
+        !IsServer(location) &&
+        Path.GetFileName(location.AsSpan()).IsEmpty;
+
+    /// <summary>
+    /// A share's own name, "share" for "\\server\share".
+    /// </summary>
+    public static string ShareName(string share)
+    {
+        var trimmed = share.AsSpan().TrimEnd(Path.DirectorySeparatorChar);
+        return trimmed[(trimmed.LastIndexOf(Path.DirectorySeparatorChar) + 1)..].ToString();
+    }
+
+    /// <summary>
+    /// True for somewhere on the network: a share, or a drive letter mapped to one. Asking
+    /// whether such a place is there can take a long time to be answered when it is not, so it
+    /// is not asked on the UI thread. Finding out which a drive is asks nothing of the network.
+    /// </summary>
+    public static bool IsRemote(string location)
+    {
+        if (IsNetwork(location))
+        {
+            return true;
+        }
+
+        if (Path.GetPathRoot(location) is not [_, ':', ..] root)
+        {
+            return false;
+        }
+
+        try
+        {
+            return new DriveInfo(root).DriveType == DriveType.Network;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public static bool Same(string? first, string? second) =>
         first != null &&
         second != null &&
@@ -80,7 +152,16 @@ static class Locations
 
         try
         {
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(text));
+            var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(text));
+            // "\\server\" is a root, which keeps its separator; the machine is "\\server".
+            if (IsNetwork(full) &&
+                full.Length > 3 &&
+                full.IndexOf(Path.DirectorySeparatorChar, 2) == full.Length - 1)
+            {
+                return full[..^1];
+            }
+
+            return full;
         }
         catch (Exception)
         {
@@ -95,6 +176,12 @@ static class Locations
             return null;
         }
 
+        // A share is the root of its path, so .NET has no parent for it; it is on its machine.
+        if (IsShare(location))
+        {
+            return Server(location);
+        }
+
         return Path.GetDirectoryName(location) ?? ThisPC;
     }
 
@@ -105,14 +192,19 @@ static class Locations
             return ThisPC;
         }
 
-        var name = Path.GetFileName(location);
-        if (name.Length == 0 && IsNetwork(location))
+        // A share is the root of its path, so it has no file name. It shows as Explorer names
+        // it: its own name, then the machine it is on, "share (\\server)".
+        if (IsShare(location))
         {
-            // A share is the root of its path, so it has no file name; show the share's name.
-            var share = location.AsSpan().TrimEnd(Path.DirectorySeparatorChar);
-            name = share[(share.LastIndexOf(Path.DirectorySeparatorChar) + 1)..].ToString();
+            return $"{ShareName(location)} ({Server(location)})";
         }
 
+        if (IsServer(location))
+        {
+            return location[2..];
+        }
+
+        var name = Path.GetFileName(location);
         if (name.Length == 0)
         {
             return location;
@@ -125,14 +217,15 @@ static class Locations
     /// What a tab or a window's title calls each of <paramref name="locations"/>: its name, or,
     /// where another has the same name, as much of the end of its path as tells the two apart,
     /// "Lode\src" and "Other\src", and the whole path when only the root does, "C:\src" and
-    /// "D:\src". Keyed by location, ignoring case.
+    /// "D:\src". A folder in a share says which machine it is on, "tv (\\server)", as a share
+    /// does, so it reads apart from a folder on this machine. Keyed by location, ignoring case.
     /// </summary>
     public static Dictionary<string, string> Labels(IEnumerable<string> locations)
     {
         var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var sameNames = locations
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .GroupBy(DisplayName, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(_ => OnServer(_, DisplayName(_)), StringComparer.OrdinalIgnoreCase)
             .Select(_ => _.ToList());
         foreach (var sameName in sameNames)
         {
@@ -149,27 +242,51 @@ static class Locations
     {
         if (sameName.Count == 1)
         {
-            return DisplayName(location);
+            return OnServer(location, DisplayName(location));
         }
 
         for (var depth = 1; ; depth++)
         {
             var label = Tail(location, depth);
-            if (label.Length == location.Length ||
-                sameName.All(_ => ReferenceEquals(_, location) ||
-                                  !Tail(_, depth).Equals(label, StringComparison.OrdinalIgnoreCase)))
+            if (label.Length == location.Length)
             {
                 return label;
+            }
+
+            if (sameName.All(_ => ReferenceEquals(_, location) ||
+                                  !Tail(_, depth).Equals(label, StringComparison.OrdinalIgnoreCase)))
+            {
+                return OnServer(location, label);
             }
         }
     }
 
+    // A folder in a share's label, with the machine it is on after it. A share's name has it
+    // already, and a machine is its own name.
+    static string OnServer(string location, string label)
+    {
+        if (!IsNetwork(location) ||
+            IsServer(location) ||
+            IsShare(location))
+        {
+            return label;
+        }
+
+        return $"{label} ({Server(location)})";
+    }
+
     // The location's name with the names of depth folders above it, or the whole location once
-    // that reaches into its root, which means nothing without the rest of it: a share's name
-    // without its server's.
+    // that reaches into its root, which means nothing without the rest of it: "C:" alone. On
+    // the network the root is the machine, which the label names after the tail, so a share's
+    // name can be part of one.
     static string Tail(string location, int depth)
     {
         var root = Path.GetPathRoot(location.AsSpan()).Length;
+        if (Server(location) is { } server)
+        {
+            root = server.Length + 1;
+        }
+
         var start = location.Length;
         for (var step = 0; step <= depth; step++)
         {

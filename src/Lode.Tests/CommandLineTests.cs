@@ -34,4 +34,17 @@ public class CommandLineTests
                     return string.Join(' ', _.Select(argument => $"[{argument}]"));
                 },
                 CommandLine.Parse));
+
+    // A relative path is from the folder the launch was started in. A copy of Lode already
+    // running was started somewhere else, so it is handed the full path.
+    [Test]
+    public async Task RelativePathsAreMadeFull()
+    {
+        var started = Environment.CurrentDirectory;
+        var commandLine = CommandLine.Parse([".", @"Source\Deep", @"D:\Code", Locations.ThisPC]);
+
+        await Assert.That(commandLine.FullPaths()).IsEquivalentTo(
+            [started, Path.Combine(started, "Source", "Deep"), @"D:\Code", Locations.ThisPC],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
 }

@@ -54,7 +54,7 @@ sealed class CommandPalette : Form
 
         // Its scrollbar drawn as the folder's and tree's are: a thin thumb, which widens and
         // shows its arrows under the mouse.
-        list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, "Explorer", null);
+        list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, ExplorerStyle.ControlTheme, null);
         list.MouseClick += (_, eventArgs) =>
         {
             var index = list.IndexFromPoint(eventArgs.Location);
@@ -205,8 +205,8 @@ sealed class CommandPalette : Form
         eventArgs.DrawBackground();
         var command = shown[eventArgs.Index];
         var selected = eventArgs.State.HasFlag(DrawItemState.Selected);
-        var color = selected ? SystemColors.HighlightText : list.ForeColor;
-        var dimmed = selected ? SystemColors.HighlightText : SystemColors.GrayText;
+        var color = selected ? ExplorerStyle.HighlightText : list.ForeColor;
+        var dimmed = selected ? ExplorerStyle.HighlightText : SystemColors.GrayText;
         var bounds = Rectangle.Inflate(eventArgs.Bounds, -LogicalToDeviceUnits(6), 0);
         const TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
         TextRenderer.DrawText(eventArgs.Graphics, command.Name, list.Font, bounds, color, flags | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);

@@ -32,7 +32,10 @@ public class PaneSplitContainerTests
     {
         using var form = Create(out var split, out var box);
         var grip = Grip(split);
-        var moved = grip with { X = grip.X + 60 };
+        var moved = grip with
+        {
+            X = grip.X + 60
+        };
 
         Send(split, leftButtonDown, grip);
         Send(split, mouseMove, moved);
@@ -62,7 +65,10 @@ public class PaneSplitContainerTests
         form.Opacity = 0.99;
         Application.DoEvents();
         var grip = Grip(split);
-        var moved = grip with { X = grip.X + 60 };
+        var moved = grip with
+        {
+            X = grip.X + 60
+        };
 
         Send(split, leftButtonDown, grip);
         Send(split, mouseMove, moved);
@@ -78,7 +84,10 @@ public class PaneSplitContainerTests
     {
         using var form = Create(out var split, out _);
         var grip = Grip(split);
-        var past = grip with { X = -500 };
+        var past = grip with
+        {
+            X = -500
+        };
 
         Send(split, leftButtonDown, grip);
         Send(split, mouseMove, past);
@@ -96,7 +105,13 @@ public class PaneSplitContainerTests
 
         Send(split, leftButtonDown, grip);
         Send(split, leftButtonUp, grip);
-        Send(split, mouseMove, grip with { X = grip.X + 60 });
+        Send(
+            split,
+            mouseMove,
+            grip with
+            {
+                X = grip.X + 60
+            });
 
         await Assert.That(split.SplitterDistance).IsEqualTo(distance);
     }

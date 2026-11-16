@@ -6,11 +6,11 @@
 /// </summary>
 sealed class FolderWatcher : IDisposable
 {
-    readonly string path;
-    readonly NotifyFilters filter;
-    readonly Action changed;
-    readonly Lock gate = new();
-    readonly IDisposable removal;
+    string path;
+    NotifyFilters filter;
+    Action changed;
+    Lock gate = new();
+    IDisposable removal;
     FileSystemWatcher? watcher;
     bool disposed;
 

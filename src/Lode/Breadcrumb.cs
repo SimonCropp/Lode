@@ -76,11 +76,13 @@ sealed class Breadcrumb : Control
     /// <summary>
     /// What a drive shows as: its label with its letter, "Windows (C:)", as Windows names it
     /// and Explorer shows it, or its letter alone when Windows has no name for it. Tests pin it,
-    /// so captures don't depend on what the drives of the machine running them are called.
+    /// so captures don't depend on what the drives of the machine running them are called. A
+    /// drive mapped to a share is named off the UI thread, and the second argument is called
+    /// once it has been.
     /// </summary>
-    internal static Func<string, string> DriveName { get; set; } = drive =>
+    internal static Func<string, Action, string> DriveName { get; set; } = (drive, described) =>
     {
-        var name = ShellIcons.Describe(drive).DisplayName;
+        var name = ShellIcons.DescribeDrive(drive, described).DisplayName;
         if (name == drive)
         {
             return drive.TrimEnd(System.IO.Path.DirectorySeparatorChar);
@@ -92,7 +94,8 @@ sealed class Breadcrumb : Control
     /// <summary>
     /// The folders from the top of <paramref name="location"/> down to it, with the name each
     /// shows. A drive shows as <paramref name="driveName"/> names it, and without one, as its
-    /// letter alone.
+    /// letter alone. Somewhere on the network starts at the machine it is on, as in Explorer,
+    /// rather than at This PC.
     /// </summary>
     internal static List<(string Path, string Name)> Segments(string location, Func<string, string>? driveName = null)
     {
@@ -100,6 +103,10 @@ sealed class Breadcrumb : Control
         for (var current = location; current != null; current = Locations.Parent(current))
         {
             segments.Add((current, SegmentName(current, driveName)));
+            if (Locations.IsServer(current))
+            {
+                break;
+            }
         }
 
         segments.Reverse();
@@ -108,6 +115,12 @@ sealed class Breadcrumb : Control
 
     static string SegmentName(string location, Func<string, string>? driveName)
     {
+        // Its machine is the segment before it, so a share needs only its own name.
+        if (Locations.IsShare(location))
+        {
+            return Locations.ShareName(location);
+        }
+
         var name = Locations.DisplayName(location);
         if (name.Length > 1 && name.EndsWith(System.IO.Path.DirectorySeparatorChar) && !Locations.IsNetwork(name))
         {
@@ -190,10 +203,18 @@ sealed class Breadcrumb : Control
 
     void Rebuild()
     {
-        segments = Segments(path, DriveName);
+        segments = Segments(path, drive => DriveName(drive, DriveDescribed));
         hovered = -1;
         pressed = -1;
         Arrange();
+    }
+
+    void DriveDescribed()
+    {
+        if (!IsDisposed)
+        {
+            Rebuild();
+        }
     }
 
     int ItemPadding => LogicalToDeviceUnits(5);
@@ -238,12 +259,20 @@ sealed class Breadcrumb : Control
 
     int IconSize => LogicalToDeviceUnits(16);
 
-    // This PC shows as an icon alone, as in Explorer; folders show their names.
+    int IconGap => LogicalToDeviceUnits(6);
+
+    // This PC shows as an icon alone, as in Explorer; a machine on the network as an icon with
+    // its name; folders show their names.
     int ContentWidth(string location, string name)
     {
         if (Locations.IsThisPC(location))
         {
             return IconSize;
+        }
+
+        if (Locations.IsServer(location))
+        {
+            return IconSize + IconGap + TextWidth(name);
         }
 
         return TextWidth(name);
@@ -278,10 +307,10 @@ sealed class Breadcrumb : Control
             // Windows 11's shades of gray, its corners rounded, in place of Windows 10's blue.
             if (index == pressed || index == hovered)
             {
-                var shade = ExplorerStyle.Hover(SystemColors.Window);
+                var shade = ExplorerStyle.Hover(ExplorerStyle.Window);
                 if (index == pressed)
                 {
-                    shade = ExplorerStyle.Pressed(SystemColors.Window);
+                    shade = ExplorerStyle.Pressed(ExplorerStyle.Window);
                 }
 
                 using var brush = new SolidBrush(shade);
@@ -300,6 +329,20 @@ sealed class Breadcrumb : Control
                     bounds.Top + (bounds.Height - IconSize) / 2,
                     IconSize,
                     IconSize);
+            }
+            else if (Locations.IsServer(segments[index].Path))
+            {
+                var left = bounds.Left + ItemPadding;
+                var image = Icons.Bitmap(Icons.Network, IconSize, SystemColors.WindowText);
+                graphics.DrawImage(image, left, bounds.Top + (bounds.Height - IconSize) / 2, IconSize, IconSize);
+                var text = Rectangle.FromLTRB(left + IconSize + IconGap, bounds.Top, bounds.Right - ItemPadding, bounds.Bottom);
+                TextRenderer.DrawText(
+                    graphics,
+                    segments[index].Name,
+                    Font,
+                    text,
+                    SystemColors.WindowText,
+                    (flags & ~TextFormatFlags.HorizontalCenter) | TextFormatFlags.NoPadding);
             }
             else
             {

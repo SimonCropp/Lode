@@ -6,9 +6,9 @@
 sealed class ChangeSignal : IDisposable
 {
     // Reaches the UI thread whether or not any window of its controls has been created yet.
-    readonly SynchronizationContext context = new WindowsFormsSynchronizationContext();
-    readonly Timer timer;
-    readonly Func<bool> changed;
+    SynchronizationContext context = new WindowsFormsSynchronizationContext();
+    Timer timer;
+    Func<bool> changed;
     int raised;
     bool disposed;
 

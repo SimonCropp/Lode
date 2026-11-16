@@ -1,5 +1,3 @@
-using NuGet.Versioning;
-
 /// <summary>
 /// The git commands, run for real against throwaway repositories in the temp folder. A bare
 /// repository stands in for origin, so nothing leaves the machine.
@@ -107,6 +105,23 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
     }
 
+    // Nor does a file git doesn't track stand in the way, though git then says there is nothing
+    // to commit in other words.
+    [Test]
+    public async Task PushWithOnlyUntrackedFilesStillPushes()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        Scratch.Git(repo, "commit", "-am", "Earlier");
+        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "new");
+
+        var results = await CodeCommands.Push([repo], "Unused");
+
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
+    }
+
     [Test]
     public async Task PullBringsInWhatOriginHas()
     {
@@ -152,7 +167,7 @@ public class CodeCommandsTests
     // Git reports from a worker thread.
     sealed class Recorder : IProgress<string>
     {
-        readonly List<string> reports = [];
+        List<string> reports = [];
 
         public List<string> Reports
         {

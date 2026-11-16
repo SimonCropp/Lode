@@ -7,6 +7,8 @@ global using System.Drawing.Drawing2D;
 global using System.Drawing.Imaging;
 global using System.IO.Enumeration;
 global using System.IO.Pipes;
+global using System.Net;
+global using System.Runtime.ExceptionServices;
 global using System.Runtime.InteropServices;
 global using System.Runtime.Versioning;
 global using System.Security;

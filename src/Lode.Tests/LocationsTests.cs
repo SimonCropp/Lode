@@ -14,6 +14,9 @@ public class LocationsTests
         "C:/Windows/System32",
         @"\\server\share",
         @"\\server\share\folder\",
+        // A machine on the network, which lists its shares.
+        @"\\server",
+        @"\\server\",
         "This PC",
         "this pc",
         // This PC as the explore verb on Folder names it.
@@ -49,10 +52,15 @@ public class LocationsTests
                 // Told apart only further up.
                 @"C:\Repos\Lode\src\Lode",
                 @"C:\Worktrees\Lode\src\Lode",
-                // Told apart only by their roots, a share's whole.
+                // Told apart only by their roots. One in a share says which machine it is on.
                 @"C:\Notes",
                 @"D:\Notes",
                 @"\\server\share\Notes",
+                // Folders in a share say which machine they are on, also when told apart
+                // further up.
+                @"\\server\video\tv",
+                @"\\server\backup\tv",
+                @"\\server\video\movies",
                 // Shares named alike, on two servers.
                 @"\\server\share",
                 @"\\other\share",
@@ -76,6 +84,21 @@ public class LocationsTests
             (@"D:\Code", @"C:\")
         ];
         return Verify(pairs.ToDictionary(_ => $"{_.Path} in {_.Folder}", _ => Locations.IsWithin(_.Path, _.Folder)));
+    }
+
+    // A share is on the network whatever is asked of it. The drive Windows is on is not, and
+    // neither is somewhere with no drive at all.
+    [Test]
+    public async Task IsRemote()
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+        await Assert.That(Locations.IsRemote(@"\\server\share")).IsTrue();
+        await Assert.That(Locations.IsRemote(@"\\server\share\folder\file.txt")).IsTrue();
+        await Assert.That(Locations.IsRemote(windows)).IsFalse();
+        await Assert.That(Locations.IsRemote(Path.GetPathRoot(windows)!)).IsFalse();
+        await Assert.That(Locations.IsRemote(Locations.ThisPC)).IsFalse();
+        await Assert.That(Locations.IsRemote("")).IsFalse();
     }
 
     static IEnumerable<string> Normalized() =>

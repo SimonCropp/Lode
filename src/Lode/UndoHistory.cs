@@ -33,6 +33,11 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         /// Restores items from the Recycle Bin, returning those it could not find.
         /// </summary>
         IReadOnlyList<string> Restore(IReadOnlyList<string> inBin);
+
+        /// <summary>
+        /// Whether a file or folder is still there.
+        /// </summary>
+        bool Exists(string path);
     }
 
     /// <summary>
@@ -59,16 +64,43 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     public event Action? Changed;
 
     /// <summary>
+    /// How undoing or redoing a change went, which decides what becomes of it.
+    /// </summary>
+    public enum Result
+    {
+        /// <summary>
+        /// Done, all of it or some. The change is then what was done, and can be done the other
+        /// way.
+        /// </summary>
+        Done,
+
+        /// <summary>
+        /// None of it done, though it still could be: Windows' dialog was cancelled, say. It
+        /// stays where it was, to be tried again.
+        /// </summary>
+        Waiting,
+
+        /// <summary>
+        /// None of it done, and none of it can be: what it was done to has gone since. It is let
+        /// go. Left where it was, it would fail the same way each time, and nothing done before
+        /// it could be reached.
+        /// </summary>
+        Gone
+    }
+
+    /// <param name="Failure">Why not all of it was done, when it was not.</param>
+    public readonly record struct Outcome(Result Result, string? Failure = null);
+
+    /// <summary>
     /// A change that can be undone and redone, named for the menus: "rename", "move" and so on.
-    /// <see cref="Undo"/> and <see cref="Redo"/> return a reason when they could not.
     /// </summary>
     public abstract class Entry(string name)
     {
         public string Name { get; } = name;
 
-        public abstract string? Undo(IFileActions actions, IntPtr owner);
+        public abstract Outcome Undo(IFileActions actions, IntPtr owner);
 
-        public abstract string? Redo(IFileActions actions, IntPtr owner);
+        public abstract Outcome Redo(IFileActions actions, IntPtr owner);
     }
 
     public string? UndoName
@@ -176,9 +208,9 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         Step(redoable, undoable, (entry, actionsToUse) => entry.Redo(actionsToUse, owner));
 
     // Takes the entry off one list for the work, which can show Windows' progress and conflict
-    // dialogs, so runs on a thread of its own. It goes on the other list when done, or back
-    // where it was when it could not be done.
-    async Task<string?> Step(List<Entry> from, List<Entry> to, Func<Entry, IFileActions, string?> work)
+    // dialogs, so runs on a thread of its own. It goes on the other list when done, back where
+    // it was when it could not be done but still could be, and on neither when it never can be.
+    async Task<string?> Step(List<Entry> from, List<Entry> to, Func<Entry, IFileActions, Outcome> work)
     {
         Entry entry;
         lock (gate)
@@ -194,31 +226,33 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
             from.RemoveAt(from.Count - 1);
         }
 
-        string? failure;
+        Outcome outcome;
         try
         {
-            failure = await FileOperations.OnStaThread(() => work(entry, actions));
+            outcome = await FileOperations.OnStaThread(() => work(entry, actions));
         }
         catch (Exception exception)
         {
-            failure = exception.Message;
+            // Whatever stopped it may stop it every time, so it is not left in the way.
+            outcome = new(Result.Gone, exception.Message);
         }
 
         lock (gate)
         {
             busy = false;
-            if (failure == null)
+            switch (outcome.Result)
             {
-                to.Add(entry);
-            }
-            else
-            {
-                from.Add(entry);
+                case Result.Done:
+                    to.Add(entry);
+                    break;
+                case Result.Waiting:
+                    from.Add(entry);
+                    break;
             }
         }
 
         Changed?.Invoke();
-        return failure;
+        return outcome.Failure;
     }
 
     static string NameOf(string path) =>
@@ -229,20 +263,38 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
 
     sealed class Renamed(string oldPath, string newPath) : Entry("rename")
     {
-        public override string? Undo(IFileActions actions, IntPtr owner) =>
-            Outcome(actions.Rename(owner, newPath, NameOf(oldPath)), NameOf(newPath));
-
-        public override string? Redo(IFileActions actions, IntPtr owner) =>
-            Outcome(actions.Rename(owner, oldPath, NameOf(newPath)), NameOf(oldPath));
-
-        static string? Outcome(string? renamed, string name)
+        public override Outcome Undo(IFileActions actions, IntPtr owner)
         {
-            if (renamed != null)
+            var outcome = Rename(actions, owner, newPath, NameOf(oldPath), "back", out var renamed);
+            oldPath = renamed ?? oldPath;
+            return outcome;
+        }
+
+        public override Outcome Redo(IFileActions actions, IntPtr owner)
+        {
+            var outcome = Rename(actions, owner, oldPath, NameOf(newPath), "again", out var renamed);
+            newPath = renamed ?? newPath;
+            return outcome;
+        }
+
+        // Where Windows put it is where it is renamed from next time: that is not always the
+        // name asked for, which something else may have taken since.
+        static Outcome Rename(IFileActions actions, IntPtr owner, string path, string newName, string direction, out string? renamed)
+        {
+            renamed = null;
+            var name = NameOf(path);
+            if (!actions.Exists(path))
             {
-                return null;
+                return new(Result.Gone, $"'{name}' is no longer there, so can't be renamed {direction}.");
             }
 
-            return $"Lode couldn't rename '{name}' back.";
+            renamed = actions.Rename(owner, path, newName);
+            if (renamed == null)
+            {
+                return new(Result.Waiting, $"Lode couldn't rename '{name}' {direction}.");
+            }
+
+            return new(Result.Done);
         }
     }
 
@@ -250,83 +302,159 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     {
         IReadOnlyList<(string From, string To)> moved = initial;
 
-        public override string? Undo(IFileActions actions, IntPtr owner)
+        public override Outcome Undo(IFileActions actions, IntPtr owner)
         {
-            var back = actions.Move(owner, moved.Select(_ => (_.To, ParentOf(_.From), NameOf(_.From))).ToList());
-            return Outcome(back.Count);
+            var outcome = Move(actions, owner, moved.Select(_ => (_.To, _.From)).ToList(), "back", out var back);
+            if (outcome.Result == Result.Done)
+            {
+                moved = back.Select(_ => (_.To, _.From)).ToList();
+            }
+
+            return outcome;
         }
 
-        public override string? Redo(IFileActions actions, IntPtr owner)
+        public override Outcome Redo(IFileActions actions, IntPtr owner)
         {
-            var again = actions.Move(owner, moved.Select(_ => (_.From, ParentOf(_.To), NameOf(_.To))).ToList());
-            if (again.Count > 0)
+            var outcome = Move(actions, owner, moved, "again", out var again);
+            if (outcome.Result == Result.Done)
             {
                 moved = again;
             }
 
-            return Outcome(again.Count);
+            return outcome;
         }
 
-        string? Outcome(int done)
+        // Moves each item to where it is wanted, giving those moved, each with where Windows
+        // put it. One that has gone, or whose folder to go back into has, is left out: asked to
+        // move something that is not there, Windows moves none of them.
+        static Outcome Move(IFileActions actions, IntPtr owner, IReadOnlyList<(string From, string To)> items, string direction, out IReadOnlyList<(string From, string To)> done)
         {
-            if (done == moved.Count)
+            done = [];
+            var there = items
+                .Where(_ => actions.Exists(_.From) &&
+                            actions.Exists(ParentOf(_.To)))
+                .ToList();
+            if (there.Count == 0)
             {
-                return null;
+                return new(Result.Gone, $"What was moved is no longer there, or the folder it was in is not, so it can't be moved {direction}.");
             }
 
-            return $"Lode moved {done} of {moved.Count} items back.";
+            done = actions.Move(owner, there.Select(_ => (_.From, ParentOf(_.To), NameOf(_.To))).ToList());
+            return Counted(done.Count, items.Count, $"Lode moved {done.Count} of {items.Count} items {direction}.");
         }
     }
 
     // Copies and new items: undone to the Recycle Bin, redone from it.
-    sealed class Created(string name, IReadOnlyList<string> created) : Entry(name)
+    sealed class Created(string name, IReadOnlyList<string> initial) : Entry(name)
     {
-        IReadOnlyList<string> inBin = [];
+        IReadOnlyList<string> created = initial;
+        IReadOnlyList<(string Original, string InBin)> binned = [];
 
-        public override string? Undo(IFileActions actions, IntPtr owner)
+        public override Outcome Undo(IFileActions actions, IntPtr owner)
         {
-            var recycled = actions.Recycle(owner, created);
-            inBin = recycled.Select(_ => _.InBin).ToList();
-            if (recycled.Count == created.Count)
+            var outcome = Recycle(actions, owner, created, out var recycled);
+            if (outcome.Result == Result.Done)
             {
-                return null;
+                binned = recycled;
             }
 
-            return $"Lode sent {recycled.Count} of {created.Count} items to the Recycle Bin.";
+            return outcome;
         }
 
-        public override string? Redo(IFileActions actions, IntPtr owner) =>
-            RestoreOutcome(actions.Restore(inBin), inBin.Count);
+        public override Outcome Redo(IFileActions actions, IntPtr owner)
+        {
+            var outcome = Restore(actions, binned, out var restored);
+            if (outcome.Result == Result.Done)
+            {
+                created = restored.Select(_ => _.Original).ToList();
+            }
+
+            return outcome;
+        }
     }
 
     sealed class Deleted(IReadOnlyList<(string Original, string InBin)> initial) : Entry("delete")
     {
         IReadOnlyList<(string Original, string InBin)> deleted = initial;
 
-        public override string? Undo(IFileActions actions, IntPtr owner) =>
-            RestoreOutcome(actions.Restore(deleted.Select(_ => _.InBin).ToList()), deleted.Count);
-
-        public override string? Redo(IFileActions actions, IntPtr owner)
+        public override Outcome Undo(IFileActions actions, IntPtr owner)
         {
-            var again = actions.Recycle(owner, deleted.Select(_ => _.Original).ToList());
-            if (again.Count == 0)
+            var outcome = Restore(actions, deleted, out var restored);
+            if (outcome.Result == Result.Done)
             {
-                return "Lode couldn't delete them again.";
+                deleted = restored;
             }
 
-            deleted = again;
-            return null;
+            return outcome;
+        }
+
+        public override Outcome Redo(IFileActions actions, IntPtr owner)
+        {
+            var outcome = Recycle(actions, owner, deleted.Select(_ => _.Original).ToList(), out var again);
+            if (outcome.Result == Result.Done)
+            {
+                deleted = again;
+            }
+
+            return outcome;
         }
     }
 
-    static string? RestoreOutcome(IReadOnlyList<string> missing, int count)
+    // Sends the items to the Recycle Bin, giving those sent, each with where it went there. One
+    // that has gone is left out: asked to delete something that is not there, Windows deletes
+    // none of them.
+    static Outcome Recycle(IFileActions actions, IntPtr owner, IReadOnlyList<string> paths, out IReadOnlyList<(string Original, string InBin)> recycled)
     {
-        if (missing.Count == 0)
+        recycled = [];
+        var there = paths
+            .Where(actions.Exists)
+            .ToList();
+        if (there.Count == 0)
         {
-            return null;
+            return new(Result.Gone, $"{paths.Count} of {paths.Count} items are no longer there, so can't be sent to the Recycle Bin.");
         }
 
-        return $"{missing.Count} of {count} items are no longer in the Recycle Bin, so can't be restored.";
+        recycled = actions.Recycle(owner, there);
+        return Counted(recycled.Count, paths.Count, $"Lode sent {recycled.Count} of {paths.Count} items to the Recycle Bin.");
+    }
+
+    // Restores the items from the Recycle Bin, giving those restored. One that has left it,
+    // emptied since say, never can be.
+    static Outcome Restore(IFileActions actions, IReadOnlyList<(string Original, string InBin)> binned, out IReadOnlyList<(string Original, string InBin)> restored)
+    {
+        var missing = actions.Restore(binned.Select(_ => _.InBin).ToList());
+        restored = binned
+            .Where(_ => !missing.Contains(_.InBin, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        if (missing.Count == 0)
+        {
+            return new(Result.Done);
+        }
+
+        var failure = $"{missing.Count} of {binned.Count} items are no longer in the Recycle Bin, so can't be restored.";
+        if (restored.Count == 0)
+        {
+            return new(Result.Gone, failure);
+        }
+
+        return new(Result.Done, failure);
+    }
+
+    // How it went for items that are still there: done when any were, with the failure to say
+    // when not all were, and otherwise to be tried again.
+    static Outcome Counted(int done, int count, string failure)
+    {
+        if (done == count)
+        {
+            return new(Result.Done);
+        }
+
+        if (done == 0)
+        {
+            return new(Result.Waiting, failure);
+        }
+
+        return new(Result.Done, failure);
     }
 
     /// <summary>
@@ -363,6 +491,9 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
 
         public IReadOnlyList<string> Restore(IReadOnlyList<string> inBin) =>
             RecycleBin.Restore(inBin);
+
+        public bool Exists(string path) =>
+            Path.Exists(path);
 
         static List<(string, string)> Pairs(ShellFileOperation.Outcome outcome) =>
             outcome.Changes

@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 /// <summary>
 /// What the file list shows and selects, as text. These don't depend on how anything is
 /// drawn, so they hold on any machine.
@@ -95,7 +93,7 @@ public class FolderViewTests
     public async Task FilterByWildcard()
     {
         using var fixture = Fixture.Create();
-        File.WriteAllText(fixture.At("Cache", "cached.aleph"), "");
+        await File.WriteAllTextAsync(fixture.At("Cache", "cached.aleph"), "");
         using var view = await Open(fixture.Root);
 
         view.Filter = "*.aleph";
@@ -108,7 +106,7 @@ public class FolderViewTests
     public async Task SearchFindsInHiddenFoldersWhenShown()
     {
         using var fixture = Fixture.Create();
-        File.WriteAllText(fixture.At("Cache", "cached.aleph"), "");
+        await File.WriteAllTextAsync(fixture.At("Cache", "cached.aleph"), "");
         using var view = await Open(fixture.Root, new() { ShowHidden = true });
 
         view.Filter = "*.aleph";
@@ -277,6 +275,30 @@ public class FolderViewTests
         await Verify(steps);
     }
 
+    // Where the view is in its history changes only once it gets there. Sent back to somewhere
+    // on the network, then elsewhere before that has been heard from, Back is to the folder it
+    // was in, not the one it never got back to.
+    [Test]
+    public async Task BackOvertakenLeavesTheHistoryAsItWas()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Navigate(fixture.At("Source"));
+        await Pump.Loaded(view);
+        view.Navigate(fixture.At("Source", "Deep"));
+        await Pump.Loaded(view);
+        view.IsRemote = _ => Locations.Same(_, fixture.At("Source"));
+
+        view.GoBack();
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+        view.GoBack();
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source", "Deep"));
+    }
+
     [Test]
     public async Task UpSelectsTheFolderLeft()
     {
@@ -312,6 +334,130 @@ public class FolderViewTests
         await Pump.Until(() => view.Entries.Any(_ => _.Name == "arrived.aleph") && view.Entries.All(_ => _.Name != "summary.gamma"));
 
         await Verify(Describe(view, fixture));
+    }
+
+    // Whether somewhere on the network is there is asked off the UI thread, since the answer
+    // can be a long time coming. The view stays where it is, saying what it is looking for,
+    // until it has heard.
+    [Test]
+    public async Task SomewhereOnTheNetworkIsAskedAfterOffTheUiThread()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.IsRemote = _ => true;
+
+        view.Navigate(fixture.At("Source"));
+        var whileAsking = (view.CurrentPath, view.StatusText);
+        await Pump.Loaded(view);
+
+        await Assert.That(whileAsking.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(whileAsking.StatusText).IsEqualTo($"Looking for {fixture.At("Source")}...");
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source"));
+        await Assert.That(Names(view)).Contains("main.aleph");
+    }
+
+    // Going somewhere else while somewhere on the network is still being asked after leaves
+    // the view where it went, whatever is then heard.
+    [Test]
+    public async Task GoingElsewhereOvertakesSomewhereBeingAskedAfter()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.IsRemote = _ => Locations.Same(_, fixture.At("Source"));
+
+        view.Navigate(fixture.At("Source"));
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Docs"));
+        await Assert.That(Names(view)).Contains("guide.aleph");
+    }
+
+    // A tab started somewhere on the network, as one restored when Lode starts is, has its
+    // name at once, taken on trust. It asks whether the folder is there when it shows.
+    [Test]
+    public async Task ATabOnTheNetworkIsTakenOnTrustUntilItShows()
+    {
+        using var fixture = Fixture.Create();
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        {
+            Showing = false,
+            IsRemote = _ => true
+        };
+
+        view.OpenAt(fixture.At("Source"));
+        var atOnce = (view.CurrentPath, Names(view).Count);
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(atOnce).IsEqualTo((fixture.At("Source"), 0));
+        await Assert.That(Names(view)).Contains("main.aleph");
+    }
+
+    // Started at a file, which means "show me this file", it shows the file's folder with the
+    // file selected, once it has found that a file is what it is.
+    [Test]
+    public async Task ATabStartedAtAFileOnTheNetworkShowsItsFolder()
+    {
+        using var fixture = Fixture.Create();
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        {
+            Showing = false,
+            IsRemote = _ => true
+        };
+
+        view.OpenAt(fixture.At("report10.beta"));
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(Selected(view)).IsEquivalentTo(["report10.beta"]);
+        await Assert.That(view.CanGoBack).IsFalse();
+    }
+
+    // Not yet shown, it finds out behind the window that it was started at a file, so its tab
+    // is named for the file's folder before it shows, and reads nothing until it does.
+    [Test]
+    public async Task ATabStartedAtAFileOnTheNetworkIsInItsFolderBeforeItShows()
+    {
+        using var fixture = Fixture.Create();
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        {
+            Showing = false,
+            IsRemote = _ => true
+        };
+
+        view.OpenAt(fixture.At("report10.beta"));
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        var hidden = Names(view).Count;
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(hidden).IsEqualTo(0);
+        await Assert.That(Selected(view)).IsEquivalentTo(["report10.beta"]);
+        await Assert.That(view.CanGoBack).IsFalse();
+    }
+
+    // Started somewhere that turns out not to be there, a share that is offline say, the tab
+    // stays, and says so, rather than Lode waiting on it before it opens.
+    [Test]
+    public async Task ATabOnTheNetworkThatIsNotThereSaysSo()
+    {
+        using var fixture = Fixture.Create();
+        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        {
+            Showing = false,
+            IsRemote = _ => true
+        };
+
+        view.OpenAt(fixture.At("Gone"));
+        view.Showing = true;
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Gone"));
+        await Assert.That(view.StatusText).IsEqualTo($"Lode can't find '{fixture.At("Gone")}'.");
+        await Assert.That(Names(view)).IsEmpty();
     }
 
     // A folder slow to read is left a while after each read before a change has it read

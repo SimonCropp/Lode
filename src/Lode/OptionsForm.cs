@@ -175,6 +175,20 @@ class OptionsForm : Form
         public override string ToString() => Text;
     }
 
+    // In the order of Theme's values.
+    readonly ComboBox theme = new()
+    {
+        Name = "theme",
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 200,
+        Items =
+        {
+            "Same as Windows",
+            "Light",
+            "Dark"
+        }
+    };
+
     readonly ComboBox textEditor = new()
     {
         Name = "textEditor",
@@ -251,6 +265,11 @@ class OptionsForm : Form
         };
         purgePermanently.Checked = settings.PurgePermanently;
         purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
+        theme.SelectedIndex = (int) settings.Theme;
+        theme.SelectedIndexChanged += (_, _) =>
+        {
+            settings.Theme = (Theme) theme.SelectedIndex;
+        };
         showRecent.Checked = settings.ShowRecent;
         showRecent.CheckedChanged += (_, _) =>
         {
@@ -479,6 +498,11 @@ class OptionsForm : Form
 
     Control[] BuildViewPage() =>
     [
+        Section(
+            "Theme",
+            "Light or dark, or whichever Windows' apps are set to. Lode takes it on when it next " +
+            "starts: choose Exit from its icon in the notification area, then open it again.",
+            theme),
         showHidden,
         showSystem,
         Note("Windows, Program Files, other people's folders under Users, and the files Windows protects."),

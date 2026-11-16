@@ -87,7 +87,10 @@ sealed class GutterMarquee : IDisposable
         initial = add ? list.SelectedIndices.Cast<int>().ToHashSet() : [];
         coveredFirst = 0;
         coveredLast = -1;
-        anchor = point with { Y = point.Y - FirstRowTop };
+        anchor = point with
+        {
+            Y = point.Y - FirstRowTop
+        };
         last = point;
         list.Focus();
         if (!add)
@@ -110,7 +113,10 @@ sealed class GutterMarquee : IDisposable
         }
 
         last = point;
-        var start = anchor with { Y = anchor.Y + FirstRowTop };
+        var start = anchor with
+        {
+            Y = anchor.Y + FirstRowTop
+        };
         var marquee = Rectangle.FromLTRB(
             Math.Min(start.X, point.X),
             Math.Min(start.Y, point.Y),

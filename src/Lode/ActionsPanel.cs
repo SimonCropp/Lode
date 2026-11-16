@@ -57,7 +57,7 @@ sealed class ActionsPanel : Panel
     {
         Dock = DockStyle.Bottom;
         Visible = false;
-        BackColor = SystemColors.Window;
+        BackColor = ExplorerStyle.Window;
         // The top row of pixels is the line between the tree and the panel, which the header
         // would otherwise cover.
         Padding = new(0, 1, 0, 0);
@@ -65,7 +65,7 @@ sealed class ActionsPanel : Panel
 
         // Its scrollbar drawn as the folder's and tree's are: a thin thumb, which widens and
         // shows its arrows under the mouse.
-        list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, "Explorer", null);
+        list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, ExplorerStyle.ControlTheme, null);
 
         // Clear ends where the rows below it do, which is short of the panel's edge once the
         // list has more entries than fit and shows its scrollbar. Docked to the edge regardless,
@@ -204,7 +204,7 @@ sealed class ActionsPanel : Panel
         if (selected)
         {
             background = SystemColors.Highlight;
-            colour = SystemColors.HighlightText;
+            colour = ExplorerStyle.HighlightText;
         }
 
         using var bitmap = new Bitmap(mark.Width, mark.Height);
@@ -281,7 +281,7 @@ sealed class ActionsPanel : Panel
 
             if (selected)
             {
-                colour = SystemColors.HighlightText;
+                colour = ExplorerStyle.HighlightText;
             }
 
             TextRenderer.DrawText(
@@ -300,7 +300,7 @@ sealed class ActionsPanel : Panel
         var right = bounds.Right - 2;
         var flags = TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
 
-        var titleColour = selected ? SystemColors.HighlightText : SystemColors.ControlText;
+        var titleColour = selected ? ExplorerStyle.HighlightText : SystemColors.ControlText;
         TextRenderer.DrawText(
             eventArgs.Graphics,
             $"{entry.Title} – {entry.FolderName}",
@@ -312,7 +312,7 @@ sealed class ActionsPanel : Panel
         var statusColour = SystemColors.GrayText;
         if (selected)
         {
-            statusColour = SystemColors.HighlightText;
+            statusColour = ExplorerStyle.HighlightText;
         }
         else if (entry.State == ActionLog.State.Failed)
         {
@@ -416,7 +416,7 @@ sealed class ActionsPanel : Panel
                 WordWrap = false,
                 Dock = DockStyle.Fill,
                 Font = new("Consolas", Font.SizeInPoints),
-                BackColor = SystemColors.Window,
+                BackColor = ExplorerStyle.Window,
                 Text = details.ReplaceLineEndings(Environment.NewLine)
             };
             Controls.Add(text);

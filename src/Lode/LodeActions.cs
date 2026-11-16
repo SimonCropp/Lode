@@ -96,18 +96,18 @@ static class LodeActions
         if (allPinned)
         {
             return Command(
-                "pin",
-                () =>
-                {
-                    foreach (var folder in folders)
+                    "pin",
+                    () =>
                     {
-                        setPinned(folder, false);
-                    }
-                },
-                text: "Unpin from Quick access") with
-            {
-                Glyph = Icons.Unpin
-            };
+                        foreach (var folder in folders)
+                        {
+                            setPinned(folder, false);
+                        }
+                    },
+                    text: "Unpin from Quick access") with
+                {
+                    Glyph = Icons.Unpin
+                };
         }
 
         return Command(

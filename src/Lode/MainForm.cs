@@ -472,7 +472,10 @@ class MainForm : Form
         {
             item.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
             item.TextImageRelation = TextImageRelation.ImageBeforeText;
-            item.Padding = item.Padding with { Right = item.Padding.Right + chevron.ChevronWidth };
+            item.Padding = item.Padding with
+            {
+                Right = item.Padding.Right + chevron.ChevronWidth
+            };
             // Its name as far from its icon as Explorer's New is.
             item.Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText, LogicalToDeviceUnits(6));
         }
@@ -569,7 +572,7 @@ class MainForm : Form
             commands.AddRange(view.ItemCommands(selection));
         }
 
-        if (!Locations.IsThisPC(view.CurrentPath))
+        if (!view.ListsPlaces)
         {
             // Not tied to the clipboard, which changes without telling Lode. Paste with nothing
             // to paste does nothing.
@@ -690,6 +693,7 @@ class MainForm : Form
             .Select(_ => Locations.Normalize(_))
             .OfType<string>()
             .Where(_ => Locations.IsThisPC(_) ||
+                        Locations.IsRemote(_) ||
                         Directory.Exists(_) ||
                         File.Exists(_))
             .ToList();
@@ -700,11 +704,26 @@ class MainForm : Form
         var active = paths.Count - 1;
         if (paths.Count == 0)
         {
-            paths = settings.Tabs
-                .Where(_ => Locations.IsThisPC(_) ||
-                            Directory.Exists(_))
-                .ToList();
-            active = settings.ActiveTab;
+            // The tab that was active is as many along as there are tabs before it still to
+            // open: one whose folder has gone since leaves those after it a place earlier.
+            active = 0;
+            for (var index = 0; index < settings.Tabs.Count; index++)
+            {
+                var path = settings.Tabs[index];
+                if (!Locations.IsThisPC(path) &&
+                    !Locations.IsRemote(path) &&
+                    !Directory.Exists(path))
+                {
+                    continue;
+                }
+
+                if (index < settings.ActiveTab)
+                {
+                    active++;
+                }
+
+                paths.Add(path);
+            }
         }
 
         if (paths.Count == 0)
@@ -821,15 +840,7 @@ class MainForm : Form
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
         view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false);
         tabs.TabPages.Add(page);
-        if (File.Exists(path))
-        {
-            // A file path means "show me this file": open its folder with it selected.
-            view.Reveal(path);
-        }
-        else
-        {
-            view.Navigate(path);
-        }
+        view.OpenAt(path);
 
         if (activate)
         {
@@ -848,7 +859,7 @@ class MainForm : Form
     /// </summary>
     internal bool SelectTabShowing(string path)
     {
-        var file = File.Exists(path);
+        var file = !Locations.IsRemote(path) && File.Exists(path);
         var folder = path;
         if (file)
         {
@@ -1108,8 +1119,8 @@ class MainForm : Form
     }
 
     // The folder's own icon, as the tree shows it: a drive's, Downloads' arrow, This PC's. A
-    // network folder has the plain one, since asking for its own could keep the window waiting
-    // on the network.
+    // machine on the network and a share have Network's, and a folder in a share the plain one,
+    // since asking for its own could keep the window waiting on the network.
     static int TabIcon(string path)
     {
         if (Locations.IsThisPC(path))
@@ -1117,12 +1128,13 @@ class MainForm : Form
             return ShellIcons.ComputerIcon;
         }
 
-        if (Locations.IsNetwork(path))
+        if (Locations.IsServer(path) ||
+            Locations.IsShare(path))
         {
-            return ShellIcons.FolderIcon;
+            return ShellIcons.NetworkIcon;
         }
 
-        return ShellIcons.GetActualIcon(path);
+        return ShellIcons.GetPlaceIcon(path);
     }
 
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
@@ -1247,6 +1259,7 @@ class MainForm : Form
     void Reload()
     {
         ShellIcons.ForgetFileIcons();
+        ShellIcons.ForgetNetworkDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();
         ActiveView?.ReloadRows();
@@ -1272,8 +1285,7 @@ class MainForm : Form
 
     void OpenTerminal(bool admin)
     {
-        if (ActiveView is { } view &&
-            !Locations.IsThisPC(view.CurrentPath))
+        if (ActiveView is {ListsPlaces: false} view)
         {
             FileOperations.OpenTerminal(view.CurrentPath, admin);
         }
@@ -1635,7 +1647,7 @@ class MainForm : Form
             {
                 viewCommands = view.ItemCommands(selection);
             }
-            else if (!Locations.IsThisPC(view.CurrentPath))
+            else if (!view.ListsPlaces)
             {
                 viewCommands = view.BackgroundCommands(FileOperations.ReadClipboard() != null);
             }

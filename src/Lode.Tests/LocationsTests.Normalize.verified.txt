@@ -13,5 +13,7 @@
   [this pc]: This PC,
   [\\server\share\folder\]: \\server\share\folder,
   [\\server\share]: \\server\share,
+  [\\server\]: \\server,
+  [\\server]: \\server,
   []: (rejected)
 }

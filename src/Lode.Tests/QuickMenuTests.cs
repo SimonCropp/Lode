@@ -370,12 +370,33 @@ public class QuickMenuTests
         string[] pinned = [fixture.At("Archive"), fixture.At("Docs"), fixture.At("Source")];
         using var tree = CreateTree(pinned, []);
         var moves = new List<List<string>>();
-        tree.MovePinnedToEnd = _ => moves.Add(_.Select(fixture.Relative).ToList());
+        tree.MovePinnedToEnd = _ =>
+        {
+            moves.Add(_.Select(fixture.Relative).ToList());
+            return Task.CompletedTask;
+        };
         tree.SetPinned = (_, _) => throw new("Moving does not pin or unpin one at a time");
 
         tree.MovePinned(fixture.At("Source"), 0);
 
         await Verify(moves);
+    }
+
+    // The tree shows the folder in its new place, selected, without waiting for the shell.
+    [Test]
+    public async Task MovePinnedFolderShownAtOnce()
+    {
+        using var fixture = Fixture.Create();
+        string[] pinned = [fixture.At("Archive"), fixture.At("Docs"), fixture.At("Source")];
+        using var tree = CreateTree(pinned, []);
+        tree.MovePinnedToEnd = _ => Task.CompletedTask;
+
+        tree.MovePinned(fixture.At("Source"), 0);
+
+        var section = tree.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Pinned");
+        var order = section.Nodes.Cast<TreeNode>().Select(_ => (string)_.Tag!).ToList();
+        await Assert.That(order).IsEquivalentTo([pinned[2], pinned[0], pinned[1]], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(fixture.At("Source"));
     }
 
     static FolderTree CreateTree(string[] pinned, string[] recent)

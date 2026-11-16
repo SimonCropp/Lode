@@ -1,5 +1,3 @@
-using System.Runtime.ExceptionServices;
-
 /// <summary>
 /// Git purge: deletes every file and folder git doesn't track, ignored ones included (bin, obj,
 /// node_modules and the like), as git clean -xdf would, leaving repositories nested inside
