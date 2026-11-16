@@ -17,6 +17,12 @@ sealed class ClosableTabControl : TabControl
     const int cornerRadius = 8;
     const int footRadius = 3;
     const int dividerHeight = 16;
+    const int iconGap = 8;
+
+    // Each tab's icon, from the system image list, drawn before its name as Explorer's tabs
+    // have their folder's. Each icon is drawn to a bitmap once.
+    readonly Dictionary<TabPage, int> icons = [];
+    readonly Dictionary<int, Bitmap> iconImages = [];
 
     int hoveredTab = -1;
     int hoveredCross = -1;
@@ -53,10 +59,88 @@ sealed class ClosableTabControl : TabControl
     void ApplyPadding() =>
         Padding = new(LogicalToDeviceUnits(horizontalPadding), LogicalToDeviceUnits(verticalPadding));
 
+    /// <summary>
+    /// Shows the icon at <paramref name="systemIcon"/> in the system image list before the
+    /// tab's name.
+    /// </summary>
+    public void SetIcon(TabPage page, int systemIcon)
+    {
+        if (icons.TryGetValue(page, out var current) &&
+            current == systemIcon)
+        {
+            return;
+        }
+
+        icons[page] = systemIcon;
+
+        // The first icon makes every tab wider, so they are fitted again once this is done,
+        // rather than once they have been painted at their old width.
+        QueueFit();
+        Invalidate();
+    }
+
+    // Fitted before the tabs are first painted, which may be well after: a window off screen
+    // isn't painted at all.
+    protected override void OnHandleCreated(EventArgs eventArgs)
+    {
+        base.OnHandleCreated(eventArgs);
+        QueueFit();
+    }
+
+    protected override void OnControlRemoved(ControlEventArgs eventArgs)
+    {
+        base.OnControlRemoved(eventArgs);
+        if (eventArgs.Control is TabPage page)
+        {
+            icons.Remove(page);
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (var image in iconImages.Values)
+            {
+                image.Dispose();
+            }
+
+            iconImages.Clear();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    Bitmap IconImage(int icon)
+    {
+        if (!iconImages.TryGetValue(icon, out var image))
+        {
+            image = ShellIcons.Render(icon, ShellIcons.SmallIconSize, Point.Empty);
+            iconImages[icon] = image;
+        }
+
+        return image;
+    }
+
+    // The room an icon takes before a tab's name, its gap included. None while no tab has one.
+    int IconRoom
+    {
+        get
+        {
+            if (icons.Count == 0)
+            {
+                return 0;
+            }
+
+            return ShellIcons.SmallIconSize.Width + LogicalToDeviceUnits(iconGap);
+        }
+    }
+
     // Windows would size each tab from its text, but it measures text its own way, which at
     // some display scales comes out narrower than the text as drawn here. So every tab gets the
     // same width, worked out here from the widest name as it is drawn, as browser tabs do.
-    // Depends only on the names, so setting it never makes it need setting again.
+    // Depends only on the names and whether there are icons, so setting it never makes it need
+    // setting again.
     void FitTabs()
     {
         if (!IsHandleCreated || TabCount == 0)
@@ -71,7 +155,7 @@ sealed class ClosableTabControl : TabControl
         }
 
         var size = new Size(
-            widest + LogicalToDeviceUnits(textMargin * 2 + crossBoxSize + crossMargin),
+            widest + IconRoom + LogicalToDeviceUnits(textMargin * 2 + crossBoxSize + crossMargin),
             Font.Height + LogicalToDeviceUnits(verticalPadding) * 2);
         if (ItemSize != size)
         {
@@ -202,6 +286,13 @@ sealed class ClosableTabControl : TabControl
         graphics.SmoothingMode = SmoothingMode.Default;
         var cross = CrossBounds(index);
         var left = tab.Left + LogicalToDeviceUnits(textMargin);
+        if (icons.TryGetValue(TabPages[index], out var icon))
+        {
+            var size = ShellIcons.SmallIconSize;
+            graphics.DrawImage(IconImage(icon), new Rectangle(new(left, tab.Top + (tab.Height - size.Height) / 2), size));
+            left += IconRoom;
+        }
+
         TextRenderer.DrawText(
             graphics,
             TabPages[index].Text,

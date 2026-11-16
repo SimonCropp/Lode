@@ -200,16 +200,14 @@ class MainForm : Form
 
     Button CreateButton(string glyph, string tip, Action action)
     {
-        var button = new Button
+        var button = new GlyphButton
         {
             Text = glyph,
             Font = glyphFont,
-            FlatStyle = FlatStyle.Flat,
             Size = new(36, 30),
             Margin = new(1),
             TabStop = false
         };
-        button.FlatAppearance.BorderSize = 0;
         button.Click += (_, _) => action();
         toolTip.SetToolTip(button, tip);
         return button;
@@ -222,9 +220,9 @@ class MainForm : Form
         actionsBar.GripStyle = ToolStripGripStyle.Hidden;
         // A tool strip takes the menu font otherwise, smaller than the rest of the window.
         actionsBar.Font = DefaultFont;
-        actionsBar.Renderer = new BarRenderer();
-        // Roomy, as Explorer's command bar is.
-        actionsBar.Padding = new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(4), LogicalToDeviceUnits(6), LogicalToDeviceUnits(4));
+        actionsBar.Renderer = new ExplorerRenderer();
+        // Roomy, and as tall as Explorer's command bar.
+        actionsBar.Padding = new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), LogicalToDeviceUnits(6));
         RebuildActionsBar();
         return actionsBar;
     }
@@ -291,6 +289,7 @@ class MainForm : Form
         // Without an item it would not open; filled with the real ones as it opens.
         button.DropDownItems.Add("See more");
         button.DropDownOpening += (_, _) => FillOverflow(button);
+        ExplorerRenderer.Style(button.DropDown);
         return button;
     }
 
@@ -449,6 +448,7 @@ class MainForm : Form
             // Without an item it would not open; filled with the real ones as it opens.
             dropDown.DropDownItems.Add(action.Text);
             dropDown.DropDownOpening += (_, _) => FillDropDown(dropDown, action.Id);
+            ExplorerRenderer.Style(dropDown.DropDown);
             item = dropDown;
         }
         else
@@ -666,7 +666,7 @@ class MainForm : Form
         // 11 windows are resized from their edges.
         var status = new StatusStrip
         {
-            Renderer = new BarRenderer(),
+            Renderer = new ExplorerRenderer(),
             SizingGrip = false,
             Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
         };
@@ -1095,12 +1095,31 @@ class MainForm : Form
             }
 
             page.ToolTipText = view.CurrentPath;
+            tabs.SetIcon(page, TabIcon(view.CurrentPath));
         }
 
         if (ActiveView is { } active)
         {
             Text = labels[active.CurrentPath] + TitleSuffix;
         }
+    }
+
+    // The folder's own icon, as the tree shows it: a drive's, Downloads' arrow, This PC's. A
+    // network folder has the plain one, since asking for its own could keep the window waiting
+    // on the network.
+    static int TabIcon(string path)
+    {
+        if (Locations.IsThisPC(path))
+        {
+            return ShellIcons.ComputerIcon;
+        }
+
+        if (Locations.IsNetwork(path))
+        {
+            return ShellIcons.FolderIcon;
+        }
+
+        return ShellIcons.GetActualIcon(path);
     }
 
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
@@ -1496,7 +1515,7 @@ class MainForm : Form
         else if (eventArgs.Button == MouseButtons.Right)
         {
             var view = page.Controls.OfType<FolderView>().First();
-            var menu = new ContextMenuStrip();
+            var menu = new ExplorerMenu();
             menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true));
             menu.Items.Add("Close tab", null, (_, _) => CloseTab(page));
             var index = tabs.TabPages.IndexOf(page);

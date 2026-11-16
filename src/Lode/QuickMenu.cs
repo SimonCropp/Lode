@@ -111,7 +111,7 @@ static class QuickMenu
     /// </summary>
     internal static ContextMenuStrip Build(IReadOnlyList<Command?> commands, Action? showMore, Action<Action> choose)
     {
-        var strip = new ContextMenuStrip();
+        var strip = new ExplorerMenu();
         var iconSize = strip.LogicalToDeviceUnits(16);
         strip.ImageScalingSize = new(iconSize, iconSize);
         var images = new List<Image>();

@@ -335,7 +335,7 @@ sealed class ActionsPanel : Panel
         }
 
         list.SelectedIndex = index;
-        var menu = new ContextMenuStrip();
+        var menu = new ExplorerMenu();
         menu.Items.Add("Show details", null, (_, _) => ShowDetails(entry));
         menu.Items.Add("Remove", null, (_, _) => ActionLog.Remove(entry)).Enabled = entry.State != ActionLog.State.Running;
         menu.Items.Add("Clear finished", null, (_, _) => ActionLog.ClearFinished());

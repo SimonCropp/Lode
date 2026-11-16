@@ -26,7 +26,7 @@ sealed class WindowContext : ApplicationContext
         this.settings = settings;
         this.places = places;
 
-        var menu = new ContextMenuStrip();
+        var menu = new ExplorerMenu();
         var open = new ToolStripMenuItem("Open Lode" + buildSuffix, null, (_, _) => ShowWindows());
         open.Font = new(open.Font, FontStyle.Bold);
         menu.Items.Add(open);

@@ -1391,7 +1391,7 @@ sealed class FolderView : UserControl
     /// </summary>
     internal ContextMenuStrip HeaderMenu(int clickedColumn)
     {
-        var menu = new ContextMenuStrip();
+        var menu = new ExplorerMenu();
         menu.Items.Add(
             new ToolStripMenuItem("Size column to fit", null, (_, _) => SizeColumnToFit(clickedColumn))
             {
@@ -2376,7 +2376,7 @@ sealed class FolderView : UserControl
         }
 
         // The shell has no background menu for this folder; offer the basics ourselves.
-        var fallback = new ContextMenuStrip();
+        var fallback = new ExplorerMenu();
         fallback.Items.Add("Refresh", null, (_, _) => Reload());
         fallback.Items.Add("New folder", null, (_, _) => CreateFolder());
         fallback.Items.Add("Paste", null, (_, _) => Paste());

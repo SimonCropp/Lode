@@ -63,6 +63,9 @@ static class Icons
     public const char Updates = '\uE777';
     // A magnifier, as Explorer's search box has.
     public const char Search = '\uE721';
+    // A menu entry's submenu, and a tick beside one that is on.
+    public const char ChevronRight = '\uE76C';
+    public const char CheckMark = '\uE73E';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

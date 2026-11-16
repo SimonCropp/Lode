@@ -32,6 +32,21 @@ static class ExplorerStyle
     public static Color SecondaryText => Pick(Color.FromArgb(0x6D, 0x6D, 0x6D), SystemColors.WindowText);
 
     /// <summary>
+    /// A button's glyph while it does nothing: Back with nowhere to go back to.
+    /// </summary>
+    public static Color DisabledText => Pick(Color.FromArgb(0xA4, 0xA4, 0xA4), SystemColors.GrayText);
+
+    /// <summary>
+    /// Behind a menu's entries: off white, as Windows 11's menus are.
+    /// </summary>
+    public static Color MenuBackground => Pick(Color.FromArgb(0xF9, 0xF9, 0xF9), SystemColors.Menu);
+
+    /// <summary>
+    /// The line between groups of a menu's entries.
+    /// </summary>
+    public static Color MenuSeparator => Pick(Color.FromArgb(0xE5, 0xE5, 0xE5), SystemColors.ControlDark);
+
+    /// <summary>
     /// Something drawn flat on <paramref name="background"/>, under the mouse: a shade darker.
     /// </summary>
     public static Color Hover(Color background) =>
