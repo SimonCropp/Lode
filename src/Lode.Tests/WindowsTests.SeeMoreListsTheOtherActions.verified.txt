@@ -7,6 +7,7 @@
   Edit (disabled),
   Open with,
   Open in Claude,
+  Coding agent,
   ----,
   Pin to Quick access (disabled),
   Create shortcut,

@@ -2099,6 +2099,7 @@ sealed class FolderView : UserControl
             commands.Add(LodeActions.Command("terminal", () => FileOperations.OpenTerminal(folders)));
             commands.Add(LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(folders, admin: true)));
             commands.AddRange(ClaudeDesktop.Commands(this, folders));
+            commands.AddRange(CodingAgents.Commands(folders));
             commands.Add(LodeActions.Pin(folders, places, SetPinned));
         }
 
@@ -2205,6 +2206,7 @@ sealed class FolderView : UserControl
         LodeActions.Command("terminal", () => FileOperations.OpenTerminal(CurrentPath)),
         LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(CurrentPath, admin: true)),
         .. ClaudeDesktop.Commands(this, [CurrentPath]),
+        .. CodingAgents.Commands([CurrentPath]),
         LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath])),
         LodeActions.Command("properties", ShowProperties),
         .. CodeMenu.Commands(this, settings, [CurrentPath])

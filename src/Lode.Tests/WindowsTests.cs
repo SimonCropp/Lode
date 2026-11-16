@@ -385,16 +385,19 @@ public class WindowsTests
         await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand));
     }
 
-    // Without the Claude desktop app, neither See more nor the palette offers Open in Claude,
-    // even greyed out.
+    // Without the Claude desktop app or a coding agent, neither See more nor the palette offers
+    // Open in Claude or Coding agent, even greyed out.
     [Test]
-    public async Task NoClaudeWithoutTheDesktopApp()
+    public async Task NothingForAppsThatAreNotInstalled()
     {
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("Docs"));
         await Pump.Loaded(form.ActiveView);
+        var claude = ClaudeDesktop.IsInstalled;
+        var agents = CodingAgents.Installed;
         ClaudeDesktop.IsInstalled = () => false;
+        CodingAgents.Installed = () => [];
         try
         {
             List<string> offered =
@@ -403,11 +406,12 @@ public class WindowsTests
                 .. form.PaletteCommands().Select(_ => _.Name)
             ];
 
-            await Assert.That(offered.Where(_ => _.Contains("Claude"))).IsEmpty();
+            await Assert.That(offered.Where(_ => _.Contains("Claude") || _.Contains("Coding agent"))).IsEmpty();
         }
         finally
         {
-            ClaudeDesktop.IsInstalled = () => true;
+            ClaudeDesktop.IsInstalled = claude;
+            CodingAgents.Installed = agents;
         }
     }
 

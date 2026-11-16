@@ -1,0 +1,4 @@
+﻿[
+  Claude Code: Second\claude.exe,
+  Codex CLI: First\codex.cmd
+]

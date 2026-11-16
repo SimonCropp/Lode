@@ -257,9 +257,10 @@ static class FileOperations
     /// <summary>
     /// One Windows Terminal window with a tab in each of <paramref name="directories"/>, so
     /// there is one UAC prompt for the lot with <paramref name="admin"/>; or a command prompt
-    /// in each where it is not installed.
+    /// in each where it is not installed. With <paramref name="command"/>, each tab or prompt
+    /// runs it, rather than the shell.
     /// </summary>
-    public static void OpenTerminal(IReadOnlyList<string> directories, bool admin = false)
+    public static void OpenTerminal(IReadOnlyList<string> directories, bool admin = false, string? command = null)
     {
         var verb = admin ? "runas" : "";
         try
@@ -269,7 +270,7 @@ static class FileOperations
                 UseShellExecute = true,
                 Verb = verb
             };
-            foreach (var argument in TerminalArguments(directories))
+            foreach (var argument in TerminalArguments(directories, command))
             {
                 startInfo.ArgumentList.Add(argument);
             }
@@ -297,6 +298,12 @@ static class FileOperations
                 fallback.ArgumentList.Add("cd");
                 fallback.ArgumentList.Add("/d");
                 fallback.ArgumentList.Add(directory);
+                if (command != null)
+                {
+                    fallback.ArgumentList.Add("&&");
+                    fallback.ArgumentList.Add(command);
+                }
+
                 try
                 {
                     Process.Start(fallback)?.Dispose();
@@ -312,9 +319,10 @@ static class FileOperations
 
     /// <summary>
     /// What Windows Terminal is started with: the first folder, then a new tab for each of the
-    /// rest, the commands split by semicolons.
+    /// rest, the commands split by semicolons. With <paramref name="command"/>, each tab runs it
+    /// in place of the default profile's shell.
     /// </summary>
-    internal static List<string> TerminalArguments(IReadOnlyList<string> directories)
+    internal static List<string> TerminalArguments(IReadOnlyList<string> directories, string? command = null)
     {
         var arguments = new List<string>();
         foreach (var directory in directories)
@@ -327,6 +335,10 @@ static class FileOperations
 
             arguments.Add("-d");
             arguments.Add(directory);
+            if (command != null)
+            {
+                arguments.Add(command);
+            }
         }
 
         return arguments;

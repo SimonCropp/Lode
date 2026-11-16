@@ -36,6 +36,13 @@ public static class ModuleInitializer
         // Claude, as they would with it.
         ClaudeDesktop.IsInstalled = () => true;
 
+        // Likewise the coding agents: two, one a program and one as npm installs them.
+        CodingAgents.Installed = () =>
+        [
+            new("Claude Code", @"C:\Agents\claude.exe"),
+            new("Codex CLI", @"C:\Agents\codex.cmd")
+        ];
+
         // What tests do to files would otherwise show as Undo in each other's menus.
         UndoHistory.Instance = new(new UndoHistory.ShellFileActions())
         {

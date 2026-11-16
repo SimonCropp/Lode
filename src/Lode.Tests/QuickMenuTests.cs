@@ -180,14 +180,18 @@ public class QuickMenuTests
         await Verify(Describe(tree.NodeCommands(fixture.At("Docs"))));
     }
 
-    // Without the Claude desktop app, no menu offers Open in Claude, nor does Options.
+    // Without the Claude desktop app or a coding agent, no menu offers Open in Claude or Coding
+    // agent, nor does Options.
     [Test]
-    public async Task NoClaudeWithoutTheDesktopApp()
+    public async Task NothingForAppsThatAreNotInstalled()
     {
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
         using var tree = CreateTree([fixture.Root], []);
+        var claude = ClaudeDesktop.IsInstalled;
+        var agents = CodingAgents.Installed;
         ClaudeDesktop.IsInstalled = () => false;
+        CodingAgents.Installed = () => [];
         try
         {
             List<string> offered =
@@ -198,11 +202,12 @@ public class QuickMenuTests
                 .. LodeActions.Offered().Select(_ => _.Text)
             ];
 
-            await Assert.That(offered.Where(_ => _.Contains("Claude"))).IsEmpty();
+            await Assert.That(offered.Where(_ => _.Contains("Claude") || _.Contains("Coding agent"))).IsEmpty();
         }
         finally
         {
-            ClaudeDesktop.IsInstalled = () => true;
+            ClaudeDesktop.IsInstalled = claude;
+            CodingAgents.Installed = agents;
         }
     }
 

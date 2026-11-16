@@ -1287,6 +1287,14 @@ class MainForm : Form
         }
     }
 
+    void OpenAgent(CodingAgents.Agent agent)
+    {
+        if (PinnablePath() is { } path)
+        {
+            CodingAgents.Open(agent, [path]);
+        }
+    }
+
     string? PinnablePath()
     {
         if (ActiveView is not { } view ||
@@ -1606,6 +1614,12 @@ class MainForm : Form
         if (ClaudeDesktop.IsInstalled())
         {
             Add("Open in Claude", OpenInClaude, enabled: PinnablePath() != null);
+        }
+
+        // Named as the folder's own would be, which these stand in for when a file is selected.
+        foreach (var agent in CodingAgents.Installed())
+        {
+            Add($"Coding agent: {agent.Name}", () => OpenAgent(agent), enabled: PinnablePath() != null);
         }
 
         if (PinMenuText() is { } pinText)

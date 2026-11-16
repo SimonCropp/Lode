@@ -31,6 +31,8 @@ static class Icons
     // Not a glyph of either font, which have no Claude: an eight spoked asterisk, which neither
     // has either, stands for Claude's symbol, drawn from its outline. See claudeOutline.
     public const char Claude = '\u2733';
+    // A robot, for the coding agents.
+    public const char Agent = '\uE99A';
     public const char Shortcut = '\uE71B';
     public const char CopyAsPath = '\uE62F';
     public const char Folder = '\uE8B7';

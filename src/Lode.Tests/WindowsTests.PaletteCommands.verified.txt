@@ -17,6 +17,8 @@
   Terminal,
   Terminal (admin),
   Open in Claude,
+  Coding agent: Claude Code,
+  Coding agent: Codex CLI,
   Pin this folder to Quick access,
   New: Folder (Ctrl+Shift+N),
   Copy as path,

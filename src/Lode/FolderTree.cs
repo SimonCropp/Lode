@@ -1115,6 +1115,7 @@ sealed class FolderTree : TreeView
             LodeActions.Command("terminal", () => FileOperations.OpenTerminal(path)),
             LodeActions.Command("terminalAdmin", () => FileOperations.OpenTerminal(path, admin: true)),
             .. ClaudeDesktop.Commands(this, [path]),
+            .. CodingAgents.Commands([path]),
             null,
             LodeActions.Command("cut", () => FileOperations.CopyToClipboard([path], true), !isDrive),
             LodeActions.Command("copy", () => FileOperations.CopyToClipboard([path], false)),
