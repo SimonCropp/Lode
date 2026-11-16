@@ -95,7 +95,7 @@ public class FolderViewTests
     public async Task FilterByWildcard()
     {
         using var fixture = Fixture.Create();
-        File.WriteAllText(fixture.At("Cache", "cached.aleph"), "");
+        await File.WriteAllTextAsync(fixture.At("Cache", "cached.aleph"), "");
         using var view = await Open(fixture.Root);
 
         view.Filter = "*.aleph";
@@ -108,7 +108,7 @@ public class FolderViewTests
     public async Task SearchFindsInHiddenFoldersWhenShown()
     {
         using var fixture = Fixture.Create();
-        File.WriteAllText(fixture.At("Cache", "cached.aleph"), "");
+        await File.WriteAllTextAsync(fixture.At("Cache", "cached.aleph"), "");
         using var view = await Open(fixture.Root, new() { ShowHidden = true });
 
         view.Filter = "*.aleph";
