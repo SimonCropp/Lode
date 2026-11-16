@@ -88,7 +88,12 @@ static class CodingAgents
     static List<string> SearchFolders()
     {
         var folders = new List<string>();
-        foreach (var target in new[] { EnvironmentVariableTarget.Machine, EnvironmentVariableTarget.User, EnvironmentVariableTarget.Process })
+        foreach (var target in new[]
+                 {
+                     EnvironmentVariableTarget.Machine,
+                     EnvironmentVariableTarget.User,
+                     EnvironmentVariableTarget.Process
+                 })
         {
             var value = Environment.GetEnvironmentVariable("Path", target) ?? "";
             foreach (var entry in value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -131,10 +136,11 @@ static class CodingAgents
                 "agent",
                 QuickMenu.Deferred(() =>
                     agents
-                        .Select(_ => (QuickMenu.Command?) new QuickMenu.Command(_.Name, () => Open(_, folders))
-                        {
-                            ShellIcon = ShellIcons.GetActualIcon(_.Path)
-                        })
+                        .Select(QuickMenu.Command? (_) =>
+                            new(_.Name, () => Open(_, folders))
+                            {
+                                ShellIcon = ShellIcons.GetActualIcon(_.Path)
+                            })
                         .ToList()))
         ];
     }

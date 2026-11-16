@@ -31,10 +31,10 @@ public class FileOperationsTests
         var outcome = await FileOperations.OnStaThread(
             () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, sources, fixture.At("Archive"), 0));
 
-        await Assert.That(outcome.Changes).IsEquivalentTo(
+        await Assert.That(outcome.Changes).IsEquivalentTo<IReadOnlyList<ShellFileOperation.Change>, ShellFileOperation.Change>(
             [
-                new ShellFileOperation.Change(fixture.At("Source"), fixture.At("Archive", "Source")),
-                new ShellFileOperation.Change(fixture.At("notes.aleph"), fixture.At("Archive", "notes.aleph"))
+                new(fixture.At("Source"), fixture.At("Archive", "Source")),
+                new(fixture.At("notes.aleph"), fixture.At("Archive", "notes.aleph"))
             ],
             TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(File.Exists(fixture.At("Archive", "Source", "Deep", "leaf.aleph"))).IsTrue();
@@ -51,10 +51,10 @@ public class FileOperationsTests
         var outcome = await FileOperations.OnStaThread(
             () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, sources, fixture.At("Archive"), 0));
 
-        await Assert.That(outcome.Changes).IsEquivalentTo(
+        await Assert.That(outcome.Changes).IsEquivalentTo<IReadOnlyList<ShellFileOperation.Change>, ShellFileOperation.Change>(
             [
-                new ShellFileOperation.Change(fixture.At("Source"), fixture.At("Archive", "Source")),
-                new ShellFileOperation.Change(fixture.At("Source", "main.aleph"), fixture.At("Archive", "main.aleph"))
+                new(fixture.At("Source"), fixture.At("Archive", "Source")),
+                new(fixture.At("Source", "main.aleph"), fixture.At("Archive", "main.aleph"))
             ],
             TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
