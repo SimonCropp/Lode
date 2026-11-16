@@ -967,19 +967,19 @@ sealed class FolderView : UserControl
 
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
         // space is read there as well, as asking a drive mapped to a share waits on the network.
-        var (loaded, free, failure) = await Task.Run(
+        var (loaded, late, free, failure) = await Task.Run(
             () =>
             {
                 var space = FreeSpaceOf(path, freeSpace);
                 try
                 {
-                    var found = Enumerate(path, showHidden, hiddenSystem);
+                    var found = Enumerate(path, showHidden, hiddenSystem, out var late);
                     found.Sort((first, second) => Compare(first, second, column, ascending));
-                    return (found, space, null);
+                    return (found, late, space, null);
                 }
                 catch (Exception exception)
                 {
-                    return (new List<FileEntry>(), space, (string?)exception.Message);
+                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message);
                 }
             });
 
@@ -995,6 +995,34 @@ sealed class FolderView : UserControl
         error = failure;
         Populate(preserveState);
         ReadTook(Stopwatch.GetElapsedTime(started));
+        foreach (var drive in late)
+        {
+            _ = SizeLate(version, drive);
+        }
+    }
+
+    // A drive of This PC's that said how big it is only after it was listed without, put in the
+    // list as it now is, unless the list has been read again, or left, meanwhile.
+    async Task SizeLate(int version, Task<FileEntry> sizing)
+    {
+        var sized = await sizing;
+        if (version != loadVersion ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        var index = entries.FindIndex(_ => Locations.Same(_.FullPath, sized.FullPath));
+        if (index < 0)
+        {
+            return;
+        }
+
+        entries[index] = sized;
+
+        // Sorted again, as its size may move it.
+        entriesSort = (-1, false);
+        Populate(true);
     }
 
     // A folder that takes long to read is not read again the moment it changes, but only once
@@ -1032,29 +1060,55 @@ sealed class FolderView : UserControl
     internal void ReadTook(TimeSpan read) =>
         readAgainAt = Environment.TickCount64 + (long)WaitAfter(read).TotalMilliseconds;
 
-    static List<FileEntry> Enumerate(string path, bool showHidden, SystemItems? hiddenSystem)
+    static FileEntry DriveEntry(DriveInfo drive)
+    {
+        long total = 0;
+        long free = 0;
+        try
+        {
+            if (drive.IsReady)
+            {
+                total = drive.TotalSize;
+                free = drive.AvailableFreeSpace;
+            }
+        }
+        catch (IOException)
+        {
+            // The drive went away between listing and querying it.
+        }
+
+        return new(drive.Name, drive.Name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free);
+    }
+
+    // How long This PC's read waits for its drives' sizes. A drive that answers later, one mapped
+    // to a share that is offline or a disk that has to spin up, is listed without its size, which
+    // follows once it has answered.
+    static readonly TimeSpan drivesWait = TimeSpan.FromMilliseconds(250);
+
+    /// <param name="late">This PC's drives that had not said how big they are in time, each as
+    /// it will be listed once it has.</param>
+    static List<FileEntry> Enumerate(string path, bool showHidden, SystemItems? hiddenSystem, out List<Task<FileEntry>> late)
     {
         var result = new List<FileEntry>();
+        late = [];
         if (Locations.IsThisPC(path))
         {
-            foreach (var drive in DriveInfo.GetDrives())
+            // Asked all at once, each on its own, so a slow drive holds up only itself.
+            var drives = DriveInfo.GetDrives();
+            var sizing = drives
+                .Select(_ => Task.Run(() => DriveEntry(_)))
+                .ToArray();
+            Task.WaitAll(sizing, drivesWait);
+            foreach (var (drive, sized) in drives.Zip(sizing))
             {
-                long total = 0;
-                long free = 0;
-                try
+                if (sized.IsCompletedSuccessfully)
                 {
-                    if (drive.IsReady)
-                    {
-                        total = drive.TotalSize;
-                        free = drive.AvailableFreeSpace;
-                    }
-                }
-                catch (IOException)
-                {
-                    // The drive went away between listing and querying it.
+                    result.Add(sized.Result);
+                    continue;
                 }
 
-                result.Add(new(drive.Name, drive.Name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free));
+                result.Add(new(drive.Name, drive.Name, true, 0, default, FileAttributes.Directory, IsDrive: true));
+                late.Add(sized);
             }
 
             return result;
@@ -1741,7 +1795,7 @@ sealed class FolderView : UserControl
         var measured = new HashSet<string>();
         foreach (var entry in displayed)
         {
-            var text = entry.IsDrive ? DescribeDrive(entry).Cells[column] : Cell(entry, column);
+            var text = entry.IsDrive ? DriveCell(entry, column) : Cell(entry, column);
             if (!measured.Add(text))
             {
                 continue;
@@ -1773,11 +1827,39 @@ sealed class FolderView : UserControl
         [
             displayName,
             "",
-            entry.Size > 0 ? Formatting.Size(entry.FreeSpace) : "",
+            DriveSize(entry, entry.FreeSpace),
             typeName,
-            entry.Size > 0 ? Formatting.Size(entry.Size) : ""
+            DriveSize(entry, entry.Size)
         ];
         return (cells, icon);
+    }
+
+    // What a drive shows in a column, asking the shell only for the columns it names: sizing
+    // the size columns to fit asks nothing of it.
+    string DriveCell(FileEntry entry, int column)
+    {
+        switch (column)
+        {
+            case folderColumn:
+                return "";
+            case dateColumn:
+                return DriveSize(entry, entry.FreeSpace);
+            case sizeColumn:
+                return DriveSize(entry, entry.Size);
+        }
+
+        return DescribeDrive(entry).Cells[column];
+    }
+
+    // Nothing for a drive that has not said how big it is.
+    static string DriveSize(FileEntry entry, long size)
+    {
+        if (entry.Size > 0)
+        {
+            return Formatting.Size(size);
+        }
+
+        return "";
     }
 
     void DriveDescribed()

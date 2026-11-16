@@ -469,7 +469,7 @@ sealed class FolderTree : TreeView
 
             // As File Explorer does, every folder on a share gets an expander, rather than a trip
             // across the network into each one to see whether it should.
-            var lookInside = !IsRemote(path);
+            var lookInside = !Locations.IsRemote(path);
             var directories = new List<Subfolder>();
             foreach (var (name, fullPath) in FindSubfolders(path, options, hiddenSystem))
             {
@@ -520,30 +520,6 @@ sealed class FolderTree : TreeView
         catch (Exception)
         {
             return true;
-        }
-    }
-
-    // A share, by its \\server\share path or by a drive letter mapped to it.
-    static bool IsRemote(string path)
-    {
-        if (Locations.IsNetwork(path))
-        {
-            return true;
-        }
-
-        var root = Path.GetPathRoot(path);
-        if (string.IsNullOrEmpty(root))
-        {
-            return false;
-        }
-
-        try
-        {
-            return new DriveInfo(root).DriveType == DriveType.Network;
-        }
-        catch (ArgumentException)
-        {
-            return false;
         }
     }
 
