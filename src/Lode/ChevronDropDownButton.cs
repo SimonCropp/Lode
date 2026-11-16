@@ -15,12 +15,12 @@ sealed class ChevronDropDownButton : ToolStripDropDownButton
     /// <summary>
     /// The room the chevron takes, gap included, to add to the right padding.
     /// </summary>
-    public int ChevronWidth => Scale(16);
+    public int ChevronWidth => Scale(14);
 
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
         base.OnPaint(eventArgs);
-        var size = Scale(12);
+        var size = Scale(8);
         var color = Enabled ? ForeColor : SystemColors.GrayText;
         var chevron = Icons.Bitmap(Icons.ChevronDown, size, color);
         var right = Width - Padding.Right + ChevronWidth - Scale(2);

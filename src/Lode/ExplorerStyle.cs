@@ -42,6 +42,11 @@ static class ExplorerStyle
     public static Color MenuBackground => Pick(Color.FromArgb(0xF9, 0xF9, 0xF9), SystemColors.Menu);
 
     /// <summary>
+    /// The line between groups of the command bar's buttons: faint.
+    /// </summary>
+    public static Color BarSeparator => Pick(Color.FromArgb(0xF0, 0xF0, 0xF0), SystemColors.ControlDark);
+
+    /// <summary>
     /// The line between groups of a menu's entries.
     /// </summary>
     public static Color MenuSeparator => Pick(Color.FromArgb(0xE5, 0xE5, 0xE5), SystemColors.ControlDark);

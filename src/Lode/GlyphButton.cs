@@ -5,6 +5,9 @@
 /// </summary>
 sealed class GlyphButton : Button
 {
+    // Pixels at 100% scale.
+    const int glyphSize = 12;
+
     bool hovered;
     bool pressed;
 
@@ -66,18 +69,25 @@ sealed class GlyphButton : Button
             graphics.SmoothingMode = SmoothingMode.Default;
         }
 
+        if (Text.Length == 0)
+        {
+            return;
+        }
+
         var color = ForeColor;
         if (!Enabled)
         {
             color = ExplorerStyle.DisabledText;
         }
 
-        TextRenderer.DrawText(
-            graphics,
-            Text,
-            Font,
-            ClientRectangle,
-            color,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        // An icon of the glyph, smoothed in gray, as the command bar's are. Drawn as text, it was
+        // smoothed with ClearType, which turned a thin stroke, Up's, green. At Explorer's size.
+        var size = LogicalToDeviceUnits(glyphSize);
+        graphics.DrawImage(
+            Icons.Bitmap(Text[0], size, color),
+            (Width - size) / 2,
+            (Height - size) / 2,
+            size,
+            size);
     }
 }

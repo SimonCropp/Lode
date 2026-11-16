@@ -203,7 +203,11 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         var item = eventArgs.Item;
         if (!item.IsOnDropDown)
         {
-            base.OnRenderSeparator(eventArgs);
+            // Down the middle, as tall as the buttons beside it, in place of Windows' etched
+            // line, which is much darker than Explorer's.
+            using var barPen = new Pen(ExplorerStyle.BarSeparator);
+            var x = item.Width / 2;
+            eventArgs.Graphics.DrawLine(barPen, x, 0, x, item.Height);
             return;
         }
 

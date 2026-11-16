@@ -1,6 +1,6 @@
 class MainForm : Form
 {
-    // Segoe MDL2 Assets code points.
+    // Glyphs of the icon font (see Icons) for the address row's buttons.
     const string backGlyph = "\uE72B";
     const string forwardGlyph = "\uE72A";
     const string upGlyph = "\uE74A";
@@ -12,7 +12,6 @@ class MainForm : Form
     const int browserForwardCommand = 2;
     const int maximumTabTextLength = 28;
 
-    Font glyphFont = new("Segoe MDL2 Assets", 10f);
     ToolTip toolTip = new();
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
@@ -203,7 +202,6 @@ class MainForm : Form
         var button = new GlyphButton
         {
             Text = glyph,
-            Font = glyphFont,
             Size = new(36, 30),
             Margin = new(1),
             TabStop = false
@@ -218,11 +216,11 @@ class MainForm : Form
     {
         actionsBar.Dock = DockStyle.Top;
         actionsBar.GripStyle = ToolStripGripStyle.Hidden;
-        // A tool strip takes the menu font otherwise, smaller than the rest of the window.
-        actionsBar.Font = DefaultFont;
+        // In a menu's font, which a tool strip takes unless told otherwise: smaller than the rest
+        // of the window, as Explorer's command bar is.
         actionsBar.Renderer = new ExplorerRenderer();
         // Roomy, and as tall as Explorer's command bar.
-        actionsBar.Padding = new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), LogicalToDeviceUnits(6), LogicalToDeviceUnits(6));
+        actionsBar.Padding = new(0, LogicalToDeviceUnits(6), 0, LogicalToDeviceUnits(6));
         RebuildActionsBar();
         return actionsBar;
     }
@@ -239,7 +237,8 @@ class MainForm : Form
 
         actionsBar.Items.Clear();
         actionButtons.Clear();
-        var iconSize = LogicalToDeviceUnits(20);
+        // Explorer's size for its command bar's icons.
+        var iconSize = LogicalToDeviceUnits(16);
         actionsBar.ImageScalingSize = new(iconSize, iconSize);
         int? group = null;
         foreach (var action in LodeActions.All.Where(_ => settings.ShowsAsButton(_.Id)))
@@ -263,7 +262,8 @@ class MainForm : Form
                 actionsBar.Items.Add(ActionsSeparator());
             }
 
-            actionsBar.Items.Add(CreateOverflowButton(iconSize));
+            // Larger than the rest: at their size the dots are smaller than Explorer's.
+            actionsBar.Items.Add(CreateOverflowButton(LogicalToDeviceUnits(20)));
         }
 
         actionsBar.Visible = actionsBar.Items.Count > 0;
@@ -459,7 +459,8 @@ class MainForm : Form
 
         item.Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText);
         item.ImageScaling = ToolStripItemImageScaling.None;
-        item.Padding = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(5), LogicalToDeviceUnits(8), LogicalToDeviceUnits(5));
+        // Spaced as Explorer's are, about 48 pixels apart at 100%, and as tall as the bar needs.
+        item.Padding = new(LogicalToDeviceUnits(13), LogicalToDeviceUnits(7), LogicalToDeviceUnits(13), LogicalToDeviceUnits(7));
         item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
         item.ToolTipText = action.Text;
         if (action.Shortcut.Length > 0)
@@ -484,7 +485,7 @@ class MainForm : Form
     ToolStripSeparator ActionsSeparator() =>
         new()
         {
-            Margin = new(LogicalToDeviceUnits(8), LogicalToDeviceUnits(4), LogicalToDeviceUnits(8), LogicalToDeviceUnits(4))
+            Margin = new(LogicalToDeviceUnits(4), 0, LogicalToDeviceUnits(4), 0)
         };
 
     // The drop-down's entries are the submenu the right-click menu would show now.
@@ -1832,7 +1833,6 @@ class MainForm : Form
             places.Changed -= RebuildTree;
             UndoHistory.Instance.Changed -= OnUndoChanged;
             updates.Changed -= OnUpdatesChanged;
-            glyphFont.Dispose();
             toolTip.Dispose();
             trayTimer.Dispose();
         }
