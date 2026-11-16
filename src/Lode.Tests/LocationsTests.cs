@@ -78,6 +78,21 @@ public class LocationsTests
         return Verify(pairs.ToDictionary(_ => $"{_.Path} in {_.Folder}", _ => Locations.IsWithin(_.Path, _.Folder)));
     }
 
+    // A share is on the network whatever is asked of it. The drive Windows is on is not, and
+    // neither is somewhere with no drive at all.
+    [Test]
+    public async Task IsRemote()
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+        await Assert.That(Locations.IsRemote(@"\\server\share")).IsTrue();
+        await Assert.That(Locations.IsRemote(@"\\server\share\folder\file.txt")).IsTrue();
+        await Assert.That(Locations.IsRemote(windows)).IsFalse();
+        await Assert.That(Locations.IsRemote(Path.GetPathRoot(windows)!)).IsFalse();
+        await Assert.That(Locations.IsRemote(Locations.ThisPC)).IsFalse();
+        await Assert.That(Locations.IsRemote("")).IsFalse();
+    }
+
     static IEnumerable<string> Normalized() =>
         inputs
             .Select(_ => Locations.Normalize(_))

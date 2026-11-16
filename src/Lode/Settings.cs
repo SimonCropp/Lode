@@ -103,7 +103,7 @@ sealed class Settings
     public string StartLocation()
     {
         if (DefaultDirectory != null &&
-            (Locations.IsThisPC(DefaultDirectory) || Directory.Exists(DefaultDirectory)))
+            (Locations.IsThisPC(DefaultDirectory) || Locations.IsRemote(DefaultDirectory) || Directory.Exists(DefaultDirectory)))
         {
             return DefaultDirectory;
         }

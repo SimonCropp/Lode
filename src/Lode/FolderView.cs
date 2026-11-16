@@ -257,7 +257,15 @@ sealed class FolderView : UserControl
             if (stale)
             {
                 // The rows are still the folder's, a read behind, unless it was never read.
-                ReadFolder(entries.Count > 0);
+                var preserveState = entries.Count > 0;
+                if (IsRemote(CurrentPath))
+                {
+                    Loading = FindThenRead(preserveState);
+                }
+                else
+                {
+                    ReadFolder(preserveState);
+                }
             }
             else if (searchStale)
             {
@@ -296,6 +304,11 @@ sealed class FolderView : UserControl
     /// </summary>
     public string StatusFor(IReadOnlyList<FileEntry> selection)
     {
+        if (looking != null)
+        {
+            return $"Looking for {looking}...";
+        }
+
         if (error != null)
         {
             return error;
@@ -336,7 +349,69 @@ sealed class FolderView : UserControl
     public void FocusList() =>
         list.Focus();
 
-    public void Navigate(string target, bool record = true)
+    /// <summary>
+    /// Whether somewhere is on the network, where asking if it is there can take a long time.
+    /// Replaced in tests, to send a folder on this machine the way one on the network goes.
+    /// </summary>
+    internal Func<string, bool> IsRemote = Locations.IsRemote;
+
+    // Somewhere on the network being asked after, off the UI thread, and which asking that is:
+    // one overtaken, by going somewhere else meanwhile, is not acted on.
+    string? looking;
+    int finding;
+
+    // The view was started at what may be a file, taken on trust. Found to be one, its folder is
+    // shown with it selected.
+    bool revealIfFile;
+
+    enum Found
+    {
+        Folder,
+        File,
+        Nothing
+    }
+
+    static Found Find(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            return Found.Folder;
+        }
+
+        if (File.Exists(path))
+        {
+            return Found.File;
+        }
+
+        return Found.Nothing;
+    }
+
+    public void Navigate(string target, bool record = true) =>
+        Go(target, record, revealFile: false);
+
+    /// <summary>
+    /// Where a tab starts: a folder, or a file, which means "show me this file", so its folder
+    /// with the file selected. Somewhere on the network is taken on trust until the view shows,
+    /// and asked after then, off the UI thread.
+    /// </summary>
+    public void OpenAt(string path)
+    {
+        if (IsRemote(path))
+        {
+            Go(path, record: true, revealFile: true);
+            return;
+        }
+
+        if (File.Exists(path))
+        {
+            Reveal(path);
+            return;
+        }
+
+        Navigate(path);
+    }
+
+    void Go(string target, bool record, bool revealFile)
     {
         var normalized = Locations.Normalize(target);
         if (normalized == null)
@@ -344,23 +419,147 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!Locations.IsThisPC(normalized) && !Directory.Exists(normalized))
+        if (Locations.IsThisPC(normalized))
         {
-            if (File.Exists(normalized))
-            {
-                FileOperations.Open(this, normalized);
-                return;
-            }
-
-            MessageBox.Show(
-                this,
-                $"Lode can't find '{target}'. Check the spelling and try again.",
-                "Lode",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            Open(normalized, record);
             return;
         }
 
+        // Whether somewhere on the network is there can take a long time to hear when it is
+        // not, and the window would wait all that time. So a view showing asks off the UI
+        // thread, and goes there once it has heard. One nobody can see takes it on trust, and
+        // asks when it shows.
+        if (IsRemote(normalized))
+        {
+            if (showing)
+            {
+                Loading = FindThenOpen(target, normalized, record, revealFile);
+                return;
+            }
+
+            Open(normalized, record);
+            revealIfFile = revealFile;
+            return;
+        }
+
+        if (Directory.Exists(normalized))
+        {
+            Open(normalized, record);
+            return;
+        }
+
+        if (File.Exists(normalized))
+        {
+            FileOperations.Open(this, normalized);
+            return;
+        }
+
+        SayNotFound(target);
+    }
+
+    void SayNotFound(string target) =>
+        MessageBox.Show(
+            this,
+            $"Lode can't find '{target}'. Check the spelling and try again.",
+            "Lode",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+
+    // Asks after somewhere on the network, off the UI thread, then does what Go does at once
+    // for somewhere on this machine.
+    async Task FindThenOpen(string target, string normalized, bool record, bool revealFile)
+    {
+        var asking = ++finding;
+        looking = normalized;
+        QueueStatusChanged();
+        var found = await Task.Run(() => Find(normalized));
+
+        // Gone somewhere else meanwhile.
+        if (asking != finding ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        looking = null;
+        if (found == Found.Folder)
+        {
+            Open(normalized, record);
+            return;
+        }
+
+        QueueStatusChanged();
+        if (found == Found.Nothing)
+        {
+            SayNotFound(target);
+            return;
+        }
+
+        if (revealFile)
+        {
+            Reveal(normalized);
+            return;
+        }
+
+        FileOperations.Open(this, normalized);
+    }
+
+    // A view that was taken somewhere on the network while nobody could see it, or left there,
+    // has just shown. It is asked after first, off the UI thread: watching the folder and
+    // reading its free space ask too, and would keep the window waiting if it has gone.
+    async Task FindThenRead(bool preserveState)
+    {
+        var asking = ++finding;
+        var path = CurrentPath;
+        looking = path;
+        QueueStatusChanged();
+        var found = await Task.Run(() => Find(path));
+        if (asking != finding ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        looking = null;
+        QueueStatusChanged();
+
+        // Out of sight again meanwhile. Still to be read, the next time it shows.
+        if (!showing)
+        {
+            return;
+        }
+
+        if (found == Found.Folder)
+        {
+            ReadFolder(preserveState);
+            return;
+        }
+
+        if (found == Found.File &&
+            revealIfFile)
+        {
+            // Where the tab started is the file, which is nowhere to go back to.
+            history.Clear();
+            historyIndex = -1;
+            Reveal(path);
+            return;
+        }
+
+        // Not there. The tab stays where it was, and says so.
+        stale = false;
+        Unwatch();
+        StopSearch();
+        error = $"Lode can't find '{path}'.";
+        Clear();
+    }
+
+    // Takes the view to a folder known to be there, or taken on trust.
+    void Open(string normalized, bool record)
+    {
+        // Anywhere being asked after has been overtaken.
+        finding++;
+        looking = null;
+        revealIfFile = false;
         if (record)
         {
             history.RemoveRange(historyIndex + 1, history.Count - historyIndex - 1);

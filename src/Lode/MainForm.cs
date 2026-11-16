@@ -690,6 +690,7 @@ class MainForm : Form
             .Select(_ => Locations.Normalize(_))
             .OfType<string>()
             .Where(_ => Locations.IsThisPC(_) ||
+                        Locations.IsRemote(_) ||
                         Directory.Exists(_) ||
                         File.Exists(_))
             .ToList();
@@ -702,6 +703,7 @@ class MainForm : Form
         {
             paths = settings.Tabs
                 .Where(_ => Locations.IsThisPC(_) ||
+                            Locations.IsRemote(_) ||
                             Directory.Exists(_))
                 .ToList();
             active = settings.ActiveTab;
@@ -821,15 +823,7 @@ class MainForm : Form
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
         view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false);
         tabs.TabPages.Add(page);
-        if (File.Exists(path))
-        {
-            // A file path means "show me this file": open its folder with it selected.
-            view.Reveal(path);
-        }
-        else
-        {
-            view.Navigate(path);
-        }
+        view.OpenAt(path);
 
         if (activate)
         {
@@ -848,7 +842,7 @@ class MainForm : Form
     /// </summary>
     internal bool SelectTabShowing(string path)
     {
-        var file = File.Exists(path);
+        var file = !Locations.IsRemote(path) && File.Exists(path);
         var folder = path;
         if (file)
         {

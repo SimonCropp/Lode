@@ -21,6 +21,33 @@ static class Locations
     public static bool IsNetwork(CharSpan location) =>
         location.StartsWith(@"\\", StringComparison.Ordinal);
 
+    /// <summary>
+    /// True for somewhere on the network: a share, or a drive letter mapped to one. Asking
+    /// whether such a place is there can take a long time to be answered when it is not, so it
+    /// is not asked on the UI thread. Finding out which a drive is asks nothing of the network.
+    /// </summary>
+    public static bool IsRemote(string location)
+    {
+        if (IsNetwork(location))
+        {
+            return true;
+        }
+
+        if (Path.GetPathRoot(location) is not [_, ':', ..] root)
+        {
+            return false;
+        }
+
+        try
+        {
+            return new DriveInfo(root).DriveType == DriveType.Network;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public static bool Same(string? first, string? second) =>
         first != null &&
         second != null &&
