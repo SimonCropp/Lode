@@ -59,7 +59,7 @@ static class QuickMenu
 
     sealed class DeferredCommands(Func<IReadOnlyList<Command?>> find) : IReadOnlyList<Command?>
     {
-        readonly Lazy<IReadOnlyList<Command?>> commands = new(find, LazyThreadSafetyMode.None);
+        Lazy<IReadOnlyList<Command?>> commands = new(find, LazyThreadSafetyMode.None);
 
         public int Count => commands.Value.Count;
 

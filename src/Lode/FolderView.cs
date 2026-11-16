@@ -403,8 +403,8 @@ sealed class FolderView : UserControl
         return Found.Nothing;
     }
 
-    public void Navigate(string target, bool record = true) =>
-        Go(target, record, revealFile: false);
+    public void Navigate(string target) =>
+        Go(target, null, revealFile: false);
 
     /// <summary>
     /// Where a tab starts: a folder, or a file, which means "show me this file", so its folder
@@ -415,7 +415,7 @@ sealed class FolderView : UserControl
     {
         if (IsRemote(path))
         {
-            Go(path, record: true, revealFile: true);
+            Go(path, null, revealFile: true);
             return;
         }
 
@@ -428,7 +428,9 @@ sealed class FolderView : UserControl
         Navigate(path);
     }
 
-    void Go(string target, bool record, bool revealFile)
+    /// <param name="position">Where in the history the target is, when going back or forward
+    /// to it. Null for somewhere new, which is added to the history.</param>
+    void Go(string target, int? position, bool revealFile)
     {
         var normalized = Locations.Normalize(target);
         if (normalized == null)
@@ -438,7 +440,7 @@ sealed class FolderView : UserControl
 
         if (Locations.IsThisPC(normalized))
         {
-            Open(normalized, record);
+            Open(normalized, position);
             return;
         }
 
@@ -450,11 +452,11 @@ sealed class FolderView : UserControl
         {
             if (showing)
             {
-                Loading = FindThenOpen(target, normalized, record, revealFile);
+                Loading = FindThenOpen(target, normalized, position, revealFile);
                 return;
             }
 
-            Open(normalized, record);
+            Open(normalized, position);
             revealIfFile = revealFile;
             if (revealFile)
             {
@@ -466,7 +468,7 @@ sealed class FolderView : UserControl
 
         if (Directory.Exists(normalized))
         {
-            Open(normalized, record);
+            Open(normalized, position);
             return;
         }
 
@@ -489,7 +491,7 @@ sealed class FolderView : UserControl
 
     // Asks after somewhere on the network, off the UI thread, then does what Go does at once
     // for somewhere on this machine.
-    async Task FindThenOpen(string target, string normalized, bool record, bool revealFile)
+    async Task FindThenOpen(string target, string normalized, int? position, bool revealFile)
     {
         var asking = ++finding;
         looking = normalized;
@@ -506,7 +508,7 @@ sealed class FolderView : UserControl
         looking = null;
         if (found == Found.Folder)
         {
-            Open(normalized, record);
+            Open(normalized, position);
             return;
         }
 
@@ -598,14 +600,20 @@ sealed class FolderView : UserControl
         Clear();
     }
 
-    // Takes the view to a folder known to be there, or taken on trust.
-    void Open(string normalized, bool record)
+    // Takes the view to a folder known to be there, or taken on trust. Only here does where it
+    // is in the history change: going back to somewhere that has gone, or that the view is taken
+    // away from while it is still being asked after, leaves the history as it was.
+    void Open(string normalized, int? position)
     {
         // Anywhere being asked after has been overtaken.
         finding++;
         looking = null;
         revealIfFile = false;
-        if (record)
+        if (position is { } index)
+        {
+            historyIndex = index;
+        }
+        else
         {
             history.RemoveRange(historyIndex + 1, history.Count - historyIndex - 1);
             history.Add(normalized);
@@ -865,8 +873,7 @@ sealed class FolderView : UserControl
     {
         if (CanGoBack)
         {
-            historyIndex--;
-            Navigate(history[historyIndex], false);
+            GoTo(historyIndex - 1);
         }
     }
 
@@ -874,10 +881,13 @@ sealed class FolderView : UserControl
     {
         if (CanGoForward)
         {
-            historyIndex++;
-            Navigate(history[historyIndex], false);
+            GoTo(historyIndex + 1);
         }
     }
+
+    // Back or forward, to somewhere in the history.
+    void GoTo(int position) =>
+        Go(history[position], position, revealFile: false);
 
     public void GoUp()
     {

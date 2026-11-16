@@ -275,6 +275,30 @@ public class FolderViewTests
         await Verify(steps);
     }
 
+    // Where the view is in its history changes only once it gets there. Sent back to somewhere
+    // on the network, then elsewhere before that has been heard from, Back is to the folder it
+    // was in, not the one it never got back to.
+    [Test]
+    public async Task BackOvertakenLeavesTheHistoryAsItWas()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Navigate(fixture.At("Source"));
+        await Pump.Loaded(view);
+        view.Navigate(fixture.At("Source", "Deep"));
+        await Pump.Loaded(view);
+        view.IsRemote = _ => Locations.Same(_, fixture.At("Source"));
+
+        view.GoBack();
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+        view.GoBack();
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source", "Deep"));
+    }
+
     [Test]
     public async Task UpSelectsTheFolderLeft()
     {

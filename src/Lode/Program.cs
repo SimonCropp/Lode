@@ -51,13 +51,19 @@ static class Program
             return 0;
         }
 
+        // Made full before they leave this launch, which is the one that knows where a relative
+        // path is from.
+        var paths = commandLine.FullPaths();
         using var instance = new SingleInstance();
         if (!instance.IsFirst &&
-            instance.TryHandOff(commandLine.Paths))
+            instance.TryHandOff(paths))
         {
             return 0;
         }
 
+        // Lode stays running, in the tray, and Windows lets nobody rename or delete the folder
+        // a program is running in. So not the one this launch happened to be started in.
+        Environment.CurrentDirectory = Environment.SystemDirectory;
         ShellNew.Warm();
         Settings.SeedFromInstalled();
         var settings = Settings.Load(Settings.DefaultPath);
@@ -65,7 +71,7 @@ static class Program
         // Before the first window, which shows a pending update from the start.
         Updates.Instance = Updates.ForThisCopy(settings);
         var places = Places.ForThisMachine(settings);
-        Application.Run(new WindowContext(new(commandLine.Paths.ToArray(), settings, places), settings, places, instance));
+        Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }
 

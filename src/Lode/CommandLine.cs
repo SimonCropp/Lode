@@ -12,6 +12,16 @@ sealed record CommandLine(CommandKind Kind, IReadOnlyList<string> Paths, string?
     /// </summary>
     public IReadOnlyList<string> ForExplorer { get; init; } = [];
 
+    /// <summary>
+    /// <see cref="Paths"/> as full paths. A relative one is from the folder this launch was
+    /// started in, which only this launch knows: a copy of Lode already running, which the
+    /// paths are handed to, was started somewhere else.
+    /// </summary>
+    public IReadOnlyList<string> FullPaths() =>
+        Paths
+            .Select(_ => Locations.Normalize(_) ?? _)
+            .ToList();
+
     public const string Usage =
         """
         Usage: lode [folder or file ...]

@@ -701,12 +701,26 @@ class MainForm : Form
         var active = paths.Count - 1;
         if (paths.Count == 0)
         {
-            paths = settings.Tabs
-                .Where(_ => Locations.IsThisPC(_) ||
-                            Locations.IsRemote(_) ||
-                            Directory.Exists(_))
-                .ToList();
-            active = settings.ActiveTab;
+            // The tab that was active is as many along as there are tabs before it still to
+            // open: one whose folder has gone since leaves those after it a place earlier.
+            active = 0;
+            for (var index = 0; index < settings.Tabs.Count; index++)
+            {
+                var path = settings.Tabs[index];
+                if (!Locations.IsThisPC(path) &&
+                    !Locations.IsRemote(path) &&
+                    !Directory.Exists(path))
+                {
+                    continue;
+                }
+
+                if (index < settings.ActiveTab)
+                {
+                    active++;
+                }
+
+                paths.Add(path);
+            }
         }
 
         if (paths.Count == 0)
