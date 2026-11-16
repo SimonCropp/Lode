@@ -174,7 +174,23 @@ static class ShellFileOperation
     [ComVisible(true)]
     sealed class ProgressSink : IFileOperationProgressSink
     {
-        public List<Change> Changes { get; } = [];
+        List<Change> changes = [];
+
+        // Where each item done now is, or was, for one deleted outright.
+        HashSet<string>.AlternateLookup<CharSpan> places =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                .GetAlternateLookup<CharSpan>();
+
+        /// <summary>
+        /// The items done, less what is inside a folder among them. Windows copies a folder by
+        /// making it and then copying each thing in it, and reports every one. What was done is
+        /// the folder: sent to the Recycle Bin to undo the copy, it takes what it holds with it,
+        /// and those could not then be sent after it.
+        /// </summary>
+        public List<Change> Changes =>
+            changes
+                .Where(_ => !IsInside(Place(_)))
+                .ToList();
 
         void Record(IShellItem? item, int result, IShellItem? newlyCreated)
         {
@@ -184,7 +200,35 @@ static class ShellFileOperation
                 return;
             }
 
-            Changes.Add(new(source, PathOf(newlyCreated)));
+            // Nearly all of a big copy is inside a folder reported before it, and is not kept.
+            // A folder reported after what is in it is seen to when the changes are asked for.
+            var change = new Change(source, PathOf(newlyCreated));
+            var place = Place(change);
+            if (IsInside(place))
+            {
+                return;
+            }
+
+            places.Set.Add(place);
+            changes.Add(change);
+        }
+
+        // By where it went rather than where it was: a file picked beside the folder it is in,
+        // from a search say, is copied twice, once with the folder and once by itself.
+        static string Place(Change change) =>
+            change.Result ?? change.Source;
+
+        bool IsInside(string place)
+        {
+            for (var folder = Path.GetDirectoryName(place.AsSpan()); !folder.IsEmpty; folder = Path.GetDirectoryName(folder))
+            {
+                if (places.Contains(folder))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public int StartOperations() => 0;

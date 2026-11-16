@@ -20,6 +20,45 @@ public class FileOperationsTests
         await Verify(fixture.Tree());
     }
 
+    // Windows reports a folder copied and then each thing in it. What was done, for undoing it,
+    // is the folder alone: the files in it go wherever it goes.
+    [Test]
+    public async Task CopyingAFolderIsOneChange()
+    {
+        using var fixture = Fixture.Create();
+        string[] sources = [fixture.At("Source"), fixture.At("notes.aleph")];
+
+        var outcome = await FileOperations.OnStaThread(
+            () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, sources, fixture.At("Archive"), 0));
+
+        await Assert.That(outcome.Changes).IsEquivalentTo(
+            [
+                new ShellFileOperation.Change(fixture.At("Source"), fixture.At("Archive", "Source")),
+                new ShellFileOperation.Change(fixture.At("notes.aleph"), fixture.At("Archive", "notes.aleph"))
+            ],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(File.Exists(fixture.At("Archive", "Source", "Deep", "leaf.aleph"))).IsTrue();
+    }
+
+    // A file picked beside the folder it is in, as from a search, is copied twice: with the
+    // folder, and by itself, which is a change of its own.
+    [Test]
+    public async Task CopyingAFolderAndAFileInItIsTwoChanges()
+    {
+        using var fixture = Fixture.Create();
+        string[] sources = [fixture.At("Source"), fixture.At("Source", "main.aleph")];
+
+        var outcome = await FileOperations.OnStaThread(
+            () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, sources, fixture.At("Archive"), 0));
+
+        await Assert.That(outcome.Changes).IsEquivalentTo(
+            [
+                new ShellFileOperation.Change(fixture.At("Source"), fixture.At("Archive", "Source")),
+                new ShellFileOperation.Change(fixture.At("Source", "main.aleph"), fixture.At("Archive", "main.aleph"))
+            ],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     [Test]
     public async Task CopyIntoSameFolderMakesDuplicate()
     {
