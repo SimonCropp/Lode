@@ -81,6 +81,15 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         return bounds;
     }
 
+    // A menu entry's name and shortcut, on the middle of its row, where its icon, tick and
+    // chevron are. Windows Forms centres them on the row's height without the padding that makes
+    // the rows roomy (see StyleItem), which left the text riding above the icon beside it.
+    static Rectangle CentredOnRow(ToolStripItem item, Rectangle bounds)
+    {
+        bounds.Y = (item.Height - bounds.Height) / 2;
+        return bounds;
+    }
+
     protected override void OnRenderItemImage(ToolStripItemImageRenderEventArgs eventArgs)
     {
         if (eventArgs.Item.IsOnDropDown)
@@ -218,6 +227,7 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
                 eventArgs.TextRectangle = Indented(item, eventArgs.TextRectangle);
             }
 
+            eventArgs.TextRectangle = CentredOnRow(item, eventArgs.TextRectangle);
             eventArgs.TextColor = color;
         }
         else if (!eventArgs.Item.Enabled)
