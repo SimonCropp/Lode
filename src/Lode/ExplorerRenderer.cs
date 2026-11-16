@@ -27,7 +27,11 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
     {
         menu.Renderer = new ExplorerRenderer();
         var vertical = menu.LogicalToDeviceUnits(menuPadding);
-        menu.Padding = menu.Padding with { Top = vertical, Bottom = vertical };
+        menu.Padding = menu.Padding with
+        {
+            Top = vertical,
+            Bottom = vertical
+        };
         menu.HandleCreated += (_, _) => RoundCorners(menu);
         if (menu.IsHandleCreated)
         {

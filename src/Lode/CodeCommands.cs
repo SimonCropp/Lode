@@ -100,7 +100,10 @@ static class CodeCommands
                 }
 
                 var push = Git(repo, "push", "origin");
-                return push with { Output = $"{commit.Output}\n{push.Output}".Trim() };
+                return push with
+                {
+                    Output = $"{commit.Output}\n{push.Output}".Trim()
+                };
             });
 
     // Whether commit -a had nothing to commit: no tracked file changed, staged or not. Asked of
@@ -110,7 +113,11 @@ static class CodeCommands
     static bool NothingToCommit(string repo)
     {
         var status = Git(repo, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty");
-        return status.Succeeded && status.Output.Length == 0;
+        return status is
+        {
+            Succeeded: true,
+            Output.Length: 0
+        };
     }
 
     /// <summary>
@@ -129,7 +136,10 @@ static class CodeCommands
                 }
 
                 var clean = Git(repo, "clean", "-f");
-                return clean with { Output = $"{restore.Output}\n{clean.Output}".Trim() };
+                return clean with
+                {
+                    Output = $"{restore.Output}\n{clean.Output}".Trim()
+                };
             });
 
     // With more than one repository, reports which it is on. With one, the entry's folder

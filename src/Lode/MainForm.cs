@@ -472,7 +472,10 @@ class MainForm : Form
         {
             item.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
             item.TextImageRelation = TextImageRelation.ImageBeforeText;
-            item.Padding = item.Padding with { Right = item.Padding.Right + chevron.ChevronWidth };
+            item.Padding = item.Padding with
+            {
+                Right = item.Padding.Right + chevron.ChevronWidth
+            };
             // Its name as far from its icon as Explorer's New is.
             item.Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText, LogicalToDeviceUnits(6));
         }
