@@ -179,19 +179,19 @@ sealed class CommandPalette : Form
     void Refill()
     {
         shown = Match(commands, searchBox.Text);
-        list.BeginUpdate();
-        list.Items.Clear();
-        foreach (var command in shown)
+        using (list.SuspendPainting())
         {
-            list.Items.Add(command.Name);
-        }
+            list.Items.Clear();
+            foreach (var command in shown)
+            {
+                list.Items.Add(command.Name);
+            }
 
-        if (shown.Count > 0)
-        {
-            list.SelectedIndex = 0;
+            if (shown.Count > 0)
+            {
+                list.SelectedIndex = 0;
+            }
         }
-
-        list.EndUpdate();
     }
 
     void DrawCommand(object? sender, DrawItemEventArgs eventArgs)

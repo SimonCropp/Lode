@@ -57,6 +57,19 @@ static class ExplorerStyle
     public static Color MenuSeparator => Pick(Color.FromArgb(0xE5, 0xE5, 0xE5), SystemColors.ControlDark);
 
     /// <summary>
+    /// The colour Windows 11 marks focus and the current choice in: the line under a focused text
+    /// box, the bar beside the page shown. The user's accent, picked in Windows' settings, rather
+    /// than the highlight colour, which stays blue whatever the accent. Read as each mark is
+    /// drawn: Windows Forms repaints every control when the accent changes.
+    /// </summary>
+    public static Color Accent => Pick(UserAccent(), SystemColors.Highlight);
+
+    /// <summary>
+    /// Where <see cref="Accent"/> comes from. Tests pin it, as every machine's accent is its own.
+    /// </summary>
+    internal static Func<Color> UserAccent { get; set; } = () => Application.SystemVisualSettings.AccentColor;
+
+    /// <summary>
     /// Something drawn flat on <paramref name="background"/>, under the mouse: a shade darker.
     /// </summary>
     public static Color Hover(Color background) =>

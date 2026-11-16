@@ -131,21 +131,22 @@ sealed class ActionsPanel : Panel
     void Refill()
     {
         var selected = list.SelectedItem;
-        list.BeginUpdate();
-        list.Items.Clear();
-
-        // Newest first, so what was just started is at the top.
-        foreach (var entry in ActionLog.Entries.Reverse())
+        using (list.SuspendPainting())
         {
-            list.Items.Add(entry);
+            list.Items.Clear();
+
+            // Newest first, so what was just started is at the top.
+            foreach (var entry in ActionLog.Entries.Reverse())
+            {
+                list.Items.Add(entry);
+            }
+
+            if (selected != null && list.Items.Contains(selected))
+            {
+                list.SelectedItem = selected;
+            }
         }
 
-        if (selected != null && list.Items.Contains(selected))
-        {
-            list.SelectedItem = selected;
-        }
-
-        list.EndUpdate();
         Visible = list.Items.Count > 0;
 
         // Clear removes finished lines only, so it has nothing to do while everything runs.

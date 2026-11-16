@@ -17,6 +17,10 @@ static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         UseDefaultFont();
 
+        // Each window stays hidden until it and every control in it have painted once, then
+        // appears whole, rather than as a blank frame its controls fill in one at a time.
+        Application.SetDefaultFormRevealMode(FormRevealMode.Deferred);
+
         var commandLine = CommandLine.Parse(arguments);
         switch (commandLine.Kind)
         {

@@ -157,8 +157,7 @@ sealed class FolderTree : TreeView
         // settings that were. Whoever rebuilds selects again.
         selectVersion++;
         selecting = null;
-        BeginUpdate();
-        try
+        using (this.SuspendPainting())
         {
             UnwatchAll();
             Nodes.Clear();
@@ -183,10 +182,6 @@ sealed class FolderTree : TreeView
 
             selectedMoved = SelectMovedPinned();
             ShowShortcutsSelected(SelectedNode);
-        }
-        finally
-        {
-            EndUpdate();
         }
 
         return selectedMoved;
@@ -540,8 +535,7 @@ sealed class FolderTree : TreeView
 
     void LoadChildren(TreeNode node, List<Subfolder>? directories)
     {
-        BeginUpdate();
-        try
+        using (this.SuspendPainting())
         {
             node.Nodes.Clear();
 
@@ -550,10 +544,6 @@ sealed class FolderTree : TreeView
             {
                 node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
             }
-        }
-        finally
-        {
-            EndUpdate();
         }
 
         Watch(node);
@@ -623,8 +613,7 @@ sealed class FolderTree : TreeView
         var paths = directories
             .Select(_ => _.FullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        BeginUpdate();
-        try
+        using (this.SuspendPainting())
         {
             foreach (var child in node.Nodes.Cast<TreeNode>().ToList())
             {
@@ -666,10 +655,6 @@ sealed class FolderTree : TreeView
 
                 nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
             }
-        }
-        finally
-        {
-            EndUpdate();
         }
     }
 
@@ -1049,8 +1034,7 @@ sealed class FolderTree : TreeView
 
         var currentPath = (string)current.Tag!;
         var segments = path[currentPath.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        BeginUpdate();
-        try
+        using (this.SuspendPainting())
         {
             for (var index = 0; index < segments.Length; index++)
             {
@@ -1085,10 +1069,6 @@ sealed class FolderTree : TreeView
                 current.Expand();
                 current = child;
             }
-        }
-        finally
-        {
-            EndUpdate();
         }
 
         return (current, []);

@@ -189,8 +189,9 @@ static class TextFrame
             graphics.DrawPath(pen, outline);
 
             var accent = control.LogicalToDeviceUnits(2);
+            using var accentBrush = new SolidBrush(ExplorerStyle.Accent);
             graphics.SetClip(shape);
-            graphics.FillRectangle(SystemBrushes.Highlight, bounds.Left, bounds.Bottom - accent, bounds.Width, accent);
+            graphics.FillRectangle(accentBrush, bounds.Left, bounds.Bottom - accent, bounds.Width, accent);
             graphics.ResetClip();
         }
 

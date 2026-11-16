@@ -28,6 +28,10 @@ public static class ModuleInitializer
         // Every machine's drives are called something else; the address bar's are all the same.
         Breadcrumb.DriveName = _ => $"Local Disk ({_.TrimEnd('\\')})";
 
+        // Every machine's accent is its own. Captures use Windows' highlight blue, which they
+        // were drawn in before Lode took the accent.
+        ExplorerStyle.UserAccent = () => Color.FromArgb(0x00, 0x78, 0xD7);
+
         // What tests do to files would otherwise show as Undo in each other's menus.
         UndoHistory.Instance = new(new UndoHistory.ShellFileActions())
         {

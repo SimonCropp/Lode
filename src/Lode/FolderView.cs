@@ -1183,8 +1183,7 @@ sealed class FolderView : UserControl
 
         pendingSelection = null;
 
-        list.BeginUpdate();
-        try
+        using (list.SuspendPainting())
         {
             SetColumnText(dateColumn, IsThisPC ? "Free space" : "Date modified");
             SetColumnText(sizeColumn, IsThisPC ? "Total size" : "Size");
@@ -1195,10 +1194,6 @@ sealed class FolderView : UserControl
             {
                 list.TopItem = list.Items[Math.Min(topIndex, visible.Count - 1)];
             }
-        }
-        finally
-        {
-            list.EndUpdate();
         }
 
         list.SetSortArrow(SortArrowColumn, sortAscending);

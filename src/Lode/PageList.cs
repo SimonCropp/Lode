@@ -149,7 +149,7 @@ sealed class PageList : Control
                     shading.Top + (shading.Height - barHeight) / 2,
                     LogicalToDeviceUnits(3),
                     barHeight);
-                using var accent = new SolidBrush(SystemColors.Highlight);
+                using var accent = new SolidBrush(ExplorerStyle.Accent);
                 using var barPath = ExplorerStyle.RoundedRectangle(bar, bar.Width / 2);
                 graphics.FillPath(accent, barPath);
             }
