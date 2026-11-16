@@ -137,6 +137,12 @@ static partial class NativeMethods
     [LibraryImport("uxtheme.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int SetWindowTheme(IntPtr window, string? application, string? idList);
 
+    public const int DwmWindowSystemBackdropType = 38;
+    public const int DwmSystemBackdropMainWindow = 2;
+
+    [LibraryImport("dwmapi.dll")]
+    public static partial int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
+
     [LibraryImport("user32.dll", EntryPoint = "SendMessageW")]
     public static partial IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 

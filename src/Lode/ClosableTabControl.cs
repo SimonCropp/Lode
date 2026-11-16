@@ -1,17 +1,22 @@
 /// <summary>
-/// A flat tab strip whose tabs each carry a cross that closes them.
+/// A tab strip drawn as Explorer's: each tab carries a cross that closes it, and the selected
+/// one, its top corners rounded, joins the page below it.
 /// </summary>
 sealed class ClosableTabControl : TabControl
 {
     const int leftButtonDownMessage = 0x0201;
 
     // Pixels at 100% scale.
-    const int crossBoxSize = 16;
+    const int crossBoxSize = 20;
     const int crossSize = 8;
     const int crossMargin = 5;
+    const int crossCornerRadius = 4;
     const int textMargin = 8;
     const int horizontalPadding = 17;
     const int verticalPadding = 5;
+    const int cornerRadius = 8;
+    const int footRadius = 3;
+    const int dividerHeight = 16;
 
     int hoveredTab = -1;
     int hoveredCross = -1;
@@ -124,6 +129,18 @@ sealed class ClosableTabControl : TabControl
         return -1;
     }
 
+    // The pages fill the control below the row of tabs, edge to edge, as Explorer's folder fills
+    // its window below the address bar. The tab strip's own frame left a margin round them,
+    // which showed as a gray border left of, right of and below the folder.
+    public override Rectangle DisplayRectangle
+    {
+        get
+        {
+            var top = base.DisplayRectangle.Top;
+            return new(0, top, ClientSize.Width, Math.Max(0, ClientSize.Height - top));
+        }
+    }
+
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
         QueueFit();
@@ -134,9 +151,9 @@ sealed class ClosableTabControl : TabControl
             return;
         }
 
-        // The line the tabs sit on. The selected tab is painted over it, so it reads as
-        // joined to the page below.
-        using var border = new Pen(SystemColors.ActiveBorder);
+        // The line the tabs sit on, along the top of the page. The selected tab is painted over
+        // it, so it reads as joined to the page below.
+        using var border = new Pen(ExplorerStyle.TabBorder);
         var baseline = DisplayRectangle.Top - 1;
         graphics.DrawLine(border, 0, baseline, Width, baseline);
 
@@ -148,6 +165,7 @@ sealed class ClosableTabControl : TabControl
             }
         }
 
+        PaintDividers(graphics, border, baseline);
         if (SelectedIndex >= 0)
         {
             PaintTab(graphics, border, SelectedIndex, baseline);
@@ -157,20 +175,31 @@ sealed class ClosableTabControl : TabControl
     void PaintTab(Graphics graphics, Pen border, int index, int baseline)
     {
         var tab = GetTabRect(index);
-        var selected = index == SelectedIndex;
-        if (selected)
+        var background = SystemColors.Control;
+        var radius = LogicalToDeviceUnits(cornerRadius);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        if (index == SelectedIndex)
         {
-            var body = Rectangle.FromLTRB(tab.Left, tab.Top, tab.Right, baseline + 1);
-            graphics.FillRectangle(SystemBrushes.Window, body);
-            graphics.DrawLines(
-                border,
-                new(body.Left, body.Bottom - 1), new(body.Left, body.Top), new(body.Right - 1, body.Top), new(body.Right - 1, body.Bottom - 1));
+            background = SystemColors.Window;
+            using var outline = SelectedOutline(tab, baseline, radius);
+
+            // Filled down over the line the tabs sit on, which the outline only reaches.
+            using var body = (GraphicsPath) outline.Clone();
+            var foot = LogicalToDeviceUnits(footRadius);
+            body.AddLine(tab.Right + foot, baseline + 1, tab.Left - foot, baseline + 1);
+            body.CloseFigure();
+            graphics.FillPath(SystemBrushes.Window, body);
+            graphics.DrawPath(border, outline);
         }
         else if (index == hoveredTab)
         {
-            graphics.FillRectangle(SystemBrushes.ControlLight, Rectangle.FromLTRB(tab.Left, tab.Top, tab.Right, baseline));
+            background = ExplorerStyle.Hover(SystemColors.Control);
+            using var brush = new SolidBrush(background);
+            using var shape = TopRounded(Rectangle.FromLTRB(tab.Left, tab.Top, tab.Right, baseline), radius);
+            graphics.FillPath(brush, shape);
         }
 
+        graphics.SmoothingMode = SmoothingMode.Default;
         var cross = CrossBounds(index);
         var left = tab.Left + LogicalToDeviceUnits(textMargin);
         TextRenderer.DrawText(
@@ -181,16 +210,71 @@ sealed class ClosableTabControl : TabControl
             SystemColors.ControlText,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
-        PaintCross(graphics, cross, index == hoveredCross);
+        PaintCross(graphics, cross, index == hoveredCross, background);
     }
 
-    void PaintCross(Graphics graphics, Rectangle box, bool hovered)
+    // The selected tab's outline: up from a foot that curves out into the line the tabs sit on,
+    // round the top corners, and down to a foot on the other side. Open along the bottom, where
+    // the tab joins the page. Through the middle of the pixels it is drawn on, so it is crisp.
+    GraphicsPath SelectedOutline(Rectangle tab, int baseline, int radius)
     {
-        var previous = graphics.SmoothingMode;
+        var left = tab.Left + 0.5f;
+        var right = tab.Right - 0.5f;
+        var top = tab.Top + 0.5f;
+        var bottom = baseline + 0.5f;
+        var corner = radius * 2f;
+        var foot = LogicalToDeviceUnits(footRadius) * 2f;
+        var path = new GraphicsPath();
+        path.AddArc(left - foot, bottom - foot, foot, foot, 90, -90);
+        path.AddArc(left, top, corner, corner, 180, 90);
+        path.AddArc(right - corner, top, corner, corner, 270, 90);
+        path.AddArc(right, bottom - foot, foot, foot, 180, -90);
+        return path;
+    }
+
+    // A tab under the mouse: its top corners rounded as the selected tab's are.
+    static GraphicsPath TopRounded(Rectangle bounds, int radius)
+    {
+        var corner = radius * 2f;
+        var path = new GraphicsPath();
+        path.AddArc(bounds.Left, bounds.Top, corner, corner, 180, 90);
+        path.AddArc(bounds.Right - corner, bounds.Top, corner, corner, 270, 90);
+        path.AddLine(bounds.Right, bounds.Bottom, bounds.Left, bounds.Bottom);
+        path.CloseFigure();
+        return path;
+    }
+
+    // A short line between two tabs where neither is selected or under the mouse, which have a
+    // shape of their own to tell them apart.
+    void PaintDividers(Graphics graphics, Pen border, int baseline)
+    {
+        for (var index = 0; index < TabCount - 1; index++)
+        {
+            if (index == SelectedIndex ||
+                index + 1 == SelectedIndex ||
+                index == hoveredTab ||
+                index + 1 == hoveredTab)
+            {
+                continue;
+            }
+
+            var tab = GetTabRect(index);
+            var height = LogicalToDeviceUnits(dividerHeight);
+            var top = tab.Top + (baseline - tab.Top - height) / 2;
+            graphics.DrawLine(border, tab.Right - 1, top, tab.Right - 1, top + height);
+        }
+    }
+
+    // Under the mouse, a shade darker than the tab behind it, its corners rounded, as Explorer's
+    // close button is.
+    void PaintCross(Graphics graphics, Rectangle box, bool hovered, Color background)
+    {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         if (hovered)
         {
-            graphics.FillEllipse(SystemBrushes.ControlDark, box);
+            using var brush = new SolidBrush(ExplorerStyle.Hover(background));
+            using var shape = ExplorerStyle.RoundedRectangle(box, LogicalToDeviceUnits(crossCornerRadius));
+            graphics.FillPath(brush, shape);
         }
 
         var inset = (box.Width - LogicalToDeviceUnits(crossSize)) / 2f;
@@ -198,10 +282,10 @@ sealed class ClosableTabControl : TabControl
         var top = box.Top + inset;
         var right = box.Right - inset;
         var bottom = box.Bottom - inset;
-        using var pen = new Pen(hovered ? SystemColors.Window : SystemColors.GrayText, LogicalToDeviceUnits(10) / 8f);
+        using var pen = new Pen(SystemColors.ControlText, LogicalToDeviceUnits(10) / 8f);
         graphics.DrawLine(pen, left, top, right, bottom);
         graphics.DrawLine(pen, left, bottom, right, top);
-        graphics.SmoothingMode = previous;
+        graphics.SmoothingMode = SmoothingMode.Default;
     }
 
     protected override void WndProc(ref Message message)

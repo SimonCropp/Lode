@@ -61,6 +61,8 @@ static class Icons
     public const char FileExplorer = '\uEC50';
     // Arrows round in a circle, as Windows Update has.
     public const char Updates = '\uE777';
+    // A magnifier, as Explorer's search box has.
+    public const char Search = '\uE721';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

@@ -1555,7 +1555,9 @@ sealed class FolderView : UserControl
         if (entry.IsDrive)
         {
             var (driveCells, driveIcon) = DescribeDrive(entry);
-            return new(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) { Tag = entry };
+            var drive = new ListViewItem(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) { Tag = entry };
+            ColorDetails(drive, ExplorerStyle.SecondaryText);
+            return drive;
         }
 
         string[] cells =
@@ -1571,9 +1573,23 @@ sealed class FolderView : UserControl
         if (entry.IsHidden)
         {
             item.ForeColor = SystemColors.GrayText;
+            ColorDetails(item, SystemColors.GrayText);
+            return item;
         }
 
+        ColorDetails(item, ExplorerStyle.SecondaryText);
         return item;
+    }
+
+    // Every column but the name, which is always the first, in gray, as Explorer has them: read
+    // after the name, if at all.
+    static void ColorDetails(ListViewItem item, Color color)
+    {
+        item.UseItemStyleForSubItems = false;
+        for (var index = 1; index < item.SubItems.Count; index++)
+        {
+            item.SubItems[index].ForeColor = color;
+        }
     }
 
     // What the list shows: the entries, or those the filter matches, with what the search of the

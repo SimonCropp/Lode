@@ -135,8 +135,8 @@ sealed class PageList : Control
             }
 
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var brush = new SolidBrush(Blend(BackColor, ForeColor, amount)))
-            using (var path = RoundedRectangle(shading, LogicalToDeviceUnits(4)))
+            using (var brush = new SolidBrush(ExplorerStyle.Blend(BackColor, ForeColor, amount)))
+            using (var path = ExplorerStyle.RoundedRectangle(shading, LogicalToDeviceUnits(4)))
             {
                 graphics.FillPath(brush, path);
             }
@@ -150,7 +150,7 @@ sealed class PageList : Control
                     LogicalToDeviceUnits(3),
                     barHeight);
                 using var accent = new SolidBrush(SystemColors.Highlight);
-                using var barPath = RoundedRectangle(bar, bar.Width / 2);
+                using var barPath = ExplorerStyle.RoundedRectangle(bar, bar.Width / 2);
                 graphics.FillPath(accent, barPath);
             }
 
@@ -182,19 +182,6 @@ sealed class PageList : Control
         {
             ControlPaint.DrawFocusRectangle(graphics, shading);
         }
-    }
-
-    static Color Blend(Color from, Color to, float amount) =>
-        Color.FromArgb(
-            (int) (from.R + (to.R - from.R) * amount),
-            (int) (from.G + (to.G - from.G) * amount),
-            (int) (from.B + (to.B - from.B) * amount));
-
-    static GraphicsPath RoundedRectangle(Rectangle bounds, int radius)
-    {
-        var path = new GraphicsPath();
-        path.AddRoundedRectangle(bounds, new(radius * 2, radius * 2));
-        return path;
     }
 
     protected override void OnMouseDown(MouseEventArgs eventArgs)

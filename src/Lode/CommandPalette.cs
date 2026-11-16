@@ -51,6 +51,10 @@ sealed class CommandPalette : Form
         list.IntegralHeight = false;
         list.DrawMode = DrawMode.OwnerDrawFixed;
         list.DrawItem += DrawCommand;
+
+        // Its scrollbar drawn as the folder's and tree's are: a thin thumb, which widens and
+        // shows its arrows under the mouse.
+        list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, "Explorer", null);
         list.MouseClick += (_, eventArgs) =>
         {
             var index = list.IndexFromPoint(eventArgs.Location);

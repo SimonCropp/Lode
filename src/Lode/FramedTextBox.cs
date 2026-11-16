@@ -1,9 +1,9 @@
 using System.Windows.Forms.VisualStyles;
 
 /// <summary>
-/// A text box drawn as the address bar is: the same border and height, with a borderless box
-/// centred on the text line inside it. Used for the filter box, so the two boxes on the
-/// navigation bar match.
+/// A text box drawn as the address bar is: the same rounded background and height, with a
+/// borderless box centred on the text line inside it. Used for the filter box, so the two
+/// boxes on the navigation bar match.
 /// </summary>
 sealed class FramedTextBox : Control
 {
@@ -57,20 +57,64 @@ sealed class FramedTextBox : Control
         PlaceBox();
     }
 
+    /// <summary>
+    /// An icon at the right-hand end, as Explorer's search box has its magnifier there. None
+    /// when null.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public char? Glyph
+    {
+        get => glyph;
+        set
+        {
+            glyph = value;
+            PlaceBox();
+            Invalidate();
+        }
+    }
+
+    char? glyph;
+
+    int GlyphSize => LogicalToDeviceUnits(14);
+
+    // The icon's square, centred on the text line, as far in from the right as the text is from
+    // the left.
+    Rectangle GlyphBounds
+    {
+        get
+        {
+            var size = GlyphSize;
+            return new(
+                ClientSize.Width - TextFrame.Inset(this) - size,
+                (ClientSize.Height - size) / 2,
+                size,
+                size);
+        }
+    }
+
     void PlaceBox()
     {
         var inset = TextFrame.Inset(this);
+        var right = ClientSize.Width - inset;
+        if (glyph != null)
+        {
+            right = GlyphBounds.Left - inset;
+        }
+
         Box.SetBounds(
             inset,
             (ClientSize.Height - Box.PreferredHeight) / 2,
-            Math.Max(0, ClientSize.Width - inset * 2),
+            Math.Max(0, right - inset),
             Box.PreferredHeight);
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
-        eventArgs.Graphics.Clear(SystemColors.Window);
-        TextFrame.DrawBorder(eventArgs.Graphics, ClientRectangle, Box.Focused);
+        TextFrame.Draw(eventArgs.Graphics, this, Box.Focused);
+        if (glyph is { } icon)
+        {
+            eventArgs.Graphics.DrawImage(Icons.Bitmap(icon, GlyphSize, ExplorerStyle.SecondaryText), GlyphBounds);
+        }
     }
 
     // A click in the margin around the box still puts the caret in it.
@@ -117,9 +161,43 @@ static class TextFrame
         control.LogicalToDeviceUnits(6);
 
     /// <summary>
-    /// A text box's border and background. Focused, Windows 11 adds an accent line along the bottom.
+    /// The box's background, as Windows 11's Explorer draws its address and search boxes: white,
+    /// with its corners rounded on the bar behind it, and no border until it has the focus, when
+    /// it gets a faint one and an accent line along the bottom. With high contrast on, a text
+    /// box's own border, which shows where the box is.
     /// </summary>
-    public static void DrawBorder(Graphics graphics, Rectangle bounds, bool focused)
+    public static void Draw(Graphics graphics, Control control, bool focused)
+    {
+        var bounds = control.ClientRectangle;
+        if (SystemInformation.HighContrast ||
+            !Application.RenderWithVisualStyles)
+        {
+            graphics.Clear(SystemColors.Window);
+            DrawSystemBorder(graphics, bounds, focused);
+            return;
+        }
+
+        graphics.Clear(control.Parent?.BackColor ?? SystemColors.Control);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var radius = control.LogicalToDeviceUnits(4);
+        using var shape = ExplorerStyle.RoundedRectangle(bounds, radius);
+        graphics.FillPath(SystemBrushes.Window, shape);
+        if (focused)
+        {
+            using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), radius);
+            using var pen = new Pen(ExplorerStyle.TabBorder);
+            graphics.DrawPath(pen, outline);
+
+            var accent = control.LogicalToDeviceUnits(2);
+            graphics.SetClip(shape);
+            graphics.FillRectangle(SystemBrushes.Highlight, bounds.Left, bounds.Bottom - accent, bounds.Width, accent);
+            graphics.ResetClip();
+        }
+
+        graphics.SmoothingMode = SmoothingMode.Default;
+    }
+
+    static void DrawSystemBorder(Graphics graphics, Rectangle bounds, bool focused)
     {
         var element = focused ? VisualStyleElement.TextBox.TextEdit.Focused : VisualStyleElement.TextBox.TextEdit.Normal;
         if (Application.RenderWithVisualStyles &&

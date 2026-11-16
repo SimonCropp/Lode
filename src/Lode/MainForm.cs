@@ -165,6 +165,7 @@ class MainForm : Form
         filterFrame.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         filterFrame.Margin = new(4, 0, 4, 0);
         filterBox.PlaceholderText = "Search this folder (Ctrl+F)";
+        filterFrame.Glyph = Icons.Search;
         filterBox.TextChanged += OnFilterTextChanged;
         filterBox.KeyDown += OnFilterKeyDown;
 
@@ -174,7 +175,9 @@ class MainForm : Form
             AutoSize = true,
             ColumnCount = 8,
             RowCount = 1,
-            Padding = new(4, 3, 4, 3)
+            Padding = new(4, 3, 4, 3),
+            // Explorer's address row, a shade off white, with the command bar white below it.
+            BackColor = ExplorerStyle.AddressRow
         };
         bar.ColumnStyles.Add(new(SizeType.AutoSize));
         bar.ColumnStyles.Add(new(SizeType.AutoSize));
@@ -219,7 +222,7 @@ class MainForm : Form
         actionsBar.GripStyle = ToolStripGripStyle.Hidden;
         // A tool strip takes the menu font otherwise, smaller than the rest of the window.
         actionsBar.Font = DefaultFont;
-        actionsBar.RenderMode = ToolStripRenderMode.System;
+        actionsBar.Renderer = new BarRenderer();
         // Roomy, as Explorer's command bar is.
         actionsBar.Padding = new(LogicalToDeviceUnits(6), LogicalToDeviceUnits(4), LogicalToDeviceUnits(6), LogicalToDeviceUnits(4));
         RebuildActionsBar();
@@ -659,7 +662,14 @@ class MainForm : Form
 
     Control BuildStatusBar()
     {
-        var status = new StatusStrip();
+        // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
+        // 11 windows are resized from their edges.
+        var status = new StatusStrip
+        {
+            Renderer = new BarRenderer(),
+            SizingGrip = false,
+            Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
+        };
         status.Items.Add(statusLabel);
         status.Items.Add(updateLabel);
         status.Items.Add(spaceLabel);
@@ -741,6 +751,12 @@ class MainForm : Form
     {
         base.OnHandleCreated(eventArgs);
         TaskbarIdentity.Apply(Handle);
+
+        // The title bar in Mica, the material Explorer's tab strip is drawn in, tinted by the
+        // desktop behind the window. Windows 10 and early Windows 11 don't have it, and ignore
+        // the setting.
+        var backdrop = DwmSystemBackdropMainWindow;
+        DwmSetWindowAttribute(Handle, DwmWindowSystemBackdropType, ref backdrop, sizeof(int));
     }
 
     protected override void OnHandleDestroyed(EventArgs eventArgs)

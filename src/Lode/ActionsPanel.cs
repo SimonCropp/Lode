@@ -63,6 +63,10 @@ sealed class ActionsPanel : Panel
         Padding = new(0, 1, 0, 0);
         spinner.Tick += (_, _) => Spin();
 
+        // Its scrollbar drawn as the folder's and tree's are: a thin thumb, which widens and
+        // shows its arrows under the mouse.
+        list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, "Explorer", null);
+
         headerRow.Controls.Add(header);
         headerRow.Controls.Add(clear);
         Controls.Add(list);

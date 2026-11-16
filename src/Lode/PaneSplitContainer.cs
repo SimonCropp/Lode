@@ -16,9 +16,32 @@ sealed class PaneSplitContainer : SplitContainer
     // While the splitter is being dragged, how far into it the mouse pressed it.
     int? grip;
 
-    // Nor does Tab stop on the splitter.
-    public PaneSplitContainer() =>
+    public PaneSplitContainer()
+    {
+        // Nor does Tab stop on the splitter.
         TabStop = false;
+
+        // The splitter white, as the panes either side are, with only a faint line down it
+        // (see OnPaint), as Explorer has between its panes. In the window's gray, it joined
+        // the gray track of the tree's scrollbar into a wide gray bar.
+        BackColor = SystemColors.Window;
+    }
+
+    protected override void OnPaint(PaintEventArgs eventArgs)
+    {
+        base.OnPaint(eventArgs);
+        var bounds = SplitterRectangle;
+        using var pen = new Pen(ExplorerStyle.PaneDivider);
+        if (Orientation == Orientation.Vertical)
+        {
+            var x = bounds.Left + bounds.Width / 2;
+            eventArgs.Graphics.DrawLine(pen, x, bounds.Top, x, bounds.Bottom - 1);
+            return;
+        }
+
+        var y = bounds.Top + bounds.Height / 2;
+        eventArgs.Graphics.DrawLine(pen, bounds.Left, y, bounds.Right - 1, y);
+    }
 
     /// <summary>
     /// The cursor over a point of the container: Explorer's resize arrows over the splitter, and

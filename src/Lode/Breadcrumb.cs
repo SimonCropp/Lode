@@ -10,10 +10,6 @@ sealed class Breadcrumb : Control
     const string chevron = "\uE76C";
     const string ellipsis = "…";
 
-    // Explorer's hover and pressed colours for its address bar items.
-    static readonly Color hoverColor = Color.FromArgb(229, 243, 255);
-    static readonly Color pressedColor = Color.FromArgb(204, 232, 255);
-
     readonly Font chevronFont = new("Segoe MDL2 Assets", 7f);
     readonly ToolTip toolTip = new();
     string path = Locations.ThisPC;
@@ -237,8 +233,7 @@ sealed class Breadcrumb : Control
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
         var graphics = eventArgs.Graphics;
-        graphics.Clear(SystemColors.Window);
-        TextFrame.DrawBorder(graphics, ClientRectangle, Editing);
+        TextFrame.Draw(graphics, this, Editing);
         if (Editing)
         {
             return;
@@ -258,10 +253,20 @@ sealed class Breadcrumb : Control
         for (var position = 0; position < layout.Count; position++)
         {
             var (index, bounds) = layout[position];
+            // Windows 11's shades of gray, its corners rounded, in place of Windows 10's blue.
             if (index == pressed || index == hovered)
             {
-                using var brush = new SolidBrush(index == pressed ? pressedColor : hoverColor);
-                graphics.FillRectangle(brush, bounds);
+                var shade = ExplorerStyle.Hover(SystemColors.Window);
+                if (index == pressed)
+                {
+                    shade = ExplorerStyle.Pressed(SystemColors.Window);
+                }
+
+                using var brush = new SolidBrush(shade);
+                using var shape = ExplorerStyle.RoundedRectangle(bounds, LogicalToDeviceUnits(4));
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.FillPath(brush, shape);
+                graphics.SmoothingMode = SmoothingMode.Default;
             }
 
             if (Locations.IsThisPC(segments[index].Path))
