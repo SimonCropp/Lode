@@ -91,8 +91,9 @@ sealed class FolderView : UserControl
     /// </summary>
     public Task Searching { get; private set; } = Task.CompletedTask;
 
-    // Whether the filter searches the subfolders too, as it does everywhere but This PC.
-    bool IsSearch => filter.Length > 0 && !IsThisPC;
+    // Whether the filter searches the subfolders too, as it does everywhere but This PC and a
+    // machine on the network.
+    bool IsSearch => filter.Length > 0 && !ListsPlaces;
 
     string? pendingSelection;
     readonly GutterMarquee marquee;
@@ -179,6 +180,12 @@ sealed class FolderView : UserControl
     public IReadOnlyList<FileEntry> Entries => displayed;
 
     bool IsThisPC => Locations.IsThisPC(CurrentPath);
+
+    /// <summary>
+    /// This PC, listing drives, or a machine on the network, listing its shares: places to go,
+    /// not a folder that holds anything, so nothing can be made, pasted or dropped there.
+    /// </summary>
+    public bool ListsPlaces => IsThisPC || Locations.IsServer(CurrentPath);
     IntPtr Owner => FindForm()?.Handle ?? Handle;
 
     public FolderView(Settings settings, Places places)
@@ -373,6 +380,16 @@ sealed class FolderView : UserControl
 
     static Found Find(string path)
     {
+        if (Locations.IsServer(path))
+        {
+            if (Shares.Answers(path))
+            {
+                return Found.Folder;
+            }
+
+            return Found.Nothing;
+        }
+
         if (Directory.Exists(path))
         {
             return Found.Folder;
@@ -1004,6 +1021,27 @@ sealed class FolderView : UserControl
                 }
 
                 result.Add(new(drive.Name, drive.Name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free));
+            }
+
+            return result;
+        }
+
+        if (Locations.IsServer(path))
+        {
+            foreach (var (name, hidden) in Shares.List(path))
+            {
+                if (hidden && !showHidden)
+                {
+                    continue;
+                }
+
+                var attributes = FileAttributes.Directory;
+                if (hidden)
+                {
+                    attributes |= FileAttributes.Hidden;
+                }
+
+                result.Add(new(name, Path.Join(path, name), true, 0, default, attributes, IsShare: true));
             }
 
             return result;
@@ -1717,6 +1755,12 @@ sealed class FolderView : UserControl
             case folderColumn:
                 return FolderCell(entry);
             case dateColumn:
+                // A share has no date of its own.
+                if (entry.Modified == default)
+                {
+                    return "";
+                }
+
                 return entry.Modified.ToString("g");
             case typeColumn:
                 return ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory);
@@ -1871,7 +1915,7 @@ sealed class FolderView : UserControl
 
     string[] SelectedPaths() =>
         SelectedEntries()
-            .Where(_ => !_.IsDrive)
+            .Where(_ => !_.IsPlace)
             .Select(_ => _.FullPath)
             .ToArray();
 
@@ -1965,7 +2009,7 @@ sealed class FolderView : UserControl
 
     public void Paste()
     {
-        if (IsThisPC)
+        if (ListsPlaces)
         {
             return;
         }
@@ -2062,7 +2106,7 @@ sealed class FolderView : UserControl
     // Makes the item, then shows it with its name ready to edit.
     void Create(Func<string, string> create)
     {
-        if (IsThisPC)
+        if (ListsPlaces)
         {
             return;
         }
@@ -2087,7 +2131,7 @@ sealed class FolderView : UserControl
         {
             ShellContextMenu.InvokeVerb(Owner, selection.Select(_ => _.FullPath).ToArray(), "properties");
         }
-        else if (!IsThisPC)
+        else if (!ListsPlaces)
         {
             ShellContextMenu.InvokeVerb(Owner, [CurrentPath], "properties");
         }
@@ -2096,7 +2140,7 @@ sealed class FolderView : UserControl
     void OnBeforeLabelEdit(object? sender, LabelEditEventArgs eventArgs)
     {
         if (eventArgs.Item >= displayed.Count ||
-            displayed[eventArgs.Item].IsDrive)
+            displayed[eventArgs.Item].IsPlace)
         {
             eventArgs.CancelEdit = true;
             return;
@@ -2243,7 +2287,7 @@ sealed class FolderView : UserControl
         {
             ShowQuickItemMenu(selection, location);
         }
-        else if (!IsThisPC)
+        else if (!ListsPlaces)
         {
             ShowQuickBackgroundMenu(location);
         }
@@ -2267,12 +2311,12 @@ sealed class FolderView : UserControl
     internal List<QuickMenu.Command?> ItemCommands(List<FileEntry> selection)
     {
         // Worked out in one pass: the actions bar asks for these each time the selection changes.
-        var anyDrive = false;
+        var anyPlace = false;
         var allFolders = true;
         var allFiles = true;
         foreach (var entry in selection)
         {
-            anyDrive |= entry.IsDrive;
+            anyPlace |= entry.IsPlace;
             if (entry.IsDirectory)
             {
                 allFiles = false;
@@ -2319,12 +2363,12 @@ sealed class FolderView : UserControl
         commands.AddRange(
         [
             null,
-            LodeActions.Command("cut", () => Copy(true), !anyDrive),
-            LodeActions.Command("copy", () => Copy(false), !anyDrive),
-            LodeActions.Command("rename", BeginRename, selection.Count == 1 && !anyDrive),
-            LodeActions.Command("delete", () => Delete(false), !anyDrive),
+            LodeActions.Command("cut", () => Copy(true), !anyPlace),
+            LodeActions.Command("copy", () => Copy(false), !anyPlace),
+            LodeActions.Command("rename", BeginRename, selection.Count == 1 && !anyPlace),
+            LodeActions.Command("delete", () => Delete(false), !anyPlace),
             null,
-            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyDrive),
+            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyPlace),
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             LodeActions.Command("properties", ShowProperties)
         ]);
@@ -2380,7 +2424,7 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!IsThisPC)
+        if (!ListsPlaces)
         {
             ShowBackgroundMenu(menu, location);
         }
@@ -2390,7 +2434,7 @@ sealed class FolderView : UserControl
     /// Whether there is anything for <see cref="ShowShellMenu"/> to show a menu for.
     /// </summary>
     public bool CanShowShellMenu =>
-        list.SelectedIndices.Count > 0 || !IsThisPC;
+        list.SelectedIndices.Count > 0 || !ListsPlaces;
 
     /// <summary>
     /// The fixed right-click menu for the empty part of the list. A null entry is a separator.
@@ -2605,7 +2649,12 @@ sealed class FolderView : UserControl
             return target.FullPath;
         }
 
-        return IsThisPC ? null : CurrentPath;
+        if (ListsPlaces)
+        {
+            return null;
+        }
+
+        return CurrentPath;
     }
 
     void OnDragOver(object? sender, DragEventArgs eventArgs) =>
@@ -2618,7 +2667,7 @@ sealed class FolderView : UserControl
     {
         Unwatch();
         changes.Reset();
-        if (IsThisPC)
+        if (ListsPlaces)
         {
             return;
         }

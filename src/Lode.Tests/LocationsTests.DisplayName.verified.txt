@@ -5,6 +5,7 @@
   C:\Windows\Fonts: Fonts,
   C:\Windows\System32: System32,
   This PC: This PC,
-  \\server\share: share,
+  \\server: server,
+  \\server\share: share (\\server),
   \\server\share\folder: folder
 }

@@ -13,6 +13,7 @@ static class ShellIcons
     const uint directoryAttribute = 0x10;
     const uint normalAttribute = 0x80;
     const int computerFolder = 0x11;
+    const int networkFolder = 0x12;
     const uint imageListDrawTransparent = 0x1;
 
     static uint infoSize = (uint)Marshal.SizeOf<ShellFileInfo>();
@@ -44,6 +45,12 @@ static class ShellIcons
     public static string FolderTypeName { get; }
     public static int ComputerIcon { get; }
 
+    /// <summary>
+    /// The Network folder's icon, for a share. Network is a virtual folder, so asking for its
+    /// icon asks nothing of the network.
+    /// </summary>
+    public static int NetworkIcon { get; }
+
     static ShellIcons()
     {
         var info = new ShellFileInfo();
@@ -55,7 +62,8 @@ static class ShellIcons
             systemIconIndexFlag | smallIconFlag | useFileAttributesFlag | typeNameFlag);
         FolderIcon = info.IconIndex;
         FolderTypeName = info.TypeName;
-        ComputerIcon = GetComputerIcon();
+        ComputerIcon = GetSpecialFolderIcon(computerFolder);
+        NetworkIcon = GetSpecialFolderIcon(networkFolder);
         QuickAccessIcon = GetShellFolderIcon("shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}");
         RecentIcon = GetShellFolderIcon("shell:::{22877a6d-37a1-461a-91b0-dbda5aaebc99}");
     }
@@ -91,9 +99,9 @@ static class ShellIcons
         }
     }
 
-    static int GetComputerIcon()
+    static int GetSpecialFolderIcon(int folder)
     {
-        if (SHGetSpecialFolderLocation(IntPtr.Zero, computerFolder, out var itemIdList) != 0)
+        if (SHGetSpecialFolderLocation(IntPtr.Zero, folder, out var itemIdList) != 0)
         {
             return FolderIcon;
         }

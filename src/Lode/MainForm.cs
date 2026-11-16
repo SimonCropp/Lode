@@ -569,7 +569,7 @@ class MainForm : Form
             commands.AddRange(view.ItemCommands(selection));
         }
 
-        if (!Locations.IsThisPC(view.CurrentPath))
+        if (!view.ListsPlaces)
         {
             // Not tied to the clipboard, which changes without telling Lode. Paste with nothing
             // to paste does nothing.
@@ -1102,13 +1102,19 @@ class MainForm : Form
     }
 
     // The folder's own icon, as the tree shows it: a drive's, Downloads' arrow, This PC's. A
-    // network folder has the plain one, since asking for its own could keep the window waiting
-    // on the network.
+    // machine on the network and a share have Network's, and a folder in a share the plain one,
+    // since asking for its own could keep the window waiting on the network.
     static int TabIcon(string path)
     {
         if (Locations.IsThisPC(path))
         {
             return ShellIcons.ComputerIcon;
+        }
+
+        if (Locations.IsServer(path) ||
+            Locations.IsShare(path))
+        {
+            return ShellIcons.NetworkIcon;
         }
 
         if (Locations.IsNetwork(path))
@@ -1266,8 +1272,7 @@ class MainForm : Form
 
     void OpenTerminal(bool admin)
     {
-        if (ActiveView is { } view &&
-            !Locations.IsThisPC(view.CurrentPath))
+        if (ActiveView is {ListsPlaces: false} view)
         {
             FileOperations.OpenTerminal(view.CurrentPath, admin);
         }
@@ -1615,7 +1620,7 @@ class MainForm : Form
             {
                 viewCommands = view.ItemCommands(selection);
             }
-            else if (!Locations.IsThisPC(view.CurrentPath))
+            else if (!view.ListsPlaces)
             {
                 viewCommands = view.BackgroundCommands(FileOperations.ReadClipboard() != null);
             }

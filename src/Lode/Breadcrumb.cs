@@ -92,7 +92,8 @@ sealed class Breadcrumb : Control
     /// <summary>
     /// The folders from the top of <paramref name="location"/> down to it, with the name each
     /// shows. A drive shows as <paramref name="driveName"/> names it, and without one, as its
-    /// letter alone.
+    /// letter alone. Somewhere on the network starts at the machine it is on, as in Explorer,
+    /// rather than at This PC.
     /// </summary>
     internal static List<(string Path, string Name)> Segments(string location, Func<string, string>? driveName = null)
     {
@@ -100,6 +101,10 @@ sealed class Breadcrumb : Control
         for (var current = location; current != null; current = Locations.Parent(current))
         {
             segments.Add((current, SegmentName(current, driveName)));
+            if (Locations.IsServer(current))
+            {
+                break;
+            }
         }
 
         segments.Reverse();
@@ -108,6 +113,12 @@ sealed class Breadcrumb : Control
 
     static string SegmentName(string location, Func<string, string>? driveName)
     {
+        // Its machine is the segment before it, so a share needs only its own name.
+        if (Locations.IsShare(location))
+        {
+            return Locations.ShareName(location);
+        }
+
         var name = Locations.DisplayName(location);
         if (name.Length > 1 && name.EndsWith(System.IO.Path.DirectorySeparatorChar) && !Locations.IsNetwork(name))
         {
@@ -238,12 +249,20 @@ sealed class Breadcrumb : Control
 
     int IconSize => LogicalToDeviceUnits(16);
 
-    // This PC shows as an icon alone, as in Explorer; folders show their names.
+    int IconGap => LogicalToDeviceUnits(6);
+
+    // This PC shows as an icon alone, as in Explorer; a machine on the network as an icon with
+    // its name; folders show their names.
     int ContentWidth(string location, string name)
     {
         if (Locations.IsThisPC(location))
         {
             return IconSize;
+        }
+
+        if (Locations.IsServer(location))
+        {
+            return IconSize + IconGap + TextWidth(name);
         }
 
         return TextWidth(name);
@@ -300,6 +319,20 @@ sealed class Breadcrumb : Control
                     bounds.Top + (bounds.Height - IconSize) / 2,
                     IconSize,
                     IconSize);
+            }
+            else if (Locations.IsServer(segments[index].Path))
+            {
+                var left = bounds.Left + ItemPadding;
+                var image = Icons.Bitmap(Icons.Network, IconSize, SystemColors.WindowText);
+                graphics.DrawImage(image, left, bounds.Top + (bounds.Height - IconSize) / 2, IconSize, IconSize);
+                var text = Rectangle.FromLTRB(left + IconSize + IconGap, bounds.Top, bounds.Right - ItemPadding, bounds.Bottom);
+                TextRenderer.DrawText(
+                    graphics,
+                    segments[index].Name,
+                    Font,
+                    text,
+                    SystemColors.WindowText,
+                    (flags & ~TextFormatFlags.HorizontalCenter) | TextFormatFlags.NoPadding);
             }
             else
             {

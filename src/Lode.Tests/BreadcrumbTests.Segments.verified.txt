@@ -14,9 +14,12 @@
     This PC => This PC
   ],
   share: [
-    This PC => This PC,
+    \\server => server,
     \\server\share => share,
     \\server\share\folder => folder
+  ],
+  server: [
+    \\server => server
   ],
   named: [
     This PC => This PC,

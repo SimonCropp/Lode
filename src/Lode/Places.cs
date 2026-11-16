@@ -148,14 +148,14 @@ sealed record Places(
             foreach (var item in (IEnumerable)Call(folder, "Items")!)
             {
                 // Quick access also lists recent files, and can hold virtual folders such as
-                // the Recycle Bin, which have no path to browse.
+                // the Recycle Bin, which have no path to browse. A machine on the network is not
+                // part of the file system either, but Lode lists its shares.
                 if (Get(item, "IsFolder") is not true ||
-                    Get(item, "IsFileSystem") is not true)
+                    Get(item, "Path") is not string path ||
+                    (Get(item, "IsFileSystem") is not true && !Locations.IsServer(path)))
                 {
                     continue;
                 }
-
-                var path = (string)Get(item, "Path")!;
 
                 // An offline share takes a long time to say it isn't there, so network
                 // folders are taken on trust.

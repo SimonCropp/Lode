@@ -21,6 +21,8 @@ static class Icons
     // A wrench, as Explorer's Properties has.
     public const char Properties = '\uE90F';
     public const char ThisPC = '\uE7F4';
+    // A machine on the network, at the top of a share's path in the address bar.
+    public const char Network = '\uE968';
     public const char ChevronDown = '\uE70D';
     public const char Open = '\uE8E5';
     public const char OpenInNewTab = '\uE8A7';

@@ -317,6 +317,24 @@ sealed class FolderTree : TreeView
         SendMessage(Handle, TreeViewSetInsertMark, IntPtr.Zero, IntPtr.Zero);
 
     // A heading with the folders beneath it, open. Nothing at all when there are no folders.
+    // Asking the shell for a network folder's own icon can stall on a share that is offline, so
+    // a machine gets Network's and a folder on one the plain folder icon.
+    static int PinnedIcon(string folder)
+    {
+        if (Locations.IsServer(folder) ||
+            Locations.IsShare(folder))
+        {
+            return ShellIcons.NetworkIcon;
+        }
+
+        if (Locations.IsNetwork(folder))
+        {
+            return ShellIcons.FolderIcon;
+        }
+
+        return ShellIcons.GetActualIcon(folder);
+    }
+
     void AddSection(string name, int icon, IReadOnlyList<string> folders, Dictionary<string, string> labels)
     {
         if (folders.Count == 0)
@@ -332,9 +350,7 @@ sealed class FolderTree : TreeView
         };
         foreach (var folder in folders)
         {
-            // Asking the shell for a network folder's own icon can stall on a share that
-            // is offline, so those get the plain folder icon.
-            var folderIcon = Locations.IsNetwork(folder) ? ShellIcons.FolderIcon : ShellIcons.GetActualIcon(folder);
+            var folderIcon = PinnedIcon(folder);
             // Shortcuts, not a second copy of the folder tree: they have no children, and
             // picking one selects the folder in the tree under This PC.
             section.Nodes.Add(CreateNode(folder, labels[folder], folderIcon, expandable: false));
@@ -1106,7 +1122,9 @@ sealed class FolderTree : TreeView
     internal List<QuickMenu.Command?> NodeCommands(string path, bool canPaste = false, TreeNode? node = null)
     {
         var owner = FindForm()?.Handle ?? Handle;
-        var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "");
+        // A drive, a machine on the network, or a share on one.
+        var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "") ||
+                      Locations.IsShare(path);
         var canRename = !isDrive && node is { Parent.Tag: not Section };
         return
         [

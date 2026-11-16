@@ -14,6 +14,9 @@ public class LocationsTests
         "C:/Windows/System32",
         @"\\server\share",
         @"\\server\share\folder\",
+        // A machine on the network, which lists its shares.
+        @"\\server",
+        @"\\server\",
         "This PC",
         "this pc",
         // This PC as the explore verb on Folder names it.
@@ -49,10 +52,15 @@ public class LocationsTests
                 // Told apart only further up.
                 @"C:\Repos\Lode\src\Lode",
                 @"C:\Worktrees\Lode\src\Lode",
-                // Told apart only by their roots, a share's whole.
+                // Told apart only by their roots. One in a share says which machine it is on.
                 @"C:\Notes",
                 @"D:\Notes",
                 @"\\server\share\Notes",
+                // Folders in a share say which machine they are on, also when told apart
+                // further up.
+                @"\\server\video\tv",
+                @"\\server\backup\tv",
+                @"\\server\video\movies",
                 // Shares named alike, on two servers.
                 @"\\server\share",
                 @"\\other\share",
