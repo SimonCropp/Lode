@@ -398,6 +398,34 @@ public class WindowsTests
             });
     }
 
+    // The git actions, nested on the bar, share one Git drop-down, which calls them what the
+    // Git submenu does: Pull rather than Git pull.
+    [Test]
+    public async Task NestedGitButtonsAreNamedAsInTheGitSubmenu()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        foreach (var id in LodeActions.GitIds)
+        {
+            settings.SetPlacement(id, button: true, menu: true, buttonNested: true);
+        }
+
+        using var form = await Show(fixture, settings, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("Docs"));
+        await Pump.Loaded(form.ActiveView);
+        form.UpdateActions();
+
+        await Verify(
+            new
+            {
+                buttons = form.DescribeActions().ToList(),
+                git = form.ParentEntries("Git").Select(DescribeCommand).ToList()
+            });
+    }
+
     // See more, at the end of the bar, lists the actions that are not buttons, greyed where
     // they do not apply: here, to a file.
     [Test]

@@ -1,0 +1,26 @@
+﻿{
+  buttons: [
+    New,
+    ----,
+    Cut,
+    Copy,
+    Paste,
+    Rename,
+    Delete,
+    ----,
+    Terminal,
+    Terminal (admin),
+    ----,
+    Properties,
+    ----,
+    Git,
+    ----,
+    See more
+  ],
+  git: [
+    Pull,
+    Push…,
+    Discard…,
+    Purge…
+  ]
+}

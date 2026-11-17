@@ -33,6 +33,32 @@ public class SettingsTests
         await Verify(Settings.Load(path));
     }
 
+    // Git was one action, a submenu of pull, push, discard and purge. Settings saved then have
+    // each of those where Git was, nested under Git, so the menu and the bar are as they were.
+    [Test]
+    public async Task GitPlacementCarriesOverToItsActions()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        await File.WriteAllTextAsync(path, """{ "Actions": { "git": { "Button": true, "Menu": false } } }""");
+
+        var settings = Settings.Load(path);
+
+        await Verify(
+            new
+            {
+                gitKept = settings.Actions.ContainsKey("git"),
+                actions = LodeActions.GitIds.Select(_ => new
+                {
+                    id = _,
+                    button = settings.ShowsAsButton(_),
+                    menu = settings.ShowsInMenu(_),
+                    buttonNested = settings.NestsButton(_),
+                    menuNested = settings.NestsInMenu(_)
+                })
+            });
+    }
+
     [Test]
     public async Task CorruptFileFallsBackToDefaults()
     {

@@ -1,0 +1,33 @@
+﻿{
+  gitKept: false,
+  actions: [
+    {
+      id: gitPull,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
+      id: gitPush,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
+      id: gitDiscard,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
+      id: gitPurge,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    }
+  ]
+}

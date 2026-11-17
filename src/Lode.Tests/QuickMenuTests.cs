@@ -211,6 +211,23 @@ public class QuickMenuTests
         await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)));
     }
 
+    // The git actions, un-nested, are entries of their own, named for git, as the Git submenu's
+    // name no longer says it.
+    [Test]
+    public async Task GitActionsUnnested()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false, CodeDirectory = fixture.Root };
+        foreach (var id in LodeActions.GitIds)
+        {
+            settings.SetPlacement(id, settings.ShowsAsButton(id), menu: true, menuNested: false);
+        }
+
+        using var view = await Open(fixture.Root, settings);
+
+        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)));
+    }
+
     [Test]
     public async Task TreeMenu()
     {

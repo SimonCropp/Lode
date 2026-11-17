@@ -39,6 +39,12 @@ static class QuickMenu
         /// Shown ticked, for a setting the entry turns on and off.
         /// </summary>
         public bool Checked { get; init; }
+
+        /// <summary>
+        /// What it is called in its parent's submenu or drop-down, where the parent's name says
+        /// the rest: Pull, under Git. Null where it is called <see cref="Text"/> there too.
+        /// </summary>
+        public string? NestedText { get; init; }
     }
 
     /// <summary>

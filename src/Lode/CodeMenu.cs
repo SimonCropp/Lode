@@ -24,26 +24,22 @@ static class CodeMenu
         return
         [
             null,
-            LodeActions.Submenu(
-                "git",
-                [
-                    new("Pull", () => Pull(folders))
-                    {
-                        Glyph = Icons.Pull
-                    },
-                    new("Push…", () => Push(owner, folders))
-                    {
-                        Glyph = Icons.Push
-                    },
-                    new("Discard…", () => Discard(owner, folders))
-                    {
-                        Glyph = Icons.Discard
-                    },
-                    new("Purge…", () => Purge(owner, settings, folders))
-                    {
-                        Glyph = Icons.Purge
-                    }
-                ]),
+            LodeActions.Command("gitPull", () => Pull(folders)) with
+            {
+                NestedText = "Pull"
+            },
+            LodeActions.Command("gitPush", () => Push(owner, folders), text: "Git push…") with
+            {
+                NestedText = "Push…"
+            },
+            LodeActions.Command("gitDiscard", () => Discard(owner, folders), text: "Git discard…") with
+            {
+                NestedText = "Discard…"
+            },
+            LodeActions.Command("gitPurge", () => Purge(owner, settings, folders), text: "Git purge…") with
+            {
+                NestedText = "Purge…"
+            },
             LodeActions.Command("updateNugets", () => UpdateNugets(folders)),
             LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folders))
         ];

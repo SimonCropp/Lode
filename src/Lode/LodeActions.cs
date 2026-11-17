@@ -7,7 +7,7 @@
 /// </summary>
 static class LodeActions
 {
-    /// <param name="Submenu">Opens a list of its own (New, Open with, Git): a drop-down on the bar.</param>
+    /// <param name="Submenu">Opens a list of its own (New, Open with, Coding agent): a drop-down on the bar.</param>
     /// <param name="Parent">What it can be nested under, in the right-click menus and on the bar.</param>
     /// <param name="MenuNested">Whether it is nested under its parent in the right-click menus
     /// unless Options says otherwise. On the bar, nothing is nested unless Options says so.</param>
@@ -35,7 +35,13 @@ static class LodeActions
     static readonly Parent open = new("Open", Icons.Open);
     static readonly Parent terminal = new("Terminal", Icons.Terminal);
     static readonly Parent ai = new("AI", Icons.Agent);
+    static readonly Parent git = new("Git", Icons.Git);
     static readonly Parent packages = new("Packages", Icons.Package);
+
+    /// <summary>
+    /// The git actions, which were one, Git, a submenu of them. See <see cref="Settings"/>.
+    /// </summary>
+    public static IReadOnlyList<string> GitIds { get; } = ["gitPull", "gitPush", "gitDiscard", "gitPurge"];
 
     /// <summary>
     /// Show more options: the full Windows menu. Not a command of its own in the menus, which
@@ -44,8 +50,8 @@ static class LodeActions
     public const string More = "more";
 
     // The right-click menus start with the less used nested: both terminals, so there is never a
-    // Terminal entry beside a Terminal submenu, the AI actions, and the NuGet updates. Git is a
-    // submenu of its own, so has no parent.
+    // Terminal entry beside a Terminal submenu, the AI actions, the git actions and the NuGet
+    // updates.
     public static IReadOnlyList<Definition> All { get; } =
     [
         new("new", "New", Icons.New, 0, Button: true, Menu: true, Submenu: true),
@@ -68,7 +74,10 @@ static class LodeActions
         new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true, Parent: file),
         new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true, Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
-        new("git", "Git", Icons.Git, 4, Button: false, Menu: true, Submenu: true),
+        new("gitPull", "Git pull", Icons.Pull, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
+        new("gitPush", "Git push", Icons.Push, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
+        new("gitDiscard", "Git discard", Icons.Discard, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
+        new("gitPurge", "Git purge", Icons.Purge, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
         new("updateNugets", "Update NuGets", Icons.Package, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new(More, "Show more options", Icons.MoreOptions, 5, Button: false, Menu: true)
@@ -165,6 +174,23 @@ static class LodeActions
         };
 
     /// <summary>
+    /// <paramref name="command"/> as its parent's submenu or drop-down lists it, by what it is
+    /// called there.
+    /// </summary>
+    public static QuickMenu.Command Nested(QuickMenu.Command command)
+    {
+        if (command.NestedText is { } text)
+        {
+            return command with
+            {
+                Text = text
+            };
+        }
+
+        return command;
+    }
+
+    /// <summary>
     /// The commands without those Options keeps off the right-click menu, those Options nests in
     /// their parent's submenu, and without the separators that leaves doubled or at either end.
     /// A parent's submenu stands where its first member was, and takes in the rest in the
@@ -195,7 +221,7 @@ static class LodeActions
                         placed.Add((null, parent));
                     }
 
-                    members.Add(command);
+                    members.Add(Nested(command));
                     continue;
                 }
             }

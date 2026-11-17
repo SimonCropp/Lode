@@ -380,11 +380,12 @@ class MainForm : Form
         return LodeActions.Command(action.Id, () => { }, enabled: false);
     }
 
-    // What a parent's drop-down on the bar lists: each action nested in it, as See more would.
+    // What a parent's drop-down on the bar lists: each action nested in it, as See more would,
+    // by what it is called under its parent.
     List<QuickMenu.Command?> ParentEntries(IReadOnlyList<LodeActions.Definition> members)
     {
         var commands = ContextCommands();
-        return [.. members.Select(_ => ActionEntry(_, commands))];
+        return [.. members.Select(_ => LodeActions.Nested(ActionEntry(_, commands)))];
     }
 
     /// <summary>
@@ -481,8 +482,8 @@ class MainForm : Form
         return commands;
     }
 
-    // As in Explorer's command bar, drop-downs (New, Git) keep their name beside their icon;
-    // the rest show theirs as a tooltip. Disabled buttons grey their icon themselves.
+    // As in Explorer's command bar, drop-downs (New, Open with) keep their name beside their
+    // icon; the rest show theirs as a tooltip. Disabled buttons grey their icon themselves.
     ToolStripItem CreateActionButton(LodeActions.Definition action, int iconSize)
     {
         var toolTip = action.Text;
@@ -515,8 +516,9 @@ class MainForm : Form
         item.Margin = new(LogicalToDeviceUnits(2), 0, LogicalToDeviceUnits(2), 0);
     }
 
-    // A drop-down on the bar, for a submenu action (New, Git) or a parent of nested buttons: its
-    // name beside its icon, then a chevron, filled with <paramref name="entries"/> as it opens.
+    // A drop-down on the bar, for a submenu action (New, Open with) or a parent of nested
+    // buttons: its name beside its icon, then a chevron, filled with <paramref name="entries"/>
+    // as it opens.
     ChevronDropDownButton CreateDropDown(string text, char glyph, string toolTip, int iconSize, Func<IReadOnlyList<QuickMenu.Command?>> entries)
     {
         var dropDown = new ChevronDropDownButton(text)
@@ -1777,7 +1779,7 @@ class MainForm : Form
             .ToList();
     }
 
-    // A submenu's entries are named after it: "New: Text Document", "Git: Pull".
+    // A submenu's entries are named after it: "New: Text Document", "Open with: Notepad".
     static void AddViewCommands(List<CommandPalette.Command> commands, FolderView view, IReadOnlyList<QuickMenu.Command?> viewCommands, string prefix)
     {
         foreach (var command in viewCommands)

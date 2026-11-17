@@ -84,6 +84,30 @@ sealed class Settings
         return LodeActions.Find(id)?.MenuNested ?? false;
     }
 
+    // Git was one action, a submenu of pull, push, discard and purge, which are now actions of
+    // their own under Git. Where Git was placed, each of them is, nested, so the menu and the bar
+    // are as they were.
+    void SplitGit()
+    {
+        if (!Actions.Remove("git", out var git))
+        {
+            return;
+        }
+
+        foreach (var id in LodeActions.GitIds)
+        {
+            Actions.TryAdd(
+                id,
+                new()
+                {
+                    Button = git.Button,
+                    Menu = git.Menu,
+                    ButtonNested = true,
+                    MenuNested = true
+                });
+        }
+    }
+
     /// <param name="buttonNested">Null for LodeActions' default, as for an action without a parent.</param>
     /// <param name="menuNested">Null for LodeActions' default, as for an action without a parent.</param>
     public void SetPlacement(string id, bool button, bool menu, bool? buttonNested = null, bool? menuNested = null) =>
@@ -211,6 +235,7 @@ sealed class Settings
 
         settings ??= new();
         settings.filePath = path;
+        settings.SplitGit();
         return settings;
     }
 

@@ -531,8 +531,8 @@ class OptionsForm : Form
             Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
         Section(
             "Git purge",
-            "Purge, in the Git menu, deletes every file and folder git doesn't track, ignored " +
-            "ones included, such as bin and obj. It moves them to the Recycle Bin.",
+            "Git purge deletes every file and folder git doesn't track, ignored ones " +
+            "included, such as bin and obj. It moves them to the Recycle Bin.",
             purgePermanently),
         Section(
             "Microsoft Defender",
