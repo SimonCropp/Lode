@@ -1,0 +1,13 @@
+﻿{
+  DbToMermaid.slnx.lnk (directory: False): shortcut arrow,
+  Documents.library-ms (directory: False): none,
+  Folder.lnk (directory: True): none,
+  notes.aleph (directory: False): none,
+  notes.txt (directory: False): none,
+  Program.pif (directory: False): shortcut arrow,
+  README (directory: False): none,
+  setup.exe (directory: False): none,
+  Site.url (directory: False): shortcut arrow,
+  Tool.appref-ms (directory: False): shortcut arrow,
+  UPPER.LNK (directory: False): shortcut arrow
+}

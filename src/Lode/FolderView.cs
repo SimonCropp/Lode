@@ -1660,6 +1660,13 @@ sealed class FolderView : UserControl
         }
     }
 
+    /// <summary>
+    /// The image a row shows, by where it is in what is displayed, as an index into the lists'
+    /// shared images. For tests.
+    /// </summary>
+    internal int RowIcon(int index) =>
+        Row(index).ImageIndex;
+
     // A row's cells for the columns shown, from one for every column.
     string[] ShownCells(string[] cells)
     {
@@ -1945,7 +1952,10 @@ sealed class FolderView : UserControl
             Cell(entry, typeColumn),
             Cell(entry, sizeColumn)
         ];
-        var icon = ShellListView.PaddedIcon(ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified));
+        // A shortcut's icon is what it points at, with the shell's arrow over it, as Explorer has it.
+        var icon = ShellListView.PaddedIcon(
+            ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified),
+            ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory));
         var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
         if (entry.IsHidden)
         {

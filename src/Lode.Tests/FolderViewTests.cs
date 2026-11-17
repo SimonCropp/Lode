@@ -33,6 +33,25 @@ public class FolderViewTests
                 new(_.Name, $@"C:\{_.Name}", _.IsDirectory, 0, default, _.IsDirectory ? FileAttributes.Directory : FileAttributes.Normal))));
     }
 
+    // As in Explorer: what the shortcut points at, with the shell's arrow over it.
+    [Test]
+    public async Task AShortcutShowsTheArrow()
+    {
+        using var fixture = Fixture.Create();
+        var target = fixture.At("Docs", "guide.aleph");
+        var shortcut = fixture.At("Docs", "Link to guide.lnk");
+        ShellLink.Save(shortcut, target);
+        using var view = await Open(fixture.At("Docs"));
+
+        var file = view.FindRow("guide", 0);
+        var link = view.FindRow("Link to guide", 0);
+
+        await Assert.That(view.RowIcon(link))
+            .IsEqualTo(ShellListView.PaddedIcon(ShellIcons.GetIcon(shortcut, false), ShellIcons.ShortcutOverlay));
+        await Assert.That(view.RowIcon(file))
+            .IsEqualTo(ShellListView.PaddedIcon(ShellIcons.GetIcon(target, false)));
+    }
+
     [Test]
     public async Task ListsFoldersFirstInNaturalOrder()
     {

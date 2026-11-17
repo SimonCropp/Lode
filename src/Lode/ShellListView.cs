@@ -24,7 +24,7 @@ sealed class ShellListView : ListView
     {
         static readonly Lock gate = new();
         static readonly ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
-        static readonly Dictionary<int, int> indexes = [];
+        static readonly Dictionary<(int Icon, int Overlay), int> indexes = [];
         static readonly Point offset;
 
         static PaddedIcons()
@@ -43,20 +43,20 @@ sealed class ShellListView : ListView
 
         public static IntPtr Handle { get; }
 
-        public static int Index(int systemIcon)
+        public static int Index(int systemIcon, int overlay)
         {
             // Tests make lists on more than one UI thread; the app has one.
             lock (gate)
             {
-                if (indexes.TryGetValue(systemIcon, out var index))
+                if (indexes.TryGetValue((systemIcon, overlay), out var index))
                 {
                     return index;
                 }
 
-                using var image = ShellIcons.Render(systemIcon, images.ImageSize, offset);
+                using var image = ShellIcons.Render(systemIcon, images.ImageSize, offset, overlay);
                 images.Images.Add(image);
                 index = images.Images.Count - 1;
-                indexes[systemIcon] = index;
+                indexes[(systemIcon, overlay)] = index;
                 return index;
             }
         }
@@ -165,10 +165,11 @@ sealed class ShellListView : ListView
         DoubleBuffered = true;
 
     /// <summary>
-    /// The index to give a list item for an icon from the system image list.
+    /// The index to give a list item for an icon from the system image list, with an overlay
+    /// drawn over it, as <see cref="ShellIcons.GetOverlay"/> gives it, or none.
     /// </summary>
-    public static int PaddedIcon(int systemIcon) =>
-        PaddedIcons.Index(systemIcon);
+    public static int PaddedIcon(int systemIcon, int overlay = 0) =>
+        PaddedIcons.Index(systemIcon, overlay);
 
     /// <summary>
     /// The size of the image a row shows, the icon with its padding, as the lists' shared image

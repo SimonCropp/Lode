@@ -16,6 +16,14 @@ static class ShellIcons
     const int networkFolder = 0x12;
     const uint imageListDrawTransparent = 0x1;
 
+    /// <summary>
+    /// The arrow the shell draws over a shortcut's icon: the index of one of the system image
+    /// list's overlays, which the list draws over any of its icons. The shell reserves this one,
+    /// and sets it as it makes the list. Asking for it, with SHGetIconOverlayIndex, would load
+    /// every icon overlay handler installed (cloud storage, source control) into Lode.
+    /// </summary>
+    public const int ShortcutOverlay = 2;
+
     static uint infoSize = (uint)Marshal.SizeOf<ShellFileInfo>();
     // Concurrent because tests browse folders on several UI threads at once; the app has one.
     // Looked up by span so that a cache hit, which is nearly every call, never allocates the extension.
@@ -24,6 +32,9 @@ static class ShellIcons
             .GetAlternateLookup<CharSpan>();
     static ConcurrentDictionary<string, string>.AlternateLookup<CharSpan> typesByExtension =
         new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            .GetAlternateLookup<CharSpan>();
+    static ConcurrentDictionary<string, bool>.AlternateLookup<CharSpan> shortcutsByExtension =
+        new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
             .GetAlternateLookup<CharSpan>();
 
     static HashSet<string>.AlternateLookup<CharSpan> perFileIconExtensions =
@@ -135,10 +146,14 @@ static class ShellIcons
     /// this to give its rows padding: a list row is as tall as its icon and starts at its
     /// icon's left edge, so the padding has to be part of the image.
     /// </summary>
-    public static Bitmap Render(int icon, Size canvas, Point offset)
+    /// <param name="overlay">An overlay to draw over the icon, as <see cref="GetOverlay"/> gives
+    /// it, or 0 for none.</param>
+    public static Bitmap Render(int icon, Size canvas, Point offset, int overlay = 0)
     {
         var bitmap = new Bitmap(canvas.Width, canvas.Height, PixelFormat.Format32bppArgb);
-        var handle = ImageList_GetIcon(SmallImageList, icon, imageListDrawTransparent);
+        // The overlay's index goes in the second byte of the flags (INDEXTOOVERLAYMASK).
+        var flags = imageListDrawTransparent | ((uint)overlay << 8);
+        var handle = ImageList_GetIcon(SmallImageList, icon, flags);
         if (handle == IntPtr.Zero)
         {
             return bitmap;
@@ -196,6 +211,52 @@ static class ShellIcons
             systemIconIndexFlag | smallIconFlag | useFileAttributesFlag);
         iconsByExtension[extension] = info.IconIndex;
         return info.IconIndex;
+    }
+
+    /// <summary>
+    /// The overlay Explorer draws over an item's icon in a folder: <see cref="ShortcutOverlay"/>
+    /// for a shortcut, or 0 for none. Goes by the item's type, so asks nothing of the disk.
+    /// </summary>
+    public static int GetOverlay(string path, bool isDirectory)
+    {
+        if (isDirectory)
+        {
+            return 0;
+        }
+
+        var extension = Path.GetExtension(path.AsSpan());
+        if (!shortcutsByExtension.TryGetValue(extension, out var shortcut))
+        {
+            shortcut = IsShortcutType(extension.ToString());
+            shortcutsByExtension[extension] = shortcut;
+        }
+
+        if (shortcut)
+        {
+            return ShortcutOverlay;
+        }
+
+        return 0;
+    }
+
+    // The shell counts a file as a shortcut, and draws the arrow over its icon, when its file
+    // type says IsShortcut, as those of .lnk, .url, .pif, .appref-ms and .website files do.
+    static bool IsShortcutType(string extension)
+    {
+        if (extension.Length == 0)
+        {
+            return false;
+        }
+
+        using var extensionKey = Registry.ClassesRoot.OpenSubKey(extension);
+        if (extensionKey?.GetValue(null) is not string type ||
+            type.Length == 0)
+        {
+            return false;
+        }
+
+        using var typeKey = Registry.ClassesRoot.OpenSubKey(type);
+        return typeKey?.GetValue("IsShortcut") != null;
     }
 
     /// <summary>
