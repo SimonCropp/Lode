@@ -519,7 +519,7 @@ class OptionsForm : Form
             "menus, or both, and in each, on its own or nested under its parent. The menus only " +
             "offer what applies to what was clicked.",
             new(3, 0, 3, 9)),
-        BuildActionsTable()
+        new ScrollingHost(BuildActionsTable())
     ];
 
     Control[] BuildCodePage() =>
@@ -1072,6 +1072,44 @@ class OptionsForm : Form
 
     // Holds every page, one shown at a time, and asks for room for the largest, so the dialog
     // keeps its size whichever page is shown.
+    // Holds the actions table, and scrolls it once it runs past a height the other pages fit in,
+    // so the list of actions doesn't set the dialog's height.
+    sealed class ScrollingHost : Panel
+    {
+        const int maximumHeight = 360;
+
+        readonly Control content;
+
+        public ScrollingHost(Control content)
+        {
+            this.content = content;
+            AutoSize = true;
+            AutoScroll = true;
+            Margin = Padding.Empty;
+            content.Location = Point.Empty;
+            Controls.Add(content);
+        }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            var preferred = content.GetPreferredSize(Size.Empty);
+            var height = LogicalToDeviceUnits(maximumHeight);
+            if (preferred.Height <= height)
+            {
+                return preferred;
+            }
+
+            // Room beside the table for the scroll bar, so it never covers the last column.
+            return new(preferred.Width + SystemInformation.VerticalScrollBarWidth, height);
+        }
+
+        protected override void OnHandleCreated(EventArgs eventArgs)
+        {
+            base.OnHandleCreated(eventArgs);
+            SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
+        }
+    }
+
     sealed class PageHost : Panel
     {
         public override Size GetPreferredSize(Size proposedSize)
