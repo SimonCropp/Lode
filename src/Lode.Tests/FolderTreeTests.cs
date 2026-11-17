@@ -384,6 +384,90 @@ public class FolderTreeTests
         await Assert.That(style & doubleBuffer).IsEqualTo(doubleBuffer);
     }
 
+    // Delete, sent to the tree's window as pressing it would be, sends the selected folder to the
+    // Recycle Bin, as it does in the list. A section heading and This PC are not folders, and
+    // pressing it on them does nothing.
+    [Test]
+    public async Task DeleteDeletesTheSelectedFolder()
+    {
+        const int keyDown = 0x0100;
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"));
+        var deleted = new List<(string Path, bool Permanent)>();
+        tree.DeleteFolder = (path, permanent) => deleted.Add((path, permanent));
+
+        tree.SelectPath(fixture.At("Archive"));
+        await Pump.Loaded(tree);
+        NativeMethods.SendMessage(tree.Handle, keyDown, (int)Keys.Delete, IntPtr.Zero);
+        tree.SelectedNode = tree.Nodes[0];
+        NativeMethods.SendMessage(tree.Handle, keyDown, (int)Keys.Delete, IntPtr.Zero);
+        tree.SelectedNode = tree.Nodes.Cast<TreeNode>().Last();
+        NativeMethods.SendMessage(tree.Handle, keyDown, (int)Keys.Delete, IntPtr.Zero);
+
+        await Assert.That(tree.Nodes[0].Text).IsEqualTo("Pinned");
+        await Assert.That(deleted).IsEquivalentTo(new List<(string Path, bool Permanent)> { (fixture.At("Archive"), false) });
+    }
+
+    // The keys of the right-click menu's actions run its entries for the selected folder, where
+    // the menu would let them: a Pinned entry can't be renamed, and This PC and the section
+    // headings aren't folders. Shift+Delete deletes outright what Delete sends to the Recycle
+    // Bin, and Ctrl+Shift+N is New's Folder, asking for a folder in the selected one. Ctrl+A is
+    // not one of them. Paste hangs on what is on the clipboard, which tests leave alone.
+    [Test]
+    public async Task KeysRunTheRightClickMenusEntries()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"));
+        var deleted = new List<(string Path, bool Permanent)>();
+        tree.DeleteFolder = (path, permanent) => deleted.Add((path, permanent));
+        var asked = new List<(string Folder, ShellNew.Entry? Type)>();
+        tree.NewRequested += (folder, type) => asked.Add((folder, type));
+        Keys[] keys =
+        [
+            Keys.F2,
+            Keys.Delete,
+            Keys.Shift | Keys.Delete,
+            Keys.Control | Keys.X,
+            Keys.Control | Keys.C,
+            Keys.Alt | Keys.Enter,
+            Keys.Control | Keys.Shift | Keys.N,
+            Keys.Control | Keys.A
+        ];
+
+        string Name(Keys key)
+        {
+            if (tree.KeyCommand(key) is not { } command)
+            {
+                return "-";
+            }
+
+            return command.Id ?? command.Text;
+        }
+
+        string Describe() =>
+            string.Join(", ", keys.Select(Name));
+
+        tree.SelectPath(fixture.At("Archive"));
+        await Pump.Loaded(tree);
+        var onFolder = Describe();
+        tree.KeyCommand(Keys.Delete)!.Action();
+        tree.KeyCommand(Keys.Shift | Keys.Delete)!.Action();
+        tree.KeyCommand(Keys.Control | Keys.Shift | Keys.N)!.Action();
+        tree.SelectedNode = tree.Nodes[0].Nodes[0];
+        var onPinned = Describe();
+        tree.SelectedNode = tree.Nodes[0];
+        var onHeading = Describe();
+        tree.SelectedNode = tree.Nodes.Cast<TreeNode>().Last();
+        var onThisPC = Describe();
+
+        await Assert.That(onFolder).IsEqualTo("rename, delete, delete, cut, copy, properties, Folder, -");
+        await Assert.That(onPinned).IsEqualTo("-, delete, delete, cut, copy, properties, Folder, -");
+        await Assert.That(onHeading).IsEqualTo("-, -, -, -, -, -, -, -");
+        await Assert.That(onThisPC).IsEqualTo("-, -, -, -, -, -, -, -");
+        await Assert.That(deleted).IsEquivalentTo(new List<(string Path, bool Permanent)> { (fixture.At("Archive"), false), (fixture.At("Archive"), true) });
+        await Assert.That(asked).IsEquivalentTo(new List<(string Folder, ShellNew.Entry? Type)> { (fixture.At("Archive"), null) });
+    }
+
     static List<string> Names(TreeNode node) =>
         node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
 

@@ -2591,7 +2591,7 @@ sealed class FolderView : UserControl
     /// </summary>
     internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes = null) =>
     [
-        LodeActions.Submenu("new", NewCommands(newTypes ?? ShellNew.Current)),
+        LodeActions.Submenu("new", NewCommands(newTypes ?? ShellNew.Current, CreateFolder, CreateFile)),
         LodeActions.Command("paste", Paste, canPaste),
         .. UndoCommands(),
         null,
@@ -2634,16 +2634,20 @@ sealed class FolderView : UserControl
         }
     }
 
-    // Folder, then each type Windows offers under New, by label.
-    List<QuickMenu.Command?> NewCommands(IReadOnlyList<ShellNew.Entry> types) =>
+    /// <summary>
+    /// New's entries: Folder, which runs <paramref name="createFolder"/>, then each type Windows
+    /// offers under New, by label, which runs <paramref name="createFile"/> with the type. The
+    /// list's own New, and the tree's for a folder in it.
+    /// </summary>
+    internal static List<QuickMenu.Command?> NewCommands(IReadOnlyList<ShellNew.Entry> types, Action createFolder, Action<ShellNew.Entry> createFile) =>
     [
-        new("Folder", CreateFolder)
+        new("Folder", createFolder)
         {
             Glyph = Icons.Folder
         },
         null,
         .. NewItems(types)
-            .Select(_ => new QuickMenu.Command(_.Label, () => CreateFile(_.Type))
+            .Select(_ => new QuickMenu.Command(_.Label, () => createFile(_.Type))
             {
                 ShellIcon = _.Icon
             })

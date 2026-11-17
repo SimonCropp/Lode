@@ -217,7 +217,7 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var tree = CreateTree([fixture.Root], []);
 
-        await Verify(Describe(tree.NodeCommands(fixture.At("Docs"))));
+        await Verify(Describe(tree.NodeCommands(fixture.At("Docs"), newTypes: newTypes)));
     }
 
     // Without the Claude desktop app or a coding agent, no menu offers Open in Claude or Coding
@@ -238,7 +238,7 @@ public class QuickMenuTests
             [
                 .. Describe(view.ItemCommands([Entry(view, "Docs")])),
                 .. Describe(view.BackgroundCommands(canPaste: false, newTypes)),
-                .. Describe(tree.NodeCommands(fixture.At("Docs"))),
+                .. Describe(tree.NodeCommands(fixture.At("Docs"), newTypes: newTypes)),
                 .. LodeActions.Offered().Select(_ => _.Text)
             ];
 
@@ -258,7 +258,42 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var tree = CreateTree([fixture.Root], []);
 
-        await Verify(Describe(tree.NodeCommands(Path.GetPathRoot(fixture.Root)!, canPaste: true)));
+        await Verify(Describe(tree.NodeCommands(Path.GetPathRoot(fixture.Root)!, canPaste: true, newTypes: newTypes)));
+    }
+
+    // A machine on the network has shares rather than folders, so nothing can be made in it.
+    [Test]
+    public async Task NothingNewOnAMachineOnTheNetwork()
+    {
+        using var tree = CreateTree([], []);
+
+        var menu = Describe(tree.NodeCommands(@"\\server", newTypes: newTypes));
+
+        await Assert.That(menu).Contains("New (disabled)");
+    }
+
+    // New on a folder's right-click menu in the tree opens the folder in the tab, then makes
+    // what was chosen there, selected for its name to be edited, as New in the list does.
+    [Test]
+    public async Task NewInTheTreeMakesItInTheFolder()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await ShowForm(fixture, fixture.Root);
+        var view = form.ActiveView!;
+
+        await form.CreateFromTree(fixture.At("Docs"), null);
+        await Pump.Loaded(view);
+        var folderTab = view.CurrentPath;
+        var folderSelected = view.SelectedEntries().Select(_ => _.Name).ToList();
+        await form.CreateFromTree(fixture.At("Archive"), new(".txt", "Text Document"));
+        await Pump.Loaded(view);
+
+        await Assert.That(folderTab).IsEqualTo(fixture.At("Docs"));
+        await Assert.That(folderSelected).IsEquivalentTo(["New folder"]);
+        await Assert.That(Directory.Exists(fixture.At("Docs", "New folder"))).IsTrue();
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Archive"));
+        await Assert.That(view.SelectedEntries().Select(_ => _.Name)).IsEquivalentTo(["New Text Document.txt"]);
+        await Assert.That(File.Exists(fixture.At("Archive", "New Text Document.txt"))).IsTrue();
     }
 
     // Clicking a submenu's own entry only opens it; clicking an entry inside it chooses that.

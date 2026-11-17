@@ -88,6 +88,12 @@ sealed class FolderTree : TreeView
     public event Action<string>? PathSelected;
     public event Action<string>? NewTabRequested;
 
+    /// <summary>
+    /// New on a folder's right-click menu was chosen: a folder to make in it, or a file of the
+    /// type given.
+    /// </summary>
+    public event Action<string, ShellNew.Entry?>? NewRequested;
+
     public FolderTree(Settings settings, Places places)
     {
         this.settings = settings;
@@ -95,6 +101,7 @@ sealed class FolderTree : TreeView
         SetPinned = (path, pin) => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, path, pin);
         Pin = _ => SetPinned(_, true);
         MovePinnedToEnd = _ => ShellContextMenu.MoveToEnd(FindForm()?.Handle ?? Handle, _);
+        DeleteFolder = (path, permanent) => FileOperations.Delete(FindForm()?.Handle ?? Handle, [path], permanent);
         HideSelection = false;
         ShowLines = false;
         FullRowSelect = true;
@@ -274,7 +281,8 @@ sealed class FolderTree : TreeView
         }
     }
 
-    // Alt+Shift+Up and Down move the selected pinned folder up or down the list.
+    // Alt+Shift+Up and Down move the selected pinned folder up or down the list. The keys of the
+    // right-click menu's actions do the same to the selected folder.
     protected override void OnKeyDown(KeyEventArgs eventArgs)
     {
         if (eventArgs.KeyData is (Keys.Alt | Keys.Shift | Keys.Up) or (Keys.Alt | Keys.Shift | Keys.Down) &&
@@ -288,8 +296,78 @@ sealed class FolderTree : TreeView
             return;
         }
 
+        if (KeyCommand(eventArgs.KeyData) is { } command)
+        {
+            command.Action();
+            eventArgs.Handled = true;
+            eventArgs.SuppressKeyPress = true;
+            return;
+        }
+
         base.OnKeyDown(eventArgs);
     }
+
+    /// <summary>
+    /// What a key does to the selected folder, as it does in the list: what the right-click
+    /// menu's entry for the key does, where the menu would let it. Shift+Delete, which the menu
+    /// has no entry for, deletes outright what Delete would send to the Recycle Bin, and
+    /// Ctrl+Shift+N makes a folder, as Folder under New does. Null for a key that does nothing
+    /// here.
+    /// </summary>
+    internal QuickMenu.Command? KeyCommand(Keys keyData)
+    {
+        if (SelectedNode is not { Tag: string path } node ||
+            Locations.IsThisPC(path))
+        {
+            return null;
+        }
+
+        var permanent = keyData == (Keys.Shift | Keys.Delete);
+        if (permanent)
+        {
+            keyData = Keys.Delete;
+        }
+
+        if (MenuAction(keyData) is not { } id)
+        {
+            return null;
+        }
+
+        // The clipboard is only read for the key that pastes.
+        var canPaste = id == "paste" && FileOperations.ReadClipboard() != null;
+        var command = NodeCommands(path, canPaste, node).FirstOrDefault(_ => _?.Id == id);
+        if (command is not { Enabled: true })
+        {
+            return null;
+        }
+
+        if (permanent)
+        {
+            return command with { Action = () => DeleteFolder(path, true) };
+        }
+
+        // New's first entry is Folder.
+        if (command.Children is [{ } folder, ..])
+        {
+            return folder;
+        }
+
+        return command;
+    }
+
+    // The right-click menu's action that a key does, as it does in the list.
+    static string? MenuAction(Keys keyData) =>
+        keyData switch
+        {
+            Keys.F2 => "rename",
+            Keys.Delete => "delete",
+            Keys.Control | Keys.X => "cut",
+            Keys.Control | Keys.C => "copy",
+            Keys.Control | Keys.V => "paste",
+            Keys.Alt | Keys.Enter => "properties",
+            Keys.Control | Keys.Shift | Keys.N => "new",
+            _ => null
+        };
 
     // A pinned folder can be dragged up or down the Pinned list to reorder it, as in Explorer.
     const string pinnedFormat = "Lode.PinnedFolder";
@@ -1149,16 +1227,22 @@ sealed class FolderTree : TreeView
     /// The fixed right-click menu for a folder in the tree, the same a folder gets in the list.
     /// A drive cannot be cut, renamed, deleted or given a shortcut. Rename edits
     /// <paramref name="node"/>'s label, so is only offered for a folder under This PC, not a
-    /// Pinned or Recent entry. Paste puts what was cut or copied into the folder. A null entry
-    /// is a separator.
+    /// Pinned or Recent entry. New and Paste put things in the folder: New as the list's own New
+    /// does, with the folder open in the tab, which a machine on the network can't have, having
+    /// shares rather than folders. <paramref name="newTypes"/> stands in for the types Windows
+    /// offers under New. A null entry is a separator.
     /// </summary>
-    internal List<QuickMenu.Command?> NodeCommands(string path, bool canPaste = false, TreeNode? node = null)
+    internal List<QuickMenu.Command?> NodeCommands(string path, bool canPaste = false, TreeNode? node = null, IReadOnlyList<ShellNew.Entry>? newTypes = null)
     {
         var owner = FindForm()?.Handle ?? Handle;
         // A drive, a machine on the network, or a share on one.
         var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "") ||
                       Locations.IsShare(path);
         var canRename = !isDrive && node is { Parent.Tag: not Section };
+        var newCommands = FolderView.NewCommands(
+            newTypes ?? ShellNew.Current,
+            () => NewRequested?.Invoke(path, null),
+            _ => NewRequested?.Invoke(path, _));
         return
         [
             LodeActions.Command("open", () => PathSelected?.Invoke(path)),
@@ -1168,11 +1252,12 @@ sealed class FolderTree : TreeView
             .. ClaudeDesktop.Commands(this, [path]),
             .. CodingAgents.Commands([path]),
             null,
+            LodeActions.Submenu("new", newCommands) with { Enabled = !Locations.IsServer(path) },
             LodeActions.Command("cut", () => FileOperations.CopyToClipboard([path], true), !isDrive),
             LodeActions.Command("copy", () => FileOperations.CopyToClipboard([path], false)),
             LodeActions.Command("paste", () => PasteInto(path), canPaste),
             LodeActions.Command("rename", () => BeginRename(node), canRename),
-            LodeActions.Command("delete", () => FileOperations.Delete(owner, [path], false), !isDrive),
+            LodeActions.Command("delete", () => DeleteFolder(path, false), !isDrive),
             null,
             LodeActions.Pin([path], places, SetPinned),
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
@@ -1281,6 +1366,12 @@ sealed class FolderTree : TreeView
     /// they have moved. Replaced in tests, which must not change the real list.
     /// </summary>
     internal Func<IReadOnlyList<string>, Task> MovePinnedToEnd;
+
+    /// <summary>
+    /// Deletes a folder: to the Recycle Bin, or outright when permanent. Replaced in tests, which
+    /// must not have the shell delete anything.
+    /// </summary>
+    internal Action<string, bool> DeleteFolder;
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
     {

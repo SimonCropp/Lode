@@ -612,6 +612,39 @@ class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// New on the tree's right-click menu: the folder opens in the tab, and once it has been
+    /// read, New does there what it does in the list, making the item with its name ready to
+    /// edit. Nothing is made if the tab ends up somewhere else, as when the folder has gone.
+    /// </summary>
+    internal async Task CreateFromTree(string folder, ShellNew.Entry? type)
+    {
+        if (ActiveView is not { } view)
+        {
+            return;
+        }
+
+        if (!Locations.Same(view.CurrentPath, folder))
+        {
+            view.Navigate(folder);
+            await view.Loading;
+        }
+
+        if (view.IsDisposed ||
+            !Locations.Same(view.CurrentPath, folder))
+        {
+            return;
+        }
+
+        if (type == null)
+        {
+            view.CreateFolder();
+            return;
+        }
+
+        view.CreateFile(type);
+    }
+
     // What the buttons act on: the right-click menu's commands for the selection, then the
     // folder's, so New and Paste still work with something selected. The selection's win where
     // both have one (Terminal on a selected folder opens it). The selection is the active view's,
@@ -720,6 +753,7 @@ class MainForm : Form
         tree.Dock = DockStyle.Fill;
         tree.PathSelected += _ => ActiveView?.Navigate(_);
         tree.NewTabRequested += _ => AddTab(_, false);
+        tree.NewRequested += (folder, type) => _ = CreateFromTree(folder, type);
 
         tabs.Dock = DockStyle.Fill;
         tabs.CloseRequested += CloseTab;
