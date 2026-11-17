@@ -24,6 +24,11 @@ static class Icons
     // A machine on the network, at the top of a share's path in the address bar.
     public const char Network = '\uE968';
     public const char ChevronDown = '\uE70D';
+    public const char ChevronUp = '\uE70E';
+    // This PC's own entries: Manage, and mapping a network drive or disconnecting one.
+    public const char Manage = '\uE912';
+    public const char MapDrive = '\uE8CE';
+    public const char DisconnectDrive = '\uE8CD';
     public const char Open = '\uE8E5';
     public const char OpenInNewTab = '\uE8A7';
     public const char Edit = '\uE70F';

@@ -753,6 +753,7 @@ class MainForm : Form
         tree.Dock = DockStyle.Fill;
         tree.PathSelected += _ => ActiveView?.Navigate(_);
         tree.NewTabRequested += _ => AddTab(_, false);
+        tree.NewWindowRequested += NewWindow;
         tree.NewRequested += (folder, type) => _ = CreateFromTree(folder, type);
 
         tabs.Dock = DockStyle.Fill;
@@ -1458,12 +1459,15 @@ class MainForm : Form
         }
     }
 
+    void NewWindow() =>
+        NewWindow(ActiveView?.CurrentPath ?? settings.StartLocation());
+
     // In this process rather than a new one, so tabs can be dragged between the two.
-    void NewWindow()
+    void NewWindow(string path)
     {
         var offset = new Size(LogicalToDeviceUnits(30), LogicalToDeviceUnits(30));
         var window = CreateWindow(new(Location + offset, NormalSize));
-        window.AddTab(ActiveView?.CurrentPath ?? settings.StartLocation(), true);
+        window.AddTab(path, true);
         window.Show();
     }
 

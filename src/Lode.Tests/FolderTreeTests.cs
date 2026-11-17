@@ -409,10 +409,11 @@ public class FolderTreeTests
     }
 
     // The keys of the right-click menu's actions run its entries for the selected folder, where
-    // the menu would let them: a Pinned entry can't be renamed, and This PC and the section
-    // headings aren't folders. Shift+Delete deletes outright what Delete sends to the Recycle
-    // Bin, and Ctrl+Shift+N is New's Folder, asking for a folder in the selected one. Ctrl+A is
-    // not one of them. Paste hangs on what is on the clipboard, which tests leave alone.
+    // the menu would let them: a Pinned entry can't be renamed, the section headings aren't
+    // folders, and This PC's menu has only Properties of them. Shift+Delete deletes outright
+    // what Delete sends to the Recycle Bin, and Ctrl+Shift+N is New's Folder, asking for a
+    // folder in the selected one. Ctrl+A is not one of them. Paste hangs on what is on the
+    // clipboard, which tests leave alone.
     [Test]
     public async Task KeysRunTheRightClickMenusEntries()
     {
@@ -463,9 +464,42 @@ public class FolderTreeTests
         await Assert.That(onFolder).IsEqualTo("rename, delete, delete, cut, copy, properties, Folder, -");
         await Assert.That(onPinned).IsEqualTo("-, delete, delete, cut, copy, properties, Folder, -");
         await Assert.That(onHeading).IsEqualTo("-, -, -, -, -, -, -, -");
-        await Assert.That(onThisPC).IsEqualTo("-, -, -, -, -, -, -, -");
+        await Assert.That(onThisPC).IsEqualTo("-, -, -, -, -, properties, -, -");
         await Assert.That(deleted).IsEquivalentTo(new List<(string Path, bool Permanent)> { (fixture.At("Archive"), false), (fixture.At("Archive"), true) });
         await Assert.That(asked).IsEquivalentTo(new List<(string Folder, ShellNew.Entry? Type)> { (fixture.At("Archive"), null) });
+    }
+
+    // This PC's right-click menu has Explorer's entries for it, less Delete and Rename. Its
+    // first entry collapses This PC when it is open and expands it when it is not, and Open in
+    // new tab and Open in new window ask for This PC.
+    [Test]
+    public async Task ThisPCsMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var thisPC = tree.Nodes.Cast<TreeNode>().Last();
+        var tabs = new List<string>();
+        var windows = new List<string>();
+        tree.NewTabRequested += tabs.Add;
+        tree.NewWindowRequested += windows.Add;
+
+        string Describe() =>
+            string.Join(", ", tree.ThisPCCommands(thisPC).Select(_ => _?.Text ?? "-"));
+
+        var expanded = Describe();
+        tree.ThisPCCommands(thisPC)[0]!.Action();
+        var collapsed = Describe();
+        var commands = tree.ThisPCCommands(thisPC);
+        commands.Single(_ => _?.Id == "openInNewTab")!.Action();
+        commands.Single(_ => _?.Text == "Open in new window")!.Action();
+
+        await Assert.That(expanded).IsEqualTo(
+            "Collapse, -, Manage, Map network drive..., Disconnect network drive..., Open in new tab, " +
+            "Open in new window, -, Add a network location, -, Properties");
+        await Assert.That(thisPC.IsExpanded).IsFalse();
+        await Assert.That(collapsed).StartsWith("Expand, -, Manage, ");
+        await Assert.That(tabs).IsEquivalentTo(new List<string> { Locations.ThisPC });
+        await Assert.That(windows).IsEquivalentTo(new List<string> { Locations.ThisPC });
     }
 
     static List<string> Names(TreeNode node) =>

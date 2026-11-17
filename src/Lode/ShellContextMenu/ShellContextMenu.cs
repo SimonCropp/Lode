@@ -216,11 +216,54 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     }
 
     /// <summary>
+    /// Shows This PC's own menu, as the shell gives it for This PC on the desktop, less Delete
+    /// and Rename, which Lode leaves off This PC.
+    /// </summary>
+    public bool ShowForThisPC(
+        IntPtr owner,
+        Point location,
+        IReadOnlyList<CustomCommand> customCommands,
+        Func<string, bool> handleVerb)
+    {
+        var contextMenu = CreateForItems(owner, [Locations.ThisPCParsingName]);
+        if (contextMenu == null)
+        {
+            return false;
+        }
+
+        // Not asked for Rename, the shell leaves it off; Delete it has to be told to.
+        Show(contextMenu, owner, location, customCommands, customFirst: false, 0, handleVerb, thisPCRemovedVerbs);
+        return true;
+    }
+
+    static readonly HashSet<string> thisPCRemovedVerbs =
+    [
+        with(StringComparer.OrdinalIgnoreCase),
+        "delete",
+        "rename"
+    ];
+
+    /// <summary>
     /// Runs a shell verb such as "properties" against the items without showing a menu.
     /// </summary>
     public static void InvokeVerb(IntPtr owner, IReadOnlyList<string> paths, string verb)
     {
         var contextMenu = CreateForItems(owner, paths);
+        if (contextMenu == null)
+        {
+            return;
+        }
+
+        InvokeVerb(contextMenu, owner, verb);
+    }
+
+    /// <summary>
+    /// Runs a verb of a folder's empty area, such as Add a network location on This PC's,
+    /// without showing a menu.
+    /// </summary>
+    public static void InvokeFolderVerb(IntPtr owner, string folder, string verb)
+    {
+        var contextMenu = CreateForFolder(owner, folder);
         if (contextMenu == null)
         {
             return;
@@ -429,7 +472,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         IReadOnlyList<CustomCommand> customCommands,
         bool customFirst,
         uint flags,
-        Func<string, bool> handleVerb)
+        Func<string, bool> handleVerb,
+        IReadOnlySet<string>? alsoRemoved = null)
     {
         Action? customAction = null;
         var quickAccessChanged = false;
@@ -450,7 +494,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 }
             }
 
-            RemoveUnwanted(contextMenu, menu);
+            RemoveUnwanted(contextMenu, menu, alsoRemoved);
             InsertCustomCommands(menu, customCommands, customFirst);
 
             menu2 = contextMenu as IContextMenu2;
@@ -524,9 +568,10 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     /// <summary>
     /// Takes out the entries Lode leaves off: those in <see cref="removedVerbs"/>, plus
     /// Send to and Include in library. Those two are submenus with no verb, so they are known
-    /// by what they list: the SendTo folder, and the user's libraries.
+    /// by what they list: the SendTo folder, and the user's libraries. Those with a verb in
+    /// <paramref name="alsoRemoved"/> go too, for what Lode leaves off this menu alone.
     /// </summary>
-    static void RemoveUnwanted(IContextMenu contextMenu, IntPtr menu)
+    static void RemoveUnwanted(IContextMenu contextMenu, IntPtr menu, IReadOnlySet<string>? alsoRemoved = null)
     {
         var sendTo = DisplayNames(Environment.GetFolderPath(Environment.SpecialFolder.SendTo));
         var libraries = DisplayNames(
@@ -564,7 +609,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 var id = GetMenuItemID(menu, position);
                 remove = id is >= firstShellCommand and <= lastShellCommand &&
                          GetVerb(contextMenu, id - firstShellCommand) is { } verb &&
-                         removedVerbs.Contains(verb);
+                         (removedVerbs.Contains(verb) ||
+                          alsoRemoved?.Contains(verb) == true);
             }
 
             if (remove)

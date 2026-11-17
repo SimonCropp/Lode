@@ -7,8 +7,11 @@ static class Locations
     public static bool IsThisPC(string location) =>
         string.Equals(location, ThisPC, StringComparison.OrdinalIgnoreCase);
 
-    // How the shell names This PC to a verb's command, the explore verb on Folder say.
-    const string thisPCParsingName = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
+    /// <summary>
+    /// How the shell names This PC: to a verb's command, the explore verb on Folder say, and to
+    /// the shell when Lode asks for This PC's own menu.
+    /// </summary>
+    public const string ThisPCParsingName = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
 
     /// <summary>
     /// True for a virtual folder as the shell names it, "::{CLSID}" and what follows (Control
@@ -16,7 +19,7 @@ static class Locations
     /// </summary>
     public static bool IsVirtual(string location) =>
         location.StartsWith("::", StringComparison.Ordinal) &&
-        !location.Equals(thisPCParsingName, StringComparison.OrdinalIgnoreCase);
+        !location.Equals(ThisPCParsingName, StringComparison.OrdinalIgnoreCase);
 
     public static bool IsNetwork(CharSpan location) =>
         location.StartsWith(@"\\", StringComparison.Ordinal);
@@ -140,7 +143,7 @@ static class Locations
         }
 
         if (IsThisPC(text) ||
-            text.Equals(thisPCParsingName, StringComparison.OrdinalIgnoreCase))
+            text.Equals(ThisPCParsingName, StringComparison.OrdinalIgnoreCase))
         {
             return ThisPC;
         }

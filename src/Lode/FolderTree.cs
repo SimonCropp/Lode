@@ -89,6 +89,11 @@ sealed class FolderTree : TreeView
     public event Action<string>? NewTabRequested;
 
     /// <summary>
+    /// Open in new window on This PC's right-click menu was chosen.
+    /// </summary>
+    public event Action<string>? NewWindowRequested;
+
+    /// <summary>
     /// New on a folder's right-click menu was chosen: a folder to make in it, or a file of the
     /// type given.
     /// </summary>
@@ -311,13 +316,13 @@ sealed class FolderTree : TreeView
     /// What a key does to the selected folder, as it does in the list: what the right-click
     /// menu's entry for the key does, where the menu would let it. Shift+Delete, which the menu
     /// has no entry for, deletes outright what Delete would send to the Recycle Bin, and
-    /// Ctrl+Shift+N makes a folder, as Folder under New does. Null for a key that does nothing
-    /// here.
+    /// Ctrl+Shift+N makes a folder, as Folder under New does. On This PC, whose menu has none
+    /// of a folder's entries, only Alt+Enter does anything: Properties. Null for a key that
+    /// does nothing here.
     /// </summary>
     internal QuickMenu.Command? KeyCommand(Keys keyData)
     {
-        if (SelectedNode is not { Tag: string path } node ||
-            Locations.IsThisPC(path))
+        if (SelectedNode is not { Tag: string path } node)
         {
             return null;
         }
@@ -333,9 +338,19 @@ sealed class FolderTree : TreeView
             return null;
         }
 
-        // The clipboard is only read for the key that pastes.
-        var canPaste = id == "paste" && FileOperations.ReadClipboard() != null;
-        var command = NodeCommands(path, canPaste, node).FirstOrDefault(_ => _?.Id == id);
+        List<QuickMenu.Command?> commands;
+        if (Locations.IsThisPC(path))
+        {
+            commands = ThisPCCommands(node);
+        }
+        else
+        {
+            // The clipboard is only read for the key that pastes.
+            var canPaste = id == "paste" && FileOperations.ReadClipboard() != null;
+            commands = NodeCommands(path, canPaste, node);
+        }
+
+        var command = commands.FirstOrDefault(_ => _?.Id == id);
         if (command is not { Enabled: true })
         {
             return null;
@@ -1205,8 +1220,7 @@ sealed class FolderTree : TreeView
     {
         base.OnNodeMouseClick(eventArgs);
         if (eventArgs.Button != MouseButtons.Right ||
-            eventArgs.Node?.Tag is not string path ||
-            Locations.IsThisPC(path))
+            eventArgs.Node?.Tag is not string path)
         {
             return;
         }
@@ -1215,12 +1229,82 @@ sealed class FolderTree : TreeView
         var location = PointToScreen(eventArgs.Location);
         var quickAccess = eventArgs.Node.Parent?.Tag is Section;
         var node = eventArgs.Node;
+        List<QuickMenu.Command?> commands;
+        if (Locations.IsThisPC(path))
+        {
+            commands = ThisPCCommands(node);
+        }
+        else
+        {
+            commands = NodeCommands(path, FileOperations.ReadClipboard() != null, node);
+        }
+
         QuickMenu.Show(
             this,
             location,
-            LodeActions.ForMenu(NodeCommands(path, FileOperations.ReadClipboard() != null, node), settings),
+            LodeActions.ForMenu(commands, settings),
             () => ShowShellMenu(owner, path, location, quickAccess),
             settings.ShowsInMenu(LodeActions.More));
+    }
+
+    /// <summary>
+    /// The right-click menu for This PC, as Explorer's has, less Delete and Rename: Expand or
+    /// Collapse, Manage, Map network drive, Disconnect network drive, Open in new tab, Open in
+    /// new window, Add a network location and Properties. Manage, the network drive entries
+    /// and Properties are the shell's own verbs on This PC, and Add a network location the one
+    /// on its empty area, so each does what it does in Explorer. A null entry is a separator.
+    /// </summary>
+    internal List<QuickMenu.Command?> ThisPCCommands(TreeNode node)
+    {
+        var owner = FindForm()?.Handle ?? Handle;
+        QuickMenu.Command toggle;
+        if (node.IsExpanded)
+        {
+            toggle = new("Collapse", node.Collapse)
+            {
+                Glyph = Icons.ChevronUp
+            };
+        }
+        else
+        {
+            toggle = new("Expand", node.Expand)
+            {
+                Glyph = Icons.ChevronDown
+            };
+        }
+
+        return
+        [
+            toggle,
+            null,
+            new("Manage", () => Verb("Manage"))
+            {
+                Glyph = Icons.Manage
+            },
+            new("Map network drive...", () => Verb("connectNetworkDrive"))
+            {
+                Glyph = Icons.MapDrive
+            },
+            new("Disconnect network drive...", () => Verb("disconnectNetworkDrive"))
+            {
+                Glyph = Icons.DisconnectDrive
+            },
+            LodeActions.Command("openInNewTab", () => NewTabRequested?.Invoke(Locations.ThisPC)),
+            new("Open in new window", () => NewWindowRequested?.Invoke(Locations.ThisPC))
+            {
+                Glyph = Icons.NewWindow
+            },
+            null,
+            new("Add a network location", () => ShellContextMenu.InvokeFolderVerb(owner, Locations.ThisPCParsingName, "addnetworkplace"))
+            {
+                Glyph = Icons.Network
+            },
+            null,
+            LodeActions.Command("properties", () => Verb("properties"))
+        ];
+
+        void Verb(string verb) =>
+            ShellContextMenu.InvokeVerb(owner, [Locations.ThisPCParsingName], verb);
     }
 
     /// <summary>
@@ -1381,6 +1465,12 @@ sealed class FolderTree : TreeView
         ];
 
         using var menu = new ShellContextMenu();
+
+        if (Locations.IsThisPC(path))
+        {
+            menu.ShowForThisPC(owner, location, customCommands, HandleVerb);
+            return;
+        }
 
         // Pinned and Recent folders are Quick access entries, whose menu offers Unpin.
         if (quickAccess)

@@ -53,6 +53,24 @@ public class MenuTests
         await CaptureMenu(QuickMenu.Build(children, null, _ => { }));
     }
 
+    // This PC's right-click menu in the folder tree: Explorer's entries for it, less Delete and
+    // Rename.
+    [Test]
+    public async Task ThisPCMenu()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings
+        {
+            ShowHidden = false
+        };
+        var drive = Path.GetDirectoryName(fixture.Root)!;
+        using var tree = new FolderTree(settings, new([], [], ShowComputer: true, _ => "", [drive]));
+        _ = tree.Handle;
+        var thisPC = tree.Nodes.Cast<TreeNode>().Last();
+
+        await CaptureMenu(QuickMenu.Build(LodeActions.ForMenu(tree.ThisPCCommands(thisPC), settings), () => { }, _ => { }));
+    }
+
     // See more, at the end of the actions bar, with a file selected.
     [Test]
     public async Task SeeMore()
