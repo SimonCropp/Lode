@@ -103,7 +103,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
    ![See more](src/Lode.Tests/MenuTests.SeeMore.verified.png) ![The Actions page of Options](src/Lode.Tests/OptionsFormTests.ActionsPage.verified.png)
 
- * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing.
+ * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing. As in Explorer, a tab follows the folder it shows when it is renamed, by Lode or another program, or moved by Lode, whether the folder itself or one above it, keeping what was selected; places in its history inside the folder follow too, so Back goes where they went. When the folder is deleted, sent to the Recycle Bin, or moved by another program, the tab goes up to the nearest folder still there.
 
    ![Tabs](src/Lode.Tests/MainFormTests.Tabs.verified.png)
 
@@ -145,7 +145,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
    ![The Code page of Options](src/Lode.Tests/OptionsFormTests.CodePage.verified.png) ![Actions panel](src/Lode.Tests/MainFormTests.Actions.verified.png)
 
- * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work.
+ * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work. Windows won't move or rename a folder, or send it to the Recycle Bin, while a program is watching a folder inside it, so Lode stops watching the folders inside one while it does that: a tab open inside the folder, or a folder expanded beneath it in the tree, doesn't stop it. Another program can't move a folder a Lode tab is open inside, as it can't one an Explorer window is open inside.
  * **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z), across every window: renames, moves, copies, deletes to the Recycle Bin, and new folders, files and shortcuts. Lode reverses each itself: a rename or move is done back, a copy or new item goes to the Recycle Bin, a deleted item is restored from it. Also on the right-click menu of empty space, under See more, and in the command palette, worded for what they would do ("Undo rename"). Permanent deletes can't be undone.
  * Drag and drop to and from Explorer and other apps.
  * Search box: type part of a name, or a wildcard such as `*.csproj`. What the folder itself has that matches shows at once. Then its subfolders are searched, all the way down, and what they hold that matches is added as it is found, with a **Folder** column saying where each is. Hidden and system items are left out, as they are from the list, and links to other folders (junctions and symbolic links) aren't followed. What the subfolders hold is as it was when found: F5 searches again. **Show more options** and **Properties** need everything selected to be in the one folder. On This PC the box narrows the drives.

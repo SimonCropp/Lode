@@ -1,0 +1,16 @@
+﻿{
+  before: {
+    title: Docs,
+    tabs: [
+      Docs
+    ],
+    active: {TempPath}LodeTests\WindowsTests.ATabWhoseFolderIsDeletedGoesUp\Projects\Docs
+  },
+  after: {
+    title: Projects,
+    tabs: [
+      Projects
+    ],
+    active: {TempPath}LodeTests\WindowsTests.ATabWhoseFolderIsDeletedGoesUp\Projects
+  }
+}

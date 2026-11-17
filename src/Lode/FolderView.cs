@@ -46,6 +46,18 @@ sealed class FolderView : UserControl
     int historyIndex = -1;
 
     FolderWatcher? watcher;
+
+    // Watches the folder's parent for the folder itself: deleted, sent to the Recycle Bin,
+    // renamed or moved. The folder's own watch only sees what is in it, and goes on watching one
+    // moved, as one sent to the Recycle Bin is, where it now is.
+    FolderWatcher? parentWatcher;
+    readonly ChangeSignal parentChanges;
+
+    // What the watch on the parent saw renamed, from where to where, still to be followed.
+    readonly ConcurrentQueue<(string From, string To)> renames = new();
+
+    // Reaches the UI thread from the thread of a move or rename Lode did, to follow it.
+    readonly SynchronizationContext context = new WindowsFormsSynchronizationContext();
     bool loading;
     int loadVersion;
 
@@ -237,6 +249,8 @@ sealed class FolderView : UserControl
         scrollBar.BringToFront();
 
         changes = new(400, OnChanged);
+        parentChanges = new(100, OnParentChanged);
+        ShellFileOperation.Moved += OnMoved;
     }
 
     /// <summary>
@@ -602,8 +616,9 @@ sealed class FolderView : UserControl
 
     // Takes the view to a folder known to be there, or taken on trust. Only here does where it
     // is in the history change: going back to somewhere that has gone, or that the view is taken
-    // away from while it is still being asked after, leaves the history as it was.
-    void Open(string normalized, int? position)
+    // away from while it is still being asked after, leaves the history as it was. For a folder
+    // that moved, what to select once it has been read where it went is kept.
+    void Open(string normalized, int? position, Kept? keep = null)
     {
         // Anywhere being asked after has been overtaken.
         finding++;
@@ -625,7 +640,7 @@ sealed class FolderView : UserControl
         filter = "";
         StopSearch();
         error = null;
-        remembered = null;
+        remembered = keep;
         if (!showing)
         {
             // Read when the view shows. Until then it lists nothing, rather than the folder left.
@@ -977,7 +992,7 @@ sealed class FolderView : UserControl
 
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
         // space is read there as well, as asking a drive mapped to a share waits on the network.
-        var (loaded, late, free, failure) = await Task.Run(
+        var (loaded, late, free, failure, nearest) = await Task.Run(
             () =>
             {
                 var space = FreeSpaceOf(path, freeSpace);
@@ -985,11 +1000,13 @@ sealed class FolderView : UserControl
                 {
                     var found = Enumerate(path, showHidden, hiddenSystem, out var late);
                     found.Sort((first, second) => Compare(first, second, column, ascending));
-                    return (found, late, space, null);
+                    return (found, late, space, null, null);
                 }
                 catch (Exception exception)
                 {
-                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message);
+                    // Not there to read. Gone, the view goes up to the nearest folder that is.
+                    var nearest = MeansGone(exception) ? NearestFolder(path) : null;
+                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message, nearest);
                 }
             });
 
@@ -999,6 +1016,12 @@ sealed class FolderView : UserControl
         }
 
         loading = false;
+        if (nearest != null)
+        {
+            Open(nearest, null);
+            return;
+        }
+
         FreeSpaceText = free;
         entries = loaded;
         entriesSort = (column, ascending);
@@ -2822,6 +2845,8 @@ sealed class FolderView : UserControl
     {
         Unwatch();
         changes.Reset();
+        parentChanges.Reset();
+        renames.Clear();
         if (ListsPlaces)
         {
             return;
@@ -2839,13 +2864,220 @@ sealed class FolderView : UserControl
             // Some locations (certain network shares) can't be watched; F5 still works.
             watcher = null;
         }
+
+        // A drive or a share has no folder above it to watch. Nor is one on the network watched:
+        // starting a watch there waits on the network, on the UI thread, and reading the folder
+        // still finds that it has gone.
+        var parent = Path.GetDirectoryName(CurrentPath);
+        if (parent == null ||
+            IsRemote(CurrentPath))
+        {
+            return;
+        }
+
+        try
+        {
+            parentWatcher = new(
+                parent,
+                NotifyFilters.DirectoryName,
+                parentChanges.Raise,
+                Path.GetFileName(CurrentPath),
+                (from, to) => renames.Enqueue((from, to)));
+        }
+        catch (Exception)
+        {
+            // Not to be watched. Reading the folder still finds that it has gone.
+            parentWatcher = null;
+        }
     }
 
     void Unwatch()
     {
         watcher?.Dispose();
         watcher = null;
+        parentWatcher?.Dispose();
+        parentWatcher = null;
     }
+
+    // The folder's name came or went in its parent. Renamed, by anything, the view follows it to
+    // its new name, as Explorer does. Gone, the view leaves it.
+    bool OnParentChanged()
+    {
+        var renamed = new List<(string From, string To)>();
+        while (renames.TryDequeue(out var rename))
+        {
+            renamed.Add(rename);
+        }
+
+        Follow(renamed);
+        _ = LeaveIfGone();
+        return true;
+    }
+
+    // A move or rename Lode did, heard on its thread, before what it let go of is watched again.
+    // Posted, so it is followed ahead of anything those watches then report.
+    void OnMoved(IReadOnlyList<(string From, string To)> moved)
+    {
+        try
+        {
+            context.Post(_ => Follow(moved), null);
+        }
+        catch (InvalidOperationException)
+        {
+            // Lode is exiting, and there is no longer a UI thread to tell.
+        }
+    }
+
+    /// <summary>
+    /// Follows folders moved or renamed, from where to where, as Explorer does: showing one, or
+    /// a folder inside it, the view goes to where that is now, with what was selected still
+    /// selected. Somewhere in the history inside one is where it went too, so Back goes there.
+    /// </summary>
+    internal void Follow(IReadOnlyList<(string From, string To)> moved)
+    {
+        if (IsDisposed ||
+            moved.Count == 0)
+        {
+            return;
+        }
+
+        for (var index = 0; index < history.Count; index++)
+        {
+            history[index] = MovedTo(history[index], moved);
+        }
+
+        // A change of case alone is followed too, for the tab's name.
+        var target = MovedTo(CurrentPath, moved);
+        if (ListsPlaces ||
+            string.Equals(target, CurrentPath, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var kept = KeepMoved(moved);
+        if (historyIndex < 0)
+        {
+            Open(target, null, kept);
+            return;
+        }
+
+        history[historyIndex] = target;
+        Open(target, historyIndex, kept);
+    }
+
+    // Where a path is now, after each move in turn.
+    static string MovedTo(string path, IReadOnlyList<(string From, string To)> moved)
+    {
+        foreach (var (from, to) in moved)
+        {
+            path = Locations.Moved(path, from, to) ?? path;
+        }
+
+        return path;
+    }
+
+    // What is selected, and has the focus, by where each now is, to select again once the folder
+    // has been read where it went.
+    Kept KeepMoved(IReadOnlyList<(string From, string To)> moved)
+    {
+        HashSet<string> selected;
+        string? focused;
+        int topIndex;
+
+        // Let go of while nobody was looking: what it held was remembered then.
+        if (entries.Count == 0 &&
+            remembered is { } kept)
+        {
+            selected = kept.Selected;
+            focused = kept.Focused;
+            topIndex = kept.TopIndex;
+        }
+        else
+        {
+            selected = SelectedEntries()
+                .Select(_ => _.FullPath)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            focused = (list.FocusedItem?.Tag as FileEntry)?.FullPath;
+            topIndex = list.TopItem?.Index ?? -1;
+        }
+
+        var movedFocus = focused == null ? null : MovedTo(focused, moved);
+        return new(
+            selected
+                .Select(_ => MovedTo(_, moved))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase),
+            movedFocus,
+            topIndex);
+    }
+
+    /// <summary>
+    /// Goes up to the nearest folder still there when the one the view shows has gone: deleted,
+    /// sent to the Recycle Bin, renamed or moved, or on a drive that has been taken out. Explorer
+    /// does the same. Asked off the UI thread. Nothing changes while the folder is there, or
+    /// may be: one that can't be asked after, a share that doesn't answer say, hasn't gone.
+    /// </summary>
+    internal async Task LeaveIfGone()
+    {
+        if (ListsPlaces)
+        {
+            return;
+        }
+
+        var path = CurrentPath;
+        var nearest = await Task.Run(() => NearestFolder(path));
+
+        // Not gone, or gone somewhere else meanwhile.
+        if (nearest == null ||
+            IsDisposed ||
+            !Locations.Same(CurrentPath, path))
+        {
+            return;
+        }
+
+        Open(nearest, null);
+    }
+
+    // For a folder that has gone, the nearest above it still there: a machine on the network,
+    // or This PC, if nothing nearer. Null while the folder itself is there, or may be.
+    static string? NearestFolder(string path)
+    {
+        if (!IsGone(path))
+        {
+            return null;
+        }
+
+        var parent = Locations.Parent(path) ?? Locations.ThisPC;
+        while (!Locations.IsThisPC(parent) &&
+               !Locations.IsServer(parent) &&
+               IsGone(parent))
+        {
+            parent = Locations.Parent(parent) ?? Locations.ThisPC;
+        }
+
+        return parent;
+    }
+
+    // Known not to be a folder there: nothing there, or a file in its place. Where it can't be
+    // asked after, as when Lode is denied, or the network doesn't answer, it isn't known to
+    // have gone.
+    static bool IsGone(string path)
+    {
+        try
+        {
+            return !File.GetAttributes(path).HasFlag(FileAttributes.Directory);
+        }
+        catch (Exception exception) when (MeansGone(exception))
+        {
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    static bool MeansGone(Exception exception) =>
+        exception is FileNotFoundException or DirectoryNotFoundException or DriveNotFoundException;
 
     // The folder changed. False while reading it again has to wait: for the read under way, or
     // for the name being edited.
@@ -2910,9 +3142,12 @@ sealed class FolderView : UserControl
     {
         if (disposing)
         {
+            ShellFileOperation.Moved -= OnMoved;
             search?.Cancel();
             changes.Dispose();
+            parentChanges.Dispose();
             watcher?.Dispose();
+            parentWatcher?.Dispose();
             marquee.Dispose();
         }
 

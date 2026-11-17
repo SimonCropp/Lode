@@ -86,6 +86,27 @@ public class LocationsTests
         return Verify(pairs.ToDictionary(_ => $"{_.Path} in {_.Folder}", _ => Locations.IsWithin(_.Path, _.Folder)));
     }
 
+    [Test]
+    public Task Moved()
+    {
+        (string Path, string From, string To)[] moves =
+        [
+            // The folder itself, renamed, and moved into another.
+            (@"C:\Code\Lode", @"C:\Code\Lode", @"C:\Code\Lode2"),
+            (@"C:\Code\Lode", @"C:\Code\Lode", @"D:\Archive\Lode"),
+            // A folder inside it goes with it.
+            (@"C:\Code\Lode\src\Lode", @"C:\Code\Lode", @"C:\Code\Lode2"),
+            (@"c:\code\lode\src", @"C:\Code\Lode", @"C:\Code\Lode2"),
+            (@"C:\Code\Lode\src\", @"C:\Code\Lode\", @"C:\Code\Lode2\"),
+            // Only the case changed.
+            (@"C:\Code\lode\src", @"C:\Code\lode", @"C:\Code\Lode"),
+            // Beside it, or above it, it stays where it is.
+            (@"C:\Code\LodeTools", @"C:\Code\Lode", @"C:\Code\Lode2"),
+            (@"C:\Code", @"C:\Code\Lode", @"C:\Code\Lode2")
+        ];
+        return Verify(moves.ToDictionary(_ => $"{_.Path} with {_.From} -> {_.To}", _ => Locations.Moved(_.Path, _.From, _.To) ?? "(not within)"));
+    }
+
     // A share is on the network whatever is asked of it. The drive Windows is on is not, and
     // neither is somewhere with no drive at all.
     [Test]

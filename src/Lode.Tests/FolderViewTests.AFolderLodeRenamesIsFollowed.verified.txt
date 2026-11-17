@@ -1,0 +1,11 @@
+﻿{
+  path: Projects/Documents,
+  status: 1 item    1 item selected  900 bytes,
+  filter: ,
+  rows: [
+    file    guide.aleph  900 bytes
+  ],
+  selected: [
+    guide.aleph
+  ]
+}

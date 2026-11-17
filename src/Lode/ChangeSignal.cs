@@ -56,7 +56,9 @@ sealed class ChangeSignal : IDisposable
 
     void Start()
     {
-        if (!disposed)
+        // Not for a change forgotten since it was reported.
+        if (!disposed &&
+            Volatile.Read(ref raised) != 0)
         {
             timer.Start();
         }

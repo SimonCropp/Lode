@@ -63,6 +63,10 @@ sealed class FolderTree : TreeView
     string? selecting;
     int selectVersion;
 
+    // The folder last asked to be selected. One the tree has not caught up with, just made or
+    // renamed, say, is settled short of, and selected once it shows up.
+    string? wanted;
+
     /// <summary>
     /// The reading of folders under way, all of it off the UI thread. Completes once the tree
     /// shows what was read.
@@ -755,6 +759,9 @@ sealed class FolderTree : TreeView
         var paths = directories
             .Select(_ => _.FullPath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // The folder asked to be selected, or one on the way down to it, has shown up.
+        var arrived = false;
         using (this.SuspendPainting())
         {
             foreach (var child in node.Nodes.Cast<TreeNode>().ToList())
@@ -796,7 +803,17 @@ sealed class FolderTree : TreeView
                 }
 
                 nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
+                if (wanted != null &&
+                    Locations.IsWithin(wanted, directory.FullPath))
+                {
+                    arrived = true;
+                }
             }
+        }
+
+        if (arrived)
+        {
+            SelectPath(wanted!);
         }
     }
 
@@ -1082,6 +1099,8 @@ sealed class FolderTree : TreeView
     /// </summary>
     public void SelectPath(string path)
     {
+        wanted = path;
+
         // A selected shortcut still moves to the folder in the tree below, when there is one.
         if (SelectedNode is { Tag: string selected } current &&
             Locations.Same(selected, path) &&

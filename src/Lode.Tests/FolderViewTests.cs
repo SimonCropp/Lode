@@ -355,6 +355,163 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // As in Explorer: the folder deleted from under the view, from Lode or from anywhere else,
+    // takes it up to the folder it was in.
+    [Test]
+    public async Task ADeletedFolderIsLeftForTheFolderItWasIn()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Source"));
+
+        Directory.Delete(fixture.At("Source"), true);
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).Contains("Docs");
+        await Assert.That(Names(view)).DoesNotContain("Source");
+        await Assert.That(view.StatusText).DoesNotContain("find");
+    }
+
+    // Sent to the Recycle Bin, a folder is moved there, and the view's watch on it goes with it.
+    // It is seen to go from the folder it was in.
+    [Test]
+    public async Task AFolderMovedAwayIsLeftForTheFolderItWasIn()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+
+        Directory.Move(fixture.At("Docs"), fixture.At("Archive", "Docs"));
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).DoesNotContain("Docs");
+    }
+
+    // As in Explorer: the folder renamed by another program, the view follows it to its new
+    // name, seen from the folder it is in.
+    [Test]
+    public async Task AFolderRenamedElsewhereIsFollowed()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+
+        Directory.Move(fixture.At("Docs"), fixture.At("Manuals"));
+        await Pump.Until(() => view.CurrentPath == fixture.At("Manuals"));
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).Contains("guide.aleph");
+    }
+
+    // Renamed by Lode, from the tree say, the view follows it, with what was selected still
+    // selected, and Back still goes where it went before.
+    [Test]
+    public async Task AFolderLodeRenamesIsFollowed()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Reveal(fixture.At("Docs", "guide.aleph"));
+        await Pump.Loaded(view);
+
+        FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "Documents");
+        await Pump.Until(() => view.CurrentPath == fixture.At("Documents"));
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+
+        view.GoBack();
+        await Pump.Loaded(view);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+    }
+
+    // A change of case alone is followed too, so the tab is named as the folder now is.
+    [Test]
+    public async Task AFolderRenamedToAnotherCaseIsFollowed()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+
+        FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "DOCS");
+        await Pump.Until(() => view.CurrentPath == fixture.At("DOCS"));
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).Contains("guide.aleph");
+    }
+
+    // Moved by Lode, a folder above the one showing takes the view with it.
+    [Test]
+    public async Task AFolderLodeMovesIsFollowedFromInsideIt()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Source", "Deep"));
+
+        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("Source")], fixture.At("Archive"), move: true);
+        await Pump.Until(() => view.CurrentPath == fixture.At("Archive", "Source", "Deep"));
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).Contains("leaf.aleph");
+    }
+
+    // Somewhere in the history that moved is where it went, so Back goes there rather than to
+    // somewhere that is no longer there.
+    [Test]
+    public async Task BackGoesWhereAFolderInTheHistoryWent()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+        view.GoUp();
+        await Pump.Loaded(view);
+
+        FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "Documents");
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+        view.GoBack();
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Documents"));
+    }
+
+    // Past the folders above it that have gone too, to the nearest still there.
+    [Test]
+    public async Task AFolderGoneWithTheOneAboveItIsLeftForTheNearestStillThere()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Source", "Deep"));
+
+        Directory.Delete(fixture.At("Source"), true);
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).DoesNotContain("Source");
+    }
+
+    // A tab nobody could see when its folder went reads it when it shows, and finding it gone,
+    // goes up instead.
+    [Test]
+    public async Task AFolderThatWentOutOfSightIsLeftWhenTheViewShows()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Showing = false;
+        view.Navigate(fixture.At("Docs"));
+
+        Directory.Delete(fixture.At("Docs"), true);
+        view.Showing = true;
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).DoesNotContain("Docs");
+    }
+
+    [Test]
+    public async Task AFolderStillThereIsNotLeft()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+
+        await view.LeaveIfGone();
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Docs"));
+    }
+
     // Whether somewhere on the network is there is asked off the UI thread, since the answer
     // can be a long time coming. The view stays where it is, saying what it is looking for,
     // until it has heard.

@@ -273,6 +273,25 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // Asked for a folder it has not caught up with, one just made or renamed, the tree settles
+    // on the folder it is in, and selects it once it shows up there.
+    [Test]
+    public async Task SelectionCatchesUpWithAFolderThatShowsUpLater()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+
+        tree.SelectPath(fixture.At("Fresh"));
+        await Pump.Loaded(tree);
+        var settled = tree.SelectedNode?.Tag;
+        Directory.CreateDirectory(fixture.At("Fresh"));
+        await Pump.Until(() => fixture.At("Fresh").Equals(tree.SelectedNode?.Tag));
+
+        await Assert.That(settled).IsEqualTo(fixture.Root);
+    }
+
     [Test]
     public async Task PicksUpFoldersAddedAndRemovedOnDisk()
     {

@@ -80,6 +80,36 @@ public class FileOperationsTests
         await Verify(fixture.Tree());
     }
 
+    // Windows won't move or rename a folder while anything beneath it is watched, as a tab
+    // showing a folder inside it, or a folder expanded beneath it in the tree, is. Lode lets go
+    // of its own watches for the length of its own operation, and finds the folder gone after.
+    [Test]
+    public async Task MoveAndRenameAFolderWithOneInsideItWatched()
+    {
+        using var fixture = Fixture.Create();
+        using var inSource = new FolderWatcher(fixture.At("Source", "Deep"), NotifyFilters.DirectoryName, () => { });
+        using var inDocs = new FolderWatcher(fixture.At("Docs"), NotifyFilters.DirectoryName, () => { });
+        Directory.CreateDirectory(fixture.At("Docs", "Drafts"));
+        using var inDrafts = new FolderWatcher(fixture.At("Docs", "Drafts"), NotifyFilters.DirectoryName, () => { });
+
+        var moved = await FileOperations.Transfer(IntPtr.Zero, [fixture.At("Source")], fixture.At("Archive"), move: true);
+        var renamed = FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "Documents");
+
+        await Verify(
+            new
+            {
+                moved,
+                renamed,
+                stillWatching = new
+                {
+                    inSource = inSource.IsWatching,
+                    inDocs = inDocs.IsWatching,
+                    inDrafts = inDrafts.IsWatching
+                },
+                tree = fixture.Tree()
+            });
+    }
+
     [Test]
     public async Task MoveIntoSameFolderChangesNothing()
     {

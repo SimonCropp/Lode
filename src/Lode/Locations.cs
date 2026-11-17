@@ -134,6 +134,21 @@ static class Locations
                (path.Length > folder.Length && path[folder.Length] == Path.DirectorySeparatorChar);
     }
 
+    /// <summary>
+    /// Where <paramref name="path"/> is now that <paramref name="from"/>, it or a folder above
+    /// it, has been moved or renamed to <paramref name="to"/>. Null for a path not within it.
+    /// </summary>
+    public static string? Moved(string path, string from, string to)
+    {
+        if (!IsWithin(path, from))
+        {
+            return null;
+        }
+
+        var rest = Path.TrimEndingDirectorySeparator(path.AsSpan())[Path.TrimEndingDirectorySeparator(from.AsSpan()).Length..];
+        return string.Concat(Path.TrimEndingDirectorySeparator(to.AsSpan()), rest);
+    }
+
     public static string? Normalize(CharSpan input)
     {
         var text = Environment.ExpandEnvironmentVariables(input.Trim().Trim('"').ToString());

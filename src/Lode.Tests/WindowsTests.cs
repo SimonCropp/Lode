@@ -499,6 +499,42 @@ public class WindowsTests
         await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source"));
     }
 
+    // As in Explorer: the folder a tab shows going takes the tab up to the folder it was in,
+    // and the tab and the window are named for that.
+    [Test]
+    public async Task ATabWhoseFolderIsDeletedGoesUp()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.At("Docs"));
+        var before = Describe(form);
+
+        Directory.Delete(fixture.At("Docs"), true);
+        await Pump.Until(() => form.ActiveView!.CurrentPath == fixture.Root);
+        await Pump.Loaded(form.ActiveView!);
+
+        await Verify(
+            new
+            {
+                before,
+                after = Describe(form)
+            });
+    }
+
+    // As in Explorer: the folder a tab shows renamed, the tab follows it, and the tab and the
+    // window are named for its new name.
+    [Test]
+    public async Task ATabWhoseFolderIsRenamedFollowsIt()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.At("Docs"));
+
+        FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "Documents");
+        await Pump.Until(() => form.ActiveView!.CurrentPath == fixture.At("Documents"));
+        await Pump.Loaded(form.ActiveView!);
+
+        await Verify(Describe(form));
+    }
+
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
         Show(fixture, new(), paths);
 

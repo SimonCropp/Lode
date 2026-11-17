@@ -2,29 +2,50 @@
 /// Watches a folder for changes, and lets go of it while its drive is being removed, locked or
 /// dismounted, so Lode never stops "Safely remove" with "this device is currently in use". When
 /// that is called off it watches again and reports a change, since some may have been missed.
-/// Throws, as FileSystemWatcher does, where the folder can't be watched.
+/// It lets go the same way while Lode moves, renames or deletes the folder, or one above it:
+/// see <see cref="LetGo"/>. Throws, as FileSystemWatcher does, where the folder can't be watched.
 /// </summary>
 sealed class FolderWatcher : IDisposable
 {
+    // Every folder watcher there is, for LetGo to find those beneath what is being moved.
+    static readonly Lock everyGate = new();
+    static readonly List<FolderWatcher> every = [];
+
     string path;
     NotifyFilters filter;
+    string? name;
     Action changed;
+    Action<string, string>? renamed;
     Lock gate = new();
     IDisposable removal;
     FileSystemWatcher? watcher;
     bool disposed;
+    bool driveGoing;
+
+    // How many operations under way have it let go of the folder.
+    int lettingGo;
 
     /// <param name="changed">Called on a background thread for each change.</param>
-    public FolderWatcher(string path, NotifyFilters filter, Action changed)
+    /// <param name="name">Only changes to what has this name in the folder, rather than to
+    /// anything in it.</param>
+    /// <param name="renamed">Called on a background thread, from where and to where, for
+    /// something renamed in the folder, before <paramref name="changed"/> is.</param>
+    public FolderWatcher(string path, NotifyFilters filter, Action changed, string? name = null, Action<string, string>? renamed = null)
     {
         this.path = path;
         this.filter = filter;
+        this.name = name;
         this.changed = changed;
+        this.renamed = renamed;
         watcher = Start();
         var root = Path.GetPathRoot(path);
         removal = root is { Length: > 0 } && !Locations.IsNetwork(root)
             ? DriveRemoval.Subscribe(root, DriveChanged)
             : DriveRemoval.None;
+        lock (everyGate)
+        {
+            every.Add(this);
+        }
     }
 
     FileSystemWatcher Start()
@@ -33,10 +54,19 @@ sealed class FolderWatcher : IDisposable
         {
             NotifyFilter = filter
         };
+        if (name != null)
+        {
+            started.Filter = name;
+        }
+
         started.Created += (_, _) => changed();
         started.Deleted += (_, _) => changed();
         started.Changed += (_, _) => changed();
-        started.Renamed += (_, _) => changed();
+        started.Renamed += (_, eventArgs) =>
+        {
+            renamed?.Invoke(eventArgs.OldFullPath, eventArgs.FullPath);
+            changed();
+        };
 
         // Too many changes at once to keep track of, or the folder itself has gone. Either way,
         // read it again.
@@ -46,7 +76,7 @@ sealed class FolderWatcher : IDisposable
     }
 
     /// <summary>
-    /// Whether the folder is being watched now, rather than let go of for its drive.
+    /// Whether the folder is being watched now, rather than let go of.
     /// </summary>
     internal bool IsWatching
     {
@@ -62,6 +92,7 @@ sealed class FolderWatcher : IDisposable
     // On the notification's thread, which Windows waits on before going ahead with the removal.
     internal void DriveChanged(bool going)
     {
+        bool report;
         lock (gate)
         {
             if (disposed)
@@ -69,33 +100,143 @@ sealed class FolderWatcher : IDisposable
                 return;
             }
 
-            if (going)
-            {
-                watcher?.Dispose();
-                watcher = null;
-                return;
-            }
-
-            if (watcher != null)
-            {
-                return;
-            }
-
-            try
-            {
-                watcher = Start();
-            }
-            catch (Exception)
-            {
-                // The drive went after all, or the folder with it.
-            }
+            driveGoing = going;
+            report = Refresh();
         }
 
-        changed();
+        if (report)
+        {
+            changed();
+        }
+    }
+
+    // Watches, or lets go, as the drive and the operations under way allow. Under the gate. True
+    // when it has just tried to watch again, which is reported as a change: some may have been
+    // missed while it was not watching, or the folder may have gone.
+    bool Refresh()
+    {
+        if (driveGoing ||
+            lettingGo > 0)
+        {
+            watcher?.Dispose();
+            watcher = null;
+            return false;
+        }
+
+        if (watcher != null)
+        {
+            return false;
+        }
+
+        try
+        {
+            watcher = Start();
+        }
+        catch (Exception)
+        {
+            // The drive went after all, or the folder with it.
+        }
+
+        return true;
+    }
+
+    // What is watched: the folder, or what has the name in it.
+    string Watched
+    {
+        get
+        {
+            if (name == null)
+            {
+                return path;
+            }
+
+            return Path.Join(path, name);
+        }
+    }
+
+    /// <summary>
+    /// Lets go of every folder watched at or beneath <paramref name="folders"/> until the result
+    /// is disposed, and of every watch for one of them by name in the folder it is in. Each is
+    /// then watched again, if it is still there, and reports a change. Windows won't move a
+    /// folder, rename it or send it to the Recycle Bin while anything beneath it is watched, so
+    /// Lode lets go of its own watches for its own operations: a tab showing a folder inside the
+    /// one being deleted, or a folder expanded beneath it in the tree, would otherwise stop it.
+    /// A watch for it by name doesn't stop it, but is quiet until the operation is done, which
+    /// tells what went where.
+    /// </summary>
+    public static IDisposable LetGo(IReadOnlyCollection<string> folders)
+    {
+        List<FolderWatcher> beneath;
+        lock (everyGate)
+        {
+            beneath = every
+                .Where(_ => folders.Any(folder => Locations.IsWithin(_.Watched, folder)))
+                .ToList();
+        }
+
+        foreach (var watcher in beneath)
+        {
+            watcher.Hold();
+        }
+
+        return new Release(beneath);
+    }
+
+    void Hold()
+    {
+        lock (gate)
+        {
+            lettingGo++;
+            Refresh();
+        }
+    }
+
+    void Unhold()
+    {
+        bool report;
+        lock (gate)
+        {
+            lettingGo--;
+            if (disposed)
+            {
+                return;
+            }
+
+            report = Refresh();
+        }
+
+        if (report)
+        {
+            changed();
+        }
+    }
+
+    sealed class Release(List<FolderWatcher> watchers) : IDisposable
+    {
+        bool released;
+
+        public void Dispose()
+        {
+            if (released)
+            {
+                return;
+            }
+
+            released = true;
+            foreach (var watcher in watchers)
+            {
+                watcher.Unhold();
+            }
+        }
     }
 
     public void Dispose()
     {
+        lock (everyGate)
+        {
+            every.Remove(this);
+        }
+
         lock (gate)
         {
             disposed = true;

@@ -44,6 +44,13 @@ static class ShellFileOperation
     public sealed record Outcome(bool Succeeded, IReadOnlyList<Change> Changes);
 
     /// <summary>
+    /// What a move or a rename took from where to where, for a tab showing a folder that went,
+    /// or one inside it, to follow. Raised on the operation's thread, before the folders it
+    /// let go of are watched again.
+    /// </summary>
+    public static event Action<IReadOnlyList<(string From, string To)>>? Moved;
+
+    /// <summary>
     /// Runs one operation over <paramref name="sources"/>. <paramref name="destination"/> is the
     /// folder to copy or move into, or the new name for a rename.
     /// </summary>
@@ -64,6 +71,10 @@ static class ShellFileOperation
 
     public static Outcome Run(IntPtr owner, Kind kind, IReadOnlyList<Item> items, uint flags)
     {
+        // Windows won't move a folder, rename it or send it to the Recycle Bin while anything
+        // beneath it is watched, Lode's own watches included, so those let go until it is done.
+        // A copy leaves what it copies where it is.
+        using var letGo = kind == Kind.Copy ? null : FolderWatcher.LetGo(items.Select(_ => _.Source).ToList());
         var operation = (IFileOperation)new FileOperationObject();
         var created = new List<IShellItem>();
         var folders = new Dictionary<string, IShellItem>(StringComparer.OrdinalIgnoreCase);
@@ -95,8 +106,15 @@ static class ShellFileOperation
                 }
             }
 
-            // Fails when the user cancels, which is not an error worth an exception.
-            if (operation.PerformOperations() < 0)
+            // Fails when the user cancels, which is not an error worth an exception. What was
+            // done before then still went where it went.
+            var performed = operation.PerformOperations() >= 0;
+            if (kind is Kind.Move or Kind.Rename)
+            {
+                TellMoved(sink.Changes);
+            }
+
+            if (!performed)
             {
                 return new(false, sink.Changes);
             }
@@ -128,6 +146,20 @@ static class ShellFileOperation
             }
 
             return folder;
+        }
+    }
+
+    static void TellMoved(IReadOnlyList<Change> changes)
+    {
+        var moved = changes
+            // A change of case only is followed too, for the tab's name.
+            .Where(_ => _.Result != null &&
+                        !string.Equals(_.Source, _.Result, StringComparison.Ordinal))
+            .Select(_ => (_.Source, _.Result!))
+            .ToList();
+        if (moved.Count > 0)
+        {
+            Moved?.Invoke(moved);
         }
     }
 

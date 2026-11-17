@@ -1,0 +1,18 @@
+﻿{
+  whileMoving: {
+    deep: false,
+    source: false,
+    docs: true,
+    root: true
+  },
+  after: {
+    deep: false,
+    source: false,
+    docs: true,
+    root: true
+  },
+  reported: {
+    deep: true,
+    source: true
+  }
+}
