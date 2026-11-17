@@ -61,7 +61,8 @@ static class ExplorerStyle
     public static Color AddressRow => Pick(Color.FromArgb(0xF8, 0xF8, 0xF8), Color.FromArgb(0x1C, 0x1C, 0x1C), SystemColors.Control);
 
     /// <summary>
-    /// The line along the foot of the command bar, between it and the panes.
+    /// The line along the foot of the command bar, between it and the panes, and along the top
+    /// of the status bar, between the panes and it.
     /// </summary>
     public static Color Divider => Pick(Color.FromArgb(0xD6, 0xD6, 0xD6), Color.FromArgb(0x2B, 0x2B, 0x2B), SystemColors.ControlDark);
 

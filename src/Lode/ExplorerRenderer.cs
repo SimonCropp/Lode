@@ -1,8 +1,9 @@
 /// <summary>
 /// The command bar, status bar and menus drawn as Explorer's are. The bars are flat white, the
-/// command bar between two lines, and a button on it is shaded under the mouse, its corners
-/// rounded. The menus are off white, with rounded corners and roomy rows, and the entry under
-/// the mouse is shaded the same way, set in from the menu's edges.
+/// command bar between two lines and the status bar with one along its top, and a button on the
+/// command bar is shaded under the mouse, its corners rounded. The menus are off white, with
+/// rounded corners and roomy rows, and the entry under the mouse is shaded the same way, set in
+/// from the menu's edges.
 /// </summary>
 sealed class ExplorerRenderer : ToolStripSystemRenderer
 {
@@ -169,13 +170,16 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             return;
         }
 
+        using var pen = new Pen(ExplorerStyle.Divider);
+
+        // Along the top of the status bar, between it and the panes, which are as white as it is.
         if (strip is StatusStrip)
         {
+            eventArgs.Graphics.DrawLine(pen, 0, 0, strip.Width, 0);
             return;
         }
 
         // Above and below the command bar: between it and the address row, and it and the panes.
-        using var pen = new Pen(ExplorerStyle.Divider);
         eventArgs.Graphics.DrawLine(pen, 0, 0, strip.Width, 0);
         eventArgs.Graphics.DrawLine(pen, 0, strip.Height - 1, strip.Width, strip.Height - 1);
     }
