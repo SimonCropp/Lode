@@ -1261,10 +1261,16 @@ sealed class FolderView : UserControl
         {
             return;
         }
-        catch (Exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
         {
             // The folder went, or a subfolder could not be read part way through. What was
             // found before that stays.
+        }
+        catch (Exception exception)
+        {
+            // Not the folder: Lode's own. Reported here, as nothing awaits the search, and what
+            // was found before it stays.
+            IssueLauncher.LaunchForException("Search failed", exception);
         }
 
         if (cancel.IsCancellationRequested ||

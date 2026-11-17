@@ -13,6 +13,13 @@ public static class ModuleInitializer
         // not put up WinForms' error dialog and leave the run waiting for someone to click.
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
 
+        // Likewise an error Lode would offer an issue for: a bug, which fails the test rather
+        // than asking, in a box nobody is there to answer.
+        IssueLauncher.Declined = text => throw new(text);
+
+        // And settings a test could not save, which fail it too.
+        Settings.Unsaved = (path, exception) => throw new($"Could not save settings to {path}", exception);
+
         // Unscaled, so captures describe the app rather than the display of whoever ran them.
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
         Application.EnableVisualStyles();

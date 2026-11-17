@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 /// <summary>
 /// Opens a new GitHub issue on Lode's repository in the browser, with its title and body filled
 /// in: from About, blank but for the version and OS, and after an error nothing caught, offered
@@ -67,6 +65,13 @@ static class IssueLauncher
              """;
         OpenUrl(BuildUrl(message, extraBody));
     }
+
+    /// <summary>
+    /// For a failure on a thread that must not wait on the question: a callback Windows is
+    /// waiting on, or the finalizer thread. Asked from a thread of the pool.
+    /// </summary>
+    public static void LaunchForExceptionLater(string message, Exception exception) =>
+        ThreadPool.QueueUserWorkItem(_ => LaunchForException(message, exception));
 
     /// <summary>
     /// Puts the question, and answers whether it was declined. A field so that a test can decline

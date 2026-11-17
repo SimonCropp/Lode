@@ -184,9 +184,11 @@ static unsafe partial class DriveRemoval
                 subscriber(going);
             }
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // Nothing can be reported from here, and Windows must get its answer.
+            // A subscriber is Lode's own, so what it threw is a bug. Windows must get its answer
+            // first, so the question is put from elsewhere.
+            IssueLauncher.LaunchForExceptionLater(exception.Message, exception);
         }
 
         return 0;

@@ -68,6 +68,18 @@ static class Program
         Settings.SeedFromInstalled();
         var settings = Settings.Load(Settings.DefaultPath);
 
+        // Before the first window, so starting with the defaults is not mistaken for tabs and
+        // options lost.
+        if (settings.LoadProblem != null)
+        {
+            MessageBox.Show(settings.LoadProblem, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        if (settings.LoadBug != null)
+        {
+            IssueLauncher.LaunchForException("Failed to load settings", settings.LoadBug);
+        }
+
         // Before the first window, which takes its colours from it.
         ExplorerStyle.Use(settings.Theme);
 
@@ -84,6 +96,18 @@ static class Program
             if (eventArgs.ExceptionObject is Exception exception)
             {
                 IssueLauncher.LaunchForException(exception.Message, exception);
+            }
+        };
+
+        // One a task threw that nothing awaited, such as a tab's load, which reaches neither of
+        // the above and was otherwise lost. Told when the task is collected, on the finalizer
+        // thread, so asked from another.
+        TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+        {
+            eventArgs.SetObserved();
+            foreach (var exception in eventArgs.Exception.Flatten().InnerExceptions)
+            {
+                IssueLauncher.LaunchForExceptionLater(exception.Message, exception);
             }
         };
         Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));

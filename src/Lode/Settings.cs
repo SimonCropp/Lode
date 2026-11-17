@@ -218,9 +218,30 @@ sealed class Settings
         }
     }
 
+    /// <summary>
+    /// What went wrong reading the settings file, for Lode to tell the user as it starts. Null
+    /// when it was read, or there was none. Neither this nor <see cref="LoadBug"/> is saved.
+    /// </summary>
+    internal string? LoadProblem;
+
+    /// <summary>
+    /// What reading the settings file threw that was neither the disk nor the file being corrupt,
+    /// which is Lode's own doing and so offered as an issue.
+    /// </summary>
+    internal Exception? LoadBug;
+
+    /// <summary>
+    /// A settings file that cannot be read never stops Lode starting, nor is it lost: the first
+    /// save would otherwise write the defaults over every tab and option in it. A corrupt one is
+    /// moved aside and the settings saved afresh. One that could not be opened, locked or not
+    /// permitted, is left as it is and not saved over while Lode runs.
+    /// </summary>
     public static Settings Load(string path)
     {
         Settings? settings = null;
+        string? problem = null;
+        Exception? bug = null;
+        var savable = true;
         try
         {
             if (File.Exists(path))
@@ -228,16 +249,90 @@ sealed class Settings
                 settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path));
             }
         }
-        catch (Exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
         {
-            // A corrupt settings file should never stop the app from starting.
+            problem = $"""
+                       Lode couldn't read its settings from {path}
+
+                       {exception.Message}
+
+                       It started with the defaults, and leaves the file as it is rather than save over it.
+                       """;
+            savable = false;
+        }
+        catch (Exception exception)
+        {
+            // A JsonException is the file, corrupt. Anything else is Lode's.
+            if (exception is not JsonException)
+            {
+                bug = exception;
+            }
+
+            (problem, savable) = KeepAside(path, exception);
         }
 
         settings ??= new();
-        settings.filePath = path;
+        if (savable)
+        {
+            settings.filePath = path;
+        }
+
+        settings.LoadProblem = problem;
+        settings.LoadBug = bug;
         settings.SplitGit();
         return settings;
     }
+
+    internal static string UnreadablePath(string path) =>
+        Path.Combine(Path.GetDirectoryName(path)!, $"{Path.GetFileNameWithoutExtension(path)}.unreadable{Path.GetExtension(path)}");
+
+    static (string Problem, bool Savable) KeepAside(string path, Exception exception)
+    {
+        var kept = UnreadablePath(path);
+        try
+        {
+            File.Move(path, kept, overwrite: true);
+        }
+        catch (Exception moveException) when (moveException is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return ($"""
+                     Lode couldn't read its settings in {path}, so it started with the defaults.
+
+                     {exception.Message}
+
+                     Nor could it move the file aside ({moveException.Message}), so it leaves it as it is rather than save over it.
+                     """, false);
+        }
+
+        return ($"""
+                 Lode couldn't read its settings in {path}, so it started with the defaults.
+
+                 {exception.Message}
+
+                 The file is kept as {kept}, and the settings are saved afresh.
+                 """, true);
+    }
+
+    // Each reason told once a run: a disk that is full or read only fails every save, and every
+    // window that closes saves.
+    static readonly ConcurrentDictionary<string, byte> unsavedReasons = new();
+
+    /// <summary>
+    /// Tells the user the settings could not be written. A field so that a test is not left
+    /// waiting on a modal box nobody is there to answer.
+    /// </summary>
+    internal static Action<string, Exception> Unsaved = static (path, exception) =>
+        MessageBox.Show(
+            $"""
+             Lode couldn't save its settings to {path}
+
+             {exception.Message}
+
+             Changes to Lode's settings are lost when it closes, unless a later save gets through.
+             """,
+            "Lode",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
 
     public void Save()
     {
@@ -251,9 +346,21 @@ sealed class Settings
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             File.WriteAllText(filePath, JsonSerializer.Serialize(this, serializerOptions));
         }
-        catch (Exception)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
         {
-            // Settings are a convenience; failing to persist them is not fatal.
+            // The disk, or the file's permissions: nothing Lode did wrong, but what was changed
+            // is lost when Lode ends unless a later save gets through, so the user is told.
+            if (unsavedReasons.TryAdd(exception.Message, 0))
+            {
+                Unsaved(filePath, exception);
+            }
+        }
+        catch (Exception exception)
+        {
+            // Not the disk: settings that do not serialize, which is Lode's own doing and would
+            // stop them being saved from then on. Reported rather than thrown, as a save is
+            // often the last thing a window does as it closes.
+            IssueLauncher.LaunchForException("Failed to save settings", exception);
         }
     }
 }

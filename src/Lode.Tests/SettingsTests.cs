@@ -68,4 +68,48 @@ public class SettingsTests
 
         await Verify(Settings.Load(path));
     }
+
+    /// <summary>
+    /// The first save would otherwise write the defaults over it, and every tab and option in it
+    /// was gone without a word.
+    /// </summary>
+    [Test]
+    public async Task CorruptFileIsKeptAsideAndSaid()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        await File.WriteAllTextAsync(path, "{ not json");
+
+        var settings = Settings.Load(path);
+        settings.ShowHidden = true;
+        settings.Save();
+
+        var kept = Settings.UnreadablePath(path);
+        await Assert.That(await File.ReadAllTextAsync(kept)).IsEqualTo("{ not json");
+        await Assert.That(Settings.Load(path).ShowHidden).IsTrue();
+        await Assert.That(settings.LoadProblem).Contains(kept);
+        await Assert.That(settings.LoadBug).IsNull();
+    }
+
+    /// <summary>
+    /// Locked by another program, say, and quite possibly fine: not saved over with the defaults.
+    /// </summary>
+    [Test]
+    public async Task FileThatCannotBeOpenedIsNotSavedOver()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        await File.WriteAllTextAsync(path, """{ "ShowHidden": true }""");
+
+        Settings settings;
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            settings = Settings.Load(path);
+        }
+
+        settings.Save();
+
+        await Assert.That(settings.LoadProblem).IsNotNull();
+        await Assert.That(await File.ReadAllTextAsync(path)).IsEqualTo("""{ "ShowHidden": true }""");
+    }
 }
