@@ -1567,6 +1567,9 @@ class MainForm : Form
 
     const string projectUrl = "https://github.com/SimonCropp/Lode";
 
+    // Not a URL: the issue's is built when clicked, with the version and OS in its body.
+    const string raiseIssue = "raise-issue";
+
     void ShowAbout()
     {
         var version = typeof(MainForm).Assembly.GetName().Version?.ToString(3);
@@ -1578,13 +1581,23 @@ class MainForm : Form
                     A tabbed file manager with the classic Windows context menu.
 
                     <a href="{projectUrl}">{projectUrl}</a>
+
+                    <a href="{raiseIssue}">Raise an issue</a>
                     """,
             EnableLinks = true,
             Icon = TaskDialogIcon.Information,
             Buttons = { TaskDialogButton.OK }
         };
         page.LinkClicked += (_, eventArgs) =>
-            Process.Start(new ProcessStartInfo(eventArgs.LinkHref) { UseShellExecute = true })?.Dispose();
+        {
+            if (eventArgs.LinkHref == raiseIssue)
+            {
+                IssueLauncher.Launch();
+                return;
+            }
+
+            IssueLauncher.OpenUrl(eventArgs.LinkHref);
+        };
         TaskDialog.ShowDialog(this, page);
     }
 

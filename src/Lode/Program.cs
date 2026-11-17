@@ -74,6 +74,18 @@ static class Program
         // Before the first window, which shows a pending update from the start.
         Updates.Instance = Updates.ForThisCopy(settings);
         var places = Places.ForThisMachine(settings);
+
+        // An exception nothing caught offers an issue for it, in place of WinForms' own error
+        // dialog. One on the UI thread leaves Lode running; one off it ends Lode once answered.
+        Application.ThreadException += (_, eventArgs) =>
+            IssueLauncher.LaunchForException(eventArgs.Exception.Message, eventArgs.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+        {
+            if (eventArgs.ExceptionObject is Exception exception)
+            {
+                IssueLauncher.LaunchForException(exception.Message, exception);
+            }
+        };
         Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }
