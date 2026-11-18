@@ -201,6 +201,64 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // With Expand to open folder off, as Explorer's tree is by default, nothing is read or
+    // expanded: a folder is selected only where the tree already shows it, and where it doesn't,
+    // nothing is, rather than the folder before.
+    [Test]
+    public async Task WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false, ExpandToOpenFolder = false });
+
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        await Pump.Loaded(tree);
+        var notShowing = Dump(tree);
+
+        await Expand(tree, await Projects(tree));
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+        var showing = Dump(tree);
+
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        await Pump.Loaded(tree);
+
+        await Verify(
+            new
+            {
+                notShowing,
+                showing,
+                thenOneNotShowing = Dump(tree)
+            });
+    }
+
+    // Picked where it is pinned, a folder stays selected there, rather than handing on to the
+    // folder under This PC, which would expand down to it.
+    [Test]
+    public async Task WithoutExpandingToTheOpenFolderAPickedPinnedFolderStaysSelected()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false, ExpandToOpenFolder = false }, fixture.At("Source"));
+        var selected = new List<string>();
+        tree.PathSelected += selected.Add;
+
+        tree.SelectByUser(tree.Nodes[0].Nodes[0]);
+        // As the window does once the tab has gone there.
+        tree.SelectPath(fixture.At("Source"));
+        await Pump.For(TimeSpan.FromMilliseconds(100));
+        var picked = Dump(tree);
+
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+
+        await Verify(
+            new
+            {
+                selected = selected.Select(fixture.Relative),
+                picked,
+                thenOneNotShowing = Dump(tree)
+            });
+    }
+
     [Test]
     public async Task PinnedAndRecentAreSeparateSections()
     {

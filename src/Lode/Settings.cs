@@ -34,6 +34,11 @@ sealed class Settings
     // The tree's Recent section: folders Explorer adds to Quick access because they are used often.
     public bool ShowRecent { get; set; } = true;
 
+    // The tree opens out down to the folder the tab shows and selects it there, as Explorer's
+    // does only with its Expand to open folder setting, which is off by default. Off, the tree is
+    // left as it is, and the folder is selected only where it already shows. See FolderTree.
+    public bool ExpandToOpenFolder { get; set; } = true;
+
     // Where each action shows, for those changed in Options: as a button on the actions bar, in
     // the right-click menu, both or neither. Those missing show where LodeActions says.
     public Dictionary<string, ActionPlacement> Actions { get; set; } = [];
@@ -129,6 +134,10 @@ sealed class Settings
     // opens with these in its tree, rather than waiting for Quick access to be read. See Places.
     public List<string> PinnedFolders { get; set; } = [];
     public List<string> RecentFolders { get; set; } = [];
+
+    // The folders removed from the taskbar's jump list, which it leaves out while Quick access
+    // has them. See JumpList.
+    public List<string> JumpListRemoved { get; set; } = [];
 
     // Where a new window opens when it is given nothing else to show. Null for the user folder.
     public string? DefaultDirectory { get; set; }

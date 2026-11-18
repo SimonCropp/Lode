@@ -330,6 +330,33 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // As clicking a folder above in the breadcrumb does.
+    [Test]
+    public async Task GoingToAFolderAboveSelectsTheFolderLeadingBack()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Source", "Deep"));
+
+        view.Navigate(fixture.Root);
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
+    [Test]
+    public async Task BackToAFolderAboveSelectsTheFolderLeft()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Source"));
+        view.Navigate(fixture.At("Source", "Deep"));
+        await Pump.Loaded(view);
+
+        view.GoBack();
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
     [Test]
     public async Task RevealSelectsTheFile()
     {

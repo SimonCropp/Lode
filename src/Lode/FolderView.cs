@@ -635,6 +635,13 @@ sealed class FolderView : UserControl
             historyIndex = history.Count - 1;
         }
 
+        // Gone to a folder above, by Up, the breadcrumb, the tree or Back, it lands with the
+        // folder that leads back selected, as Explorer does.
+        if (keep == null)
+        {
+            pendingSelection ??= Locations.ChildToward(CurrentPath, normalized);
+        }
+
         var sameDrive = Locations.SameRoot(CurrentPath, normalized);
         CurrentPath = normalized;
         filter = "";
@@ -906,15 +913,12 @@ sealed class FolderView : UserControl
 
     public void GoUp()
     {
+        // Open selects the folder left.
         var parent = Locations.Parent(CurrentPath);
-        if (parent == null)
+        if (parent != null)
         {
-            return;
+            Navigate(parent);
         }
-
-        // Land with the folder we just left selected, as Explorer does.
-        pendingSelection = CurrentPath;
-        Navigate(parent);
     }
 
     /// <summary>
@@ -1366,9 +1370,9 @@ sealed class FolderView : UserControl
             sent = Stopwatch.GetTimestamp();
         }
 
-        var subfolders = new FileSystemEnumerable<string>(root, (ref FileSystemEntry entry) => entry.ToFullPath(), options)
+        var subfolders = new FileSystemEnumerable<string>(root, (ref entry) => entry.ToFullPath(), options)
         {
-            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory && CanSearch(ref entry, hiddenSystem)
+            ShouldIncludePredicate = (ref entry) => entry.IsDirectory && CanSearch(ref entry, hiddenSystem)
         };
         foreach (var subfolder in subfolders)
         {
@@ -1376,7 +1380,7 @@ sealed class FolderView : UserControl
             {
                 // Asked of every item, matching or not, so it is where the search notices it has
                 // been let go of, and sends what it has found once it has been holding it a while.
-                ShouldIncludePredicate = (ref FileSystemEntry entry) =>
+                ShouldIncludePredicate = (ref entry) =>
                 {
                     cancel.ThrowIfCancellationRequested();
                     if (batch.Count > 0 &&
@@ -1388,7 +1392,7 @@ sealed class FolderView : UserControl
                     return Matches(pattern, entry.FileName) &&
                            !IsSystem(ref entry, hiddenSystem);
                 },
-                ShouldRecursePredicate = (ref FileSystemEntry entry) => CanSearch(ref entry, hiddenSystem)
+                ShouldRecursePredicate = (ref entry) => CanSearch(ref entry, hiddenSystem)
             };
             try
             {
@@ -2524,15 +2528,19 @@ sealed class FolderView : UserControl
             commands.Add(LodeActions.Pin(folders, places, SetPinned));
         }
 
-        if (allFiles &&
-            selection.All(_ => TextEditors.IsText(_.FullPath)))
-        {
-            commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
-        }
-
         if (allFiles)
         {
             var paths = selection.Select(_ => _.FullPath).ToList();
+            if (PowerShellScripts.AreScripts(paths))
+            {
+                commands.Add(LodeActions.Command("run", () => PowerShellScripts.Run(paths)));
+            }
+
+            if (paths.All(TextEditors.IsText))
+            {
+                commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, paths)));
+            }
+
             if (OpenWith.Extension(paths) is { } extension)
             {
                 commands.Add(LodeActions.Submenu("openWith", QuickMenu.Deferred(() => OpenWithCommands(extension, paths))));

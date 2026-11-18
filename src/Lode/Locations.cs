@@ -203,6 +203,27 @@ static class Locations
         return Path.GetDirectoryName(location) ?? ThisPC;
     }
 
+    /// <summary>
+    /// What is directly in <paramref name="ancestor"/> on the way down to
+    /// <paramref name="location"/>: the drive, for This PC. Null when
+    /// <paramref name="ancestor"/> is not above <paramref name="location"/>.
+    /// </summary>
+    public static string? ChildToward(string location, string ancestor)
+    {
+        var child = location;
+        while (Parent(child) is { } parent)
+        {
+            if (Same(parent, ancestor))
+            {
+                return child;
+            }
+
+            child = parent;
+        }
+
+        return null;
+    }
+
     public static string DisplayName(string location)
     {
         if (IsThisPC(location))

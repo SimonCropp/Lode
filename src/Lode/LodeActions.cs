@@ -64,6 +64,7 @@ static class LodeActions
         new("delete", "Delete", Icons.Delete, 1, Button: true, Menu: true, "Delete", Parent: file),
         new("open", "Open", Icons.Open, 2, Button: false, Menu: true, Parent: open),
         new("openInNewTab", "Open in new tab", Icons.OpenInNewTab, 2, Button: false, Menu: true, Parent: open),
+        new("run", "Run", Icons.Run, 2, Button: false, Menu: true, Parent: open),
         new("edit", "Edit", Icons.Edit, 2, Button: false, Menu: true, Parent: open),
         new("openWith", "Open with", Icons.OpenWith, 2, Button: false, Menu: true, Submenu: true, Parent: open),
         new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true, Parent: terminal, MenuNested: true),

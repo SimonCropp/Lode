@@ -255,12 +255,31 @@ static class FileOperations
         OpenTerminal([directory], admin);
 
     /// <summary>
+    /// A tab of Windows Terminal: the folder it opens in, and what it runs there in place of the
+    /// default profile's shell, a program then its arguments, when <paramref name="Command"/>
+    /// is not empty.
+    /// </summary>
+    public sealed record TerminalTab(string Directory, IReadOnlyList<string> Command);
+
+    /// <summary>
     /// One Windows Terminal window with a tab in each of <paramref name="directories"/>, so
     /// there is one UAC prompt for the lot with <paramref name="admin"/>; or a command prompt
     /// in each where it is not installed. With <paramref name="command"/>, each tab or prompt
     /// runs it, rather than the shell.
     /// </summary>
-    public static void OpenTerminal(IReadOnlyList<string> directories, bool admin = false, string? command = null)
+    public static void OpenTerminal(IReadOnlyList<string> directories, bool admin = false, string? command = null) =>
+        OpenTerminal(
+            directories
+                .Select(_ => new TerminalTab(_, command == null ? [] : [command]))
+                .ToList(),
+            admin);
+
+    /// <summary>
+    /// One Windows Terminal window with <paramref name="tabs"/>, so there is one UAC prompt for
+    /// the lot with <paramref name="admin"/>; or a command prompt for each where it is not
+    /// installed, which runs the tab's command.
+    /// </summary>
+    public static void OpenTerminal(IReadOnlyList<TerminalTab> tabs, bool admin = false)
     {
         var verb = admin ? "runas" : "";
         try
@@ -270,7 +289,7 @@ static class FileOperations
                 UseShellExecute = true,
                 Verb = verb
             };
-            foreach (var argument in TerminalArguments(directories, command))
+            foreach (var argument in TerminalArguments(tabs))
             {
                 startInfo.ArgumentList.Add(argument);
             }
@@ -284,7 +303,7 @@ static class FileOperations
         }
         catch (Exception)
         {
-            foreach (var directory in directories)
+            foreach (var (directory, command) in tabs)
             {
                 // An elevated process starts in System32 whatever its working directory, so the
                 // prompt changes to the folder itself.
@@ -298,10 +317,13 @@ static class FileOperations
                 fallback.ArgumentList.Add("cd");
                 fallback.ArgumentList.Add("/d");
                 fallback.ArgumentList.Add(directory);
-                if (command != null)
+                if (command.Count > 0)
                 {
                     fallback.ArgumentList.Add("&&");
-                    fallback.ArgumentList.Add(command);
+                    foreach (var argument in command)
+                    {
+                        fallback.ArgumentList.Add(argument);
+                    }
                 }
 
                 try
@@ -318,14 +340,14 @@ static class FileOperations
     }
 
     /// <summary>
-    /// What Windows Terminal is started with: the first folder, then a new tab for each of the
-    /// rest, the commands split by semicolons. With <paramref name="command"/>, each tab runs it
-    /// in place of the default profile's shell.
+    /// What Windows Terminal is started with: the first tab, then a new tab for each of the
+    /// rest, the commands split by semicolons. A tab with a command runs it in place of the
+    /// default profile's shell.
     /// </summary>
-    internal static List<string> TerminalArguments(IReadOnlyList<string> directories, string? command = null)
+    internal static List<string> TerminalArguments(IReadOnlyList<TerminalTab> tabs)
     {
         var arguments = new List<string>();
-        foreach (var directory in directories)
+        foreach (var (directory, command) in tabs)
         {
             if (arguments.Count > 0)
             {
@@ -334,15 +356,17 @@ static class FileOperations
             }
 
             arguments.Add("-d");
-            arguments.Add(directory);
-            if (command != null)
-            {
-                arguments.Add(command);
-            }
+            arguments.Add(EscapeSemicolons(directory));
+            arguments.AddRange(command.Select(EscapeSemicolons));
         }
 
         return arguments;
     }
+
+    // Windows Terminal takes a semicolon anywhere in its arguments, even in a folder's name, as
+    // the start of another command, unless a backslash is before it.
+    static string EscapeSemicolons(string argument) =>
+        argument.Replace(";", @"\;", StringComparison.Ordinal);
 
     public static void CopyToClipboard(IReadOnlyCollection<string> paths, bool cut)
     {

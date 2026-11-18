@@ -1,0 +1,22 @@
+﻿{
+  notShowing:
+- This PC
+  + FolderTreeTests.WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected
+,
+  showing:
+- This PC
+  - FolderTreeTests.WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected
+    - Projects
+        Archive
+        Docs   <- selected
+      + Source
+,
+  thenOneNotShowing:
+- This PC
+  - FolderTreeTests.WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected
+    - Projects
+        Archive
+        Docs
+      + Source
+
+}

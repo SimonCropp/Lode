@@ -1,0 +1,13 @@
+﻿{
+  newlyRemoved: [
+    D:\Code,
+    D:\Downloads
+  ],
+  removedBeforeAndSince: [
+    D:\Code,
+    D:\Downloads
+  ],
+  leftQuickAccess: [
+    D:\Code
+  ]
+}

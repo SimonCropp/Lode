@@ -56,6 +56,41 @@ sealed class RegistryScratch : IDisposable
     }
 
     /// <summary>
+    /// A copy of Explorer's own explore verb, as the machine's classes have it on Folder, which
+    /// some tools leave in the user's classes. With a command, as a copy of Explorer's Open verb
+    /// has, of the kind the machine's uses.
+    /// </summary>
+    public void CopyExplorersExplore(string folderClass, string? command = null)
+    {
+        using var explore = Registry.CurrentUser.CreateSubKey($@"{ClassesPath}\{folderClass}\shell\explore");
+        explore.SetValue("LaunchExplorerFlags", 24, RegistryValueKind.DWord);
+        explore.SetValue("MultiSelectModel", "Document");
+        explore.SetValue("ProgrammaticAccessOnly", "");
+        using var commandKey = explore.CreateSubKey("command");
+        commandKey.SetValue("DelegateExecute", "{11dbb47c-a525-400b-9e80-a54615a090c0}");
+        if (command != null)
+        {
+            commandKey.SetValue("", command, RegistryValueKind.ExpandString);
+        }
+    }
+
+    /// <summary>
+    /// A value under the classes key, unexpanded, with its kind. A null name is the key's
+    /// default value.
+    /// </summary>
+    public (object? Value, RegistryValueKind Kind) Raw(string keyPath, string? name)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey($@"{ClassesPath}\{keyPath}")!;
+        var value = key.GetValue(name ?? "", null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+        if (value == null)
+        {
+            return (null, RegistryValueKind.None);
+        }
+
+        return (value, key.GetValueKind(name ?? ""));
+    }
+
+    /// <summary>
     /// Everything under the classes key. Subkey names end in a backslash; "(default)" is a
     /// key's default value.
     /// </summary>

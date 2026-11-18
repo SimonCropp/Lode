@@ -1,0 +1,51 @@
+﻿{
+  script: [
+    Open,
+    Run,
+    Edit,
+    Open with,
+      Choose another app,
+    ----,
+    Cut,
+    Copy,
+    Rename,
+    Delete,
+    ----,
+    Create shortcut,
+    Copy as path,
+    Properties,
+    ----,
+    Show more options
+  ],
+  scripts: [
+    Open,
+    Run,
+    Edit,
+    Open with (disabled),
+    ----,
+    Cut,
+    Copy,
+    Rename (disabled),
+    Delete,
+    ----,
+    Create shortcut,
+    Copy as path,
+    Properties,
+    ----,
+    Show more options
+  ],
+  scriptAndFile: [
+    Open,
+    ----,
+    Cut,
+    Copy,
+    Rename (disabled),
+    Delete,
+    ----,
+    Create shortcut,
+    Copy as path,
+    Properties,
+    ----,
+    Show more options
+  ]
+}

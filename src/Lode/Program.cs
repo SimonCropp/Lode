@@ -110,6 +110,8 @@ static class Program
                 IssueLauncher.LaunchForExceptionLater(exception.Message, exception);
             }
         };
+
+        JumpList.Follow(places, settings);
         Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }

@@ -624,10 +624,10 @@ sealed class FolderTree : TreeView
     {
         var found = new FileSystemEnumerable<(string Name, string FullPath, FileAttributes Attributes)>(
             path,
-            (ref FileSystemEntry entry) => (entry.FileName.ToString(), entry.ToFullPath(), entry.Attributes),
+            (ref entry) => (entry.FileName.ToString(), entry.ToFullPath(), entry.Attributes),
             options)
         {
-            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory
+            ShouldIncludePredicate = (ref entry) => entry.IsDirectory
         };
         foreach (var (name, fullPath, attributes) in found)
         {
@@ -1095,11 +1095,18 @@ sealed class FolderTree : TreeView
     }
 
     /// <summary>
-    /// Moves the selection to the node for <paramref name="path"/>, expanding down to it.
+    /// Moves the selection to the node for <paramref name="path"/>, expanding down to it. With
+    /// <see cref="Settings.ExpandToOpenFolder"/> off, only selects it where it already shows.
     /// </summary>
     public void SelectPath(string path)
     {
         wanted = path;
+
+        if (!settings.ExpandToOpenFolder)
+        {
+            SelectShowing(path);
+            return;
+        }
 
         // A selected shortcut still moves to the folder in the tree below, when there is one.
         if (SelectedNode is { Tag: string selected } current &&
@@ -1119,6 +1126,78 @@ sealed class FolderTree : TreeView
         }
 
         Track(SelectAsync(path));
+    }
+
+    // Without expanding to the open folder, as Explorer's tree is by default: nothing is read,
+    // expanded or scrolled to. The folder is selected where it already shows, a pinned or recent
+    // entry for it included, and otherwise nothing is, rather than a folder it has left.
+    void SelectShowing(string path)
+    {
+        // Anywhere on its way to being selected, from before the option was turned off, has
+        // been overtaken.
+        selectVersion++;
+        selecting = null;
+
+        // A pinned entry just picked stays selected, rather than handing on to the folder below.
+        if (SelectedNode is { Tag: string selected } &&
+            Locations.Same(selected, path))
+        {
+            return;
+        }
+
+        var node = ShowingNode(path);
+        SelectedNode = node;
+
+        // Taking the selection away raises no AfterSelect.
+        if (node == null)
+        {
+            ShowShortcutsSelected(null);
+            WatchSelected(null);
+        }
+    }
+
+    // The node for the folder where the tree shows it: under This PC, down through folders that
+    // are expanded, or else an entry in a Pinned or Recent section that is. Null where it
+    // doesn't show.
+    TreeNode? ShowingNode(string path)
+    {
+        if (Locations.IsThisPC(path))
+        {
+            return places.ShowComputer ? computerNode : null;
+        }
+
+        TreeNode? current = null;
+        if (places.ShowComputer &&
+            computerNode.IsExpanded)
+        {
+            current = computerNode.Nodes
+                .Cast<TreeNode>()
+                .Where(_ => Locations.IsWithin(path, (string)_.Tag!))
+                .MaxBy(_ => ((string)_.Tag!).Length);
+        }
+
+        while (current != null)
+        {
+            if (Locations.Same((string)current.Tag!, path))
+            {
+                return current;
+            }
+
+            if (!current.IsExpanded)
+            {
+                break;
+            }
+
+            current = current.Nodes
+                .Cast<TreeNode>()
+                .FirstOrDefault(_ => _.Tag is string child && Locations.IsWithin(path, child));
+        }
+
+        return Nodes
+            .Cast<TreeNode>()
+            .Where(_ => _ is { Tag: Section, IsExpanded: true })
+            .SelectMany(_ => _.Nodes.Cast<TreeNode>())
+            .FirstOrDefault(_ => Locations.Same((string)_.Tag!, path));
     }
 
     // Goes down to the folder as far as the tree has been read, reads the folders still in the

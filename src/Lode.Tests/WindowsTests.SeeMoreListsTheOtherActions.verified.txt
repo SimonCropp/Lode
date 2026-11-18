@@ -4,6 +4,7 @@
   ----,
   Open,
   Open in new tab (disabled),
+  Run (disabled),
   Edit (disabled),
   Open with,
   Open in Claude,

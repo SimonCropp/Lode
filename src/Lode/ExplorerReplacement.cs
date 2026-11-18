@@ -31,6 +31,16 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     // Lode's, so Restore never removes another tool's.
     const string ownerName = "CreatedBy";
 
+    // The handler Explorer's own verbs name in their DelegateExecute. An explore verb in the
+    // user's classes naming it is a copy of Explorer's (some tools leave one there when they hand
+    // folders back to Explorer), not another file manager's, so Replace takes it over.
+    const string explorerHandler = "{11dbb47c-a525-400b-9e80-a54615a090c0}";
+
+    // Where Replace keeps, on the command key of a copy of Explorer's explore verb it took over,
+    // what that command had, so Restore can give the verb back to Explorer.
+    const string previousHandlerName = "LodePreviousDelegateExecute";
+    const string previousCommandName = "LodePreviousCommand";
+
     // Where Lode is made the default verb. Directory covers every file system folder; Drive
     // covers drive roots. Folder is left alone: it also covers virtual folders (Control Panel,
     // Recycle Bin) that Lode cannot show.
@@ -94,7 +104,8 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     /// <summary>
     /// True when Replace has nothing left to add for this copy: apps that ask for the explore
     /// verb get it too, unless another tool has that verb, which Replace leaves alone. False
-    /// after a Replace by a Lode from before it added the verb, or added it on Folder.
+    /// after a Replace by a Lode from before it added the verb, or added it on Folder, or took
+    /// over a copy of Explorer's.
     /// </summary>
     public bool IsComplete
     {
@@ -115,6 +126,11 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
 
                 if (explore.GetValue(ownerName) as string != verb)
                 {
+                    if (IsExplorers(explore))
+                    {
+                        return false;
+                    }
+
                     continue;
                 }
 
@@ -161,16 +177,27 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         foreach (var exploreClass in exploreClasses)
         {
             using var shell = classes.CreateSubKey($@"{exploreClass}\shell");
-            if (IsOthers(shell, exploreVerb))
+            if (IsOthers(shell))
             {
                 continue;
             }
 
             using var explore = shell.CreateSubKey(exploreVerb);
-            explore.SetValue(ownerName, verb);
-            // As on Explorer's own, which this one hides: off the right-click menu.
-            explore.SetValue("ProgrammaticAccessOnly", "");
             using var commandKey = explore.CreateSubKey("command");
+            if (IsExplorers(explore))
+            {
+                Keep(commandKey, "DelegateExecute", previousHandlerName);
+                Keep(commandKey, "", previousCommandName);
+            }
+
+            // One Replace adds goes off the right-click menu, as Explorer's own on Folder is and
+            // this one hides. A copy of Explorer's that Replace took over stays as it was.
+            if (commandKey.GetValue(previousHandlerName) == null)
+            {
+                explore.SetValue("ProgrammaticAccessOnly", "");
+            }
+
+            explore.SetValue(ownerName, verb);
             commandKey.SetValue("", FolderCommand);
             // The user's classes and the machine's merge value by value, and the machine's
             // explore on Folder names Explorer's handler here, which would win over the command.
@@ -232,7 +259,8 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
             using (var shell = classes.OpenSubKey(shellPath, writable: true))
             {
                 if (shell != null &&
-                    IsLodes(shell, exploreVerb))
+                    IsLodes(shell, exploreVerb) &&
+                    !GiveBackToExplorer(shell))
                 {
                     shell.DeleteSubKeyTree(exploreVerb);
                 }
@@ -257,13 +285,70 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         return key?.GetValue(ownerName) as string == verb;
     }
 
-    // True when the key at path is there but was not added by Replace, so belongs to another
-    // tool.
-    static bool IsOthers(RegistryKey parent, string path)
+    // True when the explore verb under shell is there, but neither Replace's nor a copy of
+    // Explorer's, so belongs to another tool.
+    static bool IsOthers(RegistryKey shell)
     {
-        using var key = parent.OpenSubKey(path);
-        return key != null &&
-               key.GetValue(ownerName) as string != verb;
+        using var explore = shell.OpenSubKey(exploreVerb);
+        return explore != null &&
+               explore.GetValue(ownerName) as string != verb &&
+               !IsExplorers(explore);
+    }
+
+    // True when the explore verb is not Replace's and hands the folder to Explorer's own
+    // handler: a copy of Explorer's in the user's classes. Through it, Chromium and Electron apps
+    // open Explorer.
+    static bool IsExplorers(RegistryKey explore)
+    {
+        if (explore.GetValue(ownerName) as string == verb)
+        {
+            return false;
+        }
+
+        using var commandKey = explore.OpenSubKey("command");
+        return commandKey?.GetValue("DelegateExecute") is string handler &&
+               handler.Equals(explorerHandler, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Copies a value, as it is and of the same kind, to where Restore finds it. Nothing when the
+    // value is not there.
+    static void Keep(RegistryKey key, string name, string keptName)
+    {
+        if (key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is { } value)
+        {
+            key.SetValue(keptName, value, key.GetValueKind(name));
+        }
+    }
+
+    // Undoes Keep: puts the value back, or deletes it when Keep found none, and drops the copy.
+    static void PutBack(RegistryKey key, string name, string keptName)
+    {
+        if (key.GetValue(keptName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is { } value)
+        {
+            key.SetValue(name, value, key.GetValueKind(keptName));
+            key.DeleteValue(keptName);
+        }
+        else
+        {
+            key.DeleteValue(name, throwOnMissingValue: false);
+        }
+    }
+
+    // Gives a copy of Explorer's explore verb that Replace took over back to Explorer, as it
+    // was. False when Replace added the verb, so it is Restore's to delete.
+    static bool GiveBackToExplorer(RegistryKey shell)
+    {
+        using var explore = shell.OpenSubKey(exploreVerb, writable: true)!;
+        using var commandKey = explore.OpenSubKey("command", writable: true);
+        if (commandKey?.GetValue(previousHandlerName) == null)
+        {
+            return false;
+        }
+
+        PutBack(commandKey, "DelegateExecute", previousHandlerName);
+        PutBack(commandKey, "", previousCommandName);
+        explore.DeleteValue(ownerName);
+        return true;
     }
 
     // Deletes the key at path, then each parent in turn, for as long as they are empty. Stops
@@ -301,9 +386,24 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     // Only without the tool is this process registered.
     public static string PreferredCommand()
     {
+        var (program, arguments) = PreferredProgram();
+        if (arguments == null)
+        {
+            return $"\"{program}\"";
+        }
+
+        return $"\"{program}\" {arguments}";
+    }
+
+    /// <summary>
+    /// What <see cref="PreferredCommand"/> starts, apart: the program, and what goes on its
+    /// command line before any folder, null for nothing. For a shortcut, which keeps them apart.
+    /// </summary>
+    public static (string Program, string? Arguments) PreferredProgram()
+    {
         if (InstalledToolPath() is { } tool)
         {
-            return $"\"{tool}\"";
+            return (tool, null);
         }
 
         var processPath = Environment.ProcessPath!;
@@ -311,10 +411,10 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         {
             // Started as "dotnet Lode.dll". This path is version specific, but this only
             // happens when someone starts Lode through dotnet themselves, never as the tool.
-            return $"\"{processPath}\" \"{typeof(ExplorerReplacement).Assembly.Location}\"";
+            return (processPath, $"\"{typeof(ExplorerReplacement).Assembly.Location}\"");
         }
 
-        return $"\"{processPath}\"";
+        return (processPath, null);
     }
 
     // Where "dotnet tool install -g" puts the shim: .dotnet\tools under DOTNET_CLI_HOME when that
