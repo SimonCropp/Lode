@@ -51,11 +51,11 @@ static class CodeMenu
         _ = ActionLog.Run(
             "Git pull",
             folders,
-            async progress =>
+            async (progress, cancel) =>
             {
                 // Looking for repositories reads folders, so that is off the UI thread too.
-                var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
-                return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress));
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
+                return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress, cancel));
             });
 
     static void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
@@ -76,7 +76,7 @@ static class CodeMenu
         _ = ActionLog.Run(
             "Git push",
             folders,
-            async progress => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress)));
+            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress, cancel)));
     }
 
     static void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
@@ -103,7 +103,7 @@ static class CodeMenu
         _ = ActionLog.Run(
             "Git discard",
             folders,
-            async progress => CodeCommands.GitOutcome(await CodeCommands.Discard(repos, progress)));
+            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Discard(repos, progress, cancel)));
     }
 
     // Deletes what git doesn't track, ignored files too. Finding the repositories can mean

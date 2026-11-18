@@ -25,6 +25,31 @@ static class ActionLog
         public string Summary { get; internal set; } = "Running…";
         public string Details { get; internal set; } = "";
 
+        // Set for work that can be stopped.
+        internal CancellationTokenSource? Cancellation { get; init; }
+
+        /// <summary>
+        /// Whether it is running and can be stopped, which <see cref="Cancel"/> does.
+        /// </summary>
+        public bool CanCancel =>
+            State == State.Running &&
+            Cancellation is { IsCancellationRequested: false };
+
+        /// <summary>
+        /// Asks the work to stop. It ends as failed, "Cancelled", with what it did till then.
+        /// </summary>
+        public void Cancel()
+        {
+            if (!CanCancel)
+            {
+                return;
+            }
+
+            Cancellation!.Cancel();
+            Summary = "Cancelling…";
+            Progressed?.Invoke(this);
+        }
+
         /// <summary>
         /// The folder's own name, or the whole path for a drive root. Of several, both names,
         /// or the first's and how many more.
@@ -108,21 +133,52 @@ static class ActionLog
     /// a failed entry. The work may report, from any thread, how far it has got; that is the
     /// entry's summary until it ends.
     /// </summary>
-    public static async Task<Entry> Run(string title, IReadOnlyList<string> folders, Func<IProgress<string>, Task<Outcome>> work)
+    public static Task<Entry> Run(string title, IReadOnlyList<string> folders, Func<IProgress<string>, Task<Outcome>> work) =>
+        Run(title, folders, null, (progress, _) => work(progress));
+
+    /// <summary>
+    /// As <see cref="Run(string, IReadOnlyList{string}, Func{IProgress{string}, Task{Outcome}})"/>,
+    /// for work that stops when the token it is given is cancelled, which the entry's
+    /// <see cref="Entry.Cancel"/> does.
+    /// </summary>
+    public static Task<Entry> Run(string title, IReadOnlyList<string> folders, Func<IProgress<string>, CancellationToken, Task<Outcome>> work) =>
+        Run(title, folders, new(), work);
+
+    static async Task<Entry> Run(string title, IReadOnlyList<string> folders, CancellationTokenSource? cancellation, Func<IProgress<string>, CancellationToken, Task<Outcome>> work)
     {
-        var entry = new Entry(title, folders);
+        var entry = new Entry(title, folders)
+        {
+            Cancellation = cancellation
+        };
         entries.Add(entry);
         Changed?.Invoke();
 
+        var cancel = cancellation?.Token ?? CancellationToken.None;
         Outcome outcome;
         try
         {
-            outcome = await work(new EntryProgress(entry));
+            outcome = await work(new EntryProgress(entry), cancel);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+        {
+            outcome = new(false, "Cancelled", "");
         }
         catch (Exception exception)
         {
             outcome = new(false, "Failed", exception.Message);
         }
+
+        // What it did before it stopped is in the details.
+        if (cancel.IsCancellationRequested)
+        {
+            outcome = outcome with
+            {
+                Succeeded = false,
+                Summary = "Cancelled"
+            };
+        }
+
+        cancellation?.Dispose();
 
         entry.State = outcome.Succeeded ? State.Succeeded : State.Failed;
         entry.Summary = outcome.Summary;
@@ -147,10 +203,12 @@ static class ActionLog
             context.Post(_ => Show(value), null);
         }
 
-        // A report can arrive after the work has ended; the outcome stands.
+        // A report can arrive after the work has ended; the outcome stands. Or after it was
+        // asked to stop, which the entry says until it has.
         void Show(string value)
         {
-            if (entry.State != State.Running)
+            if (entry.State != State.Running ||
+                entry.Cancellation is { IsCancellationRequested: true })
             {
                 return;
             }

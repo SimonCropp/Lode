@@ -104,19 +104,20 @@ static class CodeCommands
         return Directory.Exists(git) || File.Exists(git);
     }
 
-    public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null) =>
-        ForEach(repos, progress, repo => Git(repo, "pull"));
+    public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null, CancellationToken cancel = default) =>
+        ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "pull"));
 
     /// <summary>
     /// Commits every tracked change with the message, then pushes to origin.
     /// </summary>
-    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null) =>
+    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, CancellationToken cancel = default) =>
         ForEach(
             repos,
             progress,
+            cancel,
             repo =>
             {
-                var commit = Git(repo, "commit", "-am", message);
+                var commit = Git(repo, cancel, network: false, "commit", "-am", message);
 
                 // Nothing to commit is fine: there may still be commits to push.
                 if (!commit.Succeeded && !NothingToCommit(repo))
@@ -124,7 +125,7 @@ static class CodeCommands
                     return commit;
                 }
 
-                var push = Git(repo, "push", "origin");
+                var push = Git(repo, cancel, network: true, "push", "origin");
                 return push with
                 {
                     Output = $"{commit.Output}\n{push.Output}".Trim()
@@ -150,21 +151,22 @@ static class CodeCommands
     /// folders included, though not what it ignores: that is Purge's. A repository with nothing
     /// committed yet goes back to empty. Cannot be undone.
     /// </summary>
-    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null) =>
+    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null, CancellationToken cancel = default) =>
         ForEach(
             repos,
             progress,
+            cancel,
             repo =>
             {
                 // Rather than restore, which puts back only what is not staged, leaving staged
                 // changes for the next Push to commit.
-                var reset = Git(repo, "reset", "--hard");
+                var reset = Git(repo, cancel, network: false, "reset", "--hard");
                 if (!reset.Succeeded)
                 {
                     return reset;
                 }
 
-                var clean = Git(repo, "clean", "-f", "-d");
+                var clean = Git(repo, cancel, network: false, "clean", "-f", "-d");
                 return clean with
                 {
                     Output = $"{reset.Output}\n{clean.Output}".Trim()
@@ -172,23 +174,38 @@ static class CodeCommands
             });
 
     // With more than one repository, reports which it is on. With one, the entry's folder
-    // already says.
-    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Func<string, RepoResult> action) =>
+    // already says. Cancelled, it goes on to no more of them, and gives those it went through.
+    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, CancellationToken cancel, Func<string, RepoResult> action) =>
         Task.Run(
-            () => repos
-                .Select((repo, index) =>
+            () =>
+            {
+                var results = new List<RepoResult>();
+                for (var index = 0; index < repos.Count && !cancel.IsCancellationRequested; index++)
                 {
+                    var repo = repos[index];
                     if (repos.Count > 1)
                     {
                         progress?.Report($"{index + 1} of {repos.Count}: {Path.GetFileName(repo)}");
                     }
 
-                    return action(repo);
-                })
-                .ToList());
+                    results.Add(action(repo));
+                }
 
-    internal static RepoResult Git(string repo, params string[] arguments)
+                return results;
+            });
+
+    internal static RepoResult Git(string repo, params string[] arguments) =>
+        Git(repo, CancellationToken.None, network: false, arguments);
+
+    /// <param name="cancel">Stops git, and whatever it started, ssh say, where it is.</param>
+    /// <param name="network">Whether git may go to a remote, over ssh perhaps.</param>
+    internal static RepoResult Git(string repo, CancellationToken cancel, bool network, params string[] arguments)
     {
+        if (cancel.IsCancellationRequested)
+        {
+            return new(repo, false, cancelled);
+        }
+
         try
         {
             // Git writes file names as UTF-8, whatever the console's code page.
@@ -208,17 +225,59 @@ static class CodeCommands
             }
 
             // Nobody can answer a prompt in a hidden window; fail instead of waiting forever.
+            // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
+            // agent holding it, or a host whose key is not known yet.
             startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            if (network &&
+                NoSshCommandSet(repo, startInfo))
+            {
+                startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
+            }
 
             using var process = Process.Start(startInfo)!;
+            using var stopping = cancel.Register(() => Stop(process));
             var error = process.StandardError.ReadToEndAsync();
             var output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
+            if (cancel.IsCancellationRequested)
+            {
+                return new(repo, false, $"{output}\n{error.Result}\n{cancelled}".Trim());
+            }
+
             return new(repo, process.ExitCode == 0, $"{output}\n{error.Result}".Trim());
         }
         catch (Exception exception)
         {
             return new(repo, false, exception.Message);
+        }
+    }
+
+    const string cancelled = "Cancelled";
+
+    // The user's own ssh, set in the environment Lode was started with or in git's config, is
+    // left as it is: it may be one that asks some other way.
+    static bool NoSshCommandSet(string repo, ProcessStartInfo startInfo)
+    {
+        if (startInfo.Environment.ContainsKey("GIT_SSH_COMMAND") ||
+            startInfo.Environment.ContainsKey("GIT_SSH"))
+        {
+            return false;
+        }
+
+        var configured = Git(repo, "config", "--get", "core.sshCommand");
+        return !configured.Succeeded ||
+               configured.Output.Length == 0;
+    }
+
+    static void Stop(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        {
+            // Ended by itself meanwhile.
         }
     }
 

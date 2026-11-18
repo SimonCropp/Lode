@@ -21,17 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 15. A git command can hang for good, and can't be cancelled
-
-**Where:** [CodeCommands.cs:161-194](src/Lode/CodeCommands.cs#L161) (`Git`, `process.WaitForExit()` with no limit), [CodeCommands.cs:147-159](src/Lode/CodeCommands.cs#L147) (`ForEach`), `ActionsPanel.cs:347`.
-
-**What happens:** `GIT_TERMINAL_PROMPT=0` stops only git's own prompt. Pulling over SSH with a key that has a passphrase and no agent, or a host whose key is not known, ssh asks on the hidden console, where nobody can answer. A connection that stalls does the same. The entry stays "Running…", the repositories after it are never reached, since they go one at a time, and **Remove** is off for an entry that is running.
-
-That there is no limit and no cancel is read. That ssh waits, rather than fails, under `CreateNoWindow` is unverified.
-
-**Fix:** where the user has set none, `GIT_SSH_COMMAND` of `ssh -o BatchMode=yes`. Pass a cancellation token into `Git` that calls `process.Kill(entireProcessTree: true)`, and offer **Cancel** on an entry that is running.
-
-
 ### 16. Exit, and Update and restart, pay no heed to actions under way
 
 **Where:** `OptionsForm.cs:632` and `676-690`, `MainForm.cs:1493-1496`, [WindowContext.cs:201-212](src/Lode/WindowContext.cs#L201), `ToolUpdate.cs:113-116`.
@@ -409,7 +398,6 @@ Windows' own popup menus go dark only for a process that asks, through uxtheme's
  * No Ctrl+Shift+C for **Copy as path**, which Windows 11's Explorer has.
  * No Ctrl+1 to Ctrl+9 to go to a tab by where it is.
  * Dragging with the right button gives no menu of Copy here and Move here.
- * A git action can't be cancelled: see [bug 15](#15-a-git-command-can-hang-for-good-and-cant-be-cancelled).
 
 
 ## Checked and found sound

@@ -31,6 +31,35 @@ public class ActionsPanelTests
         await Assert.That(three.Where).IsEqualTo("Lode, Verify, Polyfill");
     }
 
+    // Work that can be stopped can be cancelled while it runs. It ends as failed, "Cancelled",
+    // with what it did till then in its details. Work that can't be stopped can't be cancelled.
+    [Test]
+    public async Task ARunningEntryCanBeCancelled()
+    {
+        var run = ActionLog.Run(
+            "Git pull",
+            [@"C:\Code\Lode"],
+            async (_, cancel) =>
+            {
+                await Task.Delay(Timeout.Infinite, cancel).ContinueWith(_ => { }, TaskScheduler.Default);
+                return new(true, "Done", "Lode: done");
+            });
+        var entry = ActionLog.Entries.Single();
+        var couldCancel = entry.CanCancel;
+
+        entry.Cancel();
+        var whileStopping = (entry.Summary, entry.CanCancel);
+        await run;
+        _ = ActionLog.Run("Git pull", @"C:\Code\Other", () => new TaskCompletionSource<ActionLog.Outcome>().Task);
+
+        await Assert.That(couldCancel).IsTrue();
+        await Assert.That(whileStopping).IsEqualTo(("Cancelling…", false));
+        await Assert.That(entry.State).IsEqualTo(ActionLog.State.Failed);
+        await Assert.That(entry.Summary).IsEqualTo("Cancelled");
+        await Assert.That(entry.Details).IsEqualTo("Lode: done");
+        await Assert.That(ActionLog.Entries[^1].CanCancel).IsFalse();
+    }
+
     [Test]
     public async Task AnEntryRunsThenRecordsTheOutcome()
     {

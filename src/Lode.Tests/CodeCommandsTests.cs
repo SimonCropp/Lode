@@ -123,6 +123,57 @@ public class CodeCommandsTests
         await Assert.That(File.Exists(Path.Combine(repo, "ignored.txt"))).IsTrue();
     }
 
+    // Git waiting on something that never comes, ssh on a passphrase say, is stopped where it
+    // is when cancelled, with whatever it started.
+    [Test]
+    public async Task CancellingStopsGit()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var started = Stopwatch.StartNew();
+
+        var result = await Task.Run(
+            () => CodeCommands.Git(repo, cancel.Token, network: false, "-c", "alias.hang=!sleep 60", "hang"));
+
+        await Assert.That(started.Elapsed).IsLessThan(TimeSpan.FromSeconds(20));
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).EndsWith("Cancelled");
+    }
+
+    // Cancelled, a command goes on to no more repositories.
+    [Test]
+    public async Task CancelledGoesToNoMoreRepos()
+    {
+        using var code = new Scratch();
+        var one = code.CreateRepo("One");
+        var two = code.CreateRepo("Two");
+
+        var results = await CodeCommands.Pull([one, two], cancel: new(canceled: true));
+
+        await Assert.That(results).IsEmpty();
+    }
+
+    // Going to a remote, ssh is told not to ask, as nobody can answer in a hidden window: it
+    // fails rather than waits. Unless the user has an ssh command of their own, which may ask
+    // some other way.
+    [Test]
+    public async Task SshIsToldNotToAskUnlessTheUserHasTheirOwn()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        string[] showSsh = ["-c", "alias.ssh=!echo \"[$GIT_SSH_COMMAND]\"", "ssh"];
+
+        var network = CodeCommands.Git(repo, CancellationToken.None, network: true, showSsh).Output;
+        var local = CodeCommands.Git(repo, CancellationToken.None, network: false, showSsh).Output;
+        Scratch.Git(repo, "config", "core.sshCommand", "ssh -i elsewhere");
+        var theirOwn = CodeCommands.Git(repo, CancellationToken.None, network: true, showSsh).Output;
+
+        await Assert.That(network).IsEqualTo("[ssh -o BatchMode=yes]");
+        await Assert.That(local).IsEqualTo("[]");
+        await Assert.That(theirOwn).IsEqualTo("[]");
+    }
+
     [Test]
     public async Task PushCommitsWithTheMessageAndPushes()
     {
