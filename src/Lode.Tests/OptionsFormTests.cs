@@ -646,6 +646,27 @@ public class OptionsFormTests
         }
     }
 
+    // On a screen too short for it, a small one or one scaled up, the dialog is no taller than
+    // the screen and the pages scroll, so Close is still on it. Each page shows from its top.
+    [Test]
+    public async Task FitsWithinAShortScreen()
+    {
+        using var scratch = new RegistryScratch();
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("Actions");
+        var fullHeight = form.Height;
+        var area = new Rectangle(form.Left, form.Top, 2000, fullHeight - 150);
+
+        form.FitWithin(area);
+        Application.DoEvents();
+        var close = form.AcceptButton as Control;
+
+        await Assert.That(form.Height).IsLessThanOrEqualTo(area.Height);
+        await Assert.That(form.PagesScroll).IsTrue();
+        await Assert.That(close!.Visible).IsTrue();
+        await Assert.That(form.RectangleToClient(close.RectangleToScreen(close.ClientRectangle)).Bottom).IsLessThanOrEqualTo(form.ClientSize.Height);
+    }
+
     // A build has nothing to update, and doesn't ask.
     [Test]
     public async Task ABuildHasNothingToUpdate()

@@ -330,7 +330,7 @@ class OptionsForm : Form
         pageList.SelectedChanged += ShowSelectedPage;
         ShowSelectedPage();
 
-        var host = new PageHost
+        host = new()
         {
             AutoSize = true,
             Margin = new(0, 6, 0, 0)
@@ -360,11 +360,50 @@ class OptionsForm : Form
         ShowUpdateState();
     }
 
+    readonly PageHost host;
+
+    // Brought within the screen it opens on, once it knows which.
+    protected override void OnLoad(EventArgs eventArgs)
+    {
+        base.OnLoad(eventArgs);
+        FitWithin(Screen.FromControl(this).WorkingArea);
+    }
+
+    /// <summary>
+    /// Makes the dialog no taller than <paramref name="area"/>, the pages scrolling where they
+    /// are taller than that leaves room for, and moves it up within it. On a short screen, or
+    /// one scaled up, the dialog as tall as its tallest page would run off the bottom, Close and
+    /// all.
+    /// </summary>
+    internal void FitWithin(Rectangle area)
+    {
+        var over = Height - area.Height;
+        if (over > 0)
+        {
+            host.MaximumHeight = host.Height - over;
+            PerformLayout();
+        }
+
+        // Not one placed off every screen on purpose, as the tests place theirs.
+        if (area.IntersectsWith(Bounds))
+        {
+            Top = Math.Max(area.Top, Math.Min(Top, area.Bottom - Height));
+        }
+    }
+
+    /// <summary>
+    /// Whether the pages scroll, as they do once <see cref="FitWithin"/> has made the dialog
+    /// shorter than they are.
+    /// </summary>
+    internal bool PagesScroll => host.VerticalScroll.Visible;
+
     // A page: its name as a heading, then its parts one under another. Hidden until picked.
     void AddPage(string title, char glyph, Control[] parts)
     {
         var page = Column(Padding.Empty);
-        page.Dock = DockStyle.Fill;
+        // Docked to the top rather than filling the host, so a page taller than the host
+        // scrolls in it.
+        page.Dock = DockStyle.Top;
         page.Visible = false;
         page.Controls.Add(
             new Label
@@ -389,6 +428,9 @@ class OptionsForm : Form
         {
             pages[index].Visible = index == pageList.SelectedIndex;
         }
+
+        // Each page from its top, rather than as far down as the last one was scrolled.
+        host?.AutoScrollPosition = Point.Empty;
     }
 
     /// <summary>
@@ -759,7 +801,9 @@ class OptionsForm : Form
             {
                 Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText),
                 SizeMode = PictureBoxSizeMode.CenterImage,
-                Size = new(iconSize + 4, iconSize + 4),
+                // In logical units, as the dialog scales what it holds to the screen itself. The
+                // image is drawn at the screen's size already, so is not.
+                Size = new(16 + 4, 16 + 4),
                 Anchor = AnchorStyles.None,
                 Margin = new(3, 1, 3, 1)
             };
@@ -1143,6 +1187,25 @@ class OptionsForm : Form
 
     sealed class PageHost : Panel
     {
+        public PageHost() =>
+            AutoScroll = true;
+
+        /// <summary>
+        /// How tall it may be, in pixels, the pages scrolling past that. 0 for as tall as the
+        /// tallest page.
+        /// </summary>
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int MaximumHeight
+        {
+            get;
+            set
+            {
+                field = value;
+                // What it asks for has changed, which the layout it is in only hears this way.
+                Parent?.PerformLayout(this, nameof(MaximumHeight));
+            }
+        }
+
         public override Size GetPreferredSize(Size proposedSize)
         {
             var size = Size.Empty;
@@ -1152,7 +1215,14 @@ class OptionsForm : Form
                 size = new(Math.Max(size.Width, preferred.Width), Math.Max(size.Height, preferred.Height));
             }
 
-            return size;
+            if (MaximumHeight == 0 ||
+                size.Height <= MaximumHeight)
+            {
+                return size;
+            }
+
+            // Room beside the pages for the scroll bar, so it never covers what is at their right.
+            return new(size.Width + SystemInformation.VerticalScrollBarWidth, MaximumHeight);
         }
     }
 }

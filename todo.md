@@ -21,17 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 19. Options is taller than a small or scaled screen, and can't scroll
-
-**Where:** `OptionsForm.cs:298-304` (`FixedDialog`, `AutoSize`, `GrowAndShrink`, no `AutoScroll` anywhere in the file), `721-829` (a row for each of 28 actions), `1094-1107` (`PageHost` gives every page the height of the tallest).
-
-**What happens:** `OptionsFormTests.ActionsPage.verified.png` is 804 by 856. If that is at 100%, a 1920 by 1080 screen at 150% has about 680 of those pixels to give, and one at 125% about 820, so the last rows and **Close** are off the bottom. Each action added is another 22. That it scales in proportion was not run.
-
-`OptionsForm.cs:751`, `Size = new(iconSize + 4, iconSize + 4)`, may scale twice: `iconSize` is already in device pixels (line 743), and `AutoScaleMode.Dpi` scales it again. Unverified.
-
-**Fix:** the actions table in a panel with `AutoScroll`, no taller than the screen's working area.
-
-
 ### 20. Undo on a drive with no Recycle Bin says "0 of 1" and stays
 
 **Where:** [UndoHistory.cs:406-419](src/Lode/UndoHistory.cs#L406) (`Recycle`), `445-458` (`Counted`), `489-502` (`Pairs` keeps only a change with a result).
