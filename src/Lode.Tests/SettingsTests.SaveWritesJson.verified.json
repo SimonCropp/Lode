@@ -3,6 +3,7 @@
   "ShowSystem": false,
   "Theme": "System",
   "ShowRecent": true,
+  "ExpandToOpenFolder": true,
   "Actions": {},
   "HiddenColumns": [],
   "CollapsedSections": [],

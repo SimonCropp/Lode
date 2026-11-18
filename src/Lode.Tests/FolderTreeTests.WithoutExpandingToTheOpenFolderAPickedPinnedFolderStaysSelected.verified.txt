@@ -1,0 +1,17 @@
+﻿{
+  selected: [
+    Projects/Source
+  ],
+  picked:
+- Pinned
+    Source   <- selected
+- This PC
+  + FolderTreeTests.WithoutExpandingToTheOpenFolderAPickedPinnedFolderStaysSelected
+,
+  thenOneNotShowing:
+- Pinned
+    Source
+- This PC
+  + FolderTreeTests.WithoutExpandingToTheOpenFolderAPickedPinnedFolderStaysSelected
+
+}

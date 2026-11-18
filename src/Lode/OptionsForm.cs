@@ -46,6 +46,14 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 0)
     };
 
+    readonly CheckBox expandToOpenFolder = new()
+    {
+        Name = "expandToOpenFolder",
+        Text = "Expand the folder tree to the open folder",
+        AutoSize = true,
+        Margin = new(3, 0, 3, 0)
+    };
+
     readonly CheckBox showRecent = new()
     {
         Name = "showRecent",
@@ -269,6 +277,12 @@ class OptionsForm : Form
         theme.SelectedIndexChanged += (_, _) =>
         {
             settings.Theme = (Theme) theme.SelectedIndex;
+        };
+        expandToOpenFolder.Checked = settings.ExpandToOpenFolder;
+        expandToOpenFolder.CheckedChanged += (_, _) =>
+        {
+            settings.ExpandToOpenFolder = expandToOpenFolder.Checked;
+            SettingsChanged?.Invoke();
         };
         showRecent.Checked = settings.ShowRecent;
         showRecent.CheckedChanged += (_, _) =>
@@ -506,6 +520,11 @@ class OptionsForm : Form
         showHidden,
         showSystem,
         Note("Windows, Program Files, other people's folders under Users, and the files Windows protects."),
+        expandToOpenFolder,
+        Note(
+            "The tree opens out down to the folder the tab shows, and selects it, as File " +
+            "Explorer's does only with Expand to open folder on, which it is not by default. Off, " +
+            "the tree stays as you leave it, and selects the folder only where it already shows."),
         showRecent,
         Note(
             "Pinned folders are the ones pinned to Quick access in File Explorer. Recent folders " +

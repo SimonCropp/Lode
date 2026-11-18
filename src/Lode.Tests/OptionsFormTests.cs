@@ -208,6 +208,28 @@ public class OptionsFormTests
             });
     }
 
+    // On by default, unlike Explorer's Expand to open folder.
+    [Test]
+    public async Task UntickingExpandToOpenFolderChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var changes = 0;
+        form.SettingsChanged += () => changes++;
+        var before = settings.ExpandToOpenFolder;
+
+        ((CheckBox) form.Controls.Find("expandToOpenFolder", true)[0]).Checked = false;
+
+        await Verify(
+            new
+            {
+                before,
+                after = settings.ExpandToOpenFolder,
+                changes
+            });
+    }
+
     // Off by default, so purged files go to the Recycle Bin.
     [Test]
     public async Task TickingPurgePermanentlyChangesTheSetting()
