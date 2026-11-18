@@ -966,6 +966,16 @@ sealed class FolderTree : TreeView
         {
             Watch(node);
             watchedForSelection = node;
+
+            // What it shows is from when it was last read, before it was collapsed, or, for one
+            // with no expander, from its parent's read. Read again, so a folder made in it since
+            // shows, and is selected when it is the one wanted: being watched now, it would
+            // otherwise not be read again, not even when expanded. One not read yet is read
+            // when it is expanded.
+            if (!NeedsLoading(node))
+            {
+                Track(SyncAsync([node]));
+            }
         }
     }
 

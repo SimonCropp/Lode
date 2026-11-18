@@ -403,6 +403,49 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // A collapsed folder is not watched, so a folder made in it, by git clone say, is not seen
+    // until the folder is read again. Going there reads it again, on the way, so the new one is
+    // selected, and it is there when the folder is expanded.
+    [Test]
+    public async Task AFolderMadeInACollapsedOneIsSelectedWhenGoneTo()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var projects = await Projects(tree);
+        await Expand(tree, projects);
+        var source = projects.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Source");
+        await Expand(tree, source);
+        source.Collapse();
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+
+        Directory.CreateDirectory(fixture.At("Source", "New"));
+        tree.SelectPath(fixture.At("Source", "New"));
+        await Pump.Until(() => tree.SelectedNode?.Tag as string == fixture.At("Source", "New"));
+
+        await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // Nor is one with no subfolders when its parent was read: one made in it since shows once it
+    // is gone to.
+    [Test]
+    public async Task AFolderMadeInOneWithNoneIsSelectedWhenGoneTo()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var projects = await Projects(tree);
+        await Expand(tree, projects);
+        var docs = projects.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Docs");
+        var expanderBefore = docs.Nodes.Count > 0;
+
+        Directory.CreateDirectory(fixture.At("Docs", "Drafts"));
+        tree.SelectPath(fixture.At("Docs", "Drafts"));
+        await Pump.Until(() => tree.SelectedNode?.Tag as string == fixture.At("Docs", "Drafts"));
+
+        await Assert.That(expanderBefore).IsFalse();
+        await Assert.That(Names(docs)).IsEquivalentTo(["Drafts"]);
+    }
+
     // A folder whose only subfolders are hidden has nothing to expand to while hidden folders
     // aren't shown.
     [Test]

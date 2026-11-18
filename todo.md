@@ -21,20 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 12. The tree misses folders made while their parent was collapsed
-
-**Where:** `FolderTree.cs:926-945` (`WatchSelected` watches without reading), `1005-1011` (`OnBeforeExpand` only reads a node that is not watched), `1300-1307` (`Walk` breaks at a missing child before expanding).
-
-**What happens:** a node's children are as they were when it was last read. A collapsed node is not watched, and a leaf's "no subfolders" is from its parent's last read. Selecting such a node watches it but does not read it, and as it is now watched, expanding it by hand does not read it either.
-
- * `D:\Code` was expanded once, then collapsed. `git clone` makes `D:\Code\New`. Open `D:\Code`, then `New`, in the list. The tree stays on `Code`, and expanding `Code` by hand does not show `New`.
- * `D:\Code\Proj` had no subfolders when `Code` was read. A tool makes `Proj\src`. Open `Proj`, then `src`. The tree stays on `Proj`, with no expander.
-
-Both last until some other folder is made, deleted or renamed directly in that parent. F5 does not read the tree's folders again: `MainForm.Reload` only calls `RefreshDrives`.
-
-**Fix:** where `WatchSelected` starts a watch on a node already read, also `Track(SyncAsync([node]))`. Or in `Walk`, where the child is missing and the folder was not read in this pass, read it before settling.
-
-
 ### 13. Pull, Push and Discard on a folder inside a repository find no repositories
 
 **Where:** [CodeCommands.cs:14-25](src/Lode/CodeCommands.cs#L14) (`FindRepos`), [CodeMenu.cs:16-22](src/Lode/CodeMenu.cs#L16).
