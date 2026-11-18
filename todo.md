@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 21. Rename on the tree's Show more options does nothing
-
-**Where:** `ShellContextMenu.cs:65` and `87` (every item menu and Quick access menu is shown with `canRenameFlag`), `FolderTree.cs:1576-1591` (`HandleVerb` handles only "open").
-
-**What happens:** `CMF_CANRENAME` tells the shell that the host renames. `FolderView` does (`HandleItemVerb`). The tree does not. Shift+right-click a folder, a drive or a Pinned entry in the tree, then **Rename**: the verb goes to the shell, with no view to do it. The readme says drives, and Pinned and Recent entries, can't be renamed, yet it is offered. What the shell does with the verb then is unverified.
-
-**Fix:** let the caller say whether it renames, and have the tree call `BeginRename(node)` for "rename" where its own menu would allow it.
-
-
 ### 22. Send to stays on the menu when it lists two or more drives
 
 **Where:** [ShellContextMenu.cs:671-684](src/Lode/ShellContextMenu/ShellContextMenu.cs#L671) (`Lists`).

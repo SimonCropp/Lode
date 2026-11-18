@@ -1376,7 +1376,7 @@ sealed class FolderTree : TreeView
             this,
             location,
             LodeActions.ForMenu(commands, settings),
-            () => ShowShellMenu(owner, path, location, quickAccess),
+            () => ShowShellMenu(owner, path, location, quickAccess, node),
             settings.ShowsInMenu(LodeActions.More));
     }
 
@@ -1453,9 +1453,8 @@ sealed class FolderTree : TreeView
     {
         var owner = FindForm()?.Handle ?? Handle;
         // A drive, a machine on the network, or a share on one.
-        var isDrive = Locations.IsThisPC(Locations.Parent(path) ?? "") ||
-                      Locations.IsShare(path);
-        var canRename = !isDrive && node is { Parent.Tag: not Section };
+        var isDrive = IsDrive(path);
+        var canRename = CanRename(path, node);
         var newCommands = FolderView.NewCommands(
             newTypes ?? ShellNew.Current,
             () => NewRequested?.Invoke(path, null),
@@ -1586,8 +1585,20 @@ sealed class FolderTree : TreeView
     /// </summary>
     internal Action<string, bool> DeleteFolder;
 
-    void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess)
+    // A drive, a machine on the network, or a share on one.
+    static bool IsDrive(string path) =>
+        Locations.IsThisPC(Locations.Parent(path) ?? "") ||
+        Locations.IsShare(path);
+
+    // Not a drive, nor a Pinned or Recent entry, which is Quick access's, not a folder's.
+    static bool CanRename(string path, TreeNode? node) =>
+        !IsDrive(path) &&
+        node is { Parent.Tag: not Section };
+
+    void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess, TreeNode node)
     {
+        // Rename is offered where the tree's own menu offers it, and done by the tree, in place.
+        var canRename = CanRename(path, node);
         ShellContextMenu.CustomCommand[] customCommands =
         [
             new("Open in new tab", () => NewTabRequested?.Invoke(path))
@@ -1604,14 +1615,21 @@ sealed class FolderTree : TreeView
         // Pinned and Recent folders are Quick access entries, whose menu offers Unpin.
         if (quickAccess)
         {
-            menu.ShowForQuickAccessItem(owner, path, location, customCommands, HandleVerb);
+            menu.ShowForQuickAccessItem(owner, path, location, customCommands, HandleVerb, canRename);
             return;
         }
 
-        menu.ShowForItems(owner, [path], location, customCommands, HandleVerb);
+        menu.ShowForItems(owner, [path], location, customCommands, HandleVerb, canRename);
 
         bool HandleVerb(string verb)
         {
+            if (verb.Equals("rename", StringComparison.OrdinalIgnoreCase) &&
+                canRename)
+            {
+                BeginRename(node);
+                return true;
+            }
+
             if (!verb.Equals("open", StringComparison.OrdinalIgnoreCase))
             {
                 return false;

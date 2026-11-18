@@ -54,7 +54,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         IReadOnlyList<string> paths,
         Point location,
         IReadOnlyList<CustomCommand> customCommands,
-        Func<string, bool> handleVerb)
+        Func<string, bool> handleVerb,
+        bool canRename = true)
     {
         var contextMenu = CreateForItems(owner, paths);
         if (contextMenu == null)
@@ -62,7 +63,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return false;
         }
 
-        Show(contextMenu, owner, location, customCommands, customFirst: false, canRenameFlag, handleVerb);
+        Show(contextMenu, owner, location, customCommands, customFirst: false, RenameFlag(canRename), handleVerb);
         return true;
     }
 
@@ -76,16 +77,30 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         string path,
         Point location,
         IReadOnlyList<CustomCommand> customCommands,
-        Func<string, bool> handleVerb)
+        Func<string, bool> handleVerb,
+        bool canRename = true)
     {
         var contextMenu = CreateForQuickAccessItem(owner, path);
         if (contextMenu == null)
         {
-            return ShowForItems(owner, [path], location, customCommands, handleVerb);
+            return ShowForItems(owner, [path], location, customCommands, handleVerb, canRename);
         }
 
-        Show(contextMenu, owner, location, customCommands, customFirst: false, canRenameFlag, handleVerb);
+        Show(contextMenu, owner, location, customCommands, customFirst: false, RenameFlag(canRename), handleVerb);
         return true;
+    }
+
+    // CMF_CANRENAME tells the shell the host renames, as the rename verb then comes to it, so
+    // it offers Rename. Only where the host does: with nothing to do the renaming, the verb
+    // would go nowhere.
+    static uint RenameFlag(bool canRename)
+    {
+        if (canRename)
+        {
+            return canRenameFlag;
+        }
+
+        return 0;
     }
 
     // The shell folder behind Explorer's Quick access list.
@@ -769,9 +784,10 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     public record MenuEntry(string Text, string? Verb, IReadOnlyList<MenuEntry> Submenu);
 
     /// <summary>
-    /// The top level of the menu the shell builds for the items, as Lode would show it.
+    /// The top level of the menu the shell builds for the items, as Lode would show it, for a
+    /// host that renames or one that doesn't.
     /// </summary>
-    public static List<MenuEntry> Describe(IntPtr owner, IReadOnlyList<string> paths)
+    public static List<MenuEntry> Describe(IntPtr owner, IReadOnlyList<string> paths, bool canRename = true)
     {
         var contextMenu = CreateForItems(owner, paths);
         if (contextMenu == null)
@@ -784,7 +800,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         {
             using (new ShellExtensionGuard())
             {
-                contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, canRenameFlag);
+                contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, RenameFlag(canRename));
             }
 
             RemoveUnwanted(contextMenu, menu);

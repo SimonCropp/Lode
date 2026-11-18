@@ -23,6 +23,21 @@ public class ShellContextMenuTests
                 return path;
             });
 
+    // The shell offers Rename only to a host that says it renames, so the tree's classic menu
+    // leaves it off a drive and a Pinned or Recent entry, which the tree can't rename, rather
+    // than offer one that would go nowhere.
+    [Test]
+    public async Task RenameOnlyWhereTheHostRenames()
+    {
+        using var fixture = Fixture.Create();
+        bool HasRename(bool canRename) =>
+            ShellContextMenu.Describe(IntPtr.Zero, [fixture.At("Docs")], canRename)
+                .Any(_ => string.Equals(_.Verb, "rename", StringComparison.OrdinalIgnoreCase));
+
+        await Assert.That(HasRename(true)).IsTrue();
+        await Assert.That(HasRename(false)).IsFalse();
+    }
+
     // Items from more than one folder, as a search finds, are each named to their folder by their
     // own name alone, so the shell is asked for nothing for them, rather than for whatever the
     // first one's folder has by the others' names.
