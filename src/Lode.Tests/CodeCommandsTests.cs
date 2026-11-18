@@ -32,6 +32,26 @@ public class CodeCommandsTests
         await Assert.That(repos.Select(code.Relative)).IsEquivalentTo(["One"]);
     }
 
+    // A folder inside a repository, src say, is that repository, as far up as the code folder:
+    // not one above it, such as a home folder kept in git.
+    [Test]
+    public async Task AFolderInARepoIsThatRepo()
+    {
+        using var code = new Scratch();
+        Directory.CreateDirectory(code.At("One", ".git"));
+        Directory.CreateDirectory(code.At("One", "src", "Inner", ".git"));
+        Directory.CreateDirectory(code.At("Code", "Two", "src"));
+        Directory.CreateDirectory(code.At(".git"));
+
+        var inRepo = CodeCommands.FindRepos(code.At("One", "src"), code.Root);
+        var deeper = CodeCommands.FindRepos(code.At("One", "src", "Inner", "lib"), code.Root);
+        var aboveTheCodeFolder = CodeCommands.FindRepos(code.At("Code", "Two", "src"), code.At("Code"));
+
+        await Assert.That(inRepo.Select(code.Relative)).IsEquivalentTo(["One"]);
+        await Assert.That(deeper.Select(code.Relative)).IsEquivalentTo(["One/src/Inner"]);
+        await Assert.That(aboveTheCodeFolder).IsEmpty();
+    }
+
     // Several folders: the repositories of each, once each, in order.
     [Test]
     public async Task FindsReposAcrossFolders()

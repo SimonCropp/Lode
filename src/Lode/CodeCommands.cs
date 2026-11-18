@@ -8,14 +8,17 @@ static class CodeCommands
     public sealed record RepoResult(string Repo, bool Succeeded, string Output);
 
     /// <summary>
-    /// The repositories a command acts on: the folder itself when it is one, otherwise every
-    /// repository up to two levels below it, as the scripts find them.
+    /// The repositories a command acts on: the one the folder is in, at its top or anywhere
+    /// below, otherwise every repository up to two levels below it, as the scripts find them.
+    /// Only a repository up to <paramref name="codeFolder"/> counts as one the folder is in:
+    /// one above it, such as a home folder kept in git, is not one of the code folder's.
+    /// Without a code folder, only the folder itself.
     /// </summary>
-    public static List<string> FindRepos(string folder)
+    public static List<string> FindRepos(string folder, string? codeFolder = null)
     {
-        if (IsRepo(folder))
+        if (RepoContaining(folder, codeFolder ?? folder) is { } repo)
         {
-            return [folder];
+            return [repo];
         }
 
         var repos = new List<string>();
@@ -27,15 +30,15 @@ static class CodeCommands
     /// <summary>
     /// The repositories of every one of <paramref name="folders"/>, each once.
     /// </summary>
-    public static List<string> FindRepos(IReadOnlyList<string> folders)
+    public static List<string> FindRepos(IReadOnlyList<string> folders, string? codeFolder = null)
     {
         if (folders is [var folder])
         {
-            return FindRepos(folder);
+            return FindRepos(folder, codeFolder);
         }
 
         var repos = folders
-            .SelectMany(FindRepos)
+            .SelectMany(_ => FindRepos(_, codeFolder))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         repos.Sort(StringComparer.OrdinalIgnoreCase);
@@ -70,6 +73,28 @@ static class CodeCommands
 
             Collect(child, depth - 1, repos);
         }
+    }
+
+    /// <summary>
+    /// The repository <paramref name="folder"/> is in: itself, or the nearest folder above it,
+    /// no further up than <paramref name="top"/>, that is one. Null when there is none.
+    /// </summary>
+    internal static string? RepoContaining(string folder, string top)
+    {
+        for (var current = folder; current != null; current = Path.GetDirectoryName(current))
+        {
+            if (IsRepo(current))
+            {
+                return current;
+            }
+
+            if (Locations.Same(current, top))
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     // A .git folder, or a .git file as a worktree or submodule has.

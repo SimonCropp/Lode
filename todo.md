@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 13. Pull, Push and Discard on a folder inside a repository find no repositories
-
-**Where:** [CodeCommands.cs:14-25](src/Lode/CodeCommands.cs#L14) (`FindRepos`), [CodeMenu.cs:16-22](src/Lode/CodeMenu.cs#L16).
-
-**What happens:** the Git menu is offered for every folder under the code folder. `FindRepos` looks at the folder and two levels beneath it, never above. So on `D:\Code\Lode\src` the three report "No git repositories". Purge walks up, with `InRepo` ([GitPurge.cs:92-108](src/Lode/GitPurge.cs#L92)).
-
-**Fix:** walk up to the code folder the same way.
-
-
 ### 14. Discard leaves staged changes and untracked folders
 
 **Where:** [CodeCommands.cs:126-143](src/Lode/CodeCommands.cs#L126), prompt at [CodeMenu.cs:92](src/Lode/CodeMenu.cs#L92).

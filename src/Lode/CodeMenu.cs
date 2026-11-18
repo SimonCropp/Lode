@@ -24,15 +24,15 @@ static class CodeMenu
         return
         [
             null,
-            LodeActions.Command("gitPull", () => Pull(folders)) with
+            LodeActions.Command("gitPull", () => Pull(folders, settings.CodeDirectory)) with
             {
                 NestedText = "Pull"
             },
-            LodeActions.Command("gitPush", () => Push(owner, folders), text: "Git push…") with
+            LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…") with
             {
                 NestedText = "Push…"
             },
-            LodeActions.Command("gitDiscard", () => Discard(owner, folders), text: "Git discard…") with
+            LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…") with
             {
                 NestedText = "Discard…"
             },
@@ -45,21 +45,22 @@ static class CodeMenu
         ];
     }
 
-    // Each runs in the background and shows in the actions panel; Lode stays usable.
-    static void Pull(IReadOnlyList<string> folders) =>
+    // Each runs in the background and shows in the actions panel; Lode stays usable. A folder
+    // inside a repository, src say, acts on that repository.
+    static void Pull(IReadOnlyList<string> folders, string? codeFolder) =>
         _ = ActionLog.Run(
             "Git pull",
             folders,
             async progress =>
             {
                 // Looking for repositories reads folders, so that is off the UI thread too.
-                var repos = await Task.Run(() => CodeCommands.FindRepos(folders));
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
                 return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress));
             });
 
-    static void Push(Control owner, IReadOnlyList<string> folders)
+    static void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var repos = CodeCommands.FindRepos(folders);
+        var repos = CodeCommands.FindRepos(folders, codeFolder);
         if (repos.Count == 0)
         {
             NoRepos("Git push", folders);
@@ -78,9 +79,9 @@ static class CodeMenu
             async progress => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress)));
     }
 
-    static void Discard(Control owner, IReadOnlyList<string> folders)
+    static void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var repos = CodeCommands.FindRepos(folders);
+        var repos = CodeCommands.FindRepos(folders, codeFolder);
         if (repos.Count == 0)
         {
             NoRepos("Git discard", folders);

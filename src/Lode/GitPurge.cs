@@ -34,7 +34,7 @@ static class GitPurge
     /// </summary>
     public static List<string> Folders(string folder, string codeFolder)
     {
-        if (InRepo(folder, codeFolder))
+        if (CodeCommands.RepoContaining(folder, codeFolder) != null)
         {
             return [folder];
         }
@@ -87,24 +87,6 @@ static class GitPurge
         }
 
         return true;
-    }
-
-    static bool InRepo(string folder, string codeFolder)
-    {
-        for (var current = folder; current != null; current = Path.GetDirectoryName(current))
-        {
-            if (CodeCommands.IsRepo(current))
-            {
-                return true;
-            }
-
-            if (Locations.Same(current, codeFolder))
-            {
-                return false;
-            }
-        }
-
-        return false;
     }
 
     // Links aren't followed, so a junction back up the tree can't send the walk round forever.
