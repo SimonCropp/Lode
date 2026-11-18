@@ -1,0 +1,43 @@
+﻿{
+  older: {
+    IsActive: true,
+    IsActiveHere: true,
+    IsComplete: false,
+    RegisteredCommand: "C:\Tools\lode.exe"
+  },
+  replaced: {
+    IsActive: true,
+    IsActiveHere: true,
+    IsComplete: true,
+    RegisteredCommand: "C:\Tools\lode.exe"
+  },
+  folder: {
+    shell\: {
+      explore\: {
+        command\: {
+          (default): "C:\Tools\lode.exe" "%1",
+          DelegateExecute: ,
+          LodePreviousDelegateExecute: Guid_1
+        },
+        CreatedBy: Lode,
+        LaunchExplorerFlags: 24,
+        MultiSelectModel: Document,
+        ProgrammaticAccessOnly: 
+      }
+    }
+  },
+  restoredFolder: {
+    shell\: {
+      explore\: {
+        command\: {
+          DelegateExecute: Guid_1
+        },
+        LaunchExplorerFlags: 24,
+        MultiSelectModel: Document,
+        ProgrammaticAccessOnly: 
+      }
+    }
+  },
+  driveCommand: %SystemRoot%\Explorer.exe,
+  driveCommandKind: ExpandString
+}

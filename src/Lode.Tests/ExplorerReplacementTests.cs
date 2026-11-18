@@ -161,6 +161,70 @@ public class ExplorerReplacementTests
             });
     }
 
+    // Some tools leave a copy of Explorer's explore verb on Folder in the user's classes, which
+    // Chromium and Electron apps (GitHub Desktop's Show in Explorer) find, and so open Explorer.
+    // It is Explorer's, not another tool's: a Replace that left it is not complete, replacing
+    // takes it over, and Restore gives it back to Explorer as it was.
+    [Test]
+    public async Task ReplaceTakesOverACopyOfExplorersExplore()
+    {
+        using var scratch = new RegistryScratch();
+        var replacement = scratch.Replacement();
+        // What a Replace that took them for another tool's left.
+        scratch.ReplaceWithoutFolderExplore(replacement);
+        scratch.Delete(@"Drive\shell\explore");
+        scratch.CopyExplorersExplore("Folder");
+        scratch.CopyExplorersExplore("Drive", @"%SystemRoot%\Explorer.exe");
+        var copied = scratch.Dump();
+        var older = Describe(replacement);
+
+        replacement.Replace();
+        var replaced = Describe(replacement);
+        var folder = scratch.Dump()[@"Folder\"];
+        replacement.Replace();
+        var replacedAgain = scratch.Dump()[@"Folder\"];
+        replacement.Restore();
+        var restored = scratch.Dump();
+
+        await Assert.That(Json(replacedAgain)).IsEqualTo(Json(folder));
+        await Assert.That(Json(restored[@"Folder\"])).IsEqualTo(Json(copied[@"Folder\"]));
+        await Assert.That(Json(Explore(restored, "Drive"))).IsEqualTo(Json(Explore(copied, "Drive")));
+        var (driveCommand, driveCommandKind) = scratch.Raw(@"Drive\shell\explore\command", null);
+        await Verify(
+            new
+            {
+                older,
+                replaced,
+                folder,
+                restoredFolder = restored[@"Folder\"],
+                // Unexpanded, as Dump would show it expanded.
+                driveCommand,
+                driveCommandKind
+            });
+    }
+
+    static object Explore(Dictionary<string, object> dump, string folderClass)
+    {
+        var shell = (Dictionary<string, object>) ((Dictionary<string, object>) dump[$@"{folderClass}\"])[@"shell\"];
+        return shell[@"explore\"];
+    }
+
+    // Keys sorted, since the registry need not list values in the order they were written.
+    static string Json(object value) =>
+        JsonSerializer.Serialize(Sorted(value));
+
+    static object Sorted(object value)
+    {
+        if (value is not Dictionary<string, object> dictionary)
+        {
+            return value;
+        }
+
+        return new SortedDictionary<string, object>(
+            dictionary.ToDictionary(_ => _.Key, _ => Sorted(_.Value)),
+            StringComparer.Ordinal);
+    }
+
     [Test]
     public async Task State()
     {
