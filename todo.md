@@ -22,27 +22,6 @@ Contents:
 ## Bugs, reproduced
 
 
-### 6. A relative path typed in the address bar is taken from C:\Windows\System32
-
-**Where:** [MainForm.cs:1606](src/Lode/MainForm.cs#L1606) (`view.Navigate(addressBox.Text)`), [Locations.cs:152-188](src/Lode/Locations.cs#L152) (`Normalize`, `Path.GetFullPath` at 173), [Program.cs:66](src/Lode/Program.cs#L66) (`Environment.CurrentDirectory = Environment.SystemDirectory`).
-
-**What happens:** `Normalize` makes a path full from the process's working directory, which `Program.Main` sets to System32, rightly, so Lode never holds a folder open. The command line is made full in the launch that knows where it is from. The address bar is not.
-
-**Reproduced:** `Locations.Normalize` with the working directory `Program.Main` sets:
-
-| Typed | Becomes |
-|-|-|
-| `src` | `C:\WINDOWS\system32\src`, so "Lode can't find 'src'" |
-| `..` | `C:\WINDOWS`, a folder, so the tab goes there |
-| `drivers` | `C:\WINDOWS\system32\drivers`, a folder, so the tab goes there |
-| `\Code` | `C:\Code`, whichever drive the tab is on |
-| `cmd.exe` | `C:\WINDOWS\system32\cmd.exe`, a file, which `Go` opens |
-| `cmd` | `C:\WINDOWS\system32\cmd`, not found |
-| `shell:downloads` | `C:\WINDOWS\system32\shell:downloads`, not found |
-
-**Fix:** where the tab shows a real folder, make what is typed full from it: `Path.GetFullPath(text, view.CurrentPath)` for input that is not rooted. `LocationsTests.Normalize` has no relative input. See also [Run a command from the address bar](#2-run-a-command-from-the-address-bar).
-
-
 ### 7. Going to the folder already shown drops Forward and adds to the history
 
 **Where:** [FolderView.cs:447-496](src/Lode/FolderView.cs#L447) (`Go`), [FolderView.cs:621-636](src/Lode/FolderView.cs#L621) (`Open`). Reached from the breadcrumb ([MainForm.cs:156-160](src/Lode/MainForm.cs#L156)) and the address bar ([MainForm.cs:1606](src/Lode/MainForm.cs#L1606)).
@@ -450,7 +429,7 @@ Nothing shows what branch a repository is on, whether it has changes, or how far
 
 ### 2. Run a command from the address bar
 
-Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folder open, which developers use a good deal. Lode says it can't find `cmd` (see [bug 6](#6-a-relative-path-typed-in-the-address-bar-is-taken-from-cwindowssystem32)). The shell's own names, `shell:downloads` and the like, are not known either.
+Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folder open, which developers use a good deal. Lode takes `cmd` for a folder of that name in the folder open, and says it can't find it. The shell's own names, `shell:downloads` and the like, are not known either.
 
 
 ### 3. Drives come and go only on F5

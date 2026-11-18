@@ -1624,7 +1624,7 @@ class MainForm : Form
         {
             eventArgs.Handled = true;
             eventArgs.SuppressKeyPress = true;
-            view.Navigate(addressBox.Text);
+            view.Navigate(Locations.Normalize(addressBox.Text, view.CurrentPath) ?? addressBox.Text);
             breadcrumb.Path = view.CurrentPath;
             view.FocusList();
         }

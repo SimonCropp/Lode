@@ -29,6 +29,32 @@ public class LocationsTests
     public Task Normalize() =>
         Verify(inputs.ToDictionary(_ => $"[{_}]", _ => Locations.Normalize(_) ?? "(rejected)"));
 
+    // Typed in the address bar: a path that is not full is taken from the folder the tab shows,
+    // not from Lode's working directory. Full ones, This PC, and names that are not paths in a
+    // folder, are as they would be anyway.
+    [Test]
+    public Task NormalizeRelativeToAFolder() =>
+        Verify(
+            new[]
+            {
+                "src",
+                @"src\Lode",
+                "..",
+                @"..\Other",
+                ".",
+                @"\Code",
+                "cmd.exe",
+                @"E:\Elsewhere",
+                @"\\server\share",
+                "This PC",
+                "shell:downloads"
+            }.ToDictionary(_ => $"[{_}]", _ => Locations.Normalize(_, @"D:\Code\Lode") ?? "(rejected)"));
+
+    // At This PC, there is no folder to take it from.
+    [Test]
+    public async Task NormalizeRelativeToThisPC() =>
+        await Assert.That(Locations.Normalize("src", Locations.ThisPC)).IsEqualTo(Locations.Normalize("src"));
+
     [Test]
     public Task Parent() =>
         Verify(Normalized().ToDictionary(_ => _, _ => Locations.Parent(_) ?? "(none)"));

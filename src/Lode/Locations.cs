@@ -149,7 +149,13 @@ static class Locations
         return string.Concat(Path.TrimEndingDirectorySeparator(to.AsSpan()), rest);
     }
 
-    public static string? Normalize(CharSpan input)
+    /// <summary>
+    /// <paramref name="input"/> as a full path, or This PC. A path that is not full, "src",
+    /// ".." or "\Code" say, is taken from <paramref name="relativeTo"/> where that is a folder,
+    /// as Explorer takes what is typed in its address bar from the folder open. Otherwise from
+    /// Lode's working directory, which is no folder the user picked.
+    /// </summary>
+    public static string? Normalize(CharSpan input, string? relativeTo = null)
     {
         var text = Environment.ExpandEnvironmentVariables(input.Trim().Trim('"').ToString());
         if (text.Length == 0)
@@ -170,7 +176,7 @@ static class Locations
 
         try
         {
-            var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(text));
+            var full = Path.TrimEndingDirectorySeparator(FullPath(text, relativeTo));
             // "\\server\" is a root, which keeps its separator; the machine is "\\server".
             if (IsNetwork(full) &&
                 full.Length > 3 &&
@@ -185,6 +191,21 @@ static class Locations
         {
             return null;
         }
+    }
+
+    // A name with a colon past its drive letter, "shell:downloads" say, is not a path in the
+    // folder.
+    static string FullPath(string text, string? relativeTo)
+    {
+        if (relativeTo == null ||
+            IsThisPC(relativeTo) ||
+            Path.IsPathFullyQualified(text) ||
+            text.IndexOf(':') > 1)
+        {
+            return Path.GetFullPath(text);
+        }
+
+        return Path.GetFullPath(text, relativeTo);
     }
 
     public static string? Parent(string location)

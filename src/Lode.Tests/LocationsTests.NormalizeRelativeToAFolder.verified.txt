@@ -1,0 +1,13 @@
+﻿{
+  [..\Other]: D:\Code\Other,
+  [..]: D:\Code,
+  [.]: D:\Code\Lode,
+  [cmd.exe]: D:\Code\Lode\cmd.exe,
+  [E:\Elsewhere]: E:\Elsewhere,
+  [shell:downloads]: {CurrentDirectory}shell:downloads,
+  [src\Lode]: D:\Code\Lode\src\Lode,
+  [src]: D:\Code\Lode\src,
+  [This PC]: This PC,
+  [\Code]: D:\Code,
+  [\\server\share]: \\server\share
+}
