@@ -39,9 +39,17 @@ static class ShellFileOperation
     /// <summary>
     /// What happened. <paramref name="Succeeded"/> is false when the operation failed, was
     /// cancelled, or the user skipped something; <paramref name="Changes"/> lists the items done
-    /// either way.
+    /// either way. <paramref name="Merged"/> lists the folders that went into one of the same
+    /// name already there, each with the folder there: what was in it is in
+    /// <paramref name="Changes"/> item by item, as the folder there is not new.
     /// </summary>
-    public sealed record Outcome(bool Succeeded, IReadOnlyList<Change> Changes);
+    public sealed record Outcome(bool Succeeded, IReadOnlyList<Change> Changes, IReadOnlyList<Change> Merged)
+    {
+        public Outcome(bool succeeded, IReadOnlyList<Change> changes) :
+            this(succeeded, changes, [])
+        {
+        }
+    }
 
     /// <summary>
     /// What a move or a rename took from where to where, for a tab showing a folder that went,
@@ -78,7 +86,7 @@ static class ShellFileOperation
         var operation = (IFileOperation)new FileOperationObject();
         var created = new List<IShellItem>();
         var folders = new Dictionary<string, IShellItem>(StringComparer.OrdinalIgnoreCase);
-        var sink = new ProgressSink();
+        var sink = new ProgressSink(Merging(kind, items));
         uint cookie = 0;
         try
         {
@@ -111,16 +119,17 @@ static class ShellFileOperation
             var performed = operation.PerformOperations() >= 0;
             if (kind is Kind.Move or Kind.Rename)
             {
-                TellMoved(sink.Changes);
+                // A folder merged went too, for a tab showing it to follow.
+                TellMoved([.. sink.Merged, .. sink.Changes]);
             }
 
             if (!performed)
             {
-                return new(false, sink.Changes);
+                return new(false, sink.Changes, sink.Merged);
             }
 
             operation.GetAnyOperationsAborted(out var aborted);
-            return new(!aborted, sink.Changes);
+            return new(!aborted, sink.Changes, sink.Merged);
         }
         finally
         {
@@ -147,6 +156,64 @@ static class ShellFileOperation
 
             return folder;
         }
+    }
+
+    // The folders already where a copy, move or rename puts a folder of the same name, which it
+    // merges into. Windows reports such a folder done, as if it were made there, whatever it
+    // held before. Looked for before the operation, since by the time it is reported the folder
+    // would be there either way. Each folder inside one merged is merged in its turn where the
+    // folder there has one of its name too.
+    static HashSet<string> Merging(Kind kind, IReadOnlyList<Item> items)
+    {
+        var merging = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            if (Target(kind, item) is { } target)
+            {
+                Add(item.Source, target);
+            }
+        }
+
+        return merging;
+
+        void Add(string source, string target)
+        {
+            // A copy into the folder it came from makes "name - Copy", and a rename that only
+            // changes case is the folder itself.
+            if (Locations.Same(source, target) ||
+                !Directory.Exists(source) ||
+                !Directory.Exists(target))
+            {
+                return;
+            }
+
+            merging.Add(Path.TrimEndingDirectorySeparator(target));
+            try
+            {
+                foreach (var folder in Directory.EnumerateDirectories(source))
+                {
+                    Add(folder, Path.Combine(target, Path.GetFileName(folder)));
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // What can't be read here can't be copied either.
+            }
+        }
+    }
+
+    static string? Target(Kind kind, Item item)
+    {
+        var name = item.NewName ?? Path.GetFileName(Path.TrimEndingDirectorySeparator(item.Source));
+        switch (kind)
+        {
+            case Kind.Copy or Kind.Move when item.Destination != null:
+                return Path.Combine(item.Destination, name);
+            case Kind.Rename when Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(item.Source)) is { } parent:
+                return Path.Combine(parent, name);
+        }
+
+        return null;
     }
 
     static void TellMoved(IReadOnlyList<Change> changes)
@@ -204,9 +271,14 @@ static class ShellFileOperation
 
     // Hears each item finish, on the thread running the operation.
     [ComVisible(true)]
-    sealed class ProgressSink : IFileOperationProgressSink
+    sealed class ProgressSink(HashSet<string> merging) : IFileOperationProgressSink
     {
         List<Change> changes = [];
+
+        /// <summary>
+        /// The folders merged into one already there, each with the folder there.
+        /// </summary>
+        public List<Change> Merged { get; } = [];
 
         // Where each item done now is, or was, for one deleted outright.
         HashSet<string>.AlternateLookup<CharSpan> places =
@@ -235,6 +307,15 @@ static class ShellFileOperation
             // Nearly all of a big copy is inside a folder reported before it, and is not kept.
             // A folder reported after what is in it is seen to when the changes are asked for.
             var change = new Change(source, PathOf(newlyCreated));
+            // A folder merged into one already there is not new there, nor did it go there whole:
+            // what was in it is reported, and kept, item by item.
+            if (change.Result != null &&
+                merging.Contains(change.Result))
+            {
+                Merged.Add(change);
+                return;
+            }
+
             var place = Place(change);
             if (IsInside(place))
             {

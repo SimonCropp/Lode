@@ -22,23 +22,6 @@ Contents:
 ## Bugs, reproduced
 
 
-### 1. Undo copy recycles files that were there before the copy
-
-**Where:** [ShellFileOperation.cs:227-246](src/Lode/ShellFileOperation.cs#L227) (`ProgressSink.Record`), [FileOperations.cs:49-53](src/Lode/FileOperations.cs#L49) (`Transfer`), [UndoHistory.cs:353-362](src/Lode/UndoHistory.cs#L353) (`Created.Undo`), [UndoHistory.cs:305-314](src/Lode/UndoHistory.cs#L305) (`Moved.Undo`).
-
-**What happens:** `Record` takes every result that is not a failure to mean "this item now exists at `newlyCreated`". Copying or moving a folder into a folder that already has one of the same name merges the two, and the shell reports that as one change, for the folder. Its children are then dropped as "inside a folder reported before", so the undo entry is the destination folder as a whole.
-
- * Copy `D:\a\src` into `D:\b`, which has a `src`. The entry is `Created([D:\b\src])`. Ctrl+Z sends all of `D:\b\src` to the Recycle Bin, the files that were there before the copy with it.
- * Move the same way. Ctrl+Z moves all of `D:\b\src` back to `D:\a\src`, taking what was in `D:\b\src` before.
- * A folder rename that merges has the same shape.
-
-Recoverable, from the Recycle Bin or by Redo, but it is the wrong thing undone.
-
-**Reproduced:** `ShellFileOperation.Run` copying, then moving, `a\src` (holding `new.txt` and `inner\deep.txt`) into `b`, where `b\src` held `existing.txt`. Both gave `Succeeded` true and one change, `a\src -> b\src`, with `b\src` then holding `existing.txt`, `inner` and `new.txt`. Run with `NoConfirmation` and the silent flag (0x4) rather than Lode's `AllowUndo | AddUndoRecord`, to keep dialogs and Explorer's own undo out of it. With Windows' **Hide folder merge conflicts** on, the default, the merge is silent either way.
-
-**Fix:** in `Record`, a merged folder is not created: leave it out of `places`, so its children are recorded one by one. The copy engine has `COPYENGINE_S_MERGE` (0x00270006) for this and `COPYENGINE_S_USER_IGNORED` (0x00270005) for an item skipped; which result the sink is handed for the merged folder was not looked at, so check that first. Failing that, note before the operation which destinations already hold a folder of the source's name. No test covers a merge.
-
-
 ### 2. A tab stops refreshing itself after its folder is deleted and made again
 
 **Where:** [FolderWatcher.cs:51-76](src/Lode/FolderWatcher.cs#L51) (`Start`, whose `Error` handler only calls `changed()`), [FolderWatcher.cs:116-141](src/Lode/FolderWatcher.cs#L116) (`Refresh` takes a watcher that is not null to be watching), [FolderView.cs:963-983](src/Lode/FolderView.cs#L963) (`Reload` reads without watching again).

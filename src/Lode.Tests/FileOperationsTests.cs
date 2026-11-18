@@ -47,6 +47,50 @@ public class FileOperationsTests
         await Assert.That(File.Exists(fixture.At("Archive", "Source", "Deep", "leaf.aleph"))).IsTrue();
     }
 
+    // A folder copied into one of the same name already there merges into it. That folder is
+    // not new, so the changes are what the copy brought, item by item, and undoing the copy
+    // leaves what was there before. A folder inside merges too, where the one there has one of
+    // its name.
+    [Test]
+    public async Task CopyingAFolderIntoOneOfTheSameNameMergesIt()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Archive", "Source", "Deep"));
+        File.WriteAllText(fixture.At("Archive", "Source", "existing.aleph"), "there before");
+
+        var outcome = await FileOperations.OnStaThread(
+            () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, [fixture.At("Source")], fixture.At("Archive"), ShellFileOperation.NoConfirmation));
+
+        await Verify(
+            new
+            {
+                outcome.Succeeded,
+                changes = outcome.Changes.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}"),
+                merged = outcome.Merged.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}")
+            });
+    }
+
+    // A folder renamed to the name of one beside it merges into it, which Windows does as a
+    // move of what is in it.
+    [Test]
+    public async Task RenamingAFolderToOneBesideItMergesIt()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Docs", "Deep"));
+        Directory.CreateDirectory(fixture.At("Archive", "Deep"));
+
+        var outcome = ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Rename, [fixture.At("Docs")], "Archive", ShellFileOperation.NoConfirmation);
+
+        await Verify(
+            new
+            {
+                outcome.Succeeded,
+                changes = outcome.Changes.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}"),
+                merged = outcome.Merged.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}"),
+                tree = fixture.Tree()
+            });
+    }
+
     // A file picked beside the folder it is in, as from a search, is copied twice: with the
     // folder, and by itself, which is a change of its own.
     [Test]

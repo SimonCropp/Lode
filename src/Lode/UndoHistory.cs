@@ -38,6 +38,16 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         /// Whether a file or folder is still there.
         /// </summary>
         bool Exists(string path);
+
+        /// <summary>
+        /// Makes a folder, and any it is in that are not there.
+        /// </summary>
+        void CreateFolder(string path);
+
+        /// <summary>
+        /// Deletes a folder where it is there and empty.
+        /// </summary>
+        void DeleteIfEmpty(string path);
     }
 
     /// <summary>
@@ -170,11 +180,17 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     public void RecordRename(string oldPath, string newPath) =>
         Record(new Renamed(oldPath, newPath));
 
-    public void RecordMove(IReadOnlyList<(string From, string To)> moved)
+    /// <param name="emptied">
+    /// Folders merged into one of the same name already there: Windows moves what is in each
+    /// item by item, in <paramref name="moved"/>, and then deletes it. Undo makes it again to
+    /// move those back into, and redo deletes it again once it is empty.
+    /// </param>
+    /// <param name="name">"move", or "rename" for a rename that merged.</param>
+    public void RecordMove(IReadOnlyList<(string From, string To)> moved, IReadOnlyList<string>? emptied = null, string name = "move")
     {
         if (moved.Count > 0)
         {
-            Record(new Moved(moved));
+            Record(new Moved(moved, emptied ?? [], name));
         }
     }
 
@@ -298,12 +314,21 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         }
     }
 
-    sealed class Moved(IReadOnlyList<(string From, string To)> initial) : Entry("move")
+    sealed class Moved(IReadOnlyList<(string From, string To)> initial, IReadOnlyList<string> emptied, string name) : Entry(name)
     {
         IReadOnlyList<(string From, string To)> moved = initial;
 
         public override Outcome Undo(IFileActions actions, IntPtr owner)
         {
+            // Made again for what was in them to go back into, empty folders included.
+            foreach (var folder in emptied)
+            {
+                if (!actions.Exists(folder))
+                {
+                    actions.CreateFolder(folder);
+                }
+            }
+
             var outcome = Move(actions, owner, moved.Select(_ => (_.To, _.From)).ToList(), "back", out var back);
             if (outcome.Result == Result.Done)
             {
@@ -319,6 +344,12 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
             if (outcome.Result == Result.Done)
             {
                 moved = again;
+                // As Windows did when it merged them. The deepest first, so one inside another
+                // is gone by the time the other is looked at.
+                foreach (var folder in emptied.OrderByDescending(_ => _.Length))
+                {
+                    actions.DeleteIfEmpty(folder);
+                }
             }
 
             return outcome;
@@ -494,6 +525,25 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
 
         public bool Exists(string path) =>
             Path.Exists(path);
+
+        public void CreateFolder(string path) =>
+            Directory.CreateDirectory(path);
+
+        public void DeleteIfEmpty(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path) &&
+                    !Directory.EnumerateFileSystemEntries(path).Any())
+                {
+                    Directory.Delete(path);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Left there: an empty folder does no harm, and the move itself was done.
+            }
+        }
 
         static List<(string, string)> Pairs(ShellFileOperation.Outcome outcome) =>
             outcome.Changes

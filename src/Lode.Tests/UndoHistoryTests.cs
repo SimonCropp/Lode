@@ -59,6 +59,15 @@ public class UndoHistoryTests
 
         public bool Exists(string path) =>
             !Gone.Contains(path);
+
+        public void CreateFolder(string path)
+        {
+            Calls.Add($"create {path}");
+            Gone.Remove(path);
+        }
+
+        public void DeleteIfEmpty(string path) =>
+            Calls.Add($"delete if empty {path}");
     }
 
     [Test]
@@ -253,6 +262,40 @@ public class UndoHistoryTests
             new
             {
                 failures = new[] { undoMove, undoRename, redoRename, redoMove }.Where(_ => _ != null),
+                undone,
+                redone = fixture.Tree()
+            });
+    }
+
+    // On disk: a folder moved into one of the same name already there. Windows merges the two,
+    // moving what is in the one item by item, then deletes it. Undo moves only those back, into
+    // the folder made again, empty folders included, and leaves what was there before. Redo
+    // merges them again.
+    [Test]
+    public async Task MergingMoveOnDisk()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Archive", "Source", "Deep"));
+        File.WriteAllText(fixture.At("Archive", "Source", "existing.aleph"), "there before");
+        File.WriteAllText(fixture.At("Archive", "Source", "Deep", "existing.aleph"), "there before");
+        Directory.CreateDirectory(fixture.At("Source", "Empty"));
+        Directory.CreateDirectory(fixture.At("Archive", "Source", "Empty"));
+        var history = new UndoHistory(new UndoHistory.ShellFileActions());
+
+        var outcome = ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Move, [fixture.At("Source")], fixture.At("Archive"), ShellFileOperation.NoConfirmation);
+        history.RecordMove(
+            outcome.Changes.Select(_ => (_.Source, _.Result!)).ToList(),
+            outcome.Merged.Select(_ => _.Source).ToList());
+        var moved = fixture.Tree();
+        var undo = await history.Undo(IntPtr.Zero);
+        var undone = fixture.Tree();
+        var redo = await history.Redo(IntPtr.Zero);
+
+        await Verify(
+            new
+            {
+                failures = new[] { undo, redo }.Where(_ => _ != null),
+                moved,
                 undone,
                 redone = fixture.Tree()
             });

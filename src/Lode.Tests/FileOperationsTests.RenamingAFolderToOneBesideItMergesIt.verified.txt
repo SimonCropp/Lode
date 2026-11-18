@@ -1,0 +1,26 @@
+﻿{
+  Succeeded: true,
+  changes: [
+    Projects/Docs/guide.aleph -> Projects/Archive/guide.aleph
+  ],
+  merged: [
+    Projects/Docs -> Projects/Archive,
+    Projects/Docs/Deep -> Projects/Archive/Deep
+  ],
+  tree: [
+    Projects/Archive/,
+    Projects/Archive/Deep/,
+    Projects/Archive/guide.aleph (900 bytes),
+    Projects/Cache/,
+    Projects/Report1.beta (1,500,000 bytes),
+    Projects/Source/,
+    Projects/Source/Deep/,
+    Projects/Source/Deep/leaf.aleph (40 bytes),
+    Projects/Source/main.aleph (5,000 bytes),
+    Projects/hidden.aleph (64 bytes),
+    Projects/notes.aleph (12 bytes),
+    Projects/report10.beta (300,000 bytes),
+    Projects/report2.beta (2,048 bytes),
+    Projects/summary.gamma (0 bytes)
+  ]
+}

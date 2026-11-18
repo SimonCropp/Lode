@@ -46,10 +46,12 @@ static class FileOperations
             {
                 if (move)
                 {
-                    UndoHistory.Instance.RecordMove(Pairs(outcome));
+                    UndoHistory.Instance.RecordMove(Pairs(outcome), Emptied(outcome));
                     return;
                 }
 
+                // A folder merged into one already there is not among the changes, so undoing
+                // the copy sends to the Recycle Bin what it brought, not what was there before.
                 UndoHistory.Instance.RecordCreated("copy", Pairs(outcome).Select(_ => _.To).ToList());
             });
     }
@@ -59,6 +61,12 @@ static class FileOperations
         outcome.Changes
             .Where(_ => _.Result != null)
             .Select(_ => (_.Source, _.Result!))
+            .ToList();
+
+    // The folders a move merged into one already there, which Windows emptied and deleted.
+    static List<string> Emptied(ShellFileOperation.Outcome outcome) =>
+        outcome.Merged
+            .Select(_ => _.Source)
             .ToList();
 
     // Undoable with Ctrl+Z in Explorer, as SHFileOperation's allow-undo flag was.
@@ -90,6 +98,14 @@ static class FileOperations
     public static bool Rename(IntPtr owner, string path, string newName)
     {
         var outcome = ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, [path], newName, undoFlags);
+        // Renamed to the name of a folder beside it, a folder merges into that one: what was in
+        // it is moved there item by item, and the folder deleted.
+        if (outcome.Merged.Count > 0)
+        {
+            UndoHistory.Instance.RecordMove(Pairs(outcome), Emptied(outcome), "rename");
+            return outcome.Succeeded;
+        }
+
         if (outcome.Changes is [{ Result: { } renamed }, ..])
         {
             UndoHistory.Instance.RecordRename(path, renamed);
