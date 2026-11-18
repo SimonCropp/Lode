@@ -68,11 +68,51 @@ sealed class FolderWatcher : IDisposable
             changed();
         };
 
-        // Too many changes at once to keep track of, or the folder itself has gone. Either way,
-        // read it again.
-        started.Error += (_, _) => changed();
+        started.Error += (_, eventArgs) => Failed(started, eventArgs.GetException());
         started.EnableRaisingEvents = true;
         return started;
+    }
+
+    // Too many changes at once to keep track of, or the watch itself has failed: the folder
+    // deleted, say, or the connection to its share dropped. Either way it is read again. A
+    // watch that failed reports nothing more, even once the folder is back, so it is let go of
+    // and started again. Where the folder is not back yet, Revive starts it on the next read.
+    void Failed(FileSystemWatcher failed, Exception exception)
+    {
+        if (exception is not InternalBufferOverflowException)
+        {
+            lock (gate)
+            {
+                if (watcher == failed)
+                {
+                    watcher = null;
+                    failed.Dispose();
+                    if (!disposed)
+                    {
+                        Refresh();
+                    }
+                }
+            }
+        }
+
+        changed();
+    }
+
+    /// <summary>
+    /// Watches again where the watch failed and could not be started again then, the folder not
+    /// being back yet, say. For a read of the folder that is about to be done, so reports no
+    /// change. Does nothing while it is watching, or has let go on purpose. Starting a watch
+    /// can wait on the drive, so not for the UI thread.
+    /// </summary>
+    public void Revive()
+    {
+        lock (gate)
+        {
+            if (!disposed)
+            {
+                Refresh();
+            }
+        }
     }
 
     /// <summary>

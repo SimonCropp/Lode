@@ -656,15 +656,24 @@ sealed class FolderTree : TreeView
     }
 
     // Reads folders' subfolders off the UI thread, by the settings as they are now. One result
-    // for each folder, in the same order.
-    Task<List<List<Subfolder>?>> ReadAsync(IReadOnlyList<string> paths)
+    // for each folder, in the same order. The watches given, that failed and could not be
+    // started again then, watch again first, so nothing after the read is missed.
+    Task<List<List<Subfolder>?>> ReadAsync(IReadOnlyList<string> paths, IReadOnlyList<FolderWatcher?>? reviving = null)
     {
         var showHidden = settings.ShowHidden;
         var hiddenSystem = settings.HiddenSystemItems();
         return Task.Run(
-            () => paths
-                .Select(_ => ReadSubfolders(_, showHidden, hiddenSystem))
-                .ToList());
+            () =>
+            {
+                foreach (var watcher in reviving ?? [])
+                {
+                    watcher?.Revive();
+                }
+
+                return paths
+                    .Select(_ => ReadSubfolders(_, showHidden, hiddenSystem))
+                    .ToList();
+            });
     }
 
     // Still in the tree, rather than taken out of it while its folder was being read.
@@ -731,7 +740,9 @@ sealed class FolderTree : TreeView
     // with what is there.
     async Task SyncAsync(List<TreeNode> nodes)
     {
-        var read = await ReadAsync(nodes.Select(_ => (string)_.Tag!).ToList());
+        var read = await ReadAsync(
+            nodes.Select(_ => (string)_.Tag!).ToList(),
+            nodes.Select(_ => watched.GetValueOrDefault(_)).ToList());
         if (IsDisposed)
         {
             return;

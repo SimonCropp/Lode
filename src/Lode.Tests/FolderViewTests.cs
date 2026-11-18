@@ -399,6 +399,23 @@ public class FolderViewTests
         await Assert.That(view.StatusText).DoesNotContain("find");
     }
 
+    // Deleted and made again at once, as a build emptying its output folder does, the folder
+    // stays open, and what changes in it afterwards still shows.
+    [Test]
+    public async Task AFolderDeletedAndMadeAgainIsStillWatched()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+
+        Directory.Delete(fixture.At("Docs"), true);
+        Directory.CreateDirectory(fixture.At("Docs"));
+        await Pump.Until(() => !Names(view).Contains("guide.aleph"));
+        await File.WriteAllBytesAsync(fixture.At("Docs", "arrived.aleph"), new byte[3]);
+        await Pump.Until(() => Names(view).Contains("arrived.aleph"));
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Docs"));
+    }
+
     // Sent to the Recycle Bin, a folder is moved there, and the view's watch on it goes with it.
     // It is seen to go from the folder it was in.
     [Test]

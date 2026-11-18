@@ -122,4 +122,65 @@ public class FolderWatcherTests
                 reportedAfter = changes > 0
             });
     }
+
+    // A watch on a folder deleted fails, and would report nothing more even once the folder is
+    // made again. It lets go when it fails, and the next read revives it, so what changes in the
+    // folder made again is heard.
+    [Test]
+    public async Task WatchesAgainOnceTheFolderIsMadeAgain()
+    {
+        using var fixture = Fixture.Create();
+        var changes = 0;
+        var folder = fixture.At("Docs");
+        using var watcher = new FolderWatcher(folder, NotifyFilters.FileName | NotifyFilters.DirectoryName, () => Interlocked.Increment(ref changes));
+
+        Directory.Delete(folder, true);
+        var letGoOnceDeleted = await Until(() => !watcher.IsWatching);
+        Directory.CreateDirectory(folder);
+        watcher.Revive();
+        var watchingOnceRevived = watcher.IsWatching;
+        var changesBefore = changes;
+        await File.WriteAllTextAsync(Path.Combine(folder, "after.txt"), "");
+        var heardAfter = await Until(() => changes > changesBefore);
+
+        await Assert.That(letGoOnceDeleted).IsTrue();
+        await Assert.That(watchingOnceRevived).IsTrue();
+        await Assert.That(heardAfter).IsTrue();
+    }
+
+    // Reviving a watch that is watching, or that has let go on purpose, changes nothing.
+    [Test]
+    public async Task ReviveLeavesAWatchAsItIs()
+    {
+        using var fixture = Fixture.Create();
+        using var watcher = new FolderWatcher(fixture.At("Docs"), NotifyFilters.FileName, () => { });
+
+        watcher.Revive();
+        var watching = watcher.IsWatching;
+        bool whileLetGo;
+        using (FolderWatcher.LetGo([fixture.At("Docs")]))
+        {
+            watcher.Revive();
+            whileLetGo = watcher.IsWatching;
+        }
+
+        await Assert.That(watching).IsTrue();
+        await Assert.That(whileLetGo).IsFalse();
+        await Assert.That(watcher.IsWatching).IsTrue();
+    }
+
+    static async Task<bool> Until(Func<bool> condition)
+    {
+        for (var tries = 0; tries < 100; tries++)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            await Task.Delay(20);
+        }
+
+        return false;
+    }
 }

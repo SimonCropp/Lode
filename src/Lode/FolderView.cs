@@ -992,6 +992,8 @@ sealed class FolderView : UserControl
         var ascending = sortAscending;
         var started = Stopwatch.GetTimestamp();
         var freeSpace = places.FreeSpace;
+        var watching = watcher;
+        var watchingParent = parentWatcher;
         loading = true;
 
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
@@ -1000,6 +1002,10 @@ sealed class FolderView : UserControl
             () =>
             {
                 var space = FreeSpaceOf(path, freeSpace);
+                // A watch that failed, the folder deleted and made again say, watches again
+                // before the read, so nothing after the read is missed. F5 mends one too.
+                watching?.Revive();
+                watchingParent?.Revive();
                 try
                 {
                     var found = Enumerate(path, showHidden, hiddenSystem, out var late);

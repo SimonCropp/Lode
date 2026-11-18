@@ -22,24 +22,6 @@ Contents:
 ## Bugs, reproduced
 
 
-### 2. A tab stops refreshing itself after its folder is deleted and made again
-
-**Where:** [FolderWatcher.cs:51-76](src/Lode/FolderWatcher.cs#L51) (`Start`, whose `Error` handler only calls `changed()`), [FolderWatcher.cs:116-141](src/Lode/FolderWatcher.cs#L116) (`Refresh` takes a watcher that is not null to be watching), [FolderView.cs:963-983](src/Lode/FolderView.cs#L963) (`Reload` reads without watching again).
-
-**What happens:** when the folder a `FileSystemWatcher` watches is deleted, it raises `Error` once and reports nothing after that, even with the folder back. `FolderWatcher` keeps the dead watcher, so the tab shows the folder as it was at that one reload and never updates again. F5 does not help, since `Reload` does not call `Watch`. Only leaving the folder and coming back does.
-
-It needs the folder to be back by the time `LeaveIfGone` looks, about 100ms on. Otherwise the tab goes up to the nearest folder still there, as it should. So:
-
- * code that empties an output folder by deleting and recreating it: `Directory.Delete(x, true)` then `Directory.CreateDirectory(x)` in a test's setup, MSBuild's `RemoveDir` then `MakeDir`;
- * any other error on a watch, such as a share's connection dropping and coming back.
-
-The watch on the folder's parent, and the tree's watches, are the same class and die the same way.
-
-**Reproduced:** a `FileSystemWatcher` with the view's `NotifyFilters` on a temp folder. The folder was deleted, made again 50ms later, and a file written into it. One `Error` event (`Win32Exception`, "Access is denied"), then no events at all. `EnableRaisingEvents` still read true, on .NET 11.
-
-**Fix:** on an `Error` that is not an `InternalBufferOverflowException`, dispose the watcher under the gate, set it to null and try `Start` again. Where that fails because the folder is not back yet, something has to try again: `FolderView` asking the watcher to revive itself after each read that worked would do, and would make F5 mend it too.
-
-
 ### 3. One missing item makes a whole paste, delete or drop do nothing, without a word
 
 **Where:** [ShellFileOperation.cs:88-90](src/Lode/ShellFileOperation.cs#L88) and [166-171](src/Lode/ShellFileOperation.cs#L166) (`CreateItem` throws), [FileOperations.cs:103-136](src/Lode/FileOperations.cs#L103) (`OnStaThread` puts the exception in the task), [FileOperations.cs:90-99](src/Lode/FileOperations.cs#L90) (`Rename`, on the UI thread, catches nothing). Callers that drop the task: [FolderView.cs:2199-2203](src/Lode/FolderView.cs#L2199) (`Paste`), [FolderView.cs:2209](src/Lode/FolderView.cs#L2209) (`Delete`), `FileOperations.cs:475` (`Drop`), `FolderTree.cs:113` and `1459-1463`.
