@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 18. Reopening a closed tab whose folder has gone leaves an empty tab named This PC
-
-**Where:** [MainForm.cs:1053-1063](src/Lode/MainForm.cs#L1053) (`ReopenClosedTab`), [FolderView.cs:483-495](src/Lode/FolderView.cs#L483).
-
-**What happens:** close a tab on `D:\Temp\x`, delete the folder or take its drive out, press Ctrl+Shift+T. "Lode can't find…" shows. The view never reaches `Open`, so `CurrentPath` is still what it starts as, This PC, and it is not stale: a tab titled This PC listing nothing, not even drives, until F5. The closed tab is used up. `OpenInitialTabs` and `Openable` check that paths are there. `ReopenClosedTab` does not.
-
-**Fix:** skip what has gone, or go to the nearest folder still there, as a tab does when its folder is deleted.
-
-
 ### 19. Options is taller than a small or scaled screen, and can't scroll
 
 **Where:** `OptionsForm.cs:298-304` (`FixedDialog`, `AutoSize`, `GrowAndShrink`, no `AutoScroll` anywhere in the file), `721-829` (a row for each of 28 actions), `1094-1107` (`PageHost` gives every page the height of the tallest).

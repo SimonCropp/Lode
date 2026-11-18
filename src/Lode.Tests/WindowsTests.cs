@@ -235,6 +235,24 @@ public class WindowsTests
             });
     }
 
+    // One whose folder has gone since, with the folder it was in, opens at the nearest folder
+    // still there, as a tab does when its folder is deleted, rather than as an empty This PC.
+    [Test]
+    public async Task ReopeningATabWhoseFolderHasGone()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root, fixture.At("Source", "Deep"));
+        form.CloseOtherTabs((TabPage)form.Views.First().Parent!);
+        Directory.Delete(fixture.At("Source"), true);
+
+        form.ReopenClosedTab();
+        await Pump.Loaded(form.ActiveView!);
+
+        await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(form.ActiveView.Entries.Select(_ => _.Name)).Contains("Docs");
+        await Assert.That(form.CanReopenClosedTab).IsFalse();
+    }
+
     // Another launch's folders, a GitHub Desktop "Show in Explorer" say: one a tab in any
     // window already shows, however its path is written, selects that tab, and the rest open as
     // tabs in the window used last, each once.

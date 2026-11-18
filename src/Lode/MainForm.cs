@@ -1074,7 +1074,10 @@ class MainForm : Form
     internal bool CanReopenClosedTab => closedTabs.Count > 0;
 
     /// <summary>
-    /// Opens the most recently closed tab again, at the folder it was showing.
+    /// Opens the most recently closed tab again, at the folder it was showing, or, where that
+    /// has gone since, the nearest folder above it still there, as a tab whose folder is
+    /// deleted goes to. Somewhere on the network is taken on trust, as asking after it could
+    /// keep the window waiting.
     /// </summary>
     internal void ReopenClosedTab()
     {
@@ -1085,6 +1088,12 @@ class MainForm : Form
 
         var path = closedTabs[^1];
         closedTabs.RemoveAt(closedTabs.Count - 1);
+        if (!Locations.IsRemote(path) &&
+            FolderView.NearestFolder(path) is { } nearest)
+        {
+            path = nearest;
+        }
+
         AddTab(path, true);
     }
 

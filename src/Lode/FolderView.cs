@@ -3077,7 +3077,11 @@ sealed class FolderView : UserControl
 
     // For a folder that has gone, the nearest above it still there: a machine on the network,
     // or This PC, if nothing nearer. Null while the folder itself is there, or may be.
-    static string? NearestFolder(string path)
+    /// <summary>
+    /// The nearest folder above <paramref name="path"/> that is there, This PC at the last, or
+    /// null when <paramref name="path"/> itself is not known to have gone.
+    /// </summary>
+    internal static string? NearestFolder(string path)
     {
         if (!IsGone(path))
         {
