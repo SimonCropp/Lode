@@ -239,6 +239,11 @@ static class TextEditors
             var startInfo = new ProcessStartInfo(EditorPath(settings))
             {
                 UseShellExecute = false,
+
+                // Some editors are started through a console program, Sublime Text's subl.exe,
+                // which hands the files to the editor and exits. Without this, Windows gives it a
+                // console window of its own, which flashes up while it runs.
+                CreateNoWindow = true,
                 WorkingDirectory = Path.GetDirectoryName(paths[0]) ?? ""
             };
             foreach (var path in paths)
