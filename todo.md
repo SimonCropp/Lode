@@ -22,21 +22,6 @@ Contents:
 ## Bugs, reproduced
 
 
-### 4. New window opens titled "Lode" with the address bar on This PC
-
-**Where:** [MainForm.cs:1464-1474](src/Lode/MainForm.cs#L1464) (`NewWindow`), [MainForm.cs:929-960](src/Lode/MainForm.cs#L929) (`AddTab`), [MainForm.cs:764](src/Lode/MainForm.cs#L764).
-
-**What happens:** the new window's tab control has no handle when `AddTab` runs. `OpenAt` raises `PathChanged` while `ActiveView` is still null, so only `Retitle` runs, which sets no title without an active view. `tabs.SelectedTab = page` then only stores the index, and neither that nor the handle being made afterwards raises `SelectedIndexChanged`. So `SyncToActiveView` is never called. `OpenInitialTabs` ([MainForm.cs:846-847](src/Lode/MainForm.cs#L846)) and `AdoptTab` ([MainForm.cs:1139-1146](src/Lode/MainForm.cs#L1139)) both call it themselves for this reason. `NewWindow` does not.
-
-Until the first navigation the title is "Lode" and the address bar shows This PC. The tree and the Back and Forward buttons are set in the same place, so should be out of step too, though those were not looked at.
-
-Affects Ctrl+N, **New window** in the ⋯ menu and the command palette, and the tree's **Open in new window**.
-
-**Reproduced:** a `MainForm` made off screen, as the tests make them, and `NewWindow(path)` called on it. The new window had title `Lode`, `breadcrumb.Path` of `This PC`, and `ActiveView.CurrentPath` the folder. After `Navigate` both were right.
-
-**Fix:** `window.SyncToActiveView()` after `AddTab` in `NewWindow`, or in `AddTab` when `activate` is set and the tab control has no handle. No test covers `NewWindow`.
-
-
 ### 5. Show more options can lose a shell extension's submenu
 
 **Where:** [ShellContextMenu.cs:694-711](src/Lode/ShellContextMenu/ShellContextMenu.cs#L694) (`IsSeparator`, `TidySeparators`).

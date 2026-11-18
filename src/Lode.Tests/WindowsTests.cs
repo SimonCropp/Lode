@@ -74,6 +74,31 @@ public class WindowsTests
         }
     }
 
+    // Shown already, with its title and address bar for the folder: the tab control has no
+    // handle until then, so selecting the tab says nothing of it.
+    [Test]
+    public async Task NewWindowShowsItsFolder()
+    {
+        using var fixture = Fixture.Create();
+        using var source = await Show(fixture, fixture.Root, fixture.At("Docs"));
+        var opened = new List<MainForm>();
+        MainForm.WindowOpened += opened.Add;
+        try
+        {
+            source.NewWindow(fixture.At("Docs"));
+            using var window = opened.Single();
+            var address = (Breadcrumb)window.Controls.Find("address", true)[0].Parent!;
+
+            await Assert.That(window.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Docs"));
+            await Assert.That(window.Text).IsEqualTo(source.Text);
+            await Assert.That(address.Path).IsEqualTo(fixture.At("Docs"));
+        }
+        finally
+        {
+            MainForm.WindowOpened -= opened.Add;
+        }
+    }
+
     [Test]
     public async Task CloseTabsToTheLeftAndRight()
     {

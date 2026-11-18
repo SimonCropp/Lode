@@ -952,6 +952,14 @@ class MainForm : Form
         if (activate)
         {
             tabs.SelectedTab = page;
+            // In a window not shown yet, the tab control has no handle, so selecting a tab only
+            // notes which, and nothing says it changed: the title, address bar, buttons and
+            // tree are brought in line here instead.
+            if (!tabs.IsHandleCreated)
+            {
+                SyncToActiveView();
+            }
+
             view.FocusList();
         }
 
@@ -1465,7 +1473,7 @@ class MainForm : Form
         NewWindow(ActiveView?.CurrentPath ?? settings.StartLocation());
 
     // In this process rather than a new one, so tabs can be dragged between the two.
-    void NewWindow(string path)
+    internal void NewWindow(string path)
     {
         var offset = new Size(LogicalToDeviceUnits(30), LogicalToDeviceUnits(30));
         var window = CreateWindow(new(Location + offset, NormalSize));
