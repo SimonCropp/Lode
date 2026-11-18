@@ -21,20 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 11. A drive that could not be read once can never be expanded
-
-**Where:** `FolderTree.cs:682-696` (`LoadChildren`), `700-728` (`ExpandOnceRead`), `822-827` (`ShowExpander`).
-
-**What happens:** when the first read of a folder fails, `ReadSubfolders` returning null for a drive that is not ready or a mapped drive that can't be reached, `LoadChildren` clears the placeholder and watches the node. With no children it has no expander, so `OnBeforeExpand` never reads it again and `OnAfterCollapse` never lets go of it. A read of its parent skips it, as it is watched. `RefreshDrives` leaves it alone while the same drives are there, so F5 does not help.
-
- * Mapped drive Z:, off the VPN. Click its expander, or open a tab beneath it. The expander goes. Back on the VPN, Z: can't be expanded, and `SelectPath("Z:\x")` settles on Z:, until a pin, a change of options or a restart rebuilds the tree.
- * An empty card reader that later gets a card.
-
-`SyncAsync` already refuses a null read (`FolderTree.cs:742-746`). The first load does not.
-
-**Fix:** on a null read, keep the placeholder and do not watch, so the next expand reads again.
-
-
 ### 12. The tree misses folders made while their parent was collapsed
 
 **Where:** `FolderTree.cs:926-945` (`WatchSelected` watches without reading), `1005-1011` (`OnBeforeExpand` only reads a node that is not watched), `1300-1307` (`Walk` breaks at a missing child before expanding).

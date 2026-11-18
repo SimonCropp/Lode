@@ -30,6 +30,27 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // A drive that can't be read, a mapped drive off the network say, keeps its expander, and
+    // is read again each time it is expanded, so it opens once it can be read.
+    [Test]
+    public async Task ADriveThatCantBeReadIsReadAgainWhenExpanded()
+    {
+        using var fixture = Fixture.Create();
+        var offline = Path.Combine(Path.GetDirectoryName(fixture.Root)!, "Offline");
+        using var tree = new FolderTree(new() { ShowHidden = false }, new([], [], ShowComputer: true, _ => "", [offline]));
+        _ = tree.Handle;
+        var drive = tree.Nodes.Cast<TreeNode>().Last().Nodes[0];
+
+        await Expand(tree, drive);
+        var whileOffline = (drive.IsExpanded, drive.Nodes.Count);
+        Directory.CreateDirectory(Path.Combine(offline, "Shared"));
+        await Expand(tree, drive);
+
+        await Assert.That(whileOffline).IsEqualTo((false, 1));
+        await Assert.That(drive.IsExpanded).IsTrue();
+        await Assert.That(Names(drive)).IsEquivalentTo(["Shared"]);
+    }
+
     // A folder is read off the UI thread, so it is not open the moment it is expanded, only
     // once it has been read.
     [Test]

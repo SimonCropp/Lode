@@ -688,14 +688,21 @@ sealed class FolderTree : TreeView
         return Nodes.Contains(root);
     }
 
+    // A folder that could not be read, a drive not ready or a mapped drive that can't be
+    // reached, keeps its expander and is not watched, so it is read again when next expanded,
+    // or on the way down to a folder in it. Emptied and watched, it would never be read again:
+    // with no expander it can't be expanded, and a watched folder's parent leaves it be.
     void LoadChildren(TreeNode node, List<Subfolder>? directories)
     {
+        if (directories == null)
+        {
+            return;
+        }
+
         using (this.SuspendPainting())
         {
             node.Nodes.Clear();
-
-            // An unreadable folder simply has no children to show.
-            foreach (var directory in directories ?? [])
+            foreach (var directory in directories)
             {
                 node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
             }
@@ -725,7 +732,14 @@ sealed class FolderTree : TreeView
             // Unless the way down to a folder being selected got here first.
             if (NeedsLoading(node))
             {
-                LoadChildren(node, read[0]);
+                // Not read: there is nothing to show under it, and expanding it would only try
+                // again now.
+                if (read[0] is not { } directories)
+                {
+                    return;
+                }
+
+                LoadChildren(node, directories);
             }
 
             node.Expand();
