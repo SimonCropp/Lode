@@ -276,13 +276,18 @@ public class UndoHistoryTests
     {
         using var fixture = Fixture.Create();
         Directory.CreateDirectory(fixture.At("Archive", "Source", "Deep"));
-        File.WriteAllText(fixture.At("Archive", "Source", "existing.aleph"), "there before");
-        File.WriteAllText(fixture.At("Archive", "Source", "Deep", "existing.aleph"), "there before");
+        await File.WriteAllTextAsync(fixture.At("Archive", "Source", "existing.aleph"), "there before");
+        await File.WriteAllTextAsync(fixture.At("Archive", "Source", "Deep", "existing.aleph"), "there before");
         Directory.CreateDirectory(fixture.At("Source", "Empty"));
         Directory.CreateDirectory(fixture.At("Archive", "Source", "Empty"));
         var history = new UndoHistory(new UndoHistory.ShellFileActions());
 
-        var outcome = ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Move, [fixture.At("Source")], fixture.At("Archive"), ShellFileOperation.NoConfirmation);
+        var outcome = ShellFileOperation.Run(
+            IntPtr.Zero,
+            ShellFileOperation.Kind.Move,
+            [fixture.At("Source")],
+            fixture.At("Archive"),
+            ShellFileOperation.NoConfirmation);
         history.RecordMove(
             outcome.Changes.Select(_ => (_.Source, _.Result!)).ToList(),
             outcome.Merged.Select(_ => _.Source).ToList());

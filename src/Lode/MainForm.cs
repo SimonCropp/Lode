@@ -897,6 +897,32 @@ class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs eventArgs)
     {
         base.OnFormClosing(eventArgs);
+        // Not one disposed without being closed, which can stay listed.
+        var others = Application.OpenForms
+            .OfType<MainForm>()
+            .Where(_ => _ != this &&
+                        !_.IsDisposed)
+            .ToList();
+        // UserClosing is the X, Alt+F4 or the taskbar's Close; None is another program sending
+        // WM_CLOSE. Windows shutting down, or Exit (which turns HideLastWindowOnClose off), closes
+        // for real.
+        var hiding = HideLastWindowOnClose &&
+                     !others.Any(_ => _.Visible) &&
+                     eventArgs.CloseReason is
+                         CloseReason.UserClosing or
+                         CloseReason.None;
+        if (hiding)
+        {
+            // One window in the tray at most: the one closed last, which is also the one the
+            // next start restores. Otherwise each window opened for a folder from another app,
+            // while the others were in the tray, would join them there when closed, and all of
+            // them would come back at once. Closed first, so this one's tabs are saved last.
+            foreach (var inTray in others.Where(_ => _.hidden))
+            {
+                inTray.Close();
+            }
+        }
+
         var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
         settings.Left = bounds.Left;
         settings.Top = bounds.Top;
@@ -911,15 +937,7 @@ class MainForm : Form
         settings.ActiveTab = tabs.SelectedIndex;
         settings.Save();
 
-        var lastVisible = !Application.OpenForms.OfType<MainForm>().Any(_ => _ != this && _.Visible);
-        // UserClosing is the X, Alt+F4 or the taskbar's Close; None is another program sending
-        // WM_CLOSE. Windows shutting down, or Exit (which turns HideLastWindowOnClose off), closes
-        // for real.
-        if (HideLastWindowOnClose &&
-            lastVisible &&
-            eventArgs.CloseReason is
-                CloseReason.UserClosing or
-                CloseReason.None)
+        if (hiding)
         {
             eventArgs.Cancel = true;
             Hide();

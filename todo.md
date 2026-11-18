@@ -21,24 +21,13 @@ Contents:
 ## Bugs, read
 
 
-### 8. Windows pile up in the tray
-
-**Where:** [WindowContext.cs:130-151](src/Lode/WindowContext.cs#L130) (`OnLaunched`), [MainForm.cs:914-926](src/Lode/MainForm.cs#L914) (`OnFormClosing`), [WindowContext.cs:185-199](src/Lode/WindowContext.cs#L185) (`ShowWindows`).
-
-**What happens:** close the only window, and it hides (W1). Another app opens a folder: no window is showing, so `OnLaunched` opens a new one (W2), as the readme says, and W1 stays hidden. Close W2: no other window is showing, so it is "the last visible" and hides too. Every open and close from then on adds another hidden window. Nothing but **Exit** closes one.
-
-With Lode standing in for Explorer that is the ordinary day. Then a click on the tray icon, or Win+E, brings every one of them back at once, and each is rebuilt on every change to the settings or the pins meanwhile.
-
-**Fix:** keep one window in the tray at most. Either open handed-over folders in the hidden window and show it, or close for real a window that is closed while another is already hidden. No test covers it.
-
-
 ### 9. Exit restores the window used longest ago, and forgets Maximized for a minimized window
 
 **Where:** [WindowContext.cs:201-212](src/Lode/WindowContext.cs#L201) (`Exit`), [WindowContext.cs:107-123](src/Lode/WindowContext.cs#L107) (`Track` keeps `windows` most recent first), [MainForm.cs:897-912](src/Lode/MainForm.cs#L897).
 
 **What happens:**
 
- * `Exit` closes the windows in list order, most recently used first, and each close writes its tabs and bounds to the settings. The last to write is the one used longest ago. The readme says "the last one closed is what the next start restores", which after **Exit**, or **Update and restart** ("starts Lode again with the tabs it had"), is the wrong one. With item 8 it can be a window hidden days before.
+ * `Exit` closes the windows in list order, most recently used first, and each close writes its tabs and bounds to the settings. The last to write is the one used longest ago. The readme says "the last one closed is what the next start restores", which after **Exit**, or **Update and restart** ("starts Lode again with the tabs it had"), is the wrong one.
  * Maximize, minimize, then exit from the tray or shut Windows down. `WindowState` is `Minimized`, so `settings.Maximized` is saved false ([MainForm.cs:905](src/Lode/MainForm.cs#L905)) and the next start is not maximized.
 
 **Fix:** close in reverse in `Exit`, as `ShowWindows` already goes through them. Take maximized from `GetWindowPlacement` (`WPF_RESTORETOMAXIMIZED`), or keep the last state that was not minimized, in `OnResize`.

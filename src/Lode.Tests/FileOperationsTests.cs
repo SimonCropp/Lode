@@ -56,10 +56,15 @@ public class FileOperationsTests
     {
         using var fixture = Fixture.Create();
         Directory.CreateDirectory(fixture.At("Archive", "Source", "Deep"));
-        File.WriteAllText(fixture.At("Archive", "Source", "existing.aleph"), "there before");
+        await File.WriteAllTextAsync(fixture.At("Archive", "Source", "existing.aleph"), "there before");
 
         var outcome = await FileOperations.OnStaThread(
-            () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, [fixture.At("Source")], fixture.At("Archive"), ShellFileOperation.NoConfirmation));
+            () => ShellFileOperation.Run(
+                IntPtr.Zero,
+                ShellFileOperation.Kind.Copy,
+                [fixture.At("Source")],
+                fixture.At("Archive"),
+                ShellFileOperation.NoConfirmation));
 
         await Verify(
             new

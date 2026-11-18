@@ -99,6 +99,39 @@ public class WindowsTests
         }
     }
 
+    // Closing the last window showing hides it to the tray. One already there, a window closed
+    // before another opened for a folder from another app, closes for real, so the tray holds
+    // one window at most: the one closed last. A window closed while another shows closes.
+    [Test]
+    public async Task OneWindowInTheTrayAtMost()
+    {
+        using var fixture = Fixture.Create();
+        MainForm.HideLastWindowOnClose = true;
+        try
+        {
+            using var first = await Show(fixture, fixture.Root);
+            first.Close();
+            var firstInTray = (first.IsDisposed, first.Visible);
+
+            using var second = await Show(fixture, fixture.At("Docs"));
+            using var third = await Show(fixture, fixture.At("Source"));
+            third.Close();
+            var thirdClosedWhileSecondShows = third.IsDisposed;
+            second.Close();
+            Application.DoEvents();
+
+            await Assert.That(firstInTray).IsEqualTo((false, false));
+            await Assert.That(thirdClosedWhileSecondShows).IsTrue();
+            await Assert.That(first.IsDisposed).IsTrue();
+            await Assert.That(second.IsDisposed).IsFalse();
+            await Assert.That(second.Visible).IsFalse();
+        }
+        finally
+        {
+            MainForm.HideLastWindowOnClose = false;
+        }
+    }
+
     [Test]
     public async Task CloseTabsToTheLeftAndRight()
     {
