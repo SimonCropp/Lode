@@ -25,12 +25,12 @@ static class ShellLink
 
     [ComImport]
     [Guid("00021401-0000-0000-C000-000000000046")]
-    class ShellLinkObject;
+    internal class ShellLinkObject;
 
     [ComImport]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     [Guid("000214F9-0000-0000-C000-000000000046")]
-    interface IShellLinkW
+    internal interface IShellLinkW
     {
         void GetPath(IntPtr file, int fileLength, IntPtr findData, uint flags);
         void GetIDList(out IntPtr itemIdList);

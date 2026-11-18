@@ -74,6 +74,7 @@ static class Program
         // Before the first window, which shows a pending update from the start.
         Updates.Instance = Updates.ForThisCopy(settings);
         var places = Places.ForThisMachine(settings);
+        JumpList.Follow(places, settings);
         Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }

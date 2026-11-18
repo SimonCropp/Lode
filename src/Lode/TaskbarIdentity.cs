@@ -10,8 +10,8 @@
 /// pinning makes a command, name and icon of its own, and the icon here is Windows' folder
 /// icon, named where Windows keeps it rather than copied into Lode. The taskbar reads these
 /// only from a window with an AppUserModelID of its own, which also decides which pin the
-/// window's button joins: a pin made before Lode's windows had one is not theirs, and has to
-/// be unpinned and Lode pinned again.
+/// window's button joins, and which jump list it shows (see JumpList): a pin made before
+/// Lode's windows had one is not theirs, and has to be unpinned and Lode pinned again.
 /// </remarks>
 static partial class TaskbarIdentity
 {
@@ -19,14 +19,15 @@ static partial class TaskbarIdentity
 
     // The System.AppUserModel properties.
     static readonly Guid appUserModel = new("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
-    static readonly PropertyKey relaunchCommandKey = new(appUserModel, 2);
-    static readonly PropertyKey relaunchIconKey = new(appUserModel, 3);
-    static readonly PropertyKey relaunchNameKey = new(appUserModel, 4);
-    static readonly PropertyKey idKey = new(appUserModel, 5);
+    static readonly PropertyStore.PropertyKey relaunchCommandKey = new(appUserModel, 2);
+    static readonly PropertyStore.PropertyKey relaunchIconKey = new(appUserModel, 3);
+    static readonly PropertyStore.PropertyKey relaunchNameKey = new(appUserModel, 4);
+    static readonly PropertyStore.PropertyKey idKey = new(appUserModel, 5);
 
-    const ushort emptyType = 0;
-    const ushort stringType = 31;
-    const uint stockFolder = 3;
+    // SHSTOCKICONID: Windows' own icons for a folder, a machine on the network and a share.
+    public const uint StockFolder = 3;
+    public const uint StockServer = 15;
+    public const uint StockServerShare = 51;
     const uint stockIconLocation = 0;
 
     public static void Apply(IntPtr window) =>
@@ -37,14 +38,14 @@ static partial class TaskbarIdentity
             window,
             _ =>
             {
-                Set(_, relaunchCommandKey, command);
-                Set(_, relaunchNameKey, AppId);
+                PropertyStore.Set(_, relaunchCommandKey, command);
+                PropertyStore.Set(_, relaunchNameKey, AppId);
                 if (icon != null)
                 {
-                    Set(_, relaunchIconKey, icon);
+                    PropertyStore.Set(_, relaunchIconKey, icon);
                 }
 
-                Set(_, idKey, AppId);
+                PropertyStore.Set(_, idKey, AppId);
                 _.Commit();
             });
 
@@ -57,10 +58,10 @@ static partial class TaskbarIdentity
             window,
             _ =>
             {
-                Empty(_, idKey);
-                Empty(_, relaunchCommandKey);
-                Empty(_, relaunchNameKey);
-                Empty(_, relaunchIconKey);
+                PropertyStore.Empty(_, idKey);
+                PropertyStore.Empty(_, relaunchCommandKey);
+                PropertyStore.Empty(_, relaunchNameKey);
+                PropertyStore.Empty(_, relaunchIconKey);
                 _.Commit();
             });
 
@@ -72,10 +73,10 @@ static partial class TaskbarIdentity
         Change(
             window,
             _ => identity = new(
-                Get(_, idKey),
-                Get(_, relaunchCommandKey),
-                Get(_, relaunchNameKey),
-                Get(_, relaunchIconKey)));
+                PropertyStore.Get(_, idKey),
+                PropertyStore.Get(_, relaunchCommandKey),
+                PropertyStore.Get(_, relaunchNameKey),
+                PropertyStore.Get(_, relaunchIconKey)));
         return identity ?? new(null, null, null, null);
     }
 
@@ -85,11 +86,25 @@ static partial class TaskbarIdentity
     /// </summary>
     public static string? FolderIconLocation()
     {
+        if (StockIcon(StockFolder) is not { } icon)
+        {
+            return null;
+        }
+
+        return $"{icon.File},{icon.Index}";
+    }
+
+    /// <summary>
+    /// Where Windows keeps one of its own icons, a <c>SIID_</c> value: the file, and the icon's
+    /// index in it (a resource id when negative). Null if Windows does not say.
+    /// </summary>
+    public static (string File, int Index)? StockIcon(uint id)
+    {
         var info = new StockIconInfo
         {
             Size = (uint)Marshal.SizeOf<StockIconInfo>()
         };
-        if (SHGetStockIconInfo(stockFolder, stockIconLocation, ref info) != 0)
+        if (SHGetStockIconInfo(id, stockIconLocation, ref info) != 0)
         {
             return null;
         }
@@ -100,13 +115,13 @@ static partial class TaskbarIdentity
             return null;
         }
 
-        return $"{path},{info.IconIndex}";
+        return (path, info.IconIndex);
     }
 
     // Where the taskbar is a nicety, so a window it cannot be told about is left as it is.
-    static void Change(IntPtr window, Action<IPropertyStore> change)
+    static void Change(IntPtr window, Action<PropertyStore.IPropertyStore> change)
     {
-        if (SHGetPropertyStoreForWindow(window, typeof(IPropertyStore).GUID, out var store) != 0)
+        if (SHGetPropertyStoreForWindow(window, typeof(PropertyStore.IPropertyStore).GUID, out var store) != 0)
         {
             return;
         }
@@ -119,73 +134,6 @@ static partial class TaskbarIdentity
         {
             Marshal.ReleaseComObject(store);
         }
-    }
-
-    static void Set(IPropertyStore store, PropertyKey key, string text)
-    {
-        var value = new PropVariant
-        {
-            Type = stringType,
-            Value = Marshal.StringToCoTaskMemUni(text)
-        };
-        try
-        {
-            store.SetValue(ref key, ref value);
-        }
-        finally
-        {
-            Marshal.FreeCoTaskMem(value.Value);
-        }
-    }
-
-    static void Empty(IPropertyStore store, PropertyKey key)
-    {
-        var value = new PropVariant
-        {
-            Type = emptyType
-        };
-        store.SetValue(ref key, ref value);
-    }
-
-    static string? Get(IPropertyStore store, PropertyKey key)
-    {
-        if (store.GetValue(ref key, out var value) != 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            if (value.Type != stringType)
-            {
-                return null;
-            }
-
-            return Marshal.PtrToStringUni(value.Value);
-        }
-        finally
-        {
-            PropVariantClear(ref value);
-        }
-    }
-
-    // PROPERTYKEY.
-    [StructLayout(LayoutKind.Sequential)]
-    // ReSharper disable NotAccessedPositionalProperty.Local
-    record struct PropertyKey(Guid FormatId, uint PropertyId);
-    // ReSharper restore NotAccessedPositionalProperty.Local
-
-    // PROPVARIANT, for the types used here: empty, and a string, which is a pointer in the union.
-    [StructLayout(LayoutKind.Sequential)]
-    struct PropVariant
-    {
-        public ushort Type;
-        ushort reserved1;
-        ushort reserved2;
-        ushort reserved3;
-        public IntPtr Value;
-        // The union's largest member is a pointer and a count.
-        IntPtr rest;
     }
 
     // SHSTOCKICONINFO. The path is a fixed buffer of UTF-16 units, as in ShellFileInfo.
@@ -219,36 +167,12 @@ static partial class TaskbarIdentity
         }
     }
 
-    [ComImport]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    [Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99")]
-    interface IPropertyStore
-    {
-        [PreserveSig]
-        int GetCount(out uint count);
-
-        [PreserveSig]
-        int GetAt(uint index, out PropertyKey key);
-
-        [PreserveSig]
-        int GetValue(ref PropertyKey key, out PropVariant value);
-
-        [PreserveSig]
-        int SetValue(ref PropertyKey key, ref PropVariant value);
-
-        [PreserveSig]
-        int Commit();
-    }
-
     [DllImport("shell32.dll")]
     static extern int SHGetPropertyStoreForWindow(
         IntPtr window,
         [MarshalAs(UnmanagedType.LPStruct)] Guid interfaceId,
-        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
+        [MarshalAs(UnmanagedType.Interface)] out PropertyStore.IPropertyStore store);
 
     [LibraryImport("shell32.dll")]
     private static partial int SHGetStockIconInfo(uint id, uint flags, ref StockIconInfo info);
-
-    [LibraryImport("ole32.dll")]
-    private static partial int PropVariantClear(ref PropVariant value);
 }

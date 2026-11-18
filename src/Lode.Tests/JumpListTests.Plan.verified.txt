@@ -1,0 +1,40 @@
+﻿[
+  {
+    Name: Pinned,
+    Items: [
+      {
+        Title: Desktop,
+        Folder: C:\Users\Simon\Desktop
+      },
+      {
+        Title: Code,
+        Folder: D:\Code
+      },
+      {
+        Title: Other\src,
+        Folder: D:\Other\src
+      },
+      {
+        Title: video (\\server),
+        Folder: \\server\video
+      }
+    ]
+  },
+  {
+    Name: Frequent,
+    Items: [
+      {
+        Title: Lode\src,
+        Folder: D:\Code\Lode\src
+      },
+      {
+        Title: Downloads,
+        Folder: D:\Downloads
+      },
+      {
+        Title: Films (\\server),
+        Folder: \\server\video\Films
+      }
+    ]
+  }
+]
