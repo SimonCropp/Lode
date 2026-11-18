@@ -85,6 +85,33 @@ public class ExplorerReplacementTests
         await Verify(scratch.Dump());
     }
 
+    // Another file manager has Win+E. Replace takes it, keeping what it had, and Restore gives
+    // it back as it was, rather than deleting it, which would hand Win+E to Explorer.
+    [Test]
+    public async Task RestoreGivesWinEBackToTheToolReplaceTookItFrom()
+    {
+        using var scratch = new RegistryScratch();
+        const string winE = @"CLSID\{52205fd8-5dfb-447d-801a-d0b52f2e83e1}\shell\opennewwindow\command";
+        scratch.Set(winE, null, "\"C:\\Other\\other.exe\"");
+        scratch.Set(winE, "DelegateExecute", "");
+        var before = scratch.Dump();
+        var replacement = scratch.Replacement();
+
+        replacement.Replace();
+        // Again, which leaves what it kept as it was.
+        replacement.Replace();
+        var replaced = scratch.Dump();
+        replacement.Restore();
+
+        await Verify(
+            new
+            {
+                before,
+                replaced,
+                restored = scratch.Dump()
+            });
+    }
+
     // Another file manager already answers the explore verb; Replace takes the default verb but
     // leaves that tool's explore, and Restore keeps it.
     [Test]

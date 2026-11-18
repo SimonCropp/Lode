@@ -3,8 +3,8 @@
   C:\Code\Lode with C:\Code\Lode -> C:\Code\Lode2: C:\Code\Lode2,
   C:\Code\Lode with C:\Code\Lode -> D:\Archive\Lode: D:\Archive\Lode,
   C:\Code\LodeTools with C:\Code\Lode -> C:\Code\Lode2: (not within),
-  C:\Code\lode\src with C:\Code\lode -> C:\Code\Lode: {SolutionDirectory},
+  C:\Code\lode\src with C:\Code\lode -> C:\Code\Lode: C:\Code\Lode\src,
   c:\code\lode\src with C:\Code\Lode -> C:\Code\Lode2: C:\Code\Lode2\src,
-  {SolutionDirectory} with C:\Code\Lode\ -> C:\Code\Lode2\: C:\Code\Lode2\src,
-  {SolutionDirectory}Lode with C:\Code\Lode -> C:\Code\Lode2: C:\Code\Lode2\src\Lode
+  C:\Code\Lode\src\ with C:\Code\Lode\ -> C:\Code\Lode2\: C:\Code\Lode2\src,
+  C:\Code\Lode\src\Lode with C:\Code\Lode -> C:\Code\Lode2: C:\Code\Lode2\src\Lode
 }

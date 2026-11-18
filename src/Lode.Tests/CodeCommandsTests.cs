@@ -148,10 +148,31 @@ public class CodeCommandsTests
         using var code = new Scratch();
         var one = code.CreateRepo("One");
         var two = code.CreateRepo("Two");
+        using var cancel = new CancelSource();
 
-        var results = await CodeCommands.Pull([one, two], cancel: new(canceled: true));
+        // Cancelled as it reaches the first: that one stops, and the second is never started.
+        var results = await CodeCommands.Pull([one, two], new CancelOnReport(cancel), cancel.Token);
 
-        await Assert.That(results).IsEmpty();
+        await Assert.That(results.Select(_ => (code.Relative(_.Repo), _.Succeeded, _.Output)))
+            .IsEquivalentTo([("One", false, "Cancelled")]);
+    }
+
+    // Cancelled before it starts, it starts nothing, and ends as cancelled.
+    [Test]
+    public async Task CancelledBeforeStartingStartsNothing()
+    {
+        using var code = new Scratch();
+        var one = code.CreateRepo("One");
+
+        await Assert.ThrowsAsync<TaskCanceledException>(
+            () => CodeCommands.Pull([one], cancel: new(canceled: true)));
+    }
+
+    // Cancels as soon as progress is reported, on the thread reporting it.
+    sealed class CancelOnReport(CancelSource cancel) : IProgress<string>
+    {
+        public void Report(string value) =>
+            cancel.Cancel();
     }
 
     // Going to a remote, ssh is told not to ask, as nobody can answer in a hidden window: it

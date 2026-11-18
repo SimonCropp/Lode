@@ -236,7 +236,10 @@ static class CodeCommands
 
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
-            var error = process.StandardError.ReadToEndAsync(cancel);
+            // Cancel.None, not the token: cancelled, git is stopped, which ends its output, and
+            // what it said till then goes in the details. Given the token, reading would throw
+            // instead, and the details would say only that a task was cancelled.
+            var error = process.StandardError.ReadToEndAsync(Cancel.None);
             var output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
             if (cancel.IsCancellationRequested)

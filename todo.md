@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 17. Replace takes another file manager's Win+E, and Restore deletes it
-
-**Where:** [ExplorerReplacement.cs:207-213](src/Lode/ExplorerReplacement.cs#L207) (`Replace`), [ExplorerReplacement.cs:272-276](src/Lode/ExplorerReplacement.cs#L272) (`Restore`).
-
-**What happens:** `Replace` writes its command to `CLSID\{52205fd8-…}\shell\opennewwindow\command` and marks the key `CreatedBy=Lode` whatever was there. Where another file manager had it (Files uses this key), `Restore` then deletes the whole key, and Win+E falls to Explorer rather than back to the other tool. The folder verbs and the explore verb do keep and put back what was there. The comment on `ownerName` says the mark is "so Restore never removes another tool's". `RestoreLeavesAnotherToolsWinEAlone` covers only a Restore with no Replace before it.
-
-**Fix:** `Keep` and `PutBack`, as the other keys have, on the Win+E command and its `DelegateExecute`, where the key is there and not Lode's.
-
-
 ### 18. Reopening a closed tab whose folder has gone leaves an empty tab named This PC
 
 **Where:** [MainForm.cs:1053-1063](src/Lode/MainForm.cs#L1053) (`ReopenClosedTab`), [FolderView.cs:483-495](src/Lode/FolderView.cs#L483).

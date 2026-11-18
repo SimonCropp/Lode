@@ -206,8 +206,17 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
 
         using (var winE = classes.CreateSubKey(winEPath))
         {
-            winE.SetValue(ownerName, verb);
             using var commandKey = winE.CreateSubKey("command");
+
+            // Another file manager's (Files has this one), kept for Restore to put back, as a
+            // displaced default verb is. Not Lode's own from a Replace before.
+            if (winE.GetValue(ownerName) as string != verb)
+            {
+                Keep(commandKey, "", previousCommandName);
+                Keep(commandKey, "DelegateExecute", previousHandlerName);
+            }
+
+            winE.SetValue(ownerName, verb);
             commandKey.SetValue("", command);
             commandKey.SetValue("DelegateExecute", "");
         }
@@ -269,7 +278,8 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
             DeleteEmptyKeys(classes, shellPath);
         }
 
-        if (IsLodes(classes, winEPath))
+        if (IsLodes(classes, winEPath) &&
+            !GiveWinEBack(classes))
         {
             classes.DeleteSubKeyTree(winEPath);
             DeleteEmptyKeys(classes, Path.GetDirectoryName(winEPath)!);
@@ -348,6 +358,25 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         PutBack(commandKey, "DelegateExecute", previousHandlerName);
         PutBack(commandKey, "", previousCommandName);
         explore.DeleteValue(ownerName);
+        return true;
+    }
+
+    // Gives Win+E back to the tool Replace took it from, as it was. False when Replace added it,
+    // so it is Restore's to delete.
+    static bool GiveWinEBack(RegistryKey classes)
+    {
+        using var winE = classes.OpenSubKey(winEPath, writable: true)!;
+        using var commandKey = winE.OpenSubKey("command", writable: true);
+        if (commandKey == null ||
+            (commandKey.GetValue(previousCommandName) == null &&
+             commandKey.GetValue(previousHandlerName) == null))
+        {
+            return false;
+        }
+
+        PutBack(commandKey, "", previousCommandName);
+        PutBack(commandKey, "DelegateExecute", previousHandlerName);
+        winE.DeleteValue(ownerName);
         return true;
     }
 

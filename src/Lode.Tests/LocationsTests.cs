@@ -27,14 +27,14 @@ public class LocationsTests
 
     [Test]
     public Task Normalize() =>
-        Verify(inputs.ToDictionary(_ => $"[{_}]", _ => Locations.Normalize(_) ?? "(rejected)"));
+        VerifyPaths(inputs.ToDictionary(_ => $"[{_}]", _ => Locations.Normalize(_) ?? "(rejected)"));
 
     // Typed in the address bar: a path that is not full is taken from the folder the tab shows,
     // not from Lode's working directory. Full ones, This PC, and names that are not paths in a
     // folder, are as they would be anyway.
     [Test]
     public Task NormalizeRelativeToAFolder() =>
-        Verify(
+        VerifyPaths(
             new[]
             {
                 "src",
@@ -46,9 +46,13 @@ public class LocationsTests
                 "cmd.exe",
                 @"E:\Elsewhere",
                 @"\\server\share",
-                "This PC",
-                "shell:downloads"
+                "This PC"
             }.ToDictionary(_ => $"[{_}]", _ => Locations.Normalize(_, @"D:\Code\Lode") ?? "(rejected)"));
+
+    // Nor is a name that is not a path in the folder: it is as it would be without one.
+    [Test]
+    public async Task NormalizeRelativeToAFolderLeavesShellNames() =>
+        await Assert.That(Locations.Normalize("shell:downloads", @"D:\Code\Lode")).IsEqualTo(Locations.Normalize("shell:downloads"));
 
     // At This PC, there is no folder to take it from.
     [Test]
@@ -57,15 +61,15 @@ public class LocationsTests
 
     [Test]
     public Task Parent() =>
-        Verify(Normalized().ToDictionary(_ => _, _ => Locations.Parent(_) ?? "(none)"));
+        VerifyPaths(Normalized().ToDictionary(_ => _, _ => Locations.Parent(_) ?? "(none)"));
 
     [Test]
     public Task DisplayName() =>
-        Verify(Normalized().ToDictionary(_ => _, Locations.DisplayName));
+        VerifyPaths(Normalized().ToDictionary(_ => _, Locations.DisplayName));
 
     [Test]
     public Task Labels() =>
-        Verify(
+        VerifyPaths(
             Locations.Labels(
             [
                 // Alone in its name.
@@ -109,7 +113,7 @@ public class LocationsTests
             (@"C:\Code", @"C:\"),
             (@"D:\Code", @"C:\")
         ];
-        return Verify(pairs.ToDictionary(_ => $"{_.Path} in {_.Folder}", _ => Locations.IsWithin(_.Path, _.Folder)));
+        return VerifyPaths(pairs.ToDictionary(_ => $"{_.Path} in {_.Folder}", _ => Locations.IsWithin(_.Path, _.Folder)));
     }
 
     [Test]
@@ -130,7 +134,7 @@ public class LocationsTests
             (@"C:\Code\LodeTools", @"C:\Code\Lode", @"C:\Code\Lode2"),
             (@"C:\Code", @"C:\Code\Lode", @"C:\Code\Lode2")
         ];
-        return Verify(moves.ToDictionary(_ => $"{_.Path} with {_.From} -> {_.To}", _ => Locations.Moved(_.Path, _.From, _.To) ?? "(not within)"));
+        return VerifyPaths(moves.ToDictionary(_ => $"{_.Path} with {_.From} -> {_.To}", _ => Locations.Moved(_.Path, _.From, _.To) ?? "(not within)"));
     }
 
     // A share is on the network whatever is asked of it. The drive Windows is on is not, and
@@ -147,6 +151,12 @@ public class LocationsTests
         await Assert.That(Locations.IsRemote(Locations.ThisPC)).IsFalse();
         await Assert.That(Locations.IsRemote("")).IsFalse();
     }
+
+    // The paths as they are. Verify writes one that is a folder on the machine the tests run on,
+    // where they are checked out or the temp folder, as {SolutionDirectory} or {TempPath}, so a
+    // made-up path that happens to be one would read differently from machine to machine.
+    static SettingsTask VerifyPaths(object? target) =>
+        Verify(target).DisableScrubbers();
 
     static IEnumerable<string> Normalized() =>
         inputs
