@@ -596,6 +596,37 @@ public class OptionsFormTests
             });
     }
 
+    // Updating has Lode exit, which would stop an action running part way, so it waits for the
+    // actions to finish.
+    [Test]
+    public async Task UpdateWaitsForActionsRunning()
+    {
+        using var scratch = new RegistryScratch();
+        var finish = new TaskCompletionSource<ActionLog.Outcome>();
+        try
+        {
+            var running = ActionLog.Run("Git pull", @"C:\Code\Lode", () => finish.Task);
+            using var form = Show(scratch.Replacement(), updates: TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" }));
+            form.ShowPage("Updates");
+            var whileRunning = DescribeUpdates(form);
+
+            finish.SetResult(new(true, "Done", ""));
+            await running;
+            Application.DoEvents();
+
+            await Verify(
+                new
+                {
+                    whileRunning,
+                    finished = DescribeUpdates(form)
+                });
+        }
+        finally
+        {
+            ActionLog.Reset();
+        }
+    }
+
     // A build has nothing to update, and doesn't ask.
     [Test]
     public async Task ABuildHasNothingToUpdate()

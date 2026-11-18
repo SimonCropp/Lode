@@ -1,0 +1,19 @@
+﻿{
+  one:
+This is still running:
+
+  Git purge – Lode
+
+Exiting now stops it part way, which can leave files half written or half deleted.,
+  many:
+These 6 are still running:
+
+  Git purge – Lode
+  Update NuGets – Verify
+  Update NuGets – Polyfill
+  Update NuGets – Argon
+  Update NuGets – Delta
+  and 1 more
+
+Exiting now stops them part way, which can leave files half written or half deleted.
+}

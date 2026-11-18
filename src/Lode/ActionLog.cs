@@ -219,6 +219,41 @@ static class ActionLog
     }
 
     /// <summary>
+    /// What to say of the entries still running, before Lode exits, which stops them part way:
+    /// a git command, an update to a props file, a purge deleting. Null when none are.
+    /// </summary>
+    public static string? RunningMessage()
+    {
+        var running = entries
+            .Where(_ => _.State == State.Running)
+            .ToList();
+        if (running.Count == 0)
+        {
+            return null;
+        }
+
+        const int listed = 5;
+        var lines = running
+            .Take(listed)
+            .Select(_ => $"  {_.Title} – {_.FolderName}");
+        var heading = $"These {running.Count} are still running:";
+        var them = "them";
+        if (running.Count == 1)
+        {
+            heading = "This is still running:";
+            them = "it";
+        }
+
+        var message = $"{heading}\n\n{string.Join("\n", lines)}";
+        if (running.Count > listed)
+        {
+            message += $"\n  and {running.Count - listed} more";
+        }
+
+        return $"{message}\n\nExiting now stops {them} part way, which can leave files half written or half deleted.";
+    }
+
+    /// <summary>
     /// Removes the finished entries, leaving those still running.
     /// </summary>
     public static void ClearFinished()

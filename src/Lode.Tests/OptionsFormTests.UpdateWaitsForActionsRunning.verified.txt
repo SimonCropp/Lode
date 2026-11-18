@@ -1,0 +1,12 @@
+﻿{
+  whileRunning: {
+    status: Lode 0.4.0 is available. This is 0.3.0. It can be installed once the actions running have finished.,
+    updateEnabled: false,
+    checkEnabled: true
+  },
+  finished: {
+    status: Lode 0.4.0 is available. This is 0.3.0.,
+    updateEnabled: true,
+    checkEnabled: true
+  }
+}

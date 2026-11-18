@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 16. Exit, and Update and restart, pay no heed to actions under way
-
-**Where:** `OptionsForm.cs:632` and `676-690`, `MainForm.cs:1493-1496`, [WindowContext.cs:201-212](src/Lode/WindowContext.cs#L201), `ToolUpdate.cs:113-116`.
-
-**What happens:** nothing asks `ActionLog` whether anything is running. Update NuGets, or a purge that deletes outright, is `Task.Run` work, which dies when `Main` returns: part way through writing a props file, or half way through a delete, with nothing said. A purge to the Recycle Bin is on a foreground thread (`FileOperations.OnStaThread` never sets `IsBackground`), so the process stays, and the update script, having waited 30 seconds, stops it by force.
-
-**Fix:** with any entry running, ask before exiting, or wait for it, and turn **Update and restart** off meanwhile.
-
-
 ### 17. Replace takes another file manager's Win+E, and Restore deletes it
 
 **Where:** [ExplorerReplacement.cs:207-213](src/Lode/ExplorerReplacement.cs#L207) (`Replace`), [ExplorerReplacement.cs:272-276](src/Lode/ExplorerReplacement.cs#L272) (`Restore`).

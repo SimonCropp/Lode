@@ -200,6 +200,23 @@ sealed class WindowContext : ApplicationContext
 
     void Exit()
     {
+        // Asked first, as Exit stops what is running part way.
+        if (ActionLog.RunningMessage() is { } running)
+        {
+            var owner = windows.FirstOrDefault(_ => _.Visible);
+            var answer = MessageBox.Show(
+                owner,
+                $"{running}\n\nExit Lode anyway?",
+                "Exit Lode",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes)
+            {
+                return;
+            }
+        }
+
         global::MainForm.HideLastWindowOnClose = false;
         tray.Visible = false;
         // Each window writes its tabs and bounds to the settings as it closes, and the last to

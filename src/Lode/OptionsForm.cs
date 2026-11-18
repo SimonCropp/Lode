@@ -239,6 +239,7 @@ class OptionsForm : Form
         applyUpdate.Click += (_, _) => OnApplyUpdate();
         checkForUpdates.Click += (_, _) => _ = updates.Check();
         updates.Changed += OnUpdatesChanged;
+        ActionLog.Changed += OnUpdatesChanged;
         BrowseForEditor = ShowBrowseDialog;
         BrowseForCodeDirectory = ShowCodeDirectoryDialog;
         browseCodeDirectory.Click += (_, _) =>
@@ -628,8 +629,18 @@ class OptionsForm : Form
 
     void ShowUpdateState()
     {
+        // Not while an action runs: the update has Lode exit, which would stop it part way.
+        var running = ActionLog.Entries.Any(_ => _.State == ActionLog.State.Running);
         updateStatus.Text = UpdateStatus(updates);
-        applyUpdate.Enabled = updates.Available != null && !updates.Checking;
+        if (running &&
+            updates.Available != null)
+        {
+            updateStatus.Text += " It can be installed once the actions running have finished.";
+        }
+
+        applyUpdate.Enabled = updates.Available != null &&
+                              !updates.Checking &&
+                              !running;
         checkForUpdates.Enabled = updates is
         {
             Tool: not null,
@@ -1042,6 +1053,7 @@ class OptionsForm : Form
         if (disposing)
         {
             updates.Changed -= OnUpdatesChanged;
+            ActionLog.Changed -= OnUpdatesChanged;
             headingFont.Dispose();
             sectionFont.Dispose();
         }

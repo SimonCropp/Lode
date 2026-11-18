@@ -60,6 +60,31 @@ public class ActionsPanelTests
         await Assert.That(ActionLog.Entries[^1].CanCancel).IsFalse();
     }
 
+    // What Exit says of the entries still running, which exiting would stop part way. Not of
+    // those finished.
+    [Test]
+    public async Task RunningMessage()
+    {
+        var none = ActionLog.RunningMessage();
+        await ActionLog.Run("Git pull", @"C:\Code\Done", () => Task.FromResult(new ActionLog.Outcome(true, "Done", "")));
+        var onlyFinished = ActionLog.RunningMessage();
+        _ = ActionLog.Run("Git purge", @"C:\Code\Lode", () => new TaskCompletionSource<ActionLog.Outcome>().Task);
+        var one = ActionLog.RunningMessage();
+        foreach (var name in new[] { "Verify", "Polyfill", "Argon", "Delta", "Replicant" })
+        {
+            _ = ActionLog.Run("Update NuGets", $@"C:\Code\{name}", () => new TaskCompletionSource<ActionLog.Outcome>().Task);
+        }
+
+        await Verify(
+            new
+            {
+                none,
+                onlyFinished,
+                one,
+                many = ActionLog.RunningMessage()
+            });
+    }
+
     [Test]
     public async Task AnEntryRunsThenRecordsTheOutcome()
     {
