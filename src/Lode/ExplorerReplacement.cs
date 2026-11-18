@@ -301,9 +301,24 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     // Only without the tool is this process registered.
     public static string PreferredCommand()
     {
+        var (program, arguments) = PreferredProgram();
+        if (arguments == null)
+        {
+            return $"\"{program}\"";
+        }
+
+        return $"\"{program}\" {arguments}";
+    }
+
+    /// <summary>
+    /// What <see cref="PreferredCommand"/> starts, apart: the program, and what goes on its
+    /// command line before any folder, null for nothing. For a shortcut, which keeps them apart.
+    /// </summary>
+    public static (string Program, string? Arguments) PreferredProgram()
+    {
         if (InstalledToolPath() is { } tool)
         {
-            return $"\"{tool}\"";
+            return (tool, null);
         }
 
         var processPath = Environment.ProcessPath!;
@@ -311,10 +326,10 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         {
             // Started as "dotnet Lode.dll". This path is version specific, but this only
             // happens when someone starts Lode through dotnet themselves, never as the tool.
-            return $"\"{processPath}\" \"{typeof(ExplorerReplacement).Assembly.Location}\"";
+            return (processPath, $"\"{typeof(ExplorerReplacement).Assembly.Location}\"");
         }
 
-        return $"\"{processPath}\"";
+        return (processPath, null);
     }
 
     // Where "dotnet tool install -g" puts the shim: .dotnet\tools under DOTNET_CLI_HOME when that

@@ -130,6 +130,10 @@ sealed class Settings
     public List<string> PinnedFolders { get; set; } = [];
     public List<string> RecentFolders { get; set; } = [];
 
+    // The folders removed from the taskbar's jump list, which it leaves out while Quick access
+    // has them. See JumpList.
+    public List<string> JumpListRemoved { get; set; } = [];
+
     // Where a new window opens when it is given nothing else to show. Null for the user folder.
     public string? DefaultDirectory { get; set; }
 
