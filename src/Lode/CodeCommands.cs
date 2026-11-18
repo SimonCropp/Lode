@@ -108,6 +108,92 @@ static class CodeCommands
         ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "pull"));
 
     /// <summary>
+    /// Switches to origin's default branch, main say. A repository with anything uncommitted,
+    /// staged or not, or a file git doesn't track, fails, listing them, and stays on its branch:
+    /// switching would take them onto the default branch, or git would refuse part way.
+    /// </summary>
+    public static Task<List<RepoResult>> SwitchToDefaultBranch(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(
+            repos,
+            progress,
+            cancel,
+            repo =>
+            {
+                var status = Git(repo, cancel, network: false, "status", "--porcelain");
+                if (!status.Succeeded)
+                {
+                    return status;
+                }
+
+                if (status.Output.Length > 0)
+                {
+                    return status with
+                    {
+                        Succeeded = false,
+                        Output = $"Uncommitted changes, so not switched:\n{status.Output}"
+                    };
+                }
+
+                var branch = DefaultBranch(repo, cancel);
+                if (!branch.Succeeded)
+                {
+                    return branch;
+                }
+
+                // Where there is no local branch of that name yet, git makes one tracking
+                // origin's.
+                return Git(repo, cancel, network: false, "switch", branch.Output);
+            });
+
+    const string originHead = "refs/remotes/origin/";
+
+    // The branch origin's HEAD names, as the output of a result that succeeded: as clone
+    // recorded it, or, in a repository made by init then given an origin, which has none
+    // recorded, as origin says now. Fails, saying why, without an origin, or one with no HEAD.
+    static RepoResult DefaultBranch(string repo, Cancel cancel)
+    {
+        var recorded = Git(repo, cancel, network: false, "symbolic-ref", "--quiet", originHead + "HEAD");
+        if (recorded.Succeeded &&
+            recorded.Output.StartsWith(originHead, StringComparison.Ordinal))
+        {
+            return recorded with
+            {
+                Output = recorded.Output[originHead.Length..]
+            };
+        }
+
+        var remote = Git(repo, cancel, network: true, "ls-remote", "--symref", "origin", "HEAD");
+        if (!remote.Succeeded)
+        {
+            return remote with
+            {
+                Output = $"Couldn't ask origin for its default branch:\n{remote.Output}"
+            };
+        }
+
+        // "ref: refs/heads/main<tab>HEAD", then the commit it is at.
+        const string prefix = "ref: refs/heads/";
+        const string suffix = "\tHEAD";
+        foreach (var line in remote.Output.Split('\n', StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith(prefix, StringComparison.Ordinal) &&
+                line.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return remote with
+                {
+                    Output = line[prefix.Length..^suffix.Length]
+                };
+            }
+        }
+
+        return remote with
+        {
+            Succeeded = false,
+            Output = "No default branch: origin's HEAD names no branch."
+        };
+    }
+
+    /// <summary>
     /// Commits every tracked change with the message, then pushes to origin.
     /// </summary>
     public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, Cancel cancel = default) =>

@@ -90,8 +90,9 @@ sealed class Settings
     }
 
     // Git was one action, a submenu of pull, push, discard and purge, which are now actions of
-    // their own under Git. Where Git was placed, each of them is, nested, so the menu and the bar
-    // are as they were.
+    // their own under Git. Where Git was placed, each git action is, nested, so the menu and the
+    // bar are as they were, with switch to the default branch beside them rather than a Git
+    // submenu of its own where Git was not.
     void SplitGit()
     {
         if (!Actions.Remove("git", out var git))

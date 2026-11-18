@@ -256,6 +256,92 @@ public class CodeCommandsTests
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("from elsewhere");
     }
 
+    // A clone records origin's default branch, which need not be called main, and switching
+    // makes a local branch of it where there is none yet.
+    [Test]
+    public async Task SwitchGoesToTheDefaultBranchACloneRecorded()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "trunk");
+        Scratch.Git(repo, "push", "origin", "trunk");
+        Scratch.Git(code.Origin("Repo"), "symbolic-ref", "HEAD", "refs/heads/trunk");
+        var clone = code.Clone("Repo", "Clone");
+        Scratch.Git(clone, "switch", "-c", "feature");
+        Scratch.Git(clone, "branch", "-D", "trunk");
+
+        var results = await CodeCommands.SwitchToDefaultBranch([clone]);
+
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(clone, "branch", "--show-current")).IsEqualTo("trunk");
+        await Assert.That(Scratch.Git(clone, "rev-parse", "--abbrev-ref", "trunk@{upstream}")).IsEqualTo("origin/trunk");
+    }
+
+    // A repository made by init, then given an origin, has no default branch recorded, so
+    // origin is asked.
+    [Test]
+    public async Task SwitchAsksOriginWhenNoDefaultBranchIsRecorded()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+
+        var results = await CodeCommands.SwitchToDefaultBranch([repo]);
+
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(repo, "branch", "--show-current")).IsEqualTo("main");
+    }
+
+    // Anything uncommitted, staged or not, or a file git doesn't track, fails the repository,
+    // which stays on its branch with its changes, while the others are still switched.
+    [Test]
+    public async Task SwitchFailsForARepoWithUncommittedChanges()
+    {
+        using var code = new Scratch();
+        var clean = code.CreateRepo("Clean");
+        var changed = code.CreateRepo("Changed");
+        var staged = code.CreateRepo("Staged");
+        var untracked = code.CreateRepo("Untracked");
+        foreach (var repo in new[] {clean, changed, staged, untracked})
+        {
+            Scratch.Git(repo, "switch", "-c", "feature");
+        }
+
+        await File.WriteAllTextAsync(Path.Combine(changed, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(staged, "added.txt"), "added");
+        Scratch.Git(staged, "add", "added.txt");
+        await File.WriteAllTextAsync(Path.Combine(untracked, "new.txt"), "new");
+
+        var results = await CodeCommands.SwitchToDefaultBranch([changed, clean, staged, untracked]);
+
+        await Assert.That(results.Select(_ => (code.Relative(_.Repo), _.Succeeded, Branch: Scratch.Git(_.Repo, "branch", "--show-current"))))
+            .IsEquivalentTo(
+            [
+                ("Changed", false, "feature"),
+                ("Clean", true, "main"),
+                ("Staged", false, "feature"),
+                ("Untracked", false, "feature")
+            ]);
+        await Assert.That(results[0].Output).IsEqualTo("Uncommitted changes, so not switched:\nM tracked.txt");
+        await Assert.That(results[2].Output).IsEqualTo("Uncommitted changes, so not switched:\nA  added.txt");
+        await Assert.That(results[3].Output).IsEqualTo("Uncommitted changes, so not switched:\n?? new.txt");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(changed, "tracked.txt"))).IsEqualTo("changed");
+    }
+
+    // A repository with no origin has no default branch to go to.
+    [Test]
+    public async Task SwitchFailsWithoutAnOrigin()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "remote", "remove", "origin");
+
+        var result = (await CodeCommands.SwitchToDefaultBranch([repo])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).StartsWith("Couldn't ask origin for its default branch:\n");
+    }
+
     [Test]
     public async Task ReportsEachRepoWhenThereAreSeveral()
     {

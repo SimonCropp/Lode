@@ -9,6 +9,13 @@
       menuNested: true
     },
     {
+      id: gitSwitchToDefault,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
       id: gitPush,
       button: true,
       menu: false,

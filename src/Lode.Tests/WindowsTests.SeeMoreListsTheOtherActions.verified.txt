@@ -15,6 +15,7 @@
   Copy as path,
   ----,
   Git pull (disabled),
+  Git switch to default branch (disabled),
   Git push (disabled),
   Git discard (disabled),
   Git purge (disabled),

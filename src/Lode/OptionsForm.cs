@@ -546,8 +546,8 @@ class OptionsForm : Form
     [
         Section(
             "Code folder",
-            "The folder your git repositories are in. Folders in it get a Git menu (pull, push, " +
-            "discard, purge) and Update NuGets on their right-click menu.",
+            "The folder your git repositories are in. Folders in it get a Git menu (pull, switch " +
+            "to default branch, push, discard, purge) and Update NuGets on their right-click menu.",
             Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
         Section(
             "Git purge",
