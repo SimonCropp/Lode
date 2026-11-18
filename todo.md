@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 10. Light and dark mix when Windows changes theme while Lode runs
-
-**Where:** [ExplorerStyle.cs:29](src/Lode/ExplorerStyle.cs#L29) (`IsDark => Application.IsDarkModeEnabled`), `Pick` at `ExplorerStyle.cs:136-149`.
-
-**What happens:** with the theme the same as Windows', the default, `Application.IsDarkModeEnabled` reads `AppsUseLightTheme` from the registry each time it is asked (Windows Forms 11.0.0, decompiled). `SystemColors` are set once, in `SetColorMode`. So when Windows goes from light to dark with Lode running, by a schedule say, every `Pick` turns to the dark colours while `SystemColors.MenuText` and `ControlText`, and the glyph bitmaps already made, stay as they were: black on dark grey in menus. Dark to light gives white on off-white. The readme says the theme is taken on when Lode next starts.
-
-**Fix:** read `Application.IsDarkModeEnabled` once in `Use`, after `SetColorMode`, and have `IsDark` return that. See also [performance item 2](#2-isdark-reads-the-registry-every-time-it-is-asked).
-
-
 ### 11. A drive that could not be read once can never be expanded
 
 **Where:** `FolderTree.cs:682-696` (`LoadChildren`), `700-728` (`ExpandOnceRead`), `822-827` (`ShowExpander`).
@@ -291,13 +282,6 @@ All read, none run.
 **Measured:** the merge by itself, of sorted names by `StrCmpLogicalW`, with 2,000 more: 28ms into 100,000, 92ms into 500,000, 202ms into 1,000,000. Lode does two a batch, and the rest of `Populate` on top. So `*.cs` across a big code folder is jerky, and one letter typed at `C:\` near enough stops the window.
 
 **Fix:** leave longer between batches as more is found, by the rule a folder's reads already go by (`WaitAfter`, [FolderView.cs:1070-1098](src/Lode/FolderView.cs#L1070)), or merge off the UI thread and hand over the merged list. Sorting by Folder also makes two strings for every comparison ([FolderView.cs:2049-2051](src/Lode/FolderView.cs#L2049)).
-
-
-### 2. IsDark reads the registry every time it is asked
-
-**Where:** [ExplorerStyle.cs:29](src/Lode/ExplorerStyle.cs#L29).
-
-**Measured:** 11.2 microseconds a call with `SystemColorMode.System`, the default theme. Every colour, in every paint, asks. Fixed by what fixes [bug 10](#10-light-and-dark-mix-when-windows-changes-theme-while-lode-runs).
 
 
 ### 3. Icons of programs and shortcuts are read on the UI thread as rows come into view

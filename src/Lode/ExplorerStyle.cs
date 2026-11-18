@@ -20,13 +20,21 @@ static class ExplorerStyle
             _ => SystemColorMode.System
         };
         Application.SetColorMode(mode);
+        isDark = Application.IsDarkModeEnabled;
     }
+
+    static bool isDark;
 
     /// <summary>
     /// True when windows are drawn dark: the Dark theme, or the System one with Windows' apps
-    /// set to dark. Never with high contrast on, which has colours of its own.
+    /// set to dark. Never with high contrast on, which has colours of its own. As it was when
+    /// <see cref="Use"/> set the theme, as Windows Forms' own colours are: with the System
+    /// theme, Windows Forms reads Windows' setting from the registry each time it is asked, so
+    /// Windows changing from light to dark while Lode runs would have Lode's colours go dark
+    /// while Windows Forms' stayed light, black text in dark menus. Asked of every colour in
+    /// every paint, too.
     /// </summary>
-    public static bool IsDark => Application.IsDarkModeEnabled;
+    public static bool IsDark => isDark;
 
     /// <summary>
     /// The name of the theme Windows draws a list, tree or scroll bar in, as Explorer's are.
