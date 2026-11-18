@@ -928,7 +928,7 @@ class MainForm : Form
         settings.Top = bounds.Top;
         settings.Width = bounds.Width;
         settings.Height = bounds.Height;
-        settings.Maximized = WindowState == FormWindowState.Maximized;
+        settings.Maximized = WasMaximized;
         settings.SplitterDistance = split.SplitterDistance;
         settings.Tabs = tabs.TabPages
             .Cast<TabPage>()
@@ -1374,10 +1374,35 @@ class MainForm : Form
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
+    // Whether it was maximized when last not minimized, which is how it comes back.
+    bool maximizedBeforeMinimizing;
+
+    /// <summary>
+    /// Whether the window is maximized, or was before it was minimized, as it is to come back
+    /// the next time Lode starts.
+    /// </summary>
+    internal bool WasMaximized
+    {
+        get
+        {
+            if (WindowState == FormWindowState.Minimized)
+            {
+                return maximizedBeforeMinimizing;
+            }
+
+            return WindowState == FormWindowState.Maximized;
+        }
+    }
+
     protected override void OnResize(EventArgs eventArgs)
     {
         base.OnResize(eventArgs);
         var nowMinimized = WindowState == FormWindowState.Minimized;
+        if (!nowMinimized)
+        {
+            maximizedBeforeMinimizing = WindowState == FormWindowState.Maximized;
+        }
+
         if (nowMinimized == minimized)
         {
             return;

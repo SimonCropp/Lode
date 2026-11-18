@@ -132,6 +132,25 @@ public class WindowsTests
         }
     }
 
+    // Maximized and then minimized, a window comes back maximized, and so is saved as maximized
+    // for the next start, as one closed from the tray or by Windows shutting down is.
+    [Test]
+    public async Task MinimizedKeepsWhetherItWasMaximized()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+
+        form.WindowState = FormWindowState.Maximized;
+        form.WindowState = FormWindowState.Minimized;
+        var fromMaximized = form.WasMaximized;
+        form.WindowState = FormWindowState.Normal;
+        form.WindowState = FormWindowState.Minimized;
+        var fromNormal = form.WasMaximized;
+
+        await Assert.That(fromMaximized).IsTrue();
+        await Assert.That(fromNormal).IsFalse();
+    }
+
     [Test]
     public async Task CloseTabsToTheLeftAndRight()
     {

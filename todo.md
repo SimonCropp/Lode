@@ -21,18 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 9. Exit restores the window used longest ago, and forgets Maximized for a minimized window
-
-**Where:** [WindowContext.cs:201-212](src/Lode/WindowContext.cs#L201) (`Exit`), [WindowContext.cs:107-123](src/Lode/WindowContext.cs#L107) (`Track` keeps `windows` most recent first), [MainForm.cs:897-912](src/Lode/MainForm.cs#L897).
-
-**What happens:**
-
- * `Exit` closes the windows in list order, most recently used first, and each close writes its tabs and bounds to the settings. The last to write is the one used longest ago. The readme says "the last one closed is what the next start restores", which after **Exit**, or **Update and restart** ("starts Lode again with the tabs it had"), is the wrong one.
- * Maximize, minimize, then exit from the tray or shut Windows down. `WindowState` is `Minimized`, so `settings.Maximized` is saved false ([MainForm.cs:905](src/Lode/MainForm.cs#L905)) and the next start is not maximized.
-
-**Fix:** close in reverse in `Exit`, as `ShowWindows` already goes through them. Take maximized from `GetWindowPlacement` (`WPF_RESTORETOMAXIMIZED`), or keep the last state that was not minimized, in `OnResize`.
-
-
 ### 10. Light and dark mix when Windows changes theme while Lode runs
 
 **Where:** [ExplorerStyle.cs:29](src/Lode/ExplorerStyle.cs#L29) (`IsDark => Application.IsDarkModeEnabled`), `Pick` at `ExplorerStyle.cs:136-149`.

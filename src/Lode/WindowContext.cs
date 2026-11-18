@@ -202,7 +202,10 @@ sealed class WindowContext : ApplicationContext
     {
         global::MainForm.HideLastWindowOnClose = false;
         tray.Visible = false;
-        foreach (var window in windows.ToList())
+        // Each window writes its tabs and bounds to the settings as it closes, and the last to
+        // write is what the next start restores. So the one used least recently first, and the
+        // one used last, last.
+        foreach (var window in windows.AsEnumerable().Reverse().ToList())
         {
             window.Close();
         }
