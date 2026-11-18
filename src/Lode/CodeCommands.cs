@@ -1,7 +1,7 @@
 /// <summary>
 /// Git and NuGet commands for the repositories in a folder under the code folder. Each git
-/// command does what the matching script in the code folder does (pull.ps1, push.ps1,
-/// discard.ps1), to every repository it finds.
+/// command runs git itself, in each repository it finds in turn, so it does what the git the
+/// user has installed does, with their config, credentials and SSH keys.
 /// </summary>
 static class CodeCommands
 {
@@ -9,7 +9,7 @@ static class CodeCommands
 
     /// <summary>
     /// The repositories a command acts on: the one the folder is in, at its top or anywhere
-    /// below, otherwise every repository up to two levels below it, as the scripts find them.
+    /// below, otherwise every repository up to two levels below it.
     /// Only a repository up to <paramref name="codeFolder"/> counts as one the folder is in:
     /// one above it, such as a home folder kept in git, is not one of the code folder's.
     /// Without a code folder, only the folder itself.
@@ -146,7 +146,9 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// Throws away changes to tracked files and deletes untracked ones. Cannot be undone.
+    /// Throws away every uncommitted change, staged or not, and deletes what git doesn't track,
+    /// folders included, though not what it ignores: that is Purge's. A repository with nothing
+    /// committed yet goes back to empty. Cannot be undone.
     /// </summary>
     public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null) =>
         ForEach(
@@ -154,16 +156,18 @@ static class CodeCommands
             progress,
             repo =>
             {
-                var restore = Git(repo, "restore", ".");
-                if (!restore.Succeeded)
+                // Rather than restore, which puts back only what is not staged, leaving staged
+                // changes for the next Push to commit.
+                var reset = Git(repo, "reset", "--hard");
+                if (!reset.Succeeded)
                 {
-                    return restore;
+                    return reset;
                 }
 
-                var clean = Git(repo, "clean", "-f");
+                var clean = Git(repo, "clean", "-f", "-d");
                 return clean with
                 {
-                    Output = $"{restore.Output}\n{clean.Output}".Trim()
+                    Output = $"{reset.Output}\n{clean.Output}".Trim()
                 };
             });
 

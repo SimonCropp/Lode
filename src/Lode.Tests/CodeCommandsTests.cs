@@ -97,6 +97,32 @@ public class CodeCommandsTests
         await Assert.That(File.Exists(Path.Combine(repo, "untracked.txt"))).IsFalse();
     }
 
+    // Every uncommitted change, as its prompt says: staged ones too, which the next Push would
+    // otherwise commit, and untracked folders as well as files. Not what git ignores.
+    [Test]
+    public async Task DiscardTakesStagedChangesAndUntrackedFolders()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "ignored.txt");
+        Scratch.Git(repo, "add", ".gitignore");
+        Scratch.Git(repo, "commit", "-m", "Ignore");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "staged");
+        await File.WriteAllTextAsync(Path.Combine(repo, "added.txt"), "added");
+        Scratch.Git(repo, "add", ".");
+        Directory.CreateDirectory(Path.Combine(repo, "folder"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "folder", "untracked.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, "ignored.txt"), "kept");
+
+        var results = await CodeCommands.Discard([repo]);
+
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(File.Exists(Path.Combine(repo, "added.txt"))).IsFalse();
+        await Assert.That(Directory.Exists(Path.Combine(repo, "folder"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(repo, "ignored.txt"))).IsTrue();
+    }
+
     [Test]
     public async Task PushCommitsWithTheMessageAndPushes()
     {

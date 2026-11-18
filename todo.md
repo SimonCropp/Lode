@@ -21,17 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 14. Discard leaves staged changes and untracked folders
-
-**Where:** [CodeCommands.cs:126-143](src/Lode/CodeCommands.cs#L126), prompt at [CodeMenu.cs:92](src/Lode/CodeMenu.cs#L92).
-
-**What happens:** the prompt says "Discard every uncommitted change, and delete untracked files". `git restore .` restores the working tree from the index, so what is staged stays. `git clean -f` without `-d` leaves untracked folders. After `git add x`, Discard reports done, and a later Push (`commit -am`) commits and pushes the change that was thought gone. A repository with no tracked files fails at `restore .` and is never cleaned.
-
-It may be meant: the class says each command does what the matching script (discard.ps1) does. `DiscardRestoresAndCleans` covers only an unstaged edit and an untracked file at the top.
-
-**Fix:** `git reset --hard` then `git clean -fd`, or word the prompt for what it does.
-
-
 ### 15. A git command can hang for good, and can't be cancelled
 
 **Where:** [CodeCommands.cs:161-194](src/Lode/CodeCommands.cs#L161) (`Git`, `process.WaitForExit()` with no limit), [CodeCommands.cs:147-159](src/Lode/CodeCommands.cs#L147) (`ForEach`), `ActionsPanel.cs:347`.
