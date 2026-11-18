@@ -691,11 +691,15 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         return new(text, 0, Math.Max(0, length));
     }
 
+    // For an entry that opens a submenu, GetMenuState gives how many entries that has in the
+    // high byte, where 8 to 15 of them set the separator's bit. So an entry with a submenu is
+    // never a separator.
     static bool IsSeparator(IntPtr menu, int position) =>
+        GetSubMenu(menu, position) == IntPtr.Zero &&
         (GetMenuState(menu, (uint)position, menuByPosition) & menuSeparator) != 0;
 
     // Removes separators left at either end, or next to each other, by removed entries.
-    static void TidySeparators(IntPtr menu)
+    internal static void TidySeparators(IntPtr menu)
     {
         for (var position = GetMenuItemCount(menu) - 1; position >= 0; position--)
         {

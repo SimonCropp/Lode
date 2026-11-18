@@ -41,6 +41,77 @@ public class ShellContextMenuTests
         await Assert.That(apart).IsEqualTo(IntPtr.Zero);
     }
 
+    // An entry with a submenu of 8 to 15 entries, or 24 to 31, reads from GetMenuState as a
+    // separator, which tidying would delete, along with a real separator just above it. Only
+    // separators at the ends or side by side go.
+    [Test]
+    public async Task TidyingSeparatorsKeepsSubmenus()
+    {
+        var menu = CreatePopupMenu();
+        try
+        {
+            AppendMenu(menu, separator, UIntPtr.Zero, null);
+            AppendMenu(menu, text, 1, "Open");
+            AppendMenu(menu, popup, Submenu(8), "TortoiseGit");
+            AppendMenu(menu, separator, UIntPtr.Zero, null);
+            AppendMenu(menu, popup, Submenu(12), "7-Zip");
+            AppendMenu(menu, popup, Submenu(24), "Tools");
+            AppendMenu(menu, separator, UIntPtr.Zero, null);
+            AppendMenu(menu, separator, UIntPtr.Zero, null);
+            AppendMenu(menu, text, 2, "Properties");
+            AppendMenu(menu, separator, UIntPtr.Zero, null);
+
+            ShellContextMenu.TidySeparators(menu);
+
+            var entries = new List<string>();
+            for (var position = 0; position < GetMenuItemCount(menu); position++)
+            {
+                var name = new StringBuilder(64);
+                GetMenuString(menu, (uint)position, name, name.Capacity, byPosition);
+                entries.Add(name.Length == 0 ? "----" : name.ToString());
+            }
+
+            await Assert.That(entries).IsEquivalentTo(
+                ["Open", "TortoiseGit", "----", "7-Zip", "Tools", "----", "Properties"],
+                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        }
+        finally
+        {
+            DestroyMenu(menu);
+        }
+
+        static UIntPtr Submenu(int count)
+        {
+            var submenu = CreatePopupMenu();
+            for (var index = 0; index < count; index++)
+            {
+                AppendMenu(submenu, text, (UIntPtr)(100 + index), $"Entry {index}");
+            }
+
+            return (UIntPtr)(ulong)submenu;
+        }
+    }
+
+    const uint text = 0;
+    const uint separator = 0x800;
+    const uint popup = 0x10;
+    const uint byPosition = 0x400;
+
+    [DllImport("user32.dll")]
+    static extern IntPtr CreatePopupMenu();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern bool AppendMenu(IntPtr menu, uint flags, UIntPtr id, string? text);
+
+    [DllImport("user32.dll")]
+    static extern int GetMenuItemCount(IntPtr menu);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetMenuStringW")]
+    static extern int GetMenuString(IntPtr menu, uint item, StringBuilder text, int max, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern bool DestroyMenu(IntPtr menu);
+
     // Takes the caller's name so each test gets its own fixture folder and they can run side by side.
     static async Task VerifyAbsences(Func<Fixture, string> pathFor, [CallerMemberName] string member = "")
     {

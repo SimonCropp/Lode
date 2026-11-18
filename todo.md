@@ -22,19 +22,6 @@ Contents:
 ## Bugs, reproduced
 
 
-### 5. Show more options can lose a shell extension's submenu
-
-**Where:** [ShellContextMenu.cs:694-711](src/Lode/ShellContextMenu/ShellContextMenu.cs#L694) (`IsSeparator`, `TidySeparators`).
-
-**What happens:** for an entry that opens a submenu, `GetMenuState` returns the flags in the low byte and how many entries the submenu has in the high byte. `MF_SEPARATOR` is 0x800, bit 3 of that count. So a submenu of 8 to 15 entries, or 24 to 31, or 40 to 47, reads as a separator. `TidySeparators` then deletes it when it is first, last, or directly above a separator or another such submenu. It also deletes a real separator directly above one.
-
-Likely to be hit by TortoiseGit's and TortoiseSVN's submenus, which add a separator after themselves and whose length changes by folder, so it comes and goes, and by 7-Zip's cascaded menu on an archive.
-
-**Reproduced:** menus built with a submenu of 1, 7, 8, 12, 15, 16 and 24 entries. `GetMenuState` gave 0x0110, 0x0710, 0x0810, 0x0C10, 0x0F10, 0x1010 and 0x1810: a "separator" at 8, 12, 15 and 24.
-
-**Fix:** a separator only where `GetSubMenu(menu, position)` is zero, or `MF_POPUP` (0x10) is clear, or ask `GetMenuItemInfo` with `MIIM_FTYPE`. The tests only check what is absent, so nothing catches this.
-
-
 ### 6. A relative path typed in the address bar is taken from C:\Windows\System32
 
 **Where:** [MainForm.cs:1606](src/Lode/MainForm.cs#L1606) (`view.Navigate(addressBox.Text)`), [Locations.cs:152-188](src/Lode/Locations.cs#L152) (`Normalize`, `Path.GetFullPath` at 173), [Program.cs:66](src/Lode/Program.cs#L66) (`Environment.CurrentDirectory = Environment.SystemDirectory`).
