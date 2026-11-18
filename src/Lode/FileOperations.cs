@@ -95,35 +95,145 @@ static class FileOperations
             outcome => UndoHistory.Instance.RecordDelete(Pairs(outcome)));
     }
 
+    /// <summary>
+    /// Renames <paramref name="path"/>, on the calling thread. False, having said why where it
+    /// was not there or could not be, when it was not renamed.
+    /// </summary>
     public static bool Rename(IntPtr owner, string path, string newName)
     {
-        var outcome = ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, [path], newName, undoFlags);
-        // Renamed to the name of a folder beside it, a folder merges into that one: what was in
-        // it is moved there item by item, and the folder deleted.
-        if (outcome.Merged.Count > 0)
+        // Not there, it is left out, which the shell counts a success.
+        var there = false;
+        var succeeded = Report(
+            owner,
+            ShellFileOperation.Kind.Rename,
+            () => ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, [path], newName, undoFlags),
+            outcome =>
+            {
+                there = outcome.Missing.Count == 0;
+
+                // Renamed to the name of a folder beside it, a folder merges into that one: what
+                // was in it is moved there item by item, and the folder deleted.
+                if (outcome.Merged.Count > 0)
+                {
+                    UndoHistory.Instance.RecordMove(Pairs(outcome), Emptied(outcome), "rename");
+                    return;
+                }
+
+                if (outcome.Changes is [{ Result: { } renamed }, ..])
+                {
+                    UndoHistory.Instance.RecordRename(path, renamed);
+                }
+            });
+        return succeeded && there;
+    }
+
+    /// <summary>
+    /// Pastes what was copied or cut into <paramref name="destination"/>. What was cut is taken
+    /// off the clipboard once it has been moved, unless something else has been put there since.
+    /// </summary>
+    public static async Task Paste(IntPtr owner, ClipboardFiles clipboard, string destination)
+    {
+        var moved = await Transfer(owner, clipboard.Paths, destination, clipboard.Move);
+        if (!clipboard.Move ||
+            !moved ||
+            ReadClipboard() is not { Move: true } now ||
+            !now.Paths.SequenceEqual(clipboard.Paths, StringComparer.OrdinalIgnoreCase))
         {
-            UndoHistory.Instance.RecordMove(Pairs(outcome), Emptied(outcome), "rename");
-            return outcome.Succeeded;
+            return;
         }
 
-        if (outcome.Changes is [{ Result: { } renamed }, ..])
+        try
         {
-            UndoHistory.Instance.RecordRename(path, renamed);
+            Clipboard.Clear();
+        }
+        catch (ExternalException)
+        {
+            // Another process is holding the clipboard open.
+        }
+    }
+
+    // The shell runs the operation on the calling thread, so a large copy on the UI thread
+    // would freeze the window. Each operation gets its own STA thread instead. What could not
+    // be done is said there, as the shell's own dialogs are, since nothing waits on the task.
+    static Task<bool> RunInBackground(IntPtr owner, ShellFileOperation.Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags, Action<ShellFileOperation.Outcome> done) =>
+        OnStaThread(() => Report(owner, kind, () => ShellFileOperation.Run(owner, kind, sources, destination, flags), done));
+
+    // Runs the operation and says what was not there, and why none of it was done when it
+    // could not be. False then.
+    static bool Report(IntPtr owner, ShellFileOperation.Kind kind, Func<ShellFileOperation.Outcome> run, Action<ShellFileOperation.Outcome> done)
+    {
+        ShellFileOperation.Outcome outcome;
+        try
+        {
+            outcome = run();
+        }
+        catch (Exception exception)
+        {
+            Warn(owner, exception.Message);
+            return false;
+        }
+
+        done(outcome);
+        if (MissingMessage(kind, outcome.Missing) is { } message)
+        {
+            Warn(owner, message);
         }
 
         return outcome.Succeeded;
     }
 
-    // The shell runs the operation on the calling thread, so a large copy on the UI thread
-    // would freeze the window. Each operation gets its own STA thread instead.
-    static Task<bool> RunInBackground(IntPtr owner, ShellFileOperation.Kind kind, IReadOnlyCollection<string> sources, string? destination, uint flags, Action<ShellFileOperation.Outcome> done) =>
-        OnStaThread(
-            () =>
-            {
-                var outcome = ShellFileOperation.Run(owner, kind, sources, destination, flags);
-                done(outcome);
-                return outcome.Succeeded;
-            });
+    /// <summary>
+    /// What to say of items that were not there, and so were left out. Null when all were.
+    /// </summary>
+    internal static string? MissingMessage(ShellFileOperation.Kind kind, IReadOnlyList<string> missing)
+    {
+        var verb = kind switch
+        {
+            ShellFileOperation.Kind.Copy => "copied",
+            ShellFileOperation.Kind.Move => "moved",
+            ShellFileOperation.Kind.Delete => "deleted",
+            _ => "renamed"
+        };
+        switch (missing.Count)
+        {
+            case 0:
+                return null;
+            case 1:
+                return $"Lode can't find '{NameOf(missing[0])}', so it wasn't {verb}.";
+        }
+
+        const int listed = 10;
+        var names = missing
+            .Take(listed)
+            .Select(_ => $"  {NameOf(_)}");
+        var message = $"Lode can't find these {missing.Count} items, so they weren't {verb}:\n\n{string.Join("\n", names)}";
+        if (missing.Count > listed)
+        {
+            message += $"\n  and {missing.Count - listed} more";
+        }
+
+        return message;
+    }
+
+    // A drive has no name of its own, so is its path.
+    static string NameOf(string path)
+    {
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
+        if (name.Length == 0)
+        {
+            return path;
+        }
+
+        return name;
+    }
+
+    // On whichever thread, owned by the window, as Windows' own dialogs for the operation are.
+    static void Warn(IntPtr owner, string message) =>
+        MessageBox.Show(new Owner(owner), message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+    // A window by its handle. Not the control itself, which Windows Forms would refuse to own a
+    // dialog from another thread.
+    sealed record Owner(IntPtr Handle) : IWin32Window;
 
     /// <summary>
     /// Runs <paramref name="work"/> on a thread of its own, set up for the shell's COM objects.

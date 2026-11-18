@@ -42,11 +42,13 @@ static class ShellFileOperation
     /// either way. <paramref name="Merged"/> lists the folders that went into one of the same
     /// name already there, each with the folder there: what was in it is in
     /// <paramref name="Changes"/> item by item, as the folder there is not new.
+    /// <paramref name="Missing"/> lists the items that were not there, and were left out, so
+    /// that the rest were done: <paramref name="Succeeded"/> is about those.
     /// </summary>
-    public sealed record Outcome(bool Succeeded, IReadOnlyList<Change> Changes, IReadOnlyList<Change> Merged)
+    public sealed record Outcome(bool Succeeded, IReadOnlyList<Change> Changes, IReadOnlyList<Change> Merged, IReadOnlyList<string> Missing)
     {
         public Outcome(bool succeeded, IReadOnlyList<Change> changes) :
-            this(succeeded, changes, [])
+            this(succeeded, changes, [], [])
         {
         }
     }
@@ -87,6 +89,7 @@ static class ShellFileOperation
         var created = new List<IShellItem>();
         var folders = new Dictionary<string, IShellItem>(StringComparer.OrdinalIgnoreCase);
         var sink = new ProgressSink(Merging(kind, items));
+        var missing = new List<string>();
         uint cookie = 0;
         try
         {
@@ -95,7 +98,14 @@ static class ShellFileOperation
             operation.Advise(sink, out cookie);
             foreach (var item in items)
             {
-                var shellItem = CreateItem(item.Source);
+                // Asked for something that is not there, Windows does none of it. One deleted or
+                // moved since it was picked, from a search, a cut or a drag, is left out instead.
+                if (TryCreateItem(item.Source) is not { } shellItem)
+                {
+                    missing.Add(item.Source);
+                    continue;
+                }
+
                 created.Add(shellItem);
                 switch (kind)
                 {
@@ -114,6 +124,11 @@ static class ShellFileOperation
                 }
             }
 
+            if (created.Count == 0)
+            {
+                return new(true, [], [], missing);
+            }
+
             // Fails when the user cancels, which is not an error worth an exception. What was
             // done before then still went where it went.
             var performed = operation.PerformOperations() >= 0;
@@ -125,11 +140,11 @@ static class ShellFileOperation
 
             if (!performed)
             {
-                return new(false, sink.Changes, sink.Merged);
+                return new(false, sink.Changes, sink.Merged, missing);
             }
 
             operation.GetAnyOperationsAborted(out var aborted);
-            return new(!aborted, sink.Changes, sink.Merged);
+            return new(!aborted, sink.Changes, sink.Merged, missing);
         }
         finally
         {
@@ -150,7 +165,9 @@ static class ShellFileOperation
         {
             if (!folders.TryGetValue(path, out var folder))
             {
-                folder = CreateItem(path);
+                // Nothing can go into a folder that has gone, dropped on in the tree say, so none
+                // of it is done.
+                folder = TryCreateItem(path) ?? throw new DirectoryNotFoundException($"Lode can't find the folder '{path}'.");
                 folders[path] = folder;
             }
 
@@ -230,9 +247,18 @@ static class ShellFileOperation
         }
     }
 
-    static IShellItem CreateItem(string path)
+    const int fileNotFound = unchecked((int)0x80070002);
+    const int pathNotFound = unchecked((int)0x80070003);
+
+    // Null for what is not there.
+    static IShellItem? TryCreateItem(string path)
     {
         var result = SHCreateItemFromParsingName(path, IntPtr.Zero, typeof(IShellItem).GUID, out var item);
+        if (result is fileNotFound or pathNotFound)
+        {
+            return null;
+        }
+
         Marshal.ThrowExceptionForHR(result);
         return (IShellItem)item;
     }

@@ -251,17 +251,32 @@ static class GitPurge
             return FileOperations.OnStaThread<IReadOnlyList<Failure>>(
                 () =>
                 {
-                    var outcome = ShellFileOperation.Run(
-                        owner,
-                        ShellFileOperation.Kind.Delete,
-                        paths,
-                        null,
-                        ShellFileOperation.AllowUndo |
-                        ShellFileOperation.RecycleOnDelete |
-                        ShellFileOperation.NoConfirmation |
-                        ShellFileOperation.WantNukeWarning);
+                    ShellFileOperation.Outcome outcome;
+                    try
+                    {
+                        outcome = ShellFileOperation.Run(
+                            owner,
+                            ShellFileOperation.Kind.Delete,
+                            paths,
+                            null,
+                            ShellFileOperation.AllowUndo |
+                            ShellFileOperation.RecycleOnDelete |
+                            ShellFileOperation.NoConfirmation |
+                            ShellFileOperation.WantNukeWarning);
+                    }
+                    catch (Exception exception)
+                    {
+                        // None of it done, which each says, so what was found is still listed.
+                        return paths
+                            .Select(_ => new Failure(_, exception.Message))
+                            .ToList();
+                    }
+
+                    // What has gone since the dry run, removed by a build say, is as good as
+                    // purged.
                     var done = outcome.Changes
                         .Select(_ => _.Source)
+                        .Concat(outcome.Missing)
                         .ToHashSet(StringComparer.OrdinalIgnoreCase);
                     return paths
                         .Where(_ => !done.Contains(_))

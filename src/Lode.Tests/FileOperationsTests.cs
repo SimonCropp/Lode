@@ -91,6 +91,62 @@ public class FileOperationsTests
             });
     }
 
+    // Asked for something that is not there, Windows does none of it. One gone since it was
+    // picked is left out, and the rest are done.
+    [Test]
+    public async Task WhatIsNotThereIsLeftOut()
+    {
+        using var fixture = Fixture.Create();
+        string[] sources = [fixture.At("notes.aleph"), fixture.At("gone.aleph"), fixture.At("Gone")];
+
+        var outcome = await FileOperations.OnStaThread(
+            () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, sources, fixture.At("Archive"), 0));
+
+        await Assert.That(outcome.Succeeded).IsTrue();
+        await Assert.That(outcome.Missing).IsEquivalentTo([fixture.At("gone.aleph"), fixture.At("Gone")], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(outcome.Changes).IsEquivalentTo<IReadOnlyList<ShellFileOperation.Change>, ShellFileOperation.Change>(
+            [new(fixture.At("notes.aleph"), fixture.At("Archive", "notes.aleph"))],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    [Test]
+    public async Task NothingThereDoesNothing()
+    {
+        using var fixture = Fixture.Create();
+
+        var outcome = await FileOperations.OnStaThread(
+            () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Move, [fixture.At("gone.aleph")], fixture.At("Archive"), 0));
+
+        await Assert.That(outcome.Changes).IsEmpty();
+        await Assert.That(outcome.Missing).IsEquivalentTo([fixture.At("gone.aleph")]);
+    }
+
+    // Nothing can go into a folder that has gone, so none of it is done, and it says which.
+    [Test]
+    public async Task AFolderToGoIntoThatHasGoneDoesNothing()
+    {
+        using var fixture = Fixture.Create();
+
+        var exception = await Assert.ThrowsAsync<DirectoryNotFoundException>(
+            () => FileOperations.OnStaThread(
+                () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, [fixture.At("notes.aleph")], fixture.At("Gone"), 0)));
+
+        await Assert.That(exception!.Message).IsEqualTo($"Lode can't find the folder '{fixture.At("Gone")}'.");
+        await Assert.That(fixture.Tree()).DoesNotContain("Projects/Gone/");
+    }
+
+    [Test]
+    public Task MissingMessage() =>
+        Verify(
+            new
+            {
+                none = FileOperations.MissingMessage(ShellFileOperation.Kind.Copy, []),
+                one = FileOperations.MissingMessage(ShellFileOperation.Kind.Move, [@"C:\Work\a.txt"]),
+                drive = FileOperations.MissingMessage(ShellFileOperation.Kind.Copy, [@"Z:\"]),
+                two = FileOperations.MissingMessage(ShellFileOperation.Kind.Delete, [@"C:\Work\a.txt", @"C:\Work\Folder"]),
+                many = FileOperations.MissingMessage(ShellFileOperation.Kind.Copy, Enumerable.Range(1, 12).Select(_ => $@"C:\Work\{_}.txt").ToList())
+            });
+
     // A file picked beside the folder it is in, as from a search, is copied twice: with the
     // folder, and by itself, which is a change of its own.
     [Test]

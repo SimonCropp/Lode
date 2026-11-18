@@ -2208,11 +2208,7 @@ sealed class FolderView : UserControl
             return;
         }
 
-        FileOperations.Transfer(Owner, clipboard.Paths, CurrentPath, clipboard.Move);
-        if (clipboard.Move)
-        {
-            Clipboard.Clear();
-        }
+        _ = FileOperations.Paste(Owner, clipboard, CurrentPath);
     }
 
     public void Delete(bool permanent)

@@ -1467,11 +1467,7 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        FileOperations.Transfer(FindForm()?.Handle ?? Handle, clipboard.Paths, folder, clipboard.Move);
-        if (clipboard.Move)
-        {
-            Clipboard.Clear();
-        }
+        _ = FileOperations.Paste(FindForm()?.Handle ?? Handle, clipboard, folder);
     }
 
     void CreateShortcut(string path)

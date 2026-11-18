@@ -22,25 +22,6 @@ Contents:
 ## Bugs, reproduced
 
 
-### 3. One missing item makes a whole paste, delete or drop do nothing, without a word
-
-**Where:** [ShellFileOperation.cs:88-90](src/Lode/ShellFileOperation.cs#L88) and [166-171](src/Lode/ShellFileOperation.cs#L166) (`CreateItem` throws), [FileOperations.cs:103-136](src/Lode/FileOperations.cs#L103) (`OnStaThread` puts the exception in the task), [FileOperations.cs:90-99](src/Lode/FileOperations.cs#L90) (`Rename`, on the UI thread, catches nothing). Callers that drop the task: [FolderView.cs:2199-2203](src/Lode/FolderView.cs#L2199) (`Paste`), [FolderView.cs:2209](src/Lode/FolderView.cs#L2209) (`Delete`), `FileOperations.cs:475` (`Drop`), `FolderTree.cs:113` and `1459-1463`.
-
-**What happens:** `SHCreateItemFromParsingName` fails for a source that is not there, before anything is queued, so nothing is done for any of them. The exception ends up in a task nobody looks at.
-
- * Ctrl+X three files, one of which another program then deletes, Ctrl+V. Nothing moves, nothing is said, and `Clipboard.Clear()` has already run, so the cut is lost.
- * Delete in search results with one row out of date. What a search found is not watched.
- * A drop onto a tree node whose folder has gone.
- * Rename, of a search row or a tree node out of date: the same throw, but on the UI thread, out of `OnAfterLabelEdit` ([FolderView.cs:2419](src/Lode/FolderView.cs#L2419), `FolderTree.cs:1528`). `Program.cs` sets no `Application.ThreadException` handler, so it is .NET's "Unhandled exception" dialog.
- * Git purge to the Recycle Bin: every dry run comes first, which can take tens of seconds over many repositories. One listed file removed meanwhile, by a build or an IDE, and nothing is deleted anywhere, the entry is a bare "Failed", and the list of what was found is lost ([GitPurge.cs:218-262](src/Lode/GitPurge.cs#L218)). `Outright` has a smaller gap: it catches only `IOException` and `UnauthorizedAccessException`.
-
-The undo path already leaves out what has gone, for this reason: see the comments on `Move` and `Recycle` in `UndoHistory.cs`.
-
-**Reproduced:** `ShellFileOperation.Run` copying a file that existed and one that did not into a folder. It threw `FileNotFoundException` (0x80070002) and the folder was left empty.
-
-**Fix:** in `Run`, leave out sources that are not there and say so through `Outcome`. Catch in `FileOperations.Rename`. Have `Paste`, `Delete` and `Drop` look at the task and show its message. Clear the clipboard only once a move has worked.
-
-
 ### 4. New window opens titled "Lode" with the address bar on This PC
 
 **Where:** [MainForm.cs:1464-1474](src/Lode/MainForm.cs#L1464) (`NewWindow`), [MainForm.cs:929-960](src/Lode/MainForm.cs#L929) (`AddTab`), [MainForm.cs:764](src/Lode/MainForm.cs#L764).
