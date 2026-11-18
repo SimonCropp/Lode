@@ -1,6 +1,7 @@
 /// <summary>
 /// What starting Windows PowerShell with a script of Lode's needs, for the update
-/// (<see cref="ToolUpdate"/>) and the Defender exclusion (<see cref="DefenderExclusion"/>).
+/// (<see cref="ToolUpdate"/>), the Defender exclusion (<see cref="DefenderExclusion"/>) and
+/// running the user's own scripts (<see cref="PowerShellScripts"/>).
 /// </summary>
 static class PowerShell
 {

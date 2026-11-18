@@ -81,31 +81,12 @@ static class CodingAgents
     }
 
     /// <summary>
-    /// Where to look: the PATH as Windows has it now, the machine's then the user's, rather than
-    /// as it was when Lode started, so an agent installed since is found; then Lode's own; then
-    /// the folder Claude Code's own installer puts it in.
+    /// Where to look: the PATH as Windows has it now (see <see cref="SearchPath"/>), then the
+    /// folder Claude Code's own installer puts it in.
     /// </summary>
     static List<string> SearchFolders()
     {
-        var folders = new List<string>();
-        foreach (var target in new[]
-                 {
-                     EnvironmentVariableTarget.Machine,
-                     EnvironmentVariableTarget.User,
-                     EnvironmentVariableTarget.Process
-                 })
-        {
-            var value = Environment.GetEnvironmentVariable("Path", target) ?? "";
-            foreach (var entry in value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                var folder = Environment.ExpandEnvironmentVariables(entry.Trim('"'));
-                if (Path.IsPathFullyQualified(folder))
-                {
-                    folders.Add(folder);
-                }
-            }
-        }
-
+        var folders = SearchPath.Folders();
         folders.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"));
         return folders.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }

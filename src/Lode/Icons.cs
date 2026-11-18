@@ -32,6 +32,8 @@ static class Icons
     public const char Open = '\uE8E5';
     public const char OpenInNewTab = '\uE8A7';
     public const char Edit = '\uE70F';
+    // A play button, for running a script.
+    public const char Run = '\uE768';
     public const char OpenWith = '\uE7AC';
     // A window with a shield, as Windows marks what runs elevated.
     public const char AdminTerminal = '\uE7EF';

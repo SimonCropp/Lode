@@ -39,6 +39,28 @@ public class QuickMenuTests
         await Verify(Describe(view.ItemCommands([Entry(view, "todo.txt")])));
     }
 
+    // PowerShell scripts offer Run, after Open, and so do several; a script selected with
+    // another file doesn't.
+    [Test]
+    public async Task ScriptMenu()
+    {
+        using var fixture = Fixture.Create();
+        foreach (var name in new[] { "build.ps1", "clean.PS1" })
+        {
+            await File.WriteAllTextAsync(fixture.At(name), "");
+        }
+
+        using var view = await Open(fixture.Root);
+
+        await Verify(
+            new
+            {
+                script = Describe(view.ItemCommands([Entry(view, "build.ps1")])),
+                scripts = Describe(view.ItemCommands([Entry(view, "build.ps1"), Entry(view, "clean.PS1")])),
+                scriptAndFile = Describe(view.ItemCommands([Entry(view, "build.ps1"), Entry(view, "notes.aleph")]))
+            });
+    }
+
     // The apps Windows recommends, then Choose another app, which takes one file. Nothing for
     // files of different types, programs or shortcuts.
     [Test]

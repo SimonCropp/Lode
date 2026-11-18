@@ -2518,15 +2518,19 @@ sealed class FolderView : UserControl
             commands.Add(LodeActions.Pin(folders, places, SetPinned));
         }
 
-        if (allFiles &&
-            selection.All(_ => TextEditors.IsText(_.FullPath)))
-        {
-            commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, selection.Select(_ => _.FullPath).ToList())));
-        }
-
         if (allFiles)
         {
             var paths = selection.Select(_ => _.FullPath).ToList();
+            if (PowerShellScripts.AreScripts(paths))
+            {
+                commands.Add(LodeActions.Command("run", () => PowerShellScripts.Run(paths)));
+            }
+
+            if (paths.All(TextEditors.IsText))
+            {
+                commands.Add(LodeActions.Command("edit", () => TextEditors.Open(this, settings, paths)));
+            }
+
             if (OpenWith.Extension(paths) is { } extension)
             {
                 commands.Add(LodeActions.Submenu("openWith", QuickMenu.Deferred(() => OpenWithCommands(extension, paths))));

@@ -4,10 +4,17 @@ public class FileOperationsTests
     [Test]
     public async Task TerminalArguments()
     {
-        await Assert.That(FileOperations.TerminalArguments([@"C:\Code\Lode"])).IsEquivalentTo(["-d", @"C:\Code\Lode"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(FileOperations.TerminalArguments([@"C:\Code\Lode", @"C:\Code\Two Words"]))
+        await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\Lode", [])])).IsEquivalentTo(["-d", @"C:\Code\Lode"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\Lode", []), new(@"C:\Code\Two Words", [])]))
             .IsEquivalentTo(["-d", @"C:\Code\Lode", ";", "new-tab", "-d", @"C:\Code\Two Words"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
+
+    // Windows Terminal would take a semicolon in a folder's name, or a command's, as the start
+    // of another tab.
+    [Test]
+    public async Task TerminalArgumentsEscapeSemicolons() =>
+        await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\A;B", [@"C:\Tools;\run.exe", "-x"])]))
+            .IsEquivalentTo(["-d", @"C:\Code\A\;B", @"C:\Tools\;\run.exe", "-x"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
 
     [Test]
     public async Task CopyToAnotherFolder()
