@@ -38,6 +38,8 @@ public class MenuTests
     }
 
     // New, from the right-click menu on empty space: Folder, then each file type with its icon.
+    // A type's own icon is whichever program is installed to open it, so each is drawn with
+    // one of Windows' own for its kind instead, the same on every machine.
     [Test]
     public async Task NewMenu()
     {
@@ -48,10 +50,59 @@ public class MenuTests
             {
                 ShowHidden = false
             });
-        var children = view.BackgroundCommands(canPaste: true, newTypes)[0]!.Children!;
+        var children = view.BackgroundCommands(canPaste: true, newTypes)[0]!.Children!
+            .Select(_ =>
+            {
+                if (_?.ShellIcon == null)
+                {
+                    return _;
+                }
+
+                return _ with
+                {
+                    ShellIcon = StockIcon(_.Text)
+                };
+            })
+            .ToList();
 
         await CaptureMenu(QuickMenu.Build(children, null, _ => { }));
     }
+
+    // SIID_ values, for the system image list.
+    const uint documentIcon = 1;
+    const uint imageIcon = 72;
+    const uint zipIcon = 105;
+    const uint systemIndexFlag = 0x4000;
+
+    static int StockIcon(string label)
+    {
+        var id = label switch
+        {
+            "Bitmap image" => imageIcon,
+            "Compressed (zipped) Folder" => zipIcon,
+            _ => documentIcon
+        };
+        var info = new StockIconInfo
+        {
+            Size = (uint)Marshal.SizeOf<StockIconInfo>()
+        };
+        Marshal.ThrowExceptionForHR(SHGetStockIconInfo(id, systemIndexFlag, ref info));
+        return info.SystemImageIndex;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct StockIconInfo
+    {
+        public uint Size;
+        public IntPtr Icon;
+        public int SystemImageIndex;
+        public int IconIndex;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string Path;
+    }
+
+    [DllImport("shell32.dll")]
+    static extern int SHGetStockIconInfo(uint id, uint flags, ref StockIconInfo info);
 
     // This PC's right-click menu in the folder tree: Explorer's entries for it, less Delete and
     // Rename.
