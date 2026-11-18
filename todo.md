@@ -10,27 +10,12 @@ How sure each item is:
 
 Contents:
 
- * [Bugs, reproduced](#bugs-reproduced)
  * [Bugs, read](#bugs-read)
  * [Bugs, unverified](#bugs-unverified)
  * [Smaller bugs](#smaller-bugs)
  * [Performance](#performance)
  * [Missing features](#missing-features)
  * [Checked and found sound](#checked-and-found-sound)
-
-
-## Bugs, reproduced
-
-
-### 7. Going to the folder already shown drops Forward and adds to the history
-
-**Where:** [FolderView.cs:447-496](src/Lode/FolderView.cs#L447) (`Go`), [FolderView.cs:621-636](src/Lode/FolderView.cs#L621) (`Open`). Reached from the breadcrumb ([MainForm.cs:156-160](src/Lode/MainForm.cs#L156)) and the address bar ([MainForm.cs:1606](src/Lode/MainForm.cs#L1606)).
-
-**What happens:** `Go` does not ask whether the target is where the view already is. `Reveal` does. So clicking the last folder in the breadcrumb, or Ctrl+L then Enter, cuts off what is forward in the history, adds the folder a second time, so Back "goes" to the same folder, and reads it afresh, losing the selection, how far down it was scrolled, and the filter.
-
-**Reproduced:** a view taken to `Projects`, then `Docs`, then Back: at `Projects`, `CanGoForward` true. `Navigate(Projects)`: `CanGoForward` false. `GoBack`: still at `Projects`.
-
-**Fix:** in `Go`, with no `position` and `Locations.Same(normalized, CurrentPath)`, `Reload()` instead. `FolderViewTests.History` does not cover it.
 
 
 ## Bugs, read

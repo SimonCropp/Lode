@@ -444,11 +444,32 @@ sealed class FolderView : UserControl
 
     /// <param name="position">Where in the history the target is, when going back or forward
     /// to it. Null for somewhere new, which is added to the history.</param>
-    void Go(string target, int? position, bool revealFile)
+    /// <param name="again">Open it even where the view is already, which clears the filter.
+    /// Otherwise going there, by the breadcrumb or the address bar say, reads it again, as
+    /// Explorer does, keeping what is forward in the history, the selection, how far down it
+    /// is scrolled and the filter.</param>
+    void Go(string target, int? position, bool revealFile, bool again = false)
     {
         var normalized = Locations.Normalize(target);
         if (normalized == null)
         {
+            return;
+        }
+
+        if (position == null &&
+            !again &&
+            historyIndex >= 0 &&
+            Locations.Same(normalized, CurrentPath))
+        {
+            // Overtakes anywhere being asked after, as going there would.
+            finding++;
+            if (looking != null)
+            {
+                looking = null;
+                QueueStatusChanged();
+            }
+
+            Reload();
             return;
         }
 
@@ -943,7 +964,8 @@ sealed class FolderView : UserControl
             return;
         }
 
-        Navigate(parent);
+        // Again where it is already, to clear the filter, which may be hiding the file.
+        Go(parent, null, revealFile: false, again: true);
     }
 
     /// <summary>

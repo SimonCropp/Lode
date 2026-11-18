@@ -294,6 +294,38 @@ public class FolderViewTests
         await Verify(steps);
     }
 
+    // Going to the folder already shown, by its button in the breadcrumb or Enter in the address
+    // bar, reads it again, as in Explorer. What is forward in the history stays, nothing is
+    // added to it, and the selection and the filter are kept.
+    [Test]
+    public async Task GoingWhereItIsAlreadyReadsItAgain()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Navigate(fixture.At("Source"));
+        await Pump.Loaded(view);
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        view.GoBack();
+        await Pump.Loaded(view);
+        view.Reveal(fixture.At("Source", "main.aleph"));
+        await Pump.Loaded(view);
+        view.Filter = "a";
+        await Pump.Loaded(view);
+        await File.WriteAllBytesAsync(fixture.At("Source", "arrived.aleph"), new byte[3]);
+
+        view.Navigate(fixture.At("source").ToLowerInvariant());
+        await Pump.Until(() => Names(view).Contains("arrived.aleph"));
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source"));
+        await Assert.That(view.CanGoForward).IsTrue();
+        await Assert.That(Selected(view)).IsEquivalentTo(["main.aleph"]);
+        await Assert.That(view.Filter).IsEqualTo("a");
+        view.GoBack();
+        await Pump.Loaded(view);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+    }
+
     // Where the view is in its history changes only once it gets there. Sent back to somewhere
     // on the network, then elsewhere before that has been heard from, Back is to the folder it
     // was in, not the one it never got back to.
