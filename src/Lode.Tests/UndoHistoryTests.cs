@@ -42,12 +42,15 @@ public class UndoHistoryTests
                 .ToList();
         }
 
-        public IReadOnlyList<(string Original, string InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths)
+        // On a drive with no Recycle Bin: deleted outright when sent there.
+        public List<string> NoRecycleBin { get; } = [];
+
+        public IReadOnlyList<(string Original, string? InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths)
         {
             Calls.Add($"recycle {string.Join(", ", paths)}");
             return paths
                 .Where(_ => !Refused.Contains(_))
-                .Select(_ => (_, $@"C:\$Recycle.Bin\$R{++binCounter}"))
+                .Select(_ => (_, NoRecycleBin.Contains(_) ? null : $@"C:\$Recycle.Bin\$R{++binCounter}"))
                 .ToList();
         }
 
@@ -169,6 +172,33 @@ public class UndoHistoryTests
         await Assert.That(actions.Calls).IsEmpty();
         await Assert.That(history.UndoText).IsEqualTo("Undo rename");
         await Assert.That(history.CanRedo).IsFalse();
+    }
+
+    // Undone on a drive with no Recycle Bin, a copy is deleted outright, which Windows asks
+    // about. That is undone, not waiting to be: nothing is said, and it is let go, as there is
+    // nothing in the Recycle Bin to redo it from. Where some went to the Recycle Bin, those can
+    // be redone.
+    [Test]
+    public async Task UndoneWithoutARecycleBin()
+    {
+        var actions = new FakeActions();
+        actions.NoRecycleBin.Add(@"E:\Copied.txt");
+        var history = new UndoHistory(actions);
+        history.RecordRename(@"C:\Work\old.txt", @"C:\Work\new.txt");
+        history.RecordCreated("copy", [@"E:\Copied.txt"]);
+
+        var allGone = await history.Undo(IntPtr.Zero);
+        var afterAllGone = (history.UndoText, history.CanRedo);
+
+        history.RecordCreated("copy", [@"E:\Copied.txt", @"C:\Work\b - Copy.txt"]);
+        var someGone = await history.Undo(IntPtr.Zero);
+        actions.Calls.Clear();
+        await history.Redo(IntPtr.Zero);
+
+        await Assert.That(allGone).IsNull();
+        await Assert.That(afterAllGone).IsEqualTo(("Undo rename", false));
+        await Assert.That(someGone).IsNull();
+        await Assert.That(actions.Calls).IsEquivalentTo([@"restore C:\$Recycle.Bin\$R1"]);
     }
 
     // One that was not undone, though what it was done to is still there, stays to be tried

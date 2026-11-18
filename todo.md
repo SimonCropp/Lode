@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 20. Undo on a drive with no Recycle Bin says "0 of 1" and stays
-
-**Where:** [UndoHistory.cs:406-419](src/Lode/UndoHistory.cs#L406) (`Recycle`), `445-458` (`Counted`), `489-502` (`Pairs` keeps only a change with a result).
-
-**What happens:** undoing a copy, or a new folder, file or shortcut, on a USB stick or a share. The shell asks to delete for good, the user agrees, the item goes, and its change has no result, as it is in no Recycle Bin. `recycled.Count` is 0, so it counts as waiting: "Lode sent 0 of 1 items to the Recycle Bin.", with "Undo copy" still next. A second Ctrl+Z says "1 of 1 items are no longer there…" and only then drops it.
-
-**Fix:** have `IFileActions.Recycle` report what was deleted outright as well, and count those as undone and not to be redone.
-
-
 ### 21. Rename on the tree's Show more options does nothing
 
 **Where:** `ShellContextMenu.cs:65` and `87` (every item menu and Quick access menu is shown with `canRenameFlag`), `FolderTree.cs:1576-1591` (`HandleVerb` handles only "open").

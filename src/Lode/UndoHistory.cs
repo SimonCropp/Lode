@@ -25,9 +25,11 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         IReadOnlyList<(string From, string To)> Move(IntPtr owner, IReadOnlyList<(string From, string Folder, string Name)> items);
 
         /// <summary>
-        /// Sends the items to the Recycle Bin, returning where each one went there.
+        /// Sends the items to the Recycle Bin, returning each one deleted, with where it went
+        /// there, or null for one deleted outright: on a drive with no Recycle Bin, a USB stick
+        /// or a share, Windows asks, and deletes it for good.
         /// </summary>
-        IReadOnlyList<(string Original, string InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths);
+        IReadOnlyList<(string Original, string? InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths);
 
         /// <summary>
         /// Restores items from the Recycle Bin, returning those it could not find.
@@ -95,7 +97,13 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         /// go. Left where it was, it would fail the same way each time, and nothing done before
         /// it could be reached.
         /// </summary>
-        Gone
+        Gone,
+
+        /// <summary>
+        /// Done, but it can't be done the other way: what it sent to the Recycle Bin was deleted
+        /// outright instead, so nothing is there to bring back. It is let go.
+        /// </summary>
+        DoneForGood
     }
 
     /// <param name="Failure">Why not all of it was done, when it was not.</param>
@@ -389,7 +397,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
                 binned = recycled;
             }
 
-            return outcome;
+            return ForGoodWhenNoneBinned(outcome, recycled);
         }
 
         public override Outcome Redo(IFileActions actions, IntPtr owner)
@@ -427,13 +435,14 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
                 deleted = again;
             }
 
-            return outcome;
+            return ForGoodWhenNoneBinned(outcome, again);
         }
     }
 
     // Sends the items to the Recycle Bin, giving those sent, each with where it went there. One
     // that has gone is left out: asked to delete something that is not there, Windows deletes
-    // none of them.
+    // none of them. One deleted outright, on a drive with no Recycle Bin, counts as done, as it
+    // has gone as asked, but is not given, as nothing can bring it back.
     static Outcome Recycle(IFileActions actions, IntPtr owner, IReadOnlyList<string> paths, out IReadOnlyList<(string Original, string InBin)> recycled)
     {
         recycled = [];
@@ -445,8 +454,28 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
             return new(Result.Gone, $"{paths.Count} of {paths.Count} items are no longer there, so can't be sent to the Recycle Bin.");
         }
 
-        recycled = actions.Recycle(owner, there);
-        return Counted(recycled.Count, paths.Count, $"Lode sent {recycled.Count} of {paths.Count} items to the Recycle Bin.");
+        var deleted = actions.Recycle(owner, there);
+        recycled = deleted
+            .Where(_ => _.InBin != null)
+            .Select(_ => (_.Original, _.InBin!))
+            .ToList();
+        return Counted(deleted.Count, paths.Count, $"Lode deleted {deleted.Count} of {paths.Count} items.");
+    }
+
+    // Done, with nothing in the Recycle Bin to do it the other way from: every item was deleted
+    // outright. Left to be redone, it would do nothing.
+    static Outcome ForGoodWhenNoneBinned(Outcome outcome, IReadOnlyList<(string Original, string InBin)> binned)
+    {
+        if (outcome.Result == Result.Done &&
+            binned.Count == 0)
+        {
+            return outcome with
+            {
+                Result = Result.DoneForGood
+            };
+        }
+
+        return outcome;
     }
 
     // Restores the items from the Recycle Bin, giving those restored. One that has left it,
@@ -517,8 +546,12 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
             return Pairs(outcome);
         }
 
-        public IReadOnlyList<(string Original, string InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths) =>
-            Pairs(ShellFileOperation.Run(owner, ShellFileOperation.Kind.Delete, paths, null, recycle));
+        // Every item deleted: one with no place in the Recycle Bin was deleted outright.
+        public IReadOnlyList<(string Original, string? InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths) =>
+            ShellFileOperation.Run(owner, ShellFileOperation.Kind.Delete, paths, null, recycle)
+                .Changes
+                .Select(_ => (_.Source, _.Result))
+                .ToList();
 
         public IReadOnlyList<string> Restore(IReadOnlyList<string> inBin) =>
             RecycleBin.Restore(inBin);
