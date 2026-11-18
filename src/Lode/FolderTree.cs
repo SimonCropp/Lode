@@ -624,10 +624,10 @@ sealed class FolderTree : TreeView
     {
         var found = new FileSystemEnumerable<(string Name, string FullPath, FileAttributes Attributes)>(
             path,
-            (ref FileSystemEntry entry) => (entry.FileName.ToString(), entry.ToFullPath(), entry.Attributes),
+            (ref entry) => (entry.FileName.ToString(), entry.ToFullPath(), entry.Attributes),
             options)
         {
-            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory
+            ShouldIncludePredicate = (ref entry) => entry.IsDirectory
         };
         foreach (var (name, fullPath, attributes) in found)
         {

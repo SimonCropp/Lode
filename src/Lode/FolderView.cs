@@ -1364,9 +1364,9 @@ sealed class FolderView : UserControl
             sent = Stopwatch.GetTimestamp();
         }
 
-        var subfolders = new FileSystemEnumerable<string>(root, (ref FileSystemEntry entry) => entry.ToFullPath(), options)
+        var subfolders = new FileSystemEnumerable<string>(root, (ref entry) => entry.ToFullPath(), options)
         {
-            ShouldIncludePredicate = (ref FileSystemEntry entry) => entry.IsDirectory && CanSearch(ref entry, hiddenSystem)
+            ShouldIncludePredicate = (ref entry) => entry.IsDirectory && CanSearch(ref entry, hiddenSystem)
         };
         foreach (var subfolder in subfolders)
         {
@@ -1374,7 +1374,7 @@ sealed class FolderView : UserControl
             {
                 // Asked of every item, matching or not, so it is where the search notices it has
                 // been let go of, and sends what it has found once it has been holding it a while.
-                ShouldIncludePredicate = (ref FileSystemEntry entry) =>
+                ShouldIncludePredicate = (ref entry) =>
                 {
                     cancel.ThrowIfCancellationRequested();
                     if (batch.Count > 0 &&
@@ -1386,7 +1386,7 @@ sealed class FolderView : UserControl
                     return Matches(pattern, entry.FileName) &&
                            !IsSystem(ref entry, hiddenSystem);
                 },
-                ShouldRecursePredicate = (ref FileSystemEntry entry) => CanSearch(ref entry, hiddenSystem)
+                ShouldRecursePredicate = (ref entry) => CanSearch(ref entry, hiddenSystem)
             };
             try
             {
