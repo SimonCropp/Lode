@@ -635,6 +635,13 @@ sealed class FolderView : UserControl
             historyIndex = history.Count - 1;
         }
 
+        // Gone to a folder above, by Up, the breadcrumb, the tree or Back, it lands with the
+        // folder that leads back selected, as Explorer does.
+        if (keep == null)
+        {
+            pendingSelection ??= Locations.ChildToward(CurrentPath, normalized);
+        }
+
         var sameDrive = Locations.SameRoot(CurrentPath, normalized);
         CurrentPath = normalized;
         filter = "";
@@ -906,15 +913,12 @@ sealed class FolderView : UserControl
 
     public void GoUp()
     {
+        // Open selects the folder left.
         var parent = Locations.Parent(CurrentPath);
-        if (parent == null)
+        if (parent != null)
         {
-            return;
+            Navigate(parent);
         }
-
-        // Land with the folder we just left selected, as Explorer does.
-        pendingSelection = CurrentPath;
-        Navigate(parent);
     }
 
     /// <summary>

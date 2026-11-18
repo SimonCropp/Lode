@@ -1,0 +1,12 @@
+﻿{
+  path: Projects/Source,
+  status: 2 items    1 item selected,
+  filter: ,
+  rows: [
+    folder  Deep,
+    file    main.aleph  5,000 bytes
+  ],
+  selected: [
+    Deep
+  ]
+}
