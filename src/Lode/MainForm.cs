@@ -1075,19 +1075,19 @@ class MainForm : Form
         }
 
         var target = WindowOf(WindowAt(screenLocation));
-        if (target == this)
-        {
-            return;
-        }
-
-        if (target != null)
+        if (target != null &&
+            target != this)
         {
             MoveTab(page, target);
             target.Activate();
+            return;
         }
-        else if (tabs.TabCount > 1)
+
+        // Dropped away from the tabs, in this window or off every window, it gets a window of
+        // its own. Within this window counts too, as a maximized window leaves nowhere else to
+        // drop it. A lone tab would only swap one window for another.
+        if (tabs.TabCount > 1)
         {
-            // A lone tab dragged off its own window would only swap one window for another.
             MoveTabToNewWindow(page, screenLocation);
         }
     }
