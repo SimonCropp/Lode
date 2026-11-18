@@ -130,11 +130,11 @@ public class CodeCommandsTests
     {
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
-        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        using var cancel = new CancelSource(TimeSpan.FromMilliseconds(500));
         var started = Stopwatch.StartNew();
 
         var result = await Task.Run(
-            () => CodeCommands.Git(repo, cancel.Token, network: false, "-c", "alias.hang=!sleep 60", "hang"));
+            () => CodeCommands.Git(repo, cancel.Token, network: false, "-c", "alias.hang=!sleep 60", "hang"), cancel.Token);
 
         await Assert.That(started.Elapsed).IsLessThan(TimeSpan.FromSeconds(20));
         await Assert.That(result.Succeeded).IsFalse();
@@ -164,10 +164,10 @@ public class CodeCommandsTests
         var repo = code.CreateRepo("Repo");
         string[] showSsh = ["-c", "alias.ssh=!echo \"[$GIT_SSH_COMMAND]\"", "ssh"];
 
-        var network = CodeCommands.Git(repo, CancellationToken.None, network: true, showSsh).Output;
-        var local = CodeCommands.Git(repo, CancellationToken.None, network: false, showSsh).Output;
+        var network = CodeCommands.Git(repo, Cancel.None, network: true, showSsh).Output;
+        var local = CodeCommands.Git(repo, Cancel.None, network: false, showSsh).Output;
         Scratch.Git(repo, "config", "core.sshCommand", "ssh -i elsewhere");
-        var theirOwn = CodeCommands.Git(repo, CancellationToken.None, network: true, showSsh).Output;
+        var theirOwn = CodeCommands.Git(repo, Cancel.None, network: true, showSsh).Output;
 
         await Assert.That(network).IsEqualTo("[ssh -o BatchMode=yes]");
         await Assert.That(local).IsEqualTo("[]");

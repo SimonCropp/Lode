@@ -45,7 +45,7 @@ public class QuickMenuTests
     public async Task ScriptMenu()
     {
         using var fixture = Fixture.Create();
-        foreach (var name in new[] { "build.ps1", "clean.PS1" })
+        foreach (var name in new[] {"build.ps1", "clean.PS1"})
         {
             await File.WriteAllTextAsync(fixture.At(name), "");
         }
@@ -67,7 +67,7 @@ public class QuickMenuTests
     public async Task OpenWithMenu()
     {
         using var fixture = Fixture.Create();
-        foreach (var name in new[] { "todo.aleph", "setup.exe", "Notepad.lnk" })
+        foreach (var name in new[] {"todo.aleph", "setup.exe", "Notepad.lnk"})
         {
             await File.WriteAllTextAsync(fixture.At(name), "");
         }
@@ -125,7 +125,7 @@ public class QuickMenuTests
     public async Task FolderUnderTheCodeFolderMenu()
     {
         using var fixture = Fixture.Create();
-        using var view = await Open(fixture.Root, new() { ShowHidden = false, CodeDirectory = fixture.Root });
+        using var view = await Open(fixture.Root, new() {ShowHidden = false, CodeDirectory = fixture.Root});
 
         await Verify(
             new
@@ -182,8 +182,8 @@ public class QuickMenuTests
     public async Task MenuLeavesOutWhatOptionsHides()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false };
-        foreach (var id in new[] { "cut", "copy", "rename", "delete", "properties", "createShortcut", "copyAsPath" })
+        var settings = new Settings {ShowHidden = false};
+        foreach (var id in new[] {"cut", "copy", "rename", "delete", "properties", "createShortcut", "copyAsPath"})
         {
             settings.SetPlacement(id, button: false, menu: false);
         }
@@ -199,7 +199,7 @@ public class QuickMenuTests
     public async Task NestedByDefault()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false, CodeDirectory = fixture.Root };
+        var settings = new Settings {ShowHidden = false, CodeDirectory = fixture.Root};
         using var view = await Open(fixture.Root, settings);
 
         await Verify(
@@ -217,13 +217,13 @@ public class QuickMenuTests
     public async Task NestingFollowsOptions()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false };
-        foreach (var id in new[] { "cut", "copy", "copyAsPath", "rename", "delete", "pin", "createShortcut" })
+        var settings = new Settings {ShowHidden = false};
+        foreach (var id in new[] {"cut", "copy", "copyAsPath", "rename", "delete", "pin", "createShortcut"})
         {
             settings.SetPlacement(id, settings.ShowsAsButton(id), menu: true, menuNested: true);
         }
 
-        foreach (var id in new[] { "terminal", "terminalAdmin" })
+        foreach (var id in new[] {"terminal", "terminalAdmin"})
         {
             settings.SetPlacement(id, settings.ShowsAsButton(id), menu: true, menuNested: false);
         }
@@ -239,7 +239,7 @@ public class QuickMenuTests
     public async Task GitActionsUnnested()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false, CodeDirectory = fixture.Root };
+        var settings = new Settings {ShowHidden = false, CodeDirectory = fixture.Root};
         foreach (var id in LodeActions.GitIds)
         {
             settings.SetPlacement(id, settings.ShowsAsButton(id), menu: true, menuNested: false);
@@ -344,7 +344,9 @@ public class QuickMenuTests
         Action? handed = null;
         using var strip = QuickMenu.Build(
             [QuickMenu.Submenu("Git", [new("Pull", Pull)])],
-            () => { },
+            () =>
+            {
+            },
             _ => handed = _);
         var git = (ToolStripMenuItem) strip.Items[0];
 
@@ -462,7 +464,7 @@ public class QuickMenuTests
 
     static async Task<FolderView> Open(string path, Settings? settings = null)
     {
-        var view = new FolderView(settings ?? new() { ShowHidden = false }, noPlaces)
+        var view = new FolderView(settings ?? new() {ShowHidden = false}, noPlaces)
         {
             // What Open with lists depends on what is installed.
             FindApps = _ => []
@@ -508,14 +510,19 @@ public class QuickMenuTests
         tree.MovePinned(fixture.At("Source"), 0);
 
         var section = tree.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Pinned");
-        var order = section.Nodes.Cast<TreeNode>().Select(_ => (string)_.Tag!).ToList();
+        var order = section.Nodes.Cast<TreeNode>().Select(_ => (string) _.Tag!).ToList();
         await Assert.That(order).IsEquivalentTo([pinned[2], pinned[0], pinned[1]], TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(fixture.At("Source"));
     }
 
     static FolderTree CreateTree(string[] pinned, string[] recent)
     {
-        var tree = new FolderTree(new() { ShowHidden = false }, new(pinned, recent, ShowComputer: false, _ => ""))
+        var tree = new FolderTree(
+            new()
+            {
+                ShowHidden = false
+            },
+            new(pinned, recent, ShowComputer: false, _ => ""))
         {
             Size = new(300, 400)
         };
@@ -547,7 +554,11 @@ public class QuickMenuTests
     // What the menu reads as: one line per item, disabled ones marked, separators as dashes.
     static List<string> Describe(IReadOnlyList<QuickMenu.Command?> commands)
     {
-        using var strip = QuickMenu.Build(commands, () => { }, _ => { });
+        using var strip = QuickMenu.Build(commands, () =>
+        {
+        }, _ =>
+        {
+        });
         var lines = new List<string>();
         Describe(strip.Items, "", lines);
         return lines;
@@ -559,7 +570,7 @@ public class QuickMenuTests
         foreach (ToolStripItem item in items)
         {
             lines.Add(indent + Describe(item));
-            if (item is ToolStripMenuItem { HasDropDownItems: true } parent)
+            if (item is ToolStripMenuItem {HasDropDownItems: true} parent)
             {
                 Describe(parent.DropDownItems, indent + "  ", lines);
             }

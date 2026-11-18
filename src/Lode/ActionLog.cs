@@ -26,7 +26,7 @@ static class ActionLog
         public string Details { get; internal set; } = "";
 
         // Set for work that can be stopped.
-        internal CancellationTokenSource? Cancellation { get; init; }
+        internal CancelSource? Cancellation { get; init; }
 
         /// <summary>
         /// Whether it is running and can be stopped, which <see cref="Cancel"/> does.
@@ -141,10 +141,10 @@ static class ActionLog
     /// for work that stops when the token it is given is cancelled, which the entry's
     /// <see cref="Entry.Cancel"/> does.
     /// </summary>
-    public static Task<Entry> Run(string title, IReadOnlyList<string> folders, Func<IProgress<string>, CancellationToken, Task<Outcome>> work) =>
+    public static Task<Entry> Run(string title, IReadOnlyList<string> folders, Func<IProgress<string>, Cancel, Task<Outcome>> work) =>
         Run(title, folders, new(), work);
 
-    static async Task<Entry> Run(string title, IReadOnlyList<string> folders, CancellationTokenSource? cancellation, Func<IProgress<string>, CancellationToken, Task<Outcome>> work)
+    static async Task<Entry> Run(string title, IReadOnlyList<string> folders, CancelSource? cancellation, Func<IProgress<string>, Cancel, Task<Outcome>> work)
     {
         var entry = new Entry(title, folders)
         {
@@ -153,7 +153,7 @@ static class ActionLog
         entries.Add(entry);
         Changed?.Invoke();
 
-        var cancel = cancellation?.Token ?? CancellationToken.None;
+        var cancel = cancellation?.Token ?? Cancel.None;
         Outcome outcome;
         try
         {

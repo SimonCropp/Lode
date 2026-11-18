@@ -18,27 +18,25 @@ public class MainFormTests
     // Two levels down: the tree expanded to the folder, and back and up available.
     [Test]
     public Task Subfolder() =>
-        Capture(
-            (form, fixture) =>
-            {
-                form.ActiveView!.Navigate(fixture.At("Source"));
-                form.ActiveView.Navigate(fixture.At("Source", "Deep"));
-            });
+        Capture((form, fixture) =>
+        {
+            form.ActiveView!.Navigate(fixture.At("Source"));
+            form.ActiveView.Navigate(fixture.At("Source", "Deep"));
+        });
 
     [Test]
     public Task Tabs() =>
-        Capture(
-            (form, fixture) =>
-            {
-                form.AddTab(fixture.At("Source"), false);
-                form.AddTab(fixture.At("Docs"), true);
-            });
+        Capture((form, fixture) =>
+        {
+            form.AddTab(fixture.At("Source"), false);
+            form.AddTab(fixture.At("Docs"), true);
+        });
 
     // Typing a path: the box sits on the bar's text line, inside the bar's own border.
     [Test]
     public Task EditingAddress() =>
         Capture(
-            (form, _) => ((Breadcrumb)form.Controls.Find("address", true)[0].Parent!).BeginEdit(),
+            (form, _) => ((Breadcrumb) form.Controls.Find("address", true)[0].Parent!).BeginEdit(),
             // Taking the focus away would end the editing.
             keepFocus: true);
 
@@ -49,12 +47,11 @@ public class MainFormTests
 
     [Test]
     public Task SortedBySizeDescending() =>
-        Capture(
-            (form, _) =>
-            {
-                form.ActiveView!.SortBy(sizeColumn);
-                form.ActiveView.SortBy(sizeColumn);
-            });
+        Capture((form, _) =>
+        {
+            form.ActiveView!.SortBy(sizeColumn);
+            form.ActiveView.SortBy(sizeColumn);
+        });
 
     // Hidden items are listed, dimmed.
     [Test]
@@ -75,7 +72,12 @@ public class MainFormTests
     public async Task UpdateAvailable()
     {
         var previous = Updates.Instance;
-        Updates.Instance = TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" });
+        Updates.Instance = TestUpdates.Installed(
+            new()
+            {
+                AvailableUpdate = "0.4.0"
+            });
+
         try
         {
             await Capture();
@@ -129,7 +131,7 @@ public class MainFormTests
     static async Task Capture(Action<MainForm, Fixture>? arrange = null, bool showHidden = false, int width = 1200, bool keepFocus = false)
     {
         using var fixture = Fixture.CreateAtFixedPath();
-        var settings = new Settings { ShowHidden = showHidden };
+        var settings = new Settings {ShowHidden = showHidden};
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
         using var form = new QuietForm([fixture.Root], settings, places);
 

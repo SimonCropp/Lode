@@ -126,7 +126,7 @@ public class FolderViewTests
     {
         using var fixture = Fixture.Create();
         await File.WriteAllTextAsync(fixture.At("Cache", "cached.aleph"), "");
-        using var view = await Open(fixture.Root, new() { ShowHidden = true });
+        using var view = await Open(fixture.Root, new() {ShowHidden = true});
 
         view.Filter = "*.aleph";
         await Pump.Loaded(view);
@@ -254,7 +254,7 @@ public class FolderViewTests
     public async Task HiddenItemsWhenShown()
     {
         using var fixture = Fixture.Create();
-        using var view = await Open(fixture.Root, new() { ShowHidden = true });
+        using var view = await Open(fixture.Root, new() {ShowHidden = true});
 
         await Verify(Describe(view, fixture));
     }
@@ -280,7 +280,9 @@ public class FolderViewTests
                 });
         }
 
-        await Step("start", () => { });
+        await Step("start", () =>
+        {
+        });
         await Step("open Source", () => view.Navigate(fixture.At("Source")));
         await Step("open Deep", () => view.Navigate(fixture.At("Source", "Deep")));
         await Step("back", view.GoBack);
@@ -393,7 +395,12 @@ public class FolderViewTests
     public async Task RevealSelectsTheFile()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces);
+        using var view = new FolderView(
+            new()
+            {
+                ShowHidden = false
+            },
+            noPlaces);
 
         view.Reveal(fixture.At("report10.beta"));
         await Pump.Loaded(view);
@@ -632,7 +639,12 @@ public class FolderViewTests
     public async Task ATabOnTheNetworkIsTakenOnTrustUntilItShows()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        using var view = new FolderView(
+            new()
+            {
+                ShowHidden = false
+            },
+            noPlaces)
         {
             Showing = false,
             IsRemote = _ => true
@@ -653,7 +665,12 @@ public class FolderViewTests
     public async Task ATabStartedAtAFileOnTheNetworkShowsItsFolder()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        using var view = new FolderView(
+            new()
+            {
+                ShowHidden = false
+            },
+            noPlaces)
         {
             Showing = false,
             IsRemote = _ => true
@@ -674,7 +691,7 @@ public class FolderViewTests
     public async Task ATabStartedAtAFileOnTheNetworkIsInItsFolderBeforeItShows()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        using var view = new FolderView(new() {ShowHidden = false}, noPlaces)
         {
             Showing = false,
             IsRemote = _ => true
@@ -697,7 +714,7 @@ public class FolderViewTests
     public async Task ATabOnTheNetworkThatIsNotThereSaysSo()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        using var view = new FolderView(new() {ShowHidden = false}, noPlaces)
         {
             Showing = false,
             IsRemote = _ => true
@@ -775,7 +792,7 @@ public class FolderViewTests
     public async Task FolderOpenedWhileNotShowingIsReadWhenShown()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        using var view = new FolderView(new() {ShowHidden = false}, noPlaces)
         {
             Showing = false
         };
@@ -943,7 +960,7 @@ public class FolderViewTests
     public async Task KeepsTheSelectionWhenTheFolderChanges()
     {
         using var fixture = Fixture.Create();
-        using var view = new FolderView(new() { ShowHidden = false }, noPlaces);
+        using var view = new FolderView(new() {ShowHidden = false}, noPlaces);
         view.Reveal(fixture.At("report2.beta"));
         await Pump.Loaded(view);
 
@@ -995,7 +1012,7 @@ public class FolderViewTests
 
     static async Task<FolderView> OpenIn(Form form, string path)
     {
-        var view = new FolderView(new() { ShowHidden = false }, noPlaces)
+        var view = new FolderView(new() {ShowHidden = false}, noPlaces)
         {
             Dock = DockStyle.Fill
         };
@@ -1109,7 +1126,7 @@ public class FolderViewTests
     public async Task HideAndShowColumns()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false };
+        var settings = new Settings {ShowHidden = false};
         using var view = await Open(fixture.Root, settings);
         view.SortBy(typeColumn);
 
@@ -1142,7 +1159,7 @@ public class FolderViewTests
     public async Task HeaderMenu()
     {
         using var fixture = Fixture.Create();
-        var settings = new Settings { ShowHidden = false, HiddenColumns = ["Size"] };
+        var settings = new Settings {ShowHidden = false, HiddenColumns = ["Size"]};
         using var view = await Open(fixture.Root, settings);
         using var menu = view.HeaderMenu(clickedColumn: 1);
 
@@ -1162,7 +1179,7 @@ public class FolderViewTests
         }
 
         var text = item.Text!;
-        if (item is ToolStripMenuItem { Checked: true })
+        if (item is ToolStripMenuItem {Checked: true})
         {
             text = $"[x] {text}";
         }
@@ -1183,7 +1200,7 @@ public class FolderViewTests
         using var fixture = Fixture.Create();
         var protectedFolder = Directory.CreateDirectory(fixture.At("Protected"));
         protectedFolder.Attributes |= FileAttributes.Hidden | FileAttributes.System;
-        var settings = new Settings { ShowHidden = true };
+        var settings = new Settings {ShowHidden = true};
         using var view = await Open(fixture.Root, settings);
         var withoutSystem = view.Entries.Select(_ => _.Name).ToList();
 
@@ -1205,7 +1222,7 @@ public class FolderViewTests
     static async Task<FolderView> Open(string path, Settings? settings = null)
     {
         // Hidden items off unless a test asks: most tests are about everything else.
-        var view = new FolderView(settings ?? new() { ShowHidden = false }, noPlaces);
+        var view = new FolderView(settings ?? new() {ShowHidden = false}, noPlaces);
         view.Navigate(path);
         await Pump.Loaded(view);
         return view;

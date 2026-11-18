@@ -37,7 +37,12 @@ public class FolderTreeTests
     {
         using var fixture = Fixture.Create();
         var offline = Path.Combine(Path.GetDirectoryName(fixture.Root)!, "Offline");
-        using var tree = new FolderTree(new() { ShowHidden = false }, new([], [], ShowComputer: true, _ => "", [offline]));
+        using var tree = new FolderTree(
+            new()
+            {
+                ShowHidden = false
+            },
+            new([], [], ShowComputer: true, _ => "", [offline]));
         _ = tree.Handle;
         var drive = tree.Nodes.Cast<TreeNode>().Last().Nodes[0];
 

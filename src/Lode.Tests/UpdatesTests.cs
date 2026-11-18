@@ -105,10 +105,29 @@ public class UpdatesTests
         Verify(
             new
             {
-                newer = Available(TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" })),
-                nowRunning = Available(TestUpdates.Installed(new() { AvailableUpdate = "0.3.0" })),
-                unreadable = Available(TestUpdates.Installed(new() { AvailableUpdate = "soon" })),
-                build = Available(TestUpdates.Build(new() { AvailableUpdate = "0.4.0" }))
+                newer = Available(
+                    TestUpdates.Installed(
+                        new()
+                        {
+                            AvailableUpdate = "0.4.0"
+                        })),
+                nowRunning = Available(
+                    TestUpdates.Installed(
+                        new()
+                        {
+                            AvailableUpdate = "0.3.0"
+                        })),
+                unreadable = Available(
+                    TestUpdates.Installed(new()
+                    {
+                        AvailableUpdate = "soon"
+                    })),
+                build = Available(
+                    TestUpdates.Build(
+                        new()
+                        {
+                            AvailableUpdate = "0.4.0"
+                        }))
             });
 
     [Test]

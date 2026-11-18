@@ -347,7 +347,7 @@ public class OptionsFormTests
 
     [Test]
     public Task CodePage() =>
-        VerifyPage("Code", new() { CodeDirectory = @"C:\Code" });
+        VerifyPage("Code", new() {CodeDirectory = @"C:\Code"});
 
     [Test]
     public Task ExplorerInCharge() =>
@@ -359,7 +359,14 @@ public class OptionsFormTests
 
     [Test]
     public Task UpdatesPage() =>
-        VerifyPage("Updates", new(), updates: TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" }));
+        VerifyPage(
+            "Updates",
+            new(),
+            updates: TestUpdates.Installed(
+                new()
+                {
+                    AvailableUpdate = "0.4.0"
+                }));
 
     static async Task VerifyPage(string page, Settings settings, bool replace = false, Updates? updates = null)
     {
@@ -484,7 +491,7 @@ public class OptionsFormTests
     public async Task CancellingBrowseKeepsTheEditor()
     {
         using var scratch = new RegistryScratch();
-        var settings = new Settings { TextEditor = editors[1].Path };
+        var settings = new Settings {TextEditor = editors[1].Path};
         using var form = Show(scratch.Replacement(), settings);
         form.BrowseForEditor = () => null;
 
@@ -542,8 +549,8 @@ public class OptionsFormTests
             {
                 build = OptionsForm.UpdateStatus(TestUpdates.Build()),
                 notCheckedYet = OptionsForm.UpdateStatus(TestUpdates.Installed(new())),
-                upToDate = OptionsForm.UpdateStatus(TestUpdates.Installed(new() { LastUpdateCheck = TestUpdates.Now.AddHours(-3) })),
-                available = OptionsForm.UpdateStatus(TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" })),
+                upToDate = OptionsForm.UpdateStatus(TestUpdates.Installed(new() {LastUpdateCheck = TestUpdates.Now.AddHours(-3)})),
+                available = OptionsForm.UpdateStatus(TestUpdates.Installed(new() {AvailableUpdate = "0.4.0"})),
                 failed = OptionsForm.UpdateStatus(failed)
             });
     }
@@ -580,7 +587,13 @@ public class OptionsFormTests
     public async Task UpdatingClosesOptions()
     {
         using var scratch = new RegistryScratch();
-        using var form = Show(scratch.Replacement(), updates: TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" }));
+        using var form = Show(
+            scratch.Replacement(),
+            updates: TestUpdates.Installed(
+                new()
+                {
+                    AvailableUpdate = "0.4.0"
+                }));
         form.ShowPage("Updates");
         var before = DescribeUpdates(form);
 
@@ -606,7 +619,13 @@ public class OptionsFormTests
         try
         {
             var running = ActionLog.Run("Git pull", @"C:\Code\Lode", () => finish.Task);
-            using var form = Show(scratch.Replacement(), updates: TestUpdates.Installed(new() { AvailableUpdate = "0.4.0" }));
+            using var form = Show(
+                scratch.Replacement(),
+                updates: TestUpdates.Installed(
+                    new()
+                    {
+                        AvailableUpdate = "0.4.0"
+                    }));
             form.ShowPage("Updates");
             var whileRunning = DescribeUpdates(form);
 
@@ -632,7 +651,13 @@ public class OptionsFormTests
     public async Task ABuildHasNothingToUpdate()
     {
         using var scratch = new RegistryScratch();
-        using var form = Show(scratch.Replacement(), updates: TestUpdates.Build(new() { AvailableUpdate = "0.4.0" }));
+        using var form = Show(
+            scratch.Replacement(),
+            updates: TestUpdates.Build(
+                new()
+                {
+                    AvailableUpdate = "0.4.0"
+                }));
         form.ShowPage("Updates");
 
         await Verify(DescribeUpdates(form));

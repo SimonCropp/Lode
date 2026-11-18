@@ -104,13 +104,13 @@ static class CodeCommands
         return Directory.Exists(git) || File.Exists(git);
     }
 
-    public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null, CancellationToken cancel = default) =>
+    public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "pull"));
 
     /// <summary>
     /// Commits every tracked change with the message, then pushes to origin.
     /// </summary>
-    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, CancellationToken cancel = default) =>
+    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
             repos,
             progress,
@@ -151,7 +151,7 @@ static class CodeCommands
     /// folders included, though not what it ignores: that is Purge's. A repository with nothing
     /// committed yet goes back to empty. Cannot be undone.
     /// </summary>
-    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null, CancellationToken cancel = default) =>
+    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
             repos,
             progress,
@@ -175,7 +175,7 @@ static class CodeCommands
 
     // With more than one repository, reports which it is on. With one, the entry's folder
     // already says. Cancelled, it goes on to no more of them, and gives those it went through.
-    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, CancellationToken cancel, Func<string, RepoResult> action) =>
+    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Cancel cancel, Func<string, RepoResult> action) =>
         Task.Run(
             () =>
             {
@@ -192,14 +192,14 @@ static class CodeCommands
                 }
 
                 return results;
-            });
+            }, cancel);
 
     internal static RepoResult Git(string repo, params string[] arguments) =>
-        Git(repo, CancellationToken.None, network: false, arguments);
+        Git(repo, Cancel.None, network: false, arguments);
 
     /// <param name="cancel">Stops git, and whatever it started, ssh say, where it is.</param>
     /// <param name="network">Whether git may go to a remote, over ssh perhaps.</param>
-    internal static RepoResult Git(string repo, CancellationToken cancel, bool network, params string[] arguments)
+    internal static RepoResult Git(string repo, Cancel cancel, bool network, params string[] arguments)
     {
         if (cancel.IsCancellationRequested)
         {
@@ -236,7 +236,7 @@ static class CodeCommands
 
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
-            var error = process.StandardError.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync(cancel);
             var output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
             if (cancel.IsCancellationRequested)
