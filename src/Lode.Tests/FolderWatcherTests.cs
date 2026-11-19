@@ -4,6 +4,49 @@
 /// </summary>
 public class FolderWatcherTests
 {
+    // Safely removed, then plugged in again: the drive is another device, which what was
+    // registered for the old one hears nothing of. A watch from before watches again once its
+    // folder is read, and it and one made since both hear when the drive next goes, so neither
+    // holds it then. Acting on the drive's registration reaches every watcher on the drive, so
+    // nothing else runs meanwhile.
+    [Test]
+    [NotInParallel]
+    public async Task WatchesAgainWhenTheDriveIsPluggedInAgain()
+    {
+        using var fixture = Fixture.Create();
+        var root = Path.GetPathRoot(fixture.Root)!;
+        using var before = new FolderWatcher(fixture.At("Docs"), NotifyFilters.FileName, () => { });
+
+        DriveRemoval.Notify(root, removeComplete);
+        var whileGone = before.IsWatching;
+
+        // Browsing the drive once it is back.
+        using var since = new FolderWatcher(fixture.At("Source"), NotifyFilters.FileName, () => { });
+        var registeredAfresh = !DriveRemoval.SameRegistration(before.Removal, since.Removal);
+        before.Revive();
+        var watchingAgain = before.IsWatching;
+        var sameRegistrationOnceRevived = DriveRemoval.SameRegistration(before.Removal, since.Removal);
+
+        DriveRemoval.Notify(root, queryRemove);
+        var whileGoingAgain = new { before = before.IsWatching, since = since.IsWatching };
+        DriveRemoval.Notify(root, queryRemoveFailed);
+
+        await Verify(
+            new
+            {
+                whileGone,
+                registeredAfresh,
+                watchingAgain,
+                sameRegistrationOnceRevived,
+                whileGoingAgain,
+                afterwards = new { before = before.IsWatching, since = since.IsWatching }
+            });
+    }
+
+    const uint queryRemove = 2;
+    const uint queryRemoveFailed = 3;
+    const uint removeComplete = 5;
+
     [Test]
     public async Task LetsGoWhileTheDriveIsGoing()
     {

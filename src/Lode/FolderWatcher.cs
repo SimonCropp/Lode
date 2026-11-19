@@ -38,14 +38,37 @@ sealed class FolderWatcher : IDisposable
         this.changed = changed;
         this.renamed = renamed;
         watcher = Start();
-        var root = Path.GetPathRoot(path);
-        removal = root is { Length: > 0 } && !Locations.IsNetwork(root)
-            ? DriveRemoval.Subscribe(root, DriveChanged)
-            : DriveRemoval.None;
+        removal = SubscribeToDrive();
         lock (everyGate)
         {
             every.Add(this);
         }
+    }
+
+    /// <summary>
+    /// What tells it the drive is going, for tests.
+    /// </summary>
+    internal IDisposable Removal
+    {
+        get
+        {
+            lock (gate)
+            {
+                return removal;
+            }
+        }
+    }
+
+    IDisposable SubscribeToDrive()
+    {
+        var root = Path.GetPathRoot(path);
+        if (root is { Length: > 0 } &&
+            !Locations.IsNetwork(root))
+        {
+            return DriveRemoval.Subscribe(root, DriveChanged);
+        }
+
+        return DriveRemoval.None;
     }
 
     FileSystemWatcher Start()
@@ -106,13 +129,30 @@ sealed class FolderWatcher : IDisposable
     /// </summary>
     public void Revive()
     {
+        IDisposable? removed = null;
         lock (gate)
         {
-            if (!disposed)
+            if (disposed)
             {
-                Refresh();
+                return;
             }
+
+            // The drive was removed, and is back, plugged in again: another device, which the
+            // old subscription hears nothing of, so the watch would hold it when it next goes.
+            if (driveGoing &&
+                DriveRemoval.DeviceRemoved(removal) &&
+                Directory.Exists(Path.GetPathRoot(path)))
+            {
+                removed = removal;
+                removal = SubscribeToDrive();
+                driveGoing = false;
+            }
+
+            Refresh();
         }
+
+        // Outside the gate: letting go of a registration waits for its callbacks, which take it.
+        removed?.Dispose();
     }
 
     /// <summary>

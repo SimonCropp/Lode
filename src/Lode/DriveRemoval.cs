@@ -23,11 +23,18 @@ static unsafe partial class DriveRemoval
     static readonly Guid volumeDismountFailed = new("e3c5b178-105d-11d2-8ffd-00a0c9a06d32");
     static readonly Guid volumeMount = new("b5804878-1a96-11d2-8ffd-00a0c9a06d32");
 
-    sealed class Registration
+    sealed class Registration(string root)
     {
+        public readonly string Root = root;
         public IntPtr Notification;
         public GCHandle Self;
         public readonly List<Action<bool>> Subscribers = [];
+
+        // The device it was registered for has been removed. Under the gate.
+        public bool Removed;
+
+        // Under the gate, so it is unregistered once.
+        public bool Unregistered;
     }
 
     static readonly Lock gate = new();
@@ -54,9 +61,8 @@ static unsafe partial class DriveRemoval
             }
 
             registration.Subscribers.Add(changed);
+            return new Subscription(registration, changed);
         }
-
-        return new Subscription(root, changed);
     }
 
     /// <summary>
@@ -64,40 +70,80 @@ static unsafe partial class DriveRemoval
     /// </summary>
     public static IDisposable None => Subscription.None;
 
-    sealed class Subscription(string root, Action<bool> changed) : IDisposable
+    /// <summary>
+    /// Whether <paramref name="subscription"/> is to a device that has since been removed. It
+    /// hears nothing more: plugged in again, the drive is another device, which a subscription
+    /// made afresh hears of.
+    /// </summary>
+    public static bool DeviceRemoved(IDisposable subscription)
     {
-        public static readonly IDisposable None = new Subscription("", _ => { });
+        lock (gate)
+        {
+            return subscription is Subscription { Registration.Removed: true };
+        }
+    }
+
+    sealed class Subscription(Registration? registration, Action<bool> changed) : IDisposable
+    {
+        public static readonly IDisposable None = new Subscription(null, _ => { });
+
+        public Registration? Registration { get; } = registration;
 
         bool disposed;
 
         public void Dispose()
         {
             if (disposed ||
-                root.Length == 0)
+                Registration == null)
             {
                 return;
             }
 
             disposed = true;
-            Registration? unused = null;
+            var unused = false;
             lock (gate)
             {
-                if (registrations.TryGetValue(root, out var registration) &&
-                    registration.Subscribers.Remove(changed) &&
-                    registration.Subscribers.Count == 0)
+                if (Registration.Subscribers.Remove(changed) &&
+                    Registration.Subscribers.Count == 0)
                 {
-                    registrations.Remove(root);
-                    unused = registration;
+                    Forget(Registration);
+                    unused = true;
                 }
             }
 
             // Outside the lock: unregistering waits for callbacks under way, which take it.
-            if (unused != null)
+            if (unused)
             {
-                CM_Unregister_Notification(unused.Notification);
-                unused.Self.Free();
+                Unregister(Registration);
             }
         }
+    }
+
+    // Under the gate: the next Subscribe for its drive registers afresh.
+    static void Forget(Registration registration)
+    {
+        if (registrations.TryGetValue(registration.Root, out var current) &&
+            current == registration)
+        {
+            registrations.Remove(registration.Root);
+        }
+    }
+
+    // Not under the gate, nor on a callback's thread: it waits for callbacks under way.
+    static void Unregister(Registration registration)
+    {
+        lock (gate)
+        {
+            if (registration.Unregistered)
+            {
+                return;
+            }
+
+            registration.Unregistered = true;
+        }
+
+        CM_Unregister_Notification(registration.Notification);
+        registration.Self.Free();
     }
 
     // A notification registered against a handle on the drive's root. The registration lasts
@@ -110,7 +156,7 @@ static unsafe partial class DriveRemoval
             return null;
         }
 
-        var registration = new Registration();
+        var registration = new Registration(root);
         registration.Self = GCHandle.Alloc(registration);
         var filter = new NotifyFilter
         {
@@ -167,21 +213,9 @@ static unsafe partial class DriveRemoval
                 volumeEvent = *(Guid*)(eventData + 8);
             }
 
-            if (Meaning(action, volumeEvent) is not { } going ||
-                GCHandle.FromIntPtr(context).Target is not Registration registration)
+            if (GCHandle.FromIntPtr(context).Target is Registration registration)
             {
-                return 0;
-            }
-
-            Action<bool>[] subscribers;
-            lock (gate)
-            {
-                subscribers = [.. registration.Subscribers];
-            }
-
-            foreach (var subscriber in subscribers)
-            {
-                subscriber(going);
+                Dispatch(registration, action, volumeEvent);
             }
         }
         catch (Exception exception)
@@ -193,6 +227,66 @@ static unsafe partial class DriveRemoval
 
         return 0;
     }
+
+    static void Dispatch(Registration registration, uint action, Guid? volumeEvent)
+    {
+        if (Meaning(action, volumeEvent) is not { } going)
+        {
+            return;
+        }
+
+        Action<bool>[] subscribers;
+        lock (gate)
+        {
+            subscribers = [.. registration.Subscribers];
+
+            // The device is gone, and its registration with it: Windows says nothing more to it,
+            // not even for the drive plugged in again, which is another device. So the next
+            // Subscribe registers afresh, and those subscribed now can tell they must.
+            if (action == removeComplete)
+            {
+                registration.Removed = true;
+                Forget(registration);
+            }
+        }
+
+        foreach (var subscriber in subscribers)
+        {
+            subscriber(going);
+        }
+
+        if (action == removeComplete)
+        {
+            // Unregistering from the callback would wait on itself.
+            ThreadPool.QueueUserWorkItem(_ => Unregister(registration));
+        }
+    }
+
+    /// <summary>
+    /// Acts on a notification as if Windows had sent it for <paramref name="root"/>'s drive, for
+    /// tests.
+    /// </summary>
+    internal static void Notify(string root, uint action)
+    {
+        Registration? registration;
+        lock (gate)
+        {
+            registrations.TryGetValue(root, out registration);
+        }
+
+        if (registration != null)
+        {
+            Dispatch(registration, action, null);
+        }
+    }
+
+    /// <summary>
+    /// Whether two subscriptions share one registration, for tests.
+    /// </summary>
+    internal static bool SameRegistration(IDisposable first, IDisposable second) =>
+        first is Subscription { Registration: { } registration } &&
+        second is Subscription { Registration: { } other } &&
+        other == registration;
 
     // CM_NOTIFY_FILTER: a union of up to 200 wide characters after a 16 byte header.
     [StructLayout(LayoutKind.Explicit, Size = 416)]

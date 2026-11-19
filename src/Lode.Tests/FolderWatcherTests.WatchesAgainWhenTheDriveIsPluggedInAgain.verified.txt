@@ -1,0 +1,14 @@
+﻿{
+  whileGone: false,
+  registeredAfresh: true,
+  watchingAgain: true,
+  sameRegistrationOnceRevived: true,
+  whileGoingAgain: {
+    before: false,
+    since: false
+  },
+  afterwards: {
+    before: true,
+    since: true
+  }
+}

@@ -20,17 +20,6 @@ Contents:
 ## Bugs, unverified
 
 
-### 27. Safely remove may be blocked the second time a drive is plugged in
-
-**Where:** `DriveRemoval.cs:41-60` (`Subscribe` reuses `registrations[root]`), `138-193`, [FolderWatcher.cs:93-124](src/Lode/FolderWatcher.cs#L93).
-
-**What happens:** a notification registered on a device's handle is for that device. Once the device has been removed it is dead, but it stays in `registrations` while anything is subscribed, and the tree keeps a drive's nodes and their watchers after the drive goes, as nothing refreshes drives by itself ([missing feature 3](#3-drives-come-and-go-only-on-f5)). So: browse USB stick E:, **Safely remove**, plug it in again. The old watcher is never told it can watch again. A new one, from browsing E: again, subscribes to the dead registration, never hears that the new device is about to go, and holds its handle. The second **Safely remove** fails with "device is currently in use", which the readme says can't happen.
-
-**Unverified:** that Windows sends nothing to the old registration for the device plugged in again. Microsoft's guidance is to unregister once a device is removed.
-
-**Fix:** once removal is complete, take the registration out of the dictionary and unregister it, off the callback's thread, so the next `Subscribe` registers afresh.
-
-
 ### 28. A menu slow to build gets an extension refused for the session, cancelled or not
 
 **Where:** [ShellExtensionGuard.cs:48-66](src/Lode/ShellExtensionGuard.cs#L48) (`CancelCall`).
@@ -216,7 +205,7 @@ Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folde
 
 **Where:** `MainForm.cs:1366-1373` is the only caller of `FolderTree.RefreshDrives`. `MainForm.WndProc` (`1956-1978`) handles only `WM_APPCOMMAND`. Nothing in `src/Lode` handles `WM_DEVICECHANGE` or registers with `SHChangeNotify`. This PC's list is not watched: `FolderView.Watch` returns at once for it.
 
-A USB drive plugged in, or a drive mapped, This PC's own **Map network drive** included, is not in the tree or in This PC until F5, and one taken out stays, with what was beneath it. Explorer shows both at once. This is also what [bug 27](#27-safely-remove-may-be-blocked-the-second-time-a-drive-is-plugged-in) rests on.
+A USB drive plugged in, or a drive mapped, This PC's own **Map network drive** included, is not in the tree or in This PC until F5, and one taken out stays, with what was beneath it. Explorer shows both at once.
 
 **Fix:** handle `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`, `DBT_DEVICEREMOVECOMPLETE`), a little after the last of a burst, and refresh only the drives that changed.
 
