@@ -18,9 +18,13 @@ public class UndoHistoryTests
         public List<string> Refused { get; } = [];
         int binCounter;
 
+        // Run in the middle of a rename, for something recorded while an undo is going on.
+        public Action? DuringRename { get; set; }
+
         public string? Rename(IntPtr owner, string path, string newName)
         {
             Calls.Add($"rename {path} to {newName}");
+            DuringRename?.Invoke();
             if (Refused.Contains(path))
             {
                 return null;
@@ -130,6 +134,32 @@ public class UndoHistoryTests
                 canRedoAfter = history.CanRedo,
                 undo = history.UndoText
             });
+    }
+
+    // A change made while an undo is going on, in another window say, clears redo as any does:
+    // the undo, once done, doesn't put back what it undid to be redone. One that could not be
+    // done goes back to be undone after the newer change.
+    [Test]
+    public async Task SomethingNewDuringAnUndoClearsRedo()
+    {
+        var actions = new FakeActions();
+        var history = new UndoHistory(actions);
+        history.RecordRename(@"C:\Work\a.txt", @"C:\Work\b.txt");
+        actions.DuringRename = () => history.RecordCreated("new folder", [@"C:\Work\New folder"]);
+        await history.Undo(IntPtr.Zero);
+        var done = (history.CanRedo, history.UndoText);
+
+        history.RecordRename(@"C:\Work\c.txt", @"C:\Work\d.txt");
+        actions.Refused.Add(@"C:\Work\d.txt");
+        actions.DuringRename = () => history.RecordCreated("new file", [@"C:\Work\New file.txt"]);
+        await history.Undo(IntPtr.Zero);
+        actions.DuringRename = null;
+        var waiting = (history.CanRedo, history.UndoText);
+        await history.Undo(IntPtr.Zero);
+
+        await Assert.That(done).IsEqualTo((false, "Undo new folder"));
+        await Assert.That(waiting).IsEqualTo((false, "Undo new file"));
+        await Assert.That(history.UndoText).IsEqualTo("Undo rename");
     }
 
     // A delete whose item has gone from the Recycle Bin can't be undone, and never can be. It

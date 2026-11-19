@@ -70,6 +70,9 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     readonly List<Entry> redoable = [];
     bool busy;
 
+    // How many changes have been recorded, so an undo or redo knows of those made meanwhile.
+    long recorded;
+
     /// <summary>
     /// Raised, on whichever thread changed it, when what can be undone or redone changes.
     /// </summary>
@@ -180,6 +183,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
             }
 
             redoable.Clear();
+            recorded++;
         }
 
         Changed?.Invoke();
@@ -234,9 +238,13 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     // Takes the entry off one list for the work, which can show Windows' progress and conflict
     // dialogs, so runs on a thread of its own. It goes on the other list when done, back where
     // it was when it could not be done but still could be, and on neither when it never can be.
+    // A change recorded meanwhile cleared redo, which nothing then goes back on: an entry undone
+    // is not to be redone after it, and one that was to be redone is not any more. One not
+    // undone, or redone, goes before the newer changes, which are undone first.
     async Task<string?> Step(List<Entry> from, List<Entry> to, Func<Entry, IFileActions, Outcome> work)
     {
         Entry entry;
+        long recordedBefore;
         lock (gate)
         {
             if (busy ||
@@ -248,6 +256,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
             busy = true;
             entry = from[^1];
             from.RemoveAt(from.Count - 1);
+            recordedBefore = recorded;
         }
 
         Outcome outcome;
@@ -264,14 +273,27 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         lock (gate)
         {
             busy = false;
-            switch (outcome.Result)
+            var newer = recorded - recordedBefore;
+            var list = to;
+            if (outcome.Result == Result.Waiting)
             {
-                case Result.Done:
-                    to.Add(entry);
-                    break;
-                case Result.Waiting:
-                    from.Add(entry);
-                    break;
+                list = from;
+            }
+
+            if (outcome.Result is Result.Done or Result.Waiting)
+            {
+                if (newer == 0)
+                {
+                    list.Add(entry);
+                }
+                else if (ReferenceEquals(list, undoable))
+                {
+                    undoable.Insert(undoable.Count - (int)Math.Min(newer, undoable.Count), entry);
+                    if (undoable.Count > maximumEntries)
+                    {
+                        undoable.RemoveAt(0);
+                    }
+                }
             }
         }
 
