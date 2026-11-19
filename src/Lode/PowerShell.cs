@@ -14,8 +14,22 @@ static class PowerShell
 
     /// <summary>
     /// <paramref name="value"/> as a single-quoted string, in which nothing is expanded and a
-    /// quote is doubled.
+    /// quote is doubled. PowerShell takes the typographic ones, ‘ ’ ‚ ‛, as quotes too, so the
+    /// apostrophe in "St Mary’s" would otherwise end the string.
     /// </summary>
-    public static string Quote(string value) =>
-        $"'{value.Replace("'", "''", StringComparison.Ordinal)}'";
+    public static string Quote(string value)
+    {
+        var builder = new StringBuilder("'");
+        foreach (var character in value)
+        {
+            if (character is '\'' or '\u2018' or '\u2019' or '\u201A' or '\u201B')
+            {
+                builder.Append(character);
+            }
+
+            builder.Append(character);
+        }
+
+        return builder.Append('\'').ToString();
+    }
 }

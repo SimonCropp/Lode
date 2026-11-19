@@ -20,17 +20,6 @@ Contents:
 ## Bugs, unverified
 
 
-### 29. A typographic apostrophe in a path ends a PowerShell string early
-
-**Where:** `PowerShell.cs:19-20` (`Quote` doubles only `'`). Used at `PowerShellScripts.cs:54`, `DefenderExclusion.cs:90-91`, `ToolUpdate.cs:109-120`.
-
-**What happens:** PowerShell also takes U+2018, U+2019, U+201A and U+201B to end a single-quoted string. **Run** on `…\OneDrive - St Mary’s College\build.ps1` would end the string at the apostrophe, and the script fail to parse. The same for the code folder in the Defender script, which runs elevated. In the update script it would mean Lode has gone and is never started again. The `Script` test has only `O'Brien`.
-
-**Unverified:** not run. From how PowerShell is documented to read those characters.
-
-**Fix:** double all four as well.
-
-
 ### 30. Two launches at once can both become the running copy
 
 **Where:** [Program.cs:57-78](src/Lode/Program.cs#L57), [WindowContext.cs:62-64](src/Lode/WindowContext.cs#L62), [SingleInstance.cs:41-105](src/Lode/SingleInstance.cs#L41).
