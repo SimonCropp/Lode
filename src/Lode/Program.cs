@@ -63,6 +63,9 @@ static class Program
 
         instance.Listen();
 
+        // Behind the window as it starts: the PATH is looked through once a session.
+        CodingAgents.StartLooking();
+
         // Lode stays running, in the tray, and Windows lets nobody rename or delete the folder
         // a program is running in. So not the one this launch happened to be started in.
         Environment.CurrentDirectory = Environment.SystemDirectory;

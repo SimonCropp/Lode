@@ -25,6 +25,38 @@ public class CodingAgentsTests
         await Verify(agents.Select(_ => $"{_.Name}: {Path.GetRelativePath(fixture.Root, _.Path)}"));
     }
 
+    // The PATH is looked through once, off the thread that asks: a folder on it that waits on a
+    // share keeps nothing waiting. Until it is done there are none, after it the same answer,
+    // however often asked, an agent installed meanwhile included.
+    [Test]
+    public async Task ThePathIsLookedThroughOnceBehindTheWindow()
+    {
+        using var fixture = Fixture.Create();
+        var folder = Directory.CreateDirectory(fixture.At("Agents")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(folder, "claude.exe"), "");
+        using var release = new ManualResetEventSlim();
+        var searched = 0;
+        var installed = CodingAgents.FoundOnce(() =>
+        {
+            Interlocked.Increment(ref searched);
+            release.Wait(TimeSpan.FromSeconds(1));
+            return [folder];
+        });
+
+        var started = Stopwatch.GetTimestamp();
+        var whileLooking = installed();
+        var took = Stopwatch.GetElapsedTime(started);
+        release.Set();
+        await Pump.Until(() => installed().Count > 0);
+        await File.WriteAllTextAsync(Path.Combine(folder, "codex.exe"), "");
+        var later = installed();
+
+        await Assert.That(took).IsLessThan(TimeSpan.FromMilliseconds(200));
+        await Assert.That(whileLooking).IsEmpty();
+        await Assert.That(later.Select(_ => _.Name)).IsEquivalentTo(["Claude Code"]);
+        await Assert.That(searched).IsEqualTo(1);
+    }
+
     // Each tab runs the agent in place of the shell.
     [Test]
     public async Task TerminalArguments() =>

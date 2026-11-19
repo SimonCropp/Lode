@@ -24,25 +24,33 @@ static class CodingAgents
     /// <summary>
     /// The agents installed, in the order of <see cref="known"/>.
     /// </summary>
-    internal static Func<IReadOnlyList<Agent>> Installed { get; set; } = FindCached;
+    internal static Func<IReadOnlyList<Agent>> Installed { get; set; } = FoundOnce(SearchFolders);
 
-    // Looking checks every folder on the PATH for every agent, a few milliseconds, and the
-    // actions bar asks each time the selection changes, so an answer stands for half a minute.
-    const long answerLifetime = 30_000;
-    static (long At, IReadOnlyList<Agent> Agents)? answer;
+    /// <summary>
+    /// Starts looking for the agents, behind the window, as Lode starts: making the class does.
+    /// </summary>
+    public static void StartLooking() =>
+        _ = Installed;
 
-    static IReadOnlyList<Agent> FindCached()
+    /// <summary>
+    /// The agents found by looking once through <paramref name="search"/>'s folders, off the
+    /// UI thread: none until that is done, which is soon, and the same answer after. Looking
+    /// checks every folder on the PATH for every agent. A few milliseconds as a rule, but a
+    /// folder on the PATH on a share which does not answer would stop the window, and the
+    /// actions bar asks on every change of selection.
+    /// </summary>
+    internal static Func<IReadOnlyList<Agent>> FoundOnce(Func<IReadOnlyList<string>> search)
     {
-        var now = Environment.TickCount64;
-        if (answer is { } last &&
-            now - last.At < answerLifetime)
+        var looking = Task.Run(IReadOnlyList<Agent> () => Find(search()));
+        return () =>
         {
-            return last.Agents;
-        }
+            if (looking.IsCompletedSuccessfully)
+            {
+                return looking.Result;
+            }
 
-        var agents = Find(SearchFolders());
-        answer = (now, agents);
-        return agents;
+            return [];
+        };
     }
 
     /// <summary>
