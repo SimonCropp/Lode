@@ -11,7 +11,8 @@
       GIMP 3.2.6
   ],
   twoFilesNoApps: [
-    Open with (disabled)
+    Open with,
+      None (disabled)
   ],
   oneFileNoApps: [
     Open with,

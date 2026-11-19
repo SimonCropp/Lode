@@ -57,15 +57,25 @@ static class QuickMenu
         };
 
     /// <summary>
-    /// A submenu's entries, found the first time something reads them: when the menu shows,
-    /// rather than each time the actions bar builds the commands for a new selection.
+    /// A submenu's entries, found the first time something reads them: when the submenu opens,
+    /// rather than as the menu it is in is built, or each time the actions bar builds the
+    /// commands for a new selection.
     /// </summary>
     public static IReadOnlyList<Command?> Deferred(Func<IReadOnlyList<Command?>> find) =>
         new DeferredCommands(find);
 
+    /// <summary>
+    /// Whether a submenu's entries are found only when something reads them, and have not been
+    /// yet: taken to have some until then.
+    /// </summary>
+    public static bool NotFoundYet(IReadOnlyList<Command?> commands) =>
+        commands is DeferredCommands { Found: false };
+
     sealed class DeferredCommands(Func<IReadOnlyList<Command?>> find) : IReadOnlyList<Command?>
     {
         Lazy<IReadOnlyList<Command?>> commands = new(find, LazyThreadSafetyMode.None);
+
+        public bool Found => commands.IsValueCreated;
 
         public int Count => commands.Value.Count;
 
@@ -176,6 +186,29 @@ static class QuickMenu
             if (command.Children == null)
             {
                 item.Click += (_, _) => choose(command.Action);
+            }
+            else if (NotFoundYet(command.Children))
+            {
+                // Found as it opens, Open with's apps say, rather than on every right-click.
+                // Until then it holds a stand-in, without which it would not open.
+                var children = command.Children;
+                var filled = false;
+                item.DropDownItems.Add(new ToolStripMenuItem("Finding…") { Enabled = false });
+                item.DropDownOpening += (_, _) =>
+                {
+                    if (filled)
+                    {
+                        return;
+                    }
+
+                    filled = true;
+                    item.DropDownItems.Clear();
+                    AddItems(item.DropDownItems, children, choose, iconSize, images);
+                    if (item.DropDownItems.Count == 0)
+                    {
+                        item.DropDownItems.Add(new ToolStripMenuItem("None") { Enabled = false });
+                    }
+                };
             }
             else
             {

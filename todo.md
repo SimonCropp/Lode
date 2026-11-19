@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 9. Open with is looked up before the right-click menu shows
-
-**Where:** `QuickMenu.cs:174-184` (reading `command.Children` runs every `Deferred` list as the menu is built), [FolderView.cs:2538-2580](src/Lode/FolderView.cs#L2538), `OpenWith.cs:52-75`, `MainForm.cs:725-728`.
-
-**What happens:** on a file, building the menu calls `OpenWith.Find`: `SHAssocEnumHandlers` and an icon for each app, kept nowhere, on every right-click, though the readme's point is a menu that opens at once. With **Open with** or **Coding agent** made a button, `command.Children.Any(…)` runs it on every change of selection. What it costs was not measured.
-
-**Fix:** a placeholder child, filled on `DropDownOpening`, and `OpenWith.Find` kept by extension.
-
-
 ### 10. Show more options waits half a second for each submenu with one entry
 
 **Where:** [ShellContextMenu.cs:587-605](src/Lode/ShellContextMenu/ShellContextMenu.cs#L587).
@@ -61,7 +52,7 @@ All read, none run.
 
 ### 11. Smaller
 
- * **The PATH is searched on the UI thread every 30 seconds.** `CodingAgents.FindCached` (`CodingAgents.cs:34-46`) reads the PATH and looks in every folder on it, three extensions for each agent not installed, on the next change of selection. Milliseconds as a rule, but a folder on the PATH that is on a share which does not answer stops the window. Give the old answer and look again in the background.
+ * **The PATH is searched on the UI thread every 30 seconds.** `CodingAgents.FindCached` (`CodingAgents.cs:34-46`) reads the PATH and looks in every folder on it, three extensions for each agent not installed, on the next change of selection. Milliseconds as a rule, but a folder on the PATH that is on a share which does not answer stops the window. Look only at startup, off the UI thread, and keep that answer for the session.
  * **Push and Discard look for repositories on the UI thread** ([CodeMenu.cs:62](src/Lode/CodeMenu.cs#L62) and [83](src/Lode/CodeMenu.cs#L83)), two levels of folders, where Pull's own comment says that belongs off it.
  * **Sorting by Folder makes two strings for every comparison** ([FolderView.cs](src/Lode/FolderView.cs), `Compare`), each item's folder from its path, which a sort of what a big search found does many times over. Keep each item's folder on it.
  * **Size column to fit measures every name.** `WidestCell` ([FolderView.cs:1833-1857](src/Lode/FolderView.cs#L1833)) sends the list a message for each different text, which for Name is every row of a big folder.

@@ -721,11 +721,15 @@ class MainForm : Form
         }
     }
 
-    // Whether the action has a command now that can run, or a submenu with one in it.
+    // Whether the action has a command now that can run, or a submenu with one in it. One whose
+    // entries are found as it opens, Open with's apps say, is taken to have some, rather than
+    // their being looked up on every change of selection.
     static bool Applies(Dictionary<string, QuickMenu.Command> commands, string id) =>
         commands.TryGetValue(id, out var command) &&
         command.Enabled &&
-        (command.Children == null || command.Children.Any(_ => _ is { Enabled: true }));
+        (command.Children == null ||
+         QuickMenu.NotFoundYet(command.Children) ||
+         command.Children.Any(_ => _ is { Enabled: true }));
 
     /// <summary>
     /// The actions bar's buttons and whether each is enabled, for tests.
@@ -1460,6 +1464,7 @@ class MainForm : Form
     {
         ShellIcons.ForgetFileIcons();
         ShellIcons.ForgetPlaceIcons();
+        OpenWith.Forget();
         ShellIcons.ForgetNetworkDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();

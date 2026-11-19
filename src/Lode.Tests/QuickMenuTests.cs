@@ -84,6 +84,33 @@ public class QuickMenuTests
             });
     }
 
+    // Open with's apps are found as it opens, not as the right-click menu is built: building it
+    // asks the shell for nothing, opening Open with asks once.
+    [Test]
+    public async Task OpenWithIsFoundAsItOpens()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var asked = 0;
+        view.FindApps = _ =>
+        {
+            asked++;
+            return [new("Firefox", @"C:\Firefox\firefox.exe", 0)];
+        };
+
+        using var strip = QuickMenu.Build(view.ItemCommands([Entry(view, "report2.beta")]), null, _ => { });
+        var built = asked;
+        var openWith = strip.Items.OfType<ToolStripMenuItem>().Single(_ => _.Text == "Open with");
+        openWith.ShowDropDown();
+        openWith.HideDropDown();
+        openWith.ShowDropDown();
+        openWith.HideDropDown();
+
+        await Assert.That(built).IsEqualTo(0);
+        await Assert.That(asked).IsEqualTo(1);
+        await Assert.That(openWith.DropDownItems[0].Text).IsEqualTo("Firefox");
+    }
+
     // The apps Windows recommends, then Choose another app, which takes one file. Nothing for
     // files of different types, programs or shortcuts.
     [Test]
@@ -592,10 +619,17 @@ public class QuickMenuTests
     {
         foreach (ToolStripItem item in items)
         {
-            lines.Add(indent + Describe(item));
+            // Opened, as what some hold, Open with's apps say, is found only then.
             if (item is ToolStripMenuItem {HasDropDownItems: true} parent)
             {
-                Describe(parent.DropDownItems, indent + "  ", lines);
+                parent.ShowDropDown();
+                parent.HideDropDown();
+            }
+
+            lines.Add(indent + Describe(item));
+            if (item is ToolStripMenuItem {HasDropDownItems: true} opened)
+            {
+                Describe(opened.DropDownItems, indent + "  ", lines);
             }
         }
     }

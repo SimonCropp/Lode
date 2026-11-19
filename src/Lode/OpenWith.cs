@@ -46,10 +46,23 @@ static partial class OpenWith
         return extension;
     }
 
+    // What each extension's files are opened with, looked up once: the shell asked for every app
+    // and an icon for each, on every right-click. Forgotten on Refresh, as apps come and go.
+    static readonly ConcurrentDictionary<string, List<App>> found = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Asks the shell again, for Refresh.
+    /// </summary>
+    public static void Forget() =>
+        found.Clear();
+
     /// <summary>
     /// The apps recommended for files with the extension, by name.
     /// </summary>
-    public static List<App> Find(string extension)
+    public static List<App> Find(string extension) =>
+        found.GetOrAdd(extension, static _ => Look(_));
+
+    static List<App> Look(string extension)
     {
         var apps = new List<App>();
         foreach (var handler in Handlers(extension))

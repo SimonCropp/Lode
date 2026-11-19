@@ -37,6 +37,22 @@ public class OpenWithTests
         await Assert.That(names).IsEquivalentTo(names.Order(StringComparer.CurrentCultureIgnoreCase), TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
+    // The shell is asked once for each extension's apps, not on every right-click, and again
+    // after Refresh.
+    [Test]
+    public async Task EachExtensionIsLookedUpOnce()
+    {
+        // Made up, so no other test running alongside looks it up.
+        var extension = $".lode{Guid.NewGuid():N}";
+        var first = OpenWith.Find(extension);
+        var again = OpenWith.Find(extension.ToUpperInvariant());
+        OpenWith.Forget();
+        var afterRefresh = OpenWith.Find(extension);
+
+        await Assert.That(again).IsSameReferenceAs(first);
+        await Assert.That(afterRefresh).IsNotSameReferenceAs(first);
+    }
+
     // The fixture's extensions are made up.
     [Test]
     public async Task NothingIsRecommendedForAnUnknownType() =>
