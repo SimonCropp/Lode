@@ -1048,7 +1048,7 @@ class MainForm : Form
     void NewTab() =>
         AddTab(settings.StartLocation(), true);
 
-    void CloseTab(TabPage page)
+    internal void CloseTab(TabPage page)
     {
         if (tabs.TabCount == 1)
         {
@@ -1056,20 +1056,35 @@ class MainForm : Form
             return;
         }
 
-        var index = tabs.TabPages.IndexOf(page);
-        var wasSelected = tabs.SelectedTab == page;
         RememberClosed(page);
+        LeaveTab(page);
         tabs.TabPages.Remove(page);
         page.Dispose();
-        if (wasSelected)
+
+        // A folder that had the same name as this one's may go back to its name alone.
+        Retitle();
+    }
+
+    // The selected tab going, the one after it is selected first, or the one before for the
+    // last: removed while selected, Windows Forms would select the first tab, which would show,
+    // read its folder and have the tree walk to it, on the way to the one wanted.
+    void LeaveTab(TabPage page)
+    {
+        if (tabs.SelectedTab != page)
         {
-            tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
-            SyncToActiveView();
+            return;
         }
-        else
+
+        var index = tabs.TabPages.IndexOf(page);
+        if (index + 1 < tabs.TabCount)
         {
-            // A folder that had the same name as this one's may go back to its name alone.
-            Retitle();
+            tabs.SelectedIndex = index + 1;
+            return;
+        }
+
+        if (index > 0)
+        {
+            tabs.SelectedIndex = index - 1;
         }
     }
 
@@ -1196,8 +1211,7 @@ class MainForm : Form
     // window when it was the last.
     void RemoveTab(TabPage page)
     {
-        var index = tabs.TabPages.IndexOf(page);
-        var wasSelected = tabs.SelectedTab == page;
+        LeaveTab(page);
         tabs.TabPages.Remove(page);
         if (tabs.TabCount == 0)
         {
@@ -1205,15 +1219,7 @@ class MainForm : Form
             return;
         }
 
-        if (wasSelected)
-        {
-            tabs.SelectedIndex = Math.Min(index, tabs.TabCount - 1);
-            SyncToActiveView();
-        }
-        else
-        {
-            Retitle();
-        }
+        Retitle();
     }
 
     void OnViewStatusChanged(FolderView view)
@@ -1297,8 +1303,19 @@ class MainForm : Form
 
     // Brings the address bar, filter box, buttons, tree and status bar in line with whichever
     // tab is showing.
+    /// <summary>
+    /// Raised each time the window brings itself in line with the tab showing, with that tab's
+    /// view. For tests.
+    /// </summary>
+    internal event Action<FolderView>? Synced;
+
     void SyncToActiveView()
     {
+        if (ActiveView is { } synced)
+        {
+            Synced?.Invoke(synced);
+        }
+
         // First, so the tab now showing has started reading its folder by the time its status
         // is asked for.
         UpdateShowing();
@@ -1982,9 +1999,28 @@ class MainForm : Form
 
     IEnumerable<TabPage> TabPages => tabs.TabPages.Cast<TabPage>();
 
+    // The selected tab among those going, the nearest one staying is selected first, so the
+    // others going are not each shown, and their folders read, in turn.
     void CloseTabs(IEnumerable<TabPage> pages)
     {
-        foreach (var page in pages.ToList())
+        var closing = pages.ToList();
+        if (tabs.SelectedTab is { } selected &&
+            closing.Contains(selected))
+        {
+            var all = TabPages.ToList();
+            var index = all.IndexOf(selected);
+            var staying = all
+                .Where(_ => !closing.Contains(_))
+                .OrderBy(_ => Math.Abs(all.IndexOf(_) - index))
+                .ThenByDescending(_ => all.IndexOf(_))
+                .FirstOrDefault();
+            if (staying != null)
+            {
+                tabs.SelectedTab = staying;
+            }
+        }
+
+        foreach (var page in closing)
         {
             CloseTab(page);
         }

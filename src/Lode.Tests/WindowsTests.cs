@@ -679,6 +679,35 @@ public class WindowsTests
         await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source"));
     }
 
+    // Closing the selected tab goes straight to the one that takes its place, once: not by way
+    // of the first tab, which would show and read its folder. Closing others with the selected
+    // one among them goes straight to the nearest that stays, not through each going in turn.
+    [Test]
+    public async Task ClosingTheSelectedTabGoesStraightToTheNext()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.At("Archive"), fixture.At("Docs"), fixture.At("Source"), fixture.At("Cache"));
+        var synced = new List<string>();
+        form.Synced += _ => synced.Add(Path.GetFileName(_.CurrentPath));
+        TabPage Page(int index) =>
+            (TabPage)form.Views.ElementAt(index).Parent!;
+
+        // Cache, the last, selected.
+        form.CloseTab(Page(3));
+        var closingTheLast = synced.ToList();
+        synced.Clear();
+
+        // Docs selected, and closed with Source by Close tabs to the right of Archive.
+        ((TabControl)Page(1).Parent!).SelectedTab = Page(1);
+        synced.Clear();
+        form.CloseTabsToTheRight(Page(0));
+        var closingOthers = synced.ToList();
+
+        await Assert.That(closingTheLast).IsEquivalentTo(["Source"]);
+        await Assert.That(closingOthers).IsEquivalentTo(["Archive"]);
+        await Assert.That(form.Views.Select(_ => Path.GetFileName(_.CurrentPath))).IsEquivalentTo(["Archive"]);
+    }
+
     // Twenty tabs from last time ask the shell for each one's icon once, not every tab's again as
     // each opens, two hundred and ten times. Moving between them asks for none again.
     [Test]

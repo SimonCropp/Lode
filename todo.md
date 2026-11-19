@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 6. Closing the selected tab shows the first tab on the way
-
-**Where:** [MainForm.cs:1014-1037](src/Lode/MainForm.cs#L1014) (`CloseTab`), [MainForm.cs:1151-1171](src/Lode/MainForm.cs#L1151) (`RemoveTab`), `MainForm.cs:1847-1853` (`CloseTabs`).
-
-**What happens:** Windows Forms selects tab 0 when the selected page is removed, which raises `SelectedIndexChanged`. So with tabs A, B and C, closing C first syncs to A: A is showing, so it reads its folder if stale and watches it, and the tree walks to it. Then the code selects B, a second sync, and calls `SyncToActiveView` itself, a third. **Close other tabs** and **Close tabs to the right**, with the selected tab among those going, show and read each in turn. Traced through the Windows Forms source, not run.
-
-**Fix:** select the tab that will be left before removing the page, and drop the last sync.
-
-
 ### 7. Git commands go through repositories one at a time
 
 **Where:** [CodeCommands.cs:147-159](src/Lode/CodeCommands.cs#L147) (`ForEach`), [GitPurge.cs:218-229](src/Lode/GitPurge.cs#L218).
