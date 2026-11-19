@@ -5,6 +5,7 @@ static partial class NativeMethods
     public const int WindowMessageAppCommand = 0x0319;
     public const int EditSetSelection = 0x00B1;
 
+    public const int ListViewGetImageList = 0x1002;
     public const int ListViewSetImageList = 0x1003;
     public const int ListViewImageListSmall = 1;
     public const int ListViewGetStringWidth = 0x1057;
@@ -183,6 +184,13 @@ static partial class NativeMethods
     [LibraryImport("comctl32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool ImageList_GetIconSize(IntPtr imageList, out int width, out int height);
+
+    // The system image list of a size, SHIL_LARGE or SHIL_EXTRALARGE say, as an HIMAGELIST.
+    [LibraryImport("shell32.dll")]
+    public static partial int SHGetImageList(int imageList, in Guid interfaceId, out IntPtr list);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetDpiForSystem();
 
     [LibraryImport("shell32.dll", EntryPoint = "SHGetFileInfoW", StringMarshalling = StringMarshalling.Utf16)]
     public static partial IntPtr SHGetFileInfo(string path, uint fileAttributes, ref ShellFileInfo info, uint infoSize, uint flags);

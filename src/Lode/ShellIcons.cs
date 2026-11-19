@@ -174,6 +174,71 @@ static class ShellIcons
         return bitmap;
     }
 
+    // SHIL_LARGE and SHIL_EXTRALARGE, and IImageList, whose pointer is the HIMAGELIST.
+    const int largeList = 0;
+    const int extraLargeList = 2;
+    static readonly Guid imageListInterface = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
+
+    // The system image lists, smallest first, for drawing an icon at a size other than the
+    // small one's: a monitor at another scale than the one Windows started on.
+    static readonly Lazy<IntPtr[]> imageLists = new(() =>
+    {
+        var lists = new List<IntPtr> { SmallImageList };
+        foreach (var size in (int[])[largeList, extraLargeList])
+        {
+            if (SHGetImageList(size, imageListInterface, out var list) >= 0 &&
+                list != IntPtr.Zero)
+            {
+                lists.Add(list);
+            }
+        }
+
+        return [.. lists];
+    });
+
+    /// <summary>
+    /// As <see cref="Render(int, Size, Point, int)"/>, with the icon drawn
+    /// <paramref name="iconSize"/> pixels square: from the smallest of the system's image lists
+    /// that holds it at least that big, scaled down to it.
+    /// </summary>
+    public static Bitmap Render(int icon, Size canvas, Point offset, int overlay, int iconSize)
+    {
+        var lists = imageLists.Value;
+        var source = lists[^1];
+        foreach (var list in lists)
+        {
+            ImageList_GetIconSize(list, out var width, out _);
+            if (width >= iconSize)
+            {
+                source = list;
+                break;
+            }
+        }
+
+        var bitmap = new Bitmap(canvas.Width, canvas.Height, PixelFormat.Format32bppArgb);
+        var flags = imageListDrawTransparent | ((uint)overlay << 8);
+        var handle = ImageList_GetIcon(source, icon, flags);
+        if (handle == IntPtr.Zero)
+        {
+            return bitmap;
+        }
+
+        try
+        {
+            using var drawn = Icon.FromHandle(handle);
+            using var image = drawn.ToBitmap();
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.DrawImage(image, new Rectangle(offset, new(iconSize, iconSize)));
+        }
+        finally
+        {
+            DestroyIcon(handle);
+        }
+
+        return bitmap;
+    }
+
     public static int GetIcon(string path, bool isDirectory) =>
         GetIcon(path, isDirectory, null);
 

@@ -17,35 +17,71 @@ sealed class ShellListView : ListView
     /// <summary>
     /// A list has no setting for row height or left margin: a row is as tall as its icon and
     /// starts where its icon does. So each icon is drawn inside a larger transparent image that
-    /// carries the padding. Every list shows the same icons at the same size, so they share one
-    /// set of these, rather than each tab keeping a copy of every icon it has shown.
+    /// carries the padding. Every list on a monitor of a scale shows the same icons at the same
+    /// size, so they share one set of these, rather than each tab keeping a copy of every icon it
+    /// has shown. A set for each scale a list has been on holds the same icons at the same
+    /// indexes, so a list moved to another monitor keeps its rows' images, only bigger or smaller.
     /// </summary>
     static class PaddedIcons
     {
         static readonly Lock gate = new();
-        static readonly ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
+        static readonly List<(int Icon, int Overlay)> icons = [];
         static readonly Dictionary<(int Icon, int Overlay), int> indexes = [];
-        static readonly Point offset;
+        static readonly Dictionary<int, Set> sets = [];
+        static readonly int systemDpi = (int)GetDpiForSystem();
 
-        static PaddedIcons()
+        sealed class Set
         {
-            var iconSize = ShellIcons.SmallIconSize;
-            var scale = iconSize.Width / (float)unscaledIconSize;
-            var height = Math.Max((int)(rowHeight * scale), iconSize.Height);
-            offset = new((int)(paddingBeforeIcon * scale), (height - iconSize.Height) / 2);
-            images.ImageSize = new(offset.X + iconSize.Width + (int)(paddingAfterIcon * scale), height);
+            readonly ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
+            readonly Point offset;
+            readonly int iconSize;
 
-            // Created now so that each image is copied in as it is added. Until an image list
-            // has its handle it only keeps a reference to what it is given, and Index disposes
-            // its bitmap straight after adding it.
-            Handle = images.Handle;
+            public Set(int dpi)
+            {
+                // The system image list's small icons are for the scale Windows started at.
+                var small = ShellIcons.SmallIconSize;
+                iconSize = small.Width * dpi / systemDpi;
+                var scale = iconSize / (float)unscaledIconSize;
+                var height = Math.Max((int)(rowHeight * scale), iconSize);
+                offset = new((int)(paddingBeforeIcon * scale), (height - iconSize) / 2);
+                images.ImageSize = new(offset.X + iconSize + (int)(paddingAfterIcon * scale), height);
+
+                // Created now so that each image is copied in as it is added. Until an image
+                // list has its handle it only keeps a reference to what it is given, and Add
+                // disposes its bitmap straight after adding it.
+                Handle = images.Handle;
+                foreach (var (icon, overlay) in icons)
+                {
+                    Add(icon, overlay);
+                }
+            }
+
+            public IntPtr Handle { get; }
+
+            public void Add(int icon, int overlay)
+            {
+                using var image = ShellIcons.Render(icon, images.ImageSize, offset, overlay, iconSize);
+                images.Images.Add(image);
+            }
         }
 
-        public static IntPtr Handle { get; }
+        // Tests make lists on more than one UI thread; the app has one.
+        public static IntPtr Handle(int dpi)
+        {
+            lock (gate)
+            {
+                if (!sets.TryGetValue(dpi, out var set))
+                {
+                    set = new(dpi);
+                    sets[dpi] = set;
+                }
+
+                return set.Handle;
+            }
+        }
 
         public static int Index(int systemIcon, int overlay)
         {
-            // Tests make lists on more than one UI thread; the app has one.
             lock (gate)
             {
                 if (indexes.TryGetValue((systemIcon, overlay), out var index))
@@ -53,9 +89,13 @@ sealed class ShellListView : ListView
                     return index;
                 }
 
-                using var image = ShellIcons.Render(systemIcon, images.ImageSize, offset, overlay);
-                images.Images.Add(image);
-                index = images.Images.Count - 1;
+                foreach (var set in sets.Values)
+                {
+                    set.Add(systemIcon, overlay);
+                }
+
+                index = icons.Count;
+                icons.Add((systemIcon, overlay));
                 indexes[(systemIcon, overlay)] = index;
                 return index;
             }
@@ -172,15 +212,34 @@ sealed class ShellListView : ListView
         PaddedIcons.Index(systemIcon, overlay);
 
     /// <summary>
-    /// The size of the image a row shows, the icon with its padding, as the lists' shared image
-    /// list has it. Empty if that list is gone. For tests.
+    /// The size of the image a row shows on a monitor at <paramref name="dpi"/>, the icon with
+    /// its padding, as the lists' shared image list has it. Empty if that list is gone. For
+    /// tests.
     /// </summary>
-    internal static Size PaddedIconSize
+    internal static Size PaddedIconSize(int dpi)
     {
-        get
+        ImageList_GetIconSize(PaddedIcons.Handle(dpi), out var width, out var height);
+        return new(width, height);
+    }
+
+    /// <summary>
+    /// The image list the list's rows are showing. For tests.
+    /// </summary>
+    internal IntPtr RowImages =>
+        SendMessage(Handle, ListViewGetImageList, ListViewImageListSmall, IntPtr.Zero);
+
+    // Moved to a monitor at another scale: the rows' images, and so their height, for it.
+    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    {
+        base.OnDpiChangedAfterParent(eventArgs);
+        UseImagesFor(DeviceDpi);
+    }
+
+    internal void UseImagesFor(int dpi)
+    {
+        if (IsHandleCreated)
         {
-            ImageList_GetIconSize(PaddedIcons.Handle, out var width, out var height);
-            return new(width, height);
+            SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(dpi));
         }
     }
 
@@ -190,7 +249,7 @@ sealed class ShellListView : ListView
         // shared list hold on to every list that ever showed it. Before the rows go in, which
         // take their height from it. Windows leaves the list alone when this window closes, as
         // every ListView asks it to.
-        SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle);
+        SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(DeviceDpi));
         base.OnHandleCreated(eventArgs);
         BackColor = ExplorerStyle.Window;
         SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);

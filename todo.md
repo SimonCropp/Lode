@@ -36,7 +36,6 @@ Contents:
 All read, none run.
 
  * **New chosen from the classic menu** goes through the shell alone, so Lode's Ctrl+Z never hears of what it made. Delete and Create shortcut are caught by their verbs, `delete` and `link`, and done by Lode; New's entries are filled in only as its submenu opens, and whether they have verbs to catch is unverified.
- * **Rows and icons keep the first monitor's scale.** `PaddedIcons` sizes its images once, from the system image list ([ShellListView.cs:30-42](src/Lode/ShellListView.cs#L30)), and Lode is `PerMonitorV2` ([Program.cs:15](src/Lode/Program.cs#L15)), so a window moved to a monitor at another scale keeps the first one's row height.
 
 
 ## Performance
