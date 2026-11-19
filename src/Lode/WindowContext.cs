@@ -61,7 +61,7 @@ sealed class WindowContext : ApplicationContext
         global::MainForm.ExitRequested += Exit;
         Track(first);
         first.Show();
-        instance.Listen(OnLaunched);
+        instance.HandTo(OnLaunched);
         ReportUpdate();
         Updates.Instance.Start();
     }

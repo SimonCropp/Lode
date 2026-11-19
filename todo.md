@@ -20,17 +20,6 @@ Contents:
 ## Bugs, unverified
 
 
-### 30. Two launches at once can both become the running copy
-
-**Where:** [Program.cs:57-78](src/Lode/Program.cs#L57), [WindowContext.cs:62-64](src/Lode/WindowContext.cs#L62), [SingleInstance.cs:41-105](src/Lode/SingleInstance.cs#L41).
-
-**What happens:** the mutex is taken at `Program.cs:57`, but `Listen` runs only after the settings, the places, the whole first window and `first.Show()`. A second launch meanwhile, two folders opened together or a double-click done twice, waits 3 seconds for the pipe (`client.Connect(3000)`), and then carries on by itself: two copies, two tray icons, both writing `settings.json`. The copy that does not have the pipe then gets `UnauthorizedAccessException` from `new NamedPipeServerStream(…, 1, …)`. Only `IOException` and `OperationCanceledException` are caught, so its listening ends for good.
-
-**Unverified:** that a cold start takes over 3 seconds to reach `Listen`.
-
-**Fix:** listen straight after taking the mutex, and hold what is handed over until the context is there. Catch everything in the loop, with a short wait.
-
-
 ### 31. Purge and Push go by a .git being there, where git decides for itself
 
 **Where:** [CodeCommands.cs:76-80](src/Lode/CodeCommands.cs#L76) (`IsRepo`), [CodeCommands.cs:161-194](src/Lode/CodeCommands.cs#L161) (`Git`), [GitPurge.cs:147-156](src/Lode/GitPurge.cs#L147).

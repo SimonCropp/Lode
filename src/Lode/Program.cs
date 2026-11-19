@@ -61,6 +61,8 @@ static class Program
             return 0;
         }
 
+        instance.Listen();
+
         // Lode stays running, in the tray, and Windows lets nobody rename or delete the folder
         // a program is running in. So not the one this launch happened to be started in.
         Environment.CurrentDirectory = Environment.SystemDirectory;

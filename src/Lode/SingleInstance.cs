@@ -23,15 +23,31 @@ sealed class SingleInstance : IDisposable
     string pipeName;
     CancelSource cancel = new();
 
+    // What later launches handed over before there was anything to hand it to, and then what to
+    // hand it to, and on which thread. Under the gate.
+    Lock gate = new();
+    List<string[]> waiting = [];
+    Action<string[]>? launched;
+    SynchronizationContext? context;
+
     public bool IsFirst { get; }
 
-    public SingleInstance()
+    public SingleInstance() :
+        this(Name())
     {
-        using var process = Process.GetCurrentProcess();
-        var name = $"Lode-{Environment.UserDomainName}-{Environment.UserName}-{process.SessionId}{buildSuffix}";
+    }
+
+    internal SingleInstance(string name)
+    {
         mutex = new(initiallyOwned: true, $@"Local\{name}", out var createdNew);
         IsFirst = createdNew;
         pipeName = name;
+    }
+
+    static string Name()
+    {
+        using var process = Process.GetCurrentProcess();
+        return $"Lode-{Environment.UserDomainName}-{Environment.UserName}-{process.SessionId}{buildSuffix}";
     }
 
     /// <summary>
@@ -62,11 +78,12 @@ sealed class SingleInstance : IDisposable
     }
 
     /// <summary>
-    /// Hands each later launch's paths to <paramref name="launched"/>, on the calling (UI) thread.
+    /// Takes later launches' paths from straight after this one became the running copy, so one
+    /// made while Lode starts up hands them over, rather than giving up waiting and running
+    /// beside it. They are kept until <see cref="HandTo"/>.
     /// </summary>
-    public void Listen(Action<string[]> launched)
+    public void Listen()
     {
-        var context = SynchronizationContext.Current!;
         var token = cancel.Token;
         Task.Run(
             async () =>
@@ -89,19 +106,70 @@ sealed class SingleInstance : IDisposable
                             paths.Add(line);
                         }
 
-                        context.Post(_ => launched(paths.ToArray()), null);
+                        Received(paths.ToArray());
                     }
-                    catch (OperationCanceledException)
+                    catch (Exception) when (token.IsCancellationRequested)
                     {
                         return;
                     }
-                    catch (IOException)
+                    catch (Exception)
                     {
-                        // The other launch went away mid-message; wait for the next.
+                        // The other launch went away mid-message, or the pipe could not be made
+                        // just then. Listening stops for nothing short of Lode closing, or a
+                        // later launch would carry on by itself.
+                        try
+                        {
+                            await Task.Delay(200, token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            return;
+                        }
                     }
                 }
             },
             token);
+    }
+
+    void Received(string[] paths)
+    {
+        Action<string[]> handTo;
+        SynchronizationContext on;
+        lock (gate)
+        {
+            if (launched == null ||
+                context == null)
+            {
+                waiting.Add(paths);
+                return;
+            }
+
+            handTo = launched;
+            on = context;
+        }
+
+        on.Post(_ => handTo(paths), null);
+    }
+
+    /// <summary>
+    /// Hands each later launch's paths to <paramref name="launched"/>, on the calling (UI)
+    /// thread: those that came while Lode was starting up straight away, the rest as they come.
+    /// </summary>
+    public void HandTo(Action<string[]> launched)
+    {
+        List<string[]> earlier;
+        lock (gate)
+        {
+            context = SynchronizationContext.Current ?? new SynchronizationContext();
+            this.launched = launched;
+            earlier = waiting;
+            waiting = [];
+        }
+
+        foreach (var paths in earlier)
+        {
+            launched(paths);
+        }
     }
 
     public void Dispose()
