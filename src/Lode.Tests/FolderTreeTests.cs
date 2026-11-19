@@ -227,6 +227,25 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // The folder above one that is not there is read on the way, and selected instead. Watched
+    // only for that, it is let go once another is selected, rather than watched, not expanded,
+    // until the tree is made again.
+    [Test]
+    public async Task TheFolderSettledForIsLetGoOnceAnotherIsSelected()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+
+        tree.SelectPath(fixture.At("Source", "Gone", "Deeper"));
+        await Pump.Loaded(tree);
+        var settledFor = (tree.SelectedNode?.Text, tree.IsWatched(fixture.At("Source")));
+        tree.SelectPath(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+
+        await Assert.That(settledFor).IsEqualTo(("Source", true));
+        await Assert.That(tree.IsWatched(fixture.At("Source"))).IsFalse();
+    }
+
     // Gone from a pinned folder to a share that is in no drive and not pinned, nothing is
     // selected, and the pinned entry loses its selected look, rather than still looking like
     // the open folder.

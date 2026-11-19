@@ -35,7 +35,6 @@ Contents:
 
 All read, none run.
 
- * **A folder the tree loads on the way to one that is not there stays watched**, not expanded, until the tree is rebuilt (`FolderTree.cs:1296-1307`).
  * **An app's name loses its ampersand in Lode's menus.** `QuickMenu` gives names to `ToolStripMenuItem` as they are, so "Snip & Sketch" shows as "Snip  Sketch".
  * **Delete, New and Create shortcut chosen from the classic menu** go through the shell alone, so Lode's Ctrl+Z never hears of them.
  * **Rows and icons keep the first monitor's scale.** `PaddedIcons` sizes its images once, from the system image list ([ShellListView.cs:30-42](src/Lode/ShellListView.cs#L30)), and Lode is `PerMonitorV2` ([Program.cs:15](src/Lode/Program.cs#L15)), so a window moved to a monitor at another scale keeps the first one's row height.

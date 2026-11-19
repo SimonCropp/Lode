@@ -916,6 +916,12 @@ sealed class FolderTree : TreeView
         watched[node] = watcher;
     }
 
+    /// <summary>
+    /// Whether the folder at <paramref name="path"/> is watched, for tests.
+    /// </summary>
+    internal bool IsWatched(string path) =>
+        watched.Keys.Any(_ => _.Tag is string tag && Locations.Same(tag, path));
+
     void Unwatch(TreeNode node)
     {
         if (watched.Remove(node, out var watcher))
@@ -1342,6 +1348,13 @@ sealed class FolderTree : TreeView
                 if (child == null)
                 {
                     // Hidden or since-deleted folder: settle for the deepest ancestor we have.
+                    // Read on the way, it was watched, as a folder showing what is in it is.
+                    // Not expanded, it is watched only while selected, as any other is.
+                    if (!current.IsExpanded)
+                    {
+                        Unwatch(current);
+                    }
+
                     break;
                 }
 
