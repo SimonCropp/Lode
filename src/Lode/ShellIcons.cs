@@ -507,7 +507,13 @@ static class ShellIcons
     {
         if (!Locations.IsRemote(path))
         {
-            return GetActualIcon(path);
+            return placeIcons.GetOrAdd(
+                path,
+                static _ =>
+                {
+                    Interlocked.Increment(ref placeIconsRead);
+                    return GetActualIcon(_);
+                });
         }
 
         if (!Locations.IsNetwork(path) &&
@@ -519,6 +525,23 @@ static class ShellIcons
 
         return FolderIcon;
     }
+
+    // The icons of places, as tabs and Pinned show them, each asked of the shell once: every tab
+    // is named again on every navigation. Forgotten on Refresh, as a folder's icon can change,
+    // with its desktop.ini say.
+    static readonly ConcurrentDictionary<string, int> placeIcons = new(StringComparer.OrdinalIgnoreCase);
+    static int placeIconsRead;
+
+    /// <summary>
+    /// How many times the shell has been asked for a place's icon. For tests.
+    /// </summary>
+    internal static int PlaceIconsRead => Volatile.Read(ref placeIconsRead);
+
+    /// <summary>
+    /// Asks the shell again for places' icons, for Refresh.
+    /// </summary>
+    public static void ForgetPlaceIcons() =>
+        placeIcons.Clear();
 
     // Drives mapped to a share, as the shell describes them, or is still describing them. The
     // shell asks the share for the drive's name, which waits on the network, long when the share

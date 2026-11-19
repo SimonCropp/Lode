@@ -838,14 +838,25 @@ class MainForm : Form
             paths.Add(settings.StartLocation());
         }
 
-        foreach (var path in paths)
+        // Named once they are all open, rather than every tab again as each is added.
+        openingTabs = true;
+        try
         {
-            AddTab(path, false);
+            foreach (var path in paths)
+            {
+                AddTab(path, false);
+            }
+        }
+        finally
+        {
+            openingTabs = false;
         }
 
         tabs.SelectedIndex = Math.Clamp(active, 0, tabs.TabCount - 1);
         SyncToActiveView();
     }
+
+    bool openingTabs;
 
     protected override void OnLoad(EventArgs eventArgs)
     {
@@ -1238,6 +1249,11 @@ class MainForm : Form
     /// </summary>
     void Retitle()
     {
+        if (openingTabs)
+        {
+            return;
+        }
+
         var labels = Locations.Labels(Views.Select(_ => _.CurrentPath));
         foreach (var view in Views)
         {
@@ -1426,6 +1442,7 @@ class MainForm : Form
     void Reload()
     {
         ShellIcons.ForgetFileIcons();
+        ShellIcons.ForgetPlaceIcons();
         ShellIcons.ForgetNetworkDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();

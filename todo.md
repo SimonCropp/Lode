@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 5. Every tab's icon is asked of the shell on every navigation
-
-**Where:** [MainForm.cs:1204-1245](src/Lode/MainForm.cs#L1204) (`Retitle`, `TabIcon`), [ShellIcons.cs:383-398](src/Lode/ShellIcons.cs#L383) (`GetPlaceIcon`), [ShellIcons.cs:294-299](src/Lode/ShellIcons.cs#L294).
-
-**What happens:** `Retitle` runs on every change of tab, every navigation and every background tab's `PathChanged`, and each time asks `SHGetFileInfo` for each tab's path, on the UI thread, with nothing kept. In `OpenInitialTabs` every `AddTab` raises `PathChanged`, so restoring N tabs makes N(N+1)/2 calls before the window shows: about 230 for 20 tabs, 1,300 for 50. What one call costs was not measured.
-
-**Fix:** keep the icon for each path, forgotten on F5, and retitle once after the loop in `OpenInitialTabs`.
-
-
 ### 6. Closing the selected tab shows the first tab on the way
 
 **Where:** [MainForm.cs:1014-1037](src/Lode/MainForm.cs#L1014) (`CloseTab`), [MainForm.cs:1151-1171](src/Lode/MainForm.cs#L1151) (`RemoveTab`), `MainForm.cs:1847-1853` (`CloseTabs`).

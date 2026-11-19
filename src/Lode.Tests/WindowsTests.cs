@@ -679,6 +679,39 @@ public class WindowsTests
         await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source"));
     }
 
+    // Twenty tabs from last time ask the shell for each one's icon once, not every tab's again as
+    // each opens, two hundred and ten times. Moving between them asks for none again.
+    [Test]
+    public async Task TabIconsAreAskedForOnceEach()
+    {
+        using var fixture = Fixture.Create();
+        var folders = Enumerable.Range(1, 20)
+            .Select(_ => fixture.At($"Tab{_}"))
+            .ToList();
+        foreach (var folder in folders)
+        {
+            Directory.CreateDirectory(folder);
+        }
+
+        var settings = new Settings
+        {
+            Tabs = folders
+        };
+        var before = ShellIcons.PlaceIconsRead;
+        using var form = await Show(fixture, settings);
+        var opening = ShellIcons.PlaceIconsRead - before;
+
+        form.ActiveView!.Navigate(fixture.At("Tab2"));
+        await Pump.Loaded(form.ActiveView!);
+        form.ActiveView!.Navigate(fixture.At("Tab1"));
+        await Pump.Loaded(form.ActiveView!);
+
+        await Assert.That(form.Views.Count()).IsEqualTo(20);
+        // The tabs', and Pinned's, which is the fixture's folder.
+        await Assert.That(opening).IsLessThanOrEqualTo(21);
+        await Assert.That(ShellIcons.PlaceIconsRead - before).IsEqualTo(opening);
+    }
+
     // As in Explorer: the folder a tab shows going takes the tab up to the folder it was in,
     // and the tab and the window are named for that.
     [Test]
