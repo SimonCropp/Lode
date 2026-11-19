@@ -41,6 +41,30 @@ public class ClosableTabControlTests
             });
     }
 
+    // A tab before the one dragged, closed by Ctrl+W meanwhile, leaves the drag with the tab it
+    // started on. One closed itself hands nothing over.
+    [Test]
+    public async Task ADragKeepsItsTabWhenAnotherCloses()
+    {
+        using var tabs = Create(out _);
+        var draggedOff = new List<string>();
+        tabs.TabDraggedOff += (page, _) => draggedOff.Add(page.Text);
+
+        var second = tabs.GetTabRect(1);
+        Send(tabs, leftButtonDown, second.Left + 10, second.Top + second.Height / 2);
+        Send(tabs, mouseMove, second.Left + 10, 250);
+        tabs.TabPages.RemoveAt(0);
+        Send(tabs, leftButtonUp, second.Left + 10, 250);
+
+        var third = tabs.GetTabRect(1);
+        Send(tabs, leftButtonDown, third.Left + 10, third.Top + third.Height / 2);
+        Send(tabs, mouseMove, third.Left + 10, 250);
+        tabs.TabPages.RemoveAt(1);
+        Send(tabs, leftButtonUp, third.Left + 10, 250);
+
+        await Assert.That(draggedOff).IsEquivalentTo(["Second"]);
+    }
+
     static void Send(Control control, int message, int left, int top) =>
         NativeMethods.SendMessage(control.Handle, message, 1, (top << 16) | (left & 0xFFFF));
 

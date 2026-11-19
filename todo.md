@@ -35,7 +35,6 @@ Contents:
 
 All read, none run.
 
- * **A tab drag goes by index.** `ClosableTabControl` remembers the tab pressed as `pressedTab`, an index. A tab closed with Ctrl+W while dragging, and letting go moves the wrong one. Hold the `TabPage`.
  * **Redo is offered after a newer change.** A `Record` that lands while an undo is running clears redo, then the undo, done, adds its entry back (`UndoHistory.cs:213-256`).
  * **An undo that can never work blocks everything older.** A failure that will not clear, access denied say, is waiting for good (`UndoHistory.cs:292-295`, `452-455`).
  * **Restore from the Recycle Bin is counted done when the item is found**, whatever became of the undelete ([RecycleBin.cs:25-32](src/Lode/RecycleBin.cs#L25)). Delete `a.txt`, another program makes a new `a.txt`, Ctrl+Z, skip at the shell's prompt: the entry still goes to redo, and Ctrl+Y recycles the other `a.txt`. How the verb behaves on a conflict is unverified. The loop also goes through the whole Recycle Bin, by `dynamic`, without stopping once it has all it wants.

@@ -28,8 +28,10 @@ sealed class ClosableTabControl : TabControl
     int hoveredCross = -1;
 
     // The tab under a left button press, and where it was pressed, until the button is
-    // released. Moving far enough with the button down turns the press into a drag.
-    int pressedTab = -1;
+    // released. Moving far enough with the button down turns the press into a drag. The page,
+    // not its index, so a tab closed meanwhile, by Ctrl+W say, doesn't move the drag onto
+    // another.
+    TabPage? pressedTab;
     Point pressedAt;
     bool dragging;
 
@@ -414,7 +416,13 @@ sealed class ClosableTabControl : TabControl
         base.OnMouseDown(eventArgs);
         if (eventArgs.Button == MouseButtons.Left)
         {
-            pressedTab = TabAt(eventArgs.Location);
+            pressedTab = null;
+            var index = TabAt(eventArgs.Location);
+            if (index >= 0)
+            {
+                pressedTab = TabPages[index];
+            }
+
             pressedAt = eventArgs.Location;
         }
     }
@@ -427,9 +435,12 @@ sealed class ClosableTabControl : TabControl
             return;
         }
 
-        var page = dragging && pressedTab < TabCount ? TabPages[pressedTab] : null;
+        var page = pressedTab;
+        var wasDragging = dragging;
         EndDrag();
-        if (page != null &&
+        if (wasDragging &&
+            page != null &&
+            TabPages.Contains(page) &&
             !TabRow.Contains(eventArgs.Location))
         {
             TabDraggedOff?.Invoke(page, PointToScreen(eventArgs.Location));
@@ -462,7 +473,7 @@ sealed class ClosableTabControl : TabControl
     {
         var wasDragging = dragging;
         dragging = false;
-        pressedTab = -1;
+        pressedTab = null;
         if (wasDragging)
         {
             Capture = false;
@@ -475,7 +486,7 @@ sealed class ClosableTabControl : TabControl
         base.OnMouseMove(eventArgs);
         // A press lasts until its release (see OnMouseUp), or until the pointer leaves before a
         // drag starts, so the button needs no checking here.
-        if (pressedTab >= 0)
+        if (pressedTab != null)
         {
             if (!dragging)
             {
@@ -512,7 +523,7 @@ sealed class ClosableTabControl : TabControl
         SetHovered(-1, -1);
         if (!dragging)
         {
-            pressedTab = -1;
+            pressedTab = null;
         }
     }
 
