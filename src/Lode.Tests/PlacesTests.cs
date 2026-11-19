@@ -112,4 +112,30 @@ public class PlacesTests
         await Assert.That(places.Pinned).IsEquivalentTo([@"C:\Latest"]);
         await Assert.That(changes).IsEqualTo(1);
     }
+
+    // A .zip is a folder in the file system to the shell, so one recently opened on a share,
+    // where folders are taken on trust rather than looked for, would be listed as a folder.
+    // It is left out, and a real folder is not.
+    [Test]
+    public async Task AZipIsNotAFolderToList()
+    {
+        using var fixture = Fixture.Create();
+        using (var zip = System.IO.Compression.ZipFile.Open(fixture.At("Archive.zip"), System.IO.Compression.ZipArchiveMode.Create))
+        {
+            zip.CreateEntry("inside.txt");
+        }
+
+        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+        var listed = new List<string>();
+        foreach (var item in shell.Namespace(fixture.Root).Items())
+        {
+            if (Places.FolderToList((object)item, _ => true) is string path)
+            {
+                listed.Add(Path.GetFileName(path));
+            }
+        }
+
+        await Assert.That(listed).Contains("Docs");
+        await Assert.That(listed).DoesNotContain("Archive.zip");
+    }
 }

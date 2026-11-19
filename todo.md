@@ -35,7 +35,6 @@ Contents:
 
 All read, none run.
 
- * **A recently used `.zip` on a share can show under Recent as a folder.** It is a folder and in the file system to the shell, and skips the `Directory.Exists` check (`Places.cs:153-165`).
  * **A folder the tree loads on the way to one that is not there stays watched**, not expanded, until the tree is rebuilt (`FolderTree.cs:1296-1307`).
  * **An app's name loses its ampersand in Lode's menus.** `QuickMenu` gives names to `ToolStripMenuItem` as they are, so "Snip & Sketch" shows as "Snip  Sketch".
  * **Delete, New and Create shortcut chosen from the classic menu** go through the shell alone, so Lode's Ctrl+Z never hears of them.

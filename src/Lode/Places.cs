@@ -147,19 +147,7 @@ sealed record Places(
             var folder = Call(shell, "Namespace", quickAccess)!;
             foreach (var item in (IEnumerable)Call(folder, "Items")!)
             {
-                // Quick access also lists recent files, and can hold virtual folders such as
-                // the Recycle Bin, which have no path to browse. A machine on the network is not
-                // part of the file system either, but Lode lists its shares.
-                if (Get(item, "IsFolder") is not true ||
-                    Get(item, "Path") is not string path ||
-                    (Get(item, "IsFileSystem") is not true && !Locations.IsServer(path)))
-                {
-                    continue;
-                }
-
-                // An offline share takes a long time to say it isn't there, so network
-                // folders are taken on trust.
-                if (!Locations.IsNetwork(path) && !Directory.Exists(path))
+                if (FolderToList(item, _ => Locations.IsNetwork(_)) is not { } path)
                 {
                     continue;
                 }
@@ -176,6 +164,44 @@ sealed record Places(
         }
 
         return (pinned, recent);
+    }
+
+    /// <summary>
+    /// The path of a shell item to list as a folder, or null. Quick access also lists recent
+    /// files, and can hold virtual folders such as the Recycle Bin, which have no path to browse.
+    /// A machine on the network is not part of the file system either, but Lode lists its
+    /// shares. A .zip is a folder in the file system to the shell, one it browses into, and is
+    /// left out by that, as somewhere <paramref name="takenOnTrust"/>, a share being slow to say
+    /// it isn't there, is not looked for.
+    /// </summary>
+    internal static string? FolderToList(object item, Func<string, bool> takenOnTrust)
+    {
+        if (Get(item, "IsFolder") is not true ||
+            Get(item, "Path") is not string path)
+        {
+            return null;
+        }
+
+        if (Get(item, "IsFileSystem") is true)
+        {
+            // A real folder is not "browsable" to the shell; a .zip, browsed into, is.
+            if (Get(item, "IsBrowsable") is true)
+            {
+                return null;
+            }
+        }
+        else if (!Locations.IsServer(path))
+        {
+            return null;
+        }
+
+        if (!takenOnTrust(path) &&
+            !Directory.Exists(path))
+        {
+            return null;
+        }
+
+        return path;
     }
 
     static string DescribeFreeSpace(string path)
