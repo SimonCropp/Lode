@@ -110,7 +110,7 @@ class MainForm : Form
         tree = new(settings, places);
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
-        places.Changed += RebuildTree;
+        places.Changed += RebuildPlaces;
         UndoHistory.Instance.Changed += OnUndoChanged;
         updates.Changed += OnUpdatesChanged;
         trayTimer.Tick += (_, _) =>
@@ -1435,13 +1435,13 @@ class MainForm : Form
     void ToggleHidden()
     {
         settings.ShowHidden = !settings.ShowHidden;
-        ApplySettingsToAllWindows();
+        ApplySettingsToAllWindows(SettingsChange.Listing);
     }
 
     void ToggleSystem()
     {
         settings.ShowSystem = !settings.ShowSystem;
-        ApplySettingsToAllWindows();
+        ApplySettingsToAllWindows(SettingsChange.Listing);
     }
 
     void OpenTerminal() =>
@@ -1595,30 +1595,56 @@ class MainForm : Form
     }
 
     // Settings are shared by every window, so a change shows in all of them.
-    static void ApplySettingsToAllWindows()
+    static void ApplySettingsToAllWindows(SettingsChange change)
     {
         foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
         {
-            window.ApplySettings();
+            window.ApplySettings(change);
         }
     }
 
-    void ApplySettings()
+    // Only what the change changes is done again: a tick on the Actions page reads no folder
+    // and leaves the tree as it is.
+    internal void ApplySettings(SettingsChange change)
     {
-        RebuildActionsBar();
-        foreach (var view in Views)
+        switch (change)
         {
-            view.Reload();
-        }
+            case SettingsChange.Actions:
+                RebuildActionsBar();
+                return;
+            case SettingsChange.Listing:
+                foreach (var view in Views)
+                {
+                    view.Reload();
+                }
 
-        RebuildTree();
+                RebuildTree();
+                return;
+            case SettingsChange.Places:
+                RebuildPlaces();
+                return;
+            case SettingsChange.TreeSelection:
+                if (ActiveView is { } active)
+                {
+                    tree.SelectPath(active.CurrentPath);
+                }
+
+                return;
+        }
     }
 
-    void RebuildTree()
+    void RebuildTree() =>
+        SelectAfter(tree.Rebuild());
+
+    // Quick access changed, a pin or an unpin say: only Pinned and Recent are made again.
+    void RebuildPlaces() =>
+        SelectAfter(tree.RebuildPlaces());
+
+    // Not when the tree kept a pinned folder selected that was just moved, so moving it again
+    // with the keyboard carries on from it.
+    void SelectAfter(bool selectedMoved)
     {
-        // Not when the tree kept a pinned folder selected that was just moved, so moving it
-        // again with the keyboard carries on from it.
-        if (!tree.Rebuild() &&
+        if (!selectedMoved &&
             ActiveView is { } view)
         {
             tree.SelectPath(view.CurrentPath);
@@ -2076,7 +2102,7 @@ class MainForm : Form
     {
         if (disposing)
         {
-            places.Changed -= RebuildTree;
+            places.Changed -= RebuildPlaces;
             UndoHistory.Instance.Changed -= OnUndoChanged;
             updates.Changed -= OnUpdatesChanged;
             toolTip.Dispose();

@@ -8,5 +8,8 @@
     cutMenu: false,
     cutButton: true
   },
-  changes: 2
+  changes: [
+    Actions,
+    Actions
+  ]
 }

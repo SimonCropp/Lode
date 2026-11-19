@@ -41,17 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 4. One tick in Options, or one pin, reads every window's folder again and rebuilds every tree
-
-**Where:** `OptionsForm.cs:787-791` and `800-807` (`SettingsChanged?.Invoke()`), `MainForm.cs:1484` and `1538-1566` (`RebuildActionsBar(); view.Reload(); RebuildTree();`), `FolderTree.cs:181-206` (`Rebuild`), `FolderTree.cs:527-541` (`LoadDrives`), `MainForm.cs:113` (`places.Changed`).
-
-**What happens:** ticking **Button** for one action reads the folder showing in every window again, hidden ones too, starts any search over, and rebuilds every tree from `Nodes.Clear()`: every watcher let go of, every branch collapsed, and the way down to the open folder read again from the drive. The same on every pin, unpin and reorder of a pin, and at startup when Quick access differs from what was saved.
-
-With **Expand the folder tree to the open folder** off, nothing is expanded again, so one pin collapses a tree the user laid out, which is what that option is there to prevent. `LoadDrives` does the same when the drives have changed, and `Reload` does not select the tab's folder in the tree afterwards.
-
-**Fix:** tell actions, listing and tree apart, so a tick on the Actions page only calls `RebuildActionsBar`. On `places.Changed`, replace only Pinned and Recent. Have `Rebuild` keep what was expanded, and `LoadDrives` add and remove only the drives that came and went.
-
-
 ### 5. Every tab's icon is asked of the shell on every navigation
 
 **Where:** [MainForm.cs:1204-1245](src/Lode/MainForm.cs#L1204) (`Retitle`, `TabIcon`), [ShellIcons.cs:383-398](src/Lode/ShellIcons.cs#L383) (`GetPlaceIcon`), [ShellIcons.cs:294-299](src/Lode/ShellIcons.cs#L294).

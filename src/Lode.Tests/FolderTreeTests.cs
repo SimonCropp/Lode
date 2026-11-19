@@ -246,6 +246,100 @@ public class FolderTreeTests
         await Assert.That(tree.IsWatched(fixture.At("Source"))).IsFalse();
     }
 
+    // A pin, an unpin or a pin moved makes Pinned again, and leaves the folders under This PC
+    // as they were: what was expanded stays so, and is still watched, rather than the whole tree
+    // being built again and collapsed.
+    [Test]
+    public async Task PinningLeavesTheFoldersUnderThisPCAsTheyWere()
+    {
+        using var fixture = Fixture.Create();
+        var pinned = new List<string> { fixture.At("Docs") };
+        var drive = Path.GetDirectoryName(fixture.Root)!;
+        using var tree = new FolderTree(new() { ShowHidden = false }, new(pinned, [], ShowComputer: true, _ => "", [drive]));
+        _ = tree.Handle;
+        tree.Rebuild();
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        await Pump.Loaded(tree);
+        var source = tree.SelectedNode!.Parent!;
+
+        pinned.Add(fixture.At("Archive"));
+        tree.RebuildPlaces();
+        await Pump.Loaded(tree);
+
+        await Assert.That(tree.Nodes[0].Nodes.Cast<TreeNode>().Select(_ => _.Text)).IsEquivalentTo(["Docs", "Archive"]);
+        await Assert.That(source.TreeView).IsEqualTo(tree);
+        await Assert.That(source.IsExpanded).IsTrue();
+        await Assert.That(tree.IsWatched(fixture.At("Source"))).IsTrue();
+    }
+
+    // Built again, for hidden folders shown say, the tree expands again what was expanded under
+    // This PC, as it reads it again.
+    [Test]
+    public async Task RebuildingExpandsAgainWhatWasExpanded()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        await Pump.Loaded(tree);
+        tree.SelectedNode = null;
+
+        tree.Rebuild();
+        await Pump.Until(() => Expanded(tree).Contains(fixture.At("Source")));
+
+        await Assert.That(Expanded(tree)).Contains(fixture.At("Source"));
+        await Assert.That(Expanded(tree)).Contains(fixture.Root);
+    }
+
+    // A drive plugged in or removed is added or taken away, and the drives that stayed are left
+    // as they were, expanded and watched.
+    [Test]
+    public async Task ADriveComingOrGoingLeavesTheOthersAsTheyWere()
+    {
+        using var fixture = Fixture.Create();
+        var drive = Path.GetDirectoryName(fixture.Root)!;
+        var drives = new List<string> { drive };
+        using var tree = new FolderTree(new() { ShowHidden = false }, new([], [], ShowComputer: true, _ => "", drives));
+        _ = tree.Handle;
+        tree.Rebuild();
+        tree.SelectPath(fixture.At("Source"));
+        await Pump.Loaded(tree);
+        var computer = tree.Nodes.Cast<TreeNode>().Last();
+        var kept = computer.Nodes[0];
+
+        drives.Add(fixture.At("Docs"));
+        tree.RefreshDrives();
+        var added = computer.Nodes.Cast<TreeNode>().Select(_ => (string)_.Tag!).ToList();
+        drives.RemoveAt(1);
+        tree.RefreshDrives();
+
+        await Assert.That(added).IsEquivalentTo([drive, fixture.At("Docs")]);
+        await Assert.That(computer.Nodes.Count).IsEqualTo(1);
+        await Assert.That(computer.Nodes[0]).IsEqualTo(kept);
+        await Assert.That(kept.IsExpanded).IsTrue();
+        await Assert.That(tree.IsWatched(drive)).IsTrue();
+    }
+
+    static List<string> Expanded(FolderTree tree)
+    {
+        var expanded = new List<string>();
+        Collect(tree.Nodes);
+        return expanded;
+
+        void Collect(TreeNodeCollection nodes)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.IsExpanded &&
+                    node.Tag is string path)
+                {
+                    expanded.Add(path);
+                }
+
+                Collect(node.Nodes);
+            }
+        }
+    }
+
     // Gone from a pinned folder to a share that is in no drive and not pinned, nothing is
     // selected, and the pinned entry loses its selected look, rather than still looking like
     // the open folder.

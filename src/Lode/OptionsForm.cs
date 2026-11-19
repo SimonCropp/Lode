@@ -222,9 +222,9 @@ class OptionsForm : Form
     readonly Font sectionFont;
 
     /// <summary>
-    /// A setting that changes how windows look was changed.
+    /// A setting that changes how windows look was changed, with what of them it changes.
     /// </summary>
-    public event Action? SettingsChanged;
+    public event Action<SettingsChange>? SettingsChanged;
 
     /// <param name="editors">The text editors installed, Notepad last, from
     /// <see cref="TextEditors.Find()"/>. Passed in so tests show a fixed list.</param>
@@ -264,13 +264,13 @@ class OptionsForm : Form
         showHidden.CheckedChanged += (_, _) =>
         {
             settings.ShowHidden = showHidden.Checked;
-            SettingsChanged?.Invoke();
+            SettingsChanged?.Invoke(SettingsChange.Listing);
         };
         showSystem.Checked = settings.ShowSystem;
         showSystem.CheckedChanged += (_, _) =>
         {
             settings.ShowSystem = showSystem.Checked;
-            SettingsChanged?.Invoke();
+            SettingsChanged?.Invoke(SettingsChange.Listing);
         };
         purgePermanently.Checked = settings.PurgePermanently;
         purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
@@ -283,13 +283,13 @@ class OptionsForm : Form
         expandToOpenFolder.CheckedChanged += (_, _) =>
         {
             settings.ExpandToOpenFolder = expandToOpenFolder.Checked;
-            SettingsChanged?.Invoke();
+            SettingsChanged?.Invoke(SettingsChange.TreeSelection);
         };
         showRecent.Checked = settings.ShowRecent;
         showRecent.CheckedChanged += (_, _) =>
         {
             settings.ShowRecent = showRecent.Checked;
-            SettingsChanged?.Invoke();
+            SettingsChanged?.Invoke(SettingsChange.Places);
         };
 
         SuspendLayout();
@@ -842,7 +842,7 @@ class OptionsForm : Form
                 EventHandler placed = (_, _) =>
                 {
                     settings.SetPlacement(id, button.Checked, menu.Checked);
-                    SettingsChanged?.Invoke();
+                    SettingsChanged?.Invoke(SettingsChange.Actions);
                 };
                 button.CheckedChanged += placed;
                 menu.CheckedChanged += placed;
@@ -858,7 +858,7 @@ class OptionsForm : Form
                 buttonNested.Enabled = button.Checked;
                 menuNested.Enabled = menu.Checked;
                 settings.SetPlacement(id, button.Checked, menu.Checked, buttonNested.Checked, menuNested.Checked);
-                SettingsChanged?.Invoke();
+                SettingsChanged?.Invoke(SettingsChange.Actions);
             };
             button.CheckedChanged += changed;
             menu.CheckedChanged += changed;

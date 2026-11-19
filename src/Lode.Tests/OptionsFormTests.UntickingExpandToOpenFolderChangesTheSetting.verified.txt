@@ -1,5 +1,7 @@
 ﻿{
   before: true,
   after: false,
-  changes: 1
+  changes: [
+    TreeSelection
+  ]
 }

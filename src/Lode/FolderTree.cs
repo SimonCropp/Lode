@@ -163,8 +163,10 @@ sealed class FolderTree : TreeView
     }
 
     /// <summary>
-    /// Builds the tree again from the settings and places. True when it selected a pinned folder
-    /// that was just moved, which the caller then leaves selected.
+    /// Builds the tree again from the settings and places, for what it lists having changed:
+    /// hidden folders shown, say. What was expanded under This PC is expanded again, as it is
+    /// read again. True when it selected a pinned folder that was just moved, which the caller
+    /// then leaves selected.
     /// </summary>
     public bool Rebuild()
     {
@@ -173,6 +175,8 @@ sealed class FolderTree : TreeView
         {
             pinnedMove = null;
         }
+
+        var expanded = ExpandedFolders();
 
         // A folder on its way to being selected was being read for the tree that was, by the
         // settings that were. Whoever rebuilds selects again.
@@ -183,17 +187,7 @@ sealed class FolderTree : TreeView
             UnwatchAll();
             Nodes.Clear();
             computerNode.Nodes.Clear();
-            IReadOnlyList<string> recent = [];
-            if (settings.ShowRecent)
-            {
-                recent = places.Recent;
-            }
-
-            // Told apart across both sections, which show side by side, as tabs are.
-            var labels = Locations.Labels(places.Pinned.Concat(recent));
-            AddSection("Pinned", ShellIcons.QuickAccessIcon, places.Pinned, labels);
-            AddSection("Recent", ShellIcons.RecentIcon, recent, labels);
-
+            AddSections();
             if (places.ShowComputer)
             {
                 Nodes.Add(computerNode);
@@ -205,7 +199,133 @@ sealed class FolderTree : TreeView
             ShowShortcutsSelected(SelectedNode);
         }
 
+        if (expanded.Count > 0)
+        {
+            Track(ExpandAgain(expanded));
+        }
+
         return selectedMoved;
+    }
+
+    /// <summary>
+    /// Makes Pinned and Recent again from the places, for Quick access having changed: a pin,
+    /// an unpin, or a pin moved. The folders under This PC are left as they are, expanded or
+    /// not, and still watched. True when it selected a pinned folder that was just moved, which
+    /// the caller then leaves selected.
+    /// </summary>
+    public bool RebuildPlaces()
+    {
+        if (pinnedMove is { IsCompleted: true })
+        {
+            pinnedMove = null;
+        }
+
+        using (this.SuspendPainting())
+        {
+            foreach (var section in Nodes.Cast<TreeNode>().Where(_ => _.Tag is Section).ToList())
+            {
+                UnwatchTree(section);
+                Nodes.Remove(section);
+            }
+
+            AddSections();
+            var selectedMoved = SelectMovedPinned();
+            ShowShortcutsSelected(SelectedNode);
+            return selectedMoved;
+        }
+    }
+
+    // Pinned then Recent, above This PC.
+    void AddSections()
+    {
+        IReadOnlyList<string> recent = [];
+        if (settings.ShowRecent)
+        {
+            recent = places.Recent;
+        }
+
+        // Told apart across both sections, which show side by side, as tabs are.
+        var labels = Locations.Labels(places.Pinned.Concat(recent));
+        var position = AddSection(0, "Pinned", ShellIcons.QuickAccessIcon, places.Pinned, labels);
+        AddSection(position, "Recent", ShellIcons.RecentIcon, recent, labels);
+    }
+
+    // The folders under This PC that are expanded, shallowest first, as each is expanded again
+    // once the one it is in has been.
+    List<string> ExpandedFolders()
+    {
+        var expanded = new List<string>();
+        Collect(computerNode);
+        return expanded
+            .OrderBy(_ => _.Length)
+            .ToList();
+
+        void Collect(TreeNode node)
+        {
+            foreach (TreeNode child in node.Nodes)
+            {
+                if (child.IsExpanded &&
+                    child.Tag is string path)
+                {
+                    expanded.Add(path);
+                    Collect(child);
+                }
+            }
+        }
+    }
+
+    // Each folder that was expanded, and is in the tree again once the one it is in has been
+    // expanded, is read and expanded. One gone since is left out, and so is what was in it.
+    // Another rebuild meanwhile overtakes it.
+    async Task ExpandAgain(List<string> folders)
+    {
+        var version = selectVersion;
+        foreach (var folder in folders)
+        {
+            if (IsDisposed ||
+                version != selectVersion)
+            {
+                return;
+            }
+
+            if (FindLoaded(computerNode, folder) is not { } node)
+            {
+                continue;
+            }
+
+            if (NeedsLoading(node))
+            {
+                await ExpandOnceRead(node);
+                continue;
+            }
+
+            node.Expand();
+        }
+    }
+
+    // The node for a folder among those read so far under it.
+    static TreeNode? FindLoaded(TreeNode parent, string path)
+    {
+        foreach (TreeNode child in parent.Nodes)
+        {
+            if (child.Tag is not string childPath)
+            {
+                continue;
+            }
+
+            if (Locations.Same(childPath, path))
+            {
+                return child;
+            }
+
+            if (Locations.IsWithin(path, childPath) &&
+                FindLoaded(child, path) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     // A pinned folder being moved, and the order it is being moved into. Its node is selected
@@ -462,11 +582,12 @@ sealed class FolderTree : TreeView
         return ShellIcons.GetPlaceIcon(folder);
     }
 
-    void AddSection(string name, int icon, IReadOnlyList<string> folders, Dictionary<string, string> labels)
+    // Puts the section at the position given, giving the position after it.
+    int AddSection(int position, string name, int icon, IReadOnlyList<string> folders, Dictionary<string, string> labels)
     {
         if (folders.Count == 0)
         {
-            return;
+            return position;
         }
 
         var section = new TreeNode(name)
@@ -483,11 +604,13 @@ sealed class FolderTree : TreeView
             section.Nodes.Add(CreateNode(folder, labels[folder], folderIcon, expandable: false));
         }
 
-        Nodes.Add(section);
+        Nodes.Insert(position, section);
         if (!settings.CollapsedSections.Contains(name))
         {
             section.Expand();
         }
+
+        return position + 1;
     }
 
     protected override void OnAfterExpand(TreeViewEventArgs eventArgs)
@@ -513,7 +636,7 @@ sealed class FolderTree : TreeView
         var actual = places.DrivePaths();
         if (!current.SequenceEqual(actual, StringComparer.OrdinalIgnoreCase))
         {
-            LoadDrives();
+            UpdateDrives(actual);
             return;
         }
 
@@ -537,6 +660,31 @@ sealed class FolderTree : TreeView
             var node = CreateNode(drive, "", ShellIcons.FolderIcon);
             DescribeDrive(node);
             computerNode.Nodes.Add(node);
+        }
+    }
+
+    // Only the drives that came or went: those that stayed keep what is expanded in them, and
+    // their watchers. In the order the drives come in.
+    void UpdateDrives(IReadOnlyList<string> actual)
+    {
+        var wanted = actual.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var gone in computerNode.Nodes.Cast<TreeNode>().Where(_ => !wanted.Contains((string)_.Tag!)).ToList())
+        {
+            UnwatchTree(gone);
+            computerNode.Nodes.Remove(gone);
+        }
+
+        for (var index = 0; index < actual.Count; index++)
+        {
+            if (index < computerNode.Nodes.Count &&
+                Locations.Same(computerNode.Nodes[index].Tag as string, actual[index]))
+            {
+                continue;
+            }
+
+            var node = CreateNode(actual[index], "", ShellIcons.FolderIcon);
+            DescribeDrive(node);
+            computerNode.Nodes.Insert(index, node);
         }
     }
 

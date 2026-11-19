@@ -78,8 +78,8 @@ public class OptionsFormTests
         using var scratch = new RegistryScratch();
         var settings = new Settings();
         using var form = Show(scratch.Replacement(), settings);
-        var changes = 0;
-        form.SettingsChanged += () => changes++;
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
         var before = new
         {
             openButton = settings.ShowsAsButton("open"),
@@ -193,8 +193,8 @@ public class OptionsFormTests
         using var scratch = new RegistryScratch();
         var settings = new Settings();
         using var form = Show(scratch.Replacement(), settings);
-        var changes = 0;
-        form.SettingsChanged += () => changes++;
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
         var before = settings.ShowRecent;
 
         ((CheckBox) form.Controls.Find("showRecent", true)[0]).Checked = false;
@@ -215,8 +215,8 @@ public class OptionsFormTests
         using var scratch = new RegistryScratch();
         var settings = new Settings();
         using var form = Show(scratch.Replacement(), settings);
-        var changes = 0;
-        form.SettingsChanged += () => changes++;
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
         var before = settings.ExpandToOpenFolder;
 
         ((CheckBox) form.Controls.Find("expandToOpenFolder", true)[0]).Checked = false;
@@ -308,8 +308,8 @@ public class OptionsFormTests
         using var scratch = new RegistryScratch();
         var settings = new Settings();
         using var form = Show(scratch.Replacement(), settings);
-        var changes = 0;
-        form.SettingsChanged += () => changes++;
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
         var before = settings.ShowHidden;
 
         ((CheckBox) form.Controls.Find("showHidden", true)[0]).Checked = false;
