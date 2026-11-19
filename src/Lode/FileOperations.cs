@@ -16,44 +16,74 @@ static class FileOperations
 
     public static Task<bool> Transfer(IntPtr owner, IReadOnlyCollection<string> sources, string destination, bool move)
     {
-        var inPlace = sources
-            .Where(_ => Locations.IsChildOf(_, destination))
-            .ToList();
-        var flags = undoFlags;
-        if (move)
-        {
-            sources = sources.Except(inPlace).ToList();
-        }
-        else if (inPlace.Count > 0)
-        {
-            // Pasting into the folder the files came from makes "name - Copy" duplicates.
-            flags |= ShellFileOperation.RenameOnCollision;
-        }
-
-        if (sources.Count == 0)
+        var batches = Batches(sources, destination, move);
+        if (batches.Count == 0)
         {
             return Task.FromResult(true);
         }
 
-        var kind = move ? ShellFileOperation.Kind.Move : ShellFileOperation.Kind.Copy;
-        return RunInBackground(
-            owner,
-            kind,
-            sources,
-            destination,
-            flags,
-            outcome =>
+        var kind = ShellFileOperation.Kind.Copy;
+        if (move)
+        {
+            kind = ShellFileOperation.Kind.Move;
+        }
+
+        return OnStaThread(
+            () =>
             {
+                var outcomes = new List<ShellFileOperation.Outcome>();
+                var succeeded = true;
+                foreach (var (batch, flags) in batches)
+                {
+                    succeeded &= Report(
+                        owner,
+                        kind,
+                        () => ShellFileOperation.Run(owner, kind, batch, destination, flags),
+                        outcomes.Add);
+                }
+
+                // One change, for one Ctrl+Z, however many batches it took.
+                var pairs = outcomes.SelectMany(Pairs).ToList();
                 if (move)
                 {
-                    UndoHistory.Instance.RecordMove(Pairs(outcome), Emptied(outcome));
-                    return;
+                    UndoHistory.Instance.RecordMove(pairs, outcomes.SelectMany(Emptied).ToList());
+                    return succeeded;
                 }
 
                 // A folder merged into one already there is not among the changes, so undoing
                 // the copy sends to the Recycle Bin what it brought, not what was there before.
-                UndoHistory.Instance.RecordCreated("copy", Pairs(outcome).Select(_ => _.To).ToList());
+                UndoHistory.Instance.RecordCreated("copy", pairs.Select(_ => _.To).ToList());
+                return succeeded;
             });
+    }
+
+    /// <summary>
+    /// How a paste is done: each batch with its flags. Moving into the folder an item is in
+    /// already leaves it out. Copying into it makes a "name - Copy" duplicate, as Explorer does,
+    /// in a batch of its own: the rest, from other folders, a search say, keep the shell's prompt
+    /// for a clash rather than being renamed too.
+    /// </summary>
+    internal static List<(List<string> Sources, uint Flags)> Batches(IReadOnlyCollection<string> sources, string destination, bool move)
+    {
+        var inPlace = sources
+            .Where(_ => Locations.IsChildOf(_, destination))
+            .ToList();
+        var others = sources
+            .Except(inPlace)
+            .ToList();
+        var batches = new List<(List<string>, uint)>();
+        if (!move &&
+            inPlace.Count > 0)
+        {
+            batches.Add((inPlace, undoFlags | ShellFileOperation.RenameOnCollision));
+        }
+
+        if (others.Count > 0)
+        {
+            batches.Add((others, undoFlags));
+        }
+
+        return batches;
     }
 
     // The items done, from and to: for a delete, from where to where in the Recycle Bin.

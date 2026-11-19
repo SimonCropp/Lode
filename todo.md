@@ -35,7 +35,6 @@ Contents:
 
 All read, none run.
 
- * **A paste with one source already in the folder renames every clash.** `RenameOnCollision` is set for the whole paste ([FileOperations.cs:27-31](src/Lode/FileOperations.cs#L27)), so items of the same name from other folders, pasted from a search say, become "- Copy" without the prompt.
  * **A recently used `.zip` on a share can show under Recent as a folder.** It is a folder and in the file system to the shell, and skips the `Directory.Exists` check (`Places.cs:153-165`).
  * **A folder the tree loads on the way to one that is not there stays watched**, not expanded, until the tree is rebuilt (`FolderTree.cs:1296-1307`).
  * **An app's name loses its ampersand in Lode's menus.** `QuickMenu` gives names to `ToolStripMenuItem` as they are, so "Snip & Sketch" shows as "Snip  Sketch".

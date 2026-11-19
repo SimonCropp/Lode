@@ -215,6 +215,30 @@ public class FileOperationsTests
         await Verify(fixture.Tree());
     }
 
+    // Pasted with a copy of one already in the folder, items from elsewhere, a search say, keep
+    // the shell's prompt for a clash: only the one in the folder becomes "- Copy".
+    [Test]
+    public async Task OnlyWhatIsInTheFolderAlreadyIsRenamedOnACopy()
+    {
+        const uint rename = ShellFileOperation.RenameOnCollision;
+        string[] sources = [@"C:\Work\a.txt", @"D:\Elsewhere\b.txt", @"C:\Work\Deep\c.txt"];
+
+        var copied = FileOperations.Batches(sources, @"C:\Work", move: false)
+            .Select(_ => (string.Join(", ", _.Sources), (_.Flags & rename) != 0));
+        var moved = FileOperations.Batches(sources, @"C:\Work", move: true)
+            .Select(_ => (string.Join(", ", _.Sources), (_.Flags & rename) != 0));
+
+        await Assert.That(copied).IsEquivalentTo(
+            [
+                (@"C:\Work\a.txt", true),
+                (@"D:\Elsewhere\b.txt, C:\Work\Deep\c.txt", false)
+            ],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(moved).IsEquivalentTo(
+            [(@"D:\Elsewhere\b.txt, C:\Work\Deep\c.txt", false)],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     [Test]
     public async Task MoveToAnotherFolder()
     {
