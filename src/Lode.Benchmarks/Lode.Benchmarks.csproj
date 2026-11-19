@@ -5,6 +5,8 @@
     <OutputType>Exe</OutputType>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- ProjectDefaults packs every Release project not named as tests or a sample. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
