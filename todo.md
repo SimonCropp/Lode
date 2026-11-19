@@ -20,17 +20,6 @@ Contents:
 ## Bugs, unverified
 
 
-### 26. What is run from Show more options starts in C:\Windows\System32
-
-**Where:** [ShellContextMenu.cs:855-879](src/Lode/ShellContextMenu/ShellContextMenu.cs#L855) (`Invoke` sets no `Directory` or `DirectoryUnicode`), [Program.cs:66](src/Lode/Program.cs#L66).
-
-**What happens:** **Show more options**, then **Open** on `build.cmd`, or **Run with PowerShell**, or any verb an app adds. With no directory given, the program started would get Lode's own, System32, so relative paths in a script go there. Lode's own Open sets `WorkingDirectory` to the file's folder (`FileOperations.cs:208`), and Explorer passes the folder.
-
-**Unverified:** that the shell falls back to the caller's working directory when it is given none. A `.cmd` holding `cd & pause`, opened from the classic menu, would show it.
-
-**Fix:** pass the items' folder into `Invoke` and set both fields, ANSI and Unicode, with the masks for them.
-
-
 ### 27. Safely remove may be blocked the second time a drive is plugged in
 
 **Where:** `DriveRemoval.cs:41-60` (`Subscribe` reuses `registrations[root]`), `138-193`, [FolderWatcher.cs:93-124](src/Lode/FolderWatcher.cs#L93).

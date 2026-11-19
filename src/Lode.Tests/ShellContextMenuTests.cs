@@ -9,6 +9,22 @@
 [NotInParallel("windows")]
 public class ShellContextMenuTests
 {
+    // What a verb starts works in the folder of the item it was run on, as from Explorer, so a
+    // script's relative paths are its folder's, not those of Lode's own, System32.
+    [Test]
+    public async Task AVerbStartsInTheItemsFolder()
+    {
+        using var fixture = Fixture.Create();
+        var script = fixture.At("Docs", "where.cmd");
+        var written = fixture.At("where.txt");
+        await File.WriteAllTextAsync(script, $"@echo %CD%> \"{written}\"");
+
+        ShellContextMenu.InvokeVerb(IntPtr.Zero, [script], "open");
+        await Pump.Until(() => File.Exists(written) && new FileInfo(written).Length > 0);
+
+        await Assert.That((await File.ReadAllTextAsync(written)).Trim()).IsEqualTo(fixture.At("Docs"));
+    }
+
     [Test]
     public Task Folder() =>
         VerifyAbsences(_ => _.At("Docs"));

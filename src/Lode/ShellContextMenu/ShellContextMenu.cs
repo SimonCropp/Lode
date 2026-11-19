@@ -63,7 +63,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return false;
         }
 
-        Show(contextMenu, owner, location, customCommands, customFirst: false, RenameFlag(canRename), handleVerb);
+        Show(contextMenu, owner, location, customCommands, customFirst: false, RenameFlag(canRename), handleVerb, ItemsFolder(paths));
         return true;
     }
 
@@ -86,7 +86,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return ShowForItems(owner, [path], location, customCommands, handleVerb, canRename);
         }
 
-        Show(contextMenu, owner, location, customCommands, customFirst: false, RenameFlag(canRename), handleVerb);
+        Show(contextMenu, owner, location, customCommands, customFirst: false, RenameFlag(canRename), handleVerb, ItemsFolder([path]));
         return true;
     }
 
@@ -226,7 +226,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return false;
         }
 
-        Show(contextMenu, owner, location, customCommands, customFirst: true, 0, handleVerb);
+        Show(contextMenu, owner, location, customCommands, customFirst: true, 0, handleVerb, FileSystemFolder(folder));
         return true;
     }
 
@@ -247,7 +247,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         }
 
         // Not asked for Rename, the shell leaves it off; Delete it has to be told to.
-        Show(contextMenu, owner, location, customCommands, customFirst: false, 0, handleVerb, thisPCRemovedVerbs);
+        Show(contextMenu, owner, location, customCommands, customFirst: false, 0, handleVerb, null, thisPCRemovedVerbs);
         return true;
     }
 
@@ -269,7 +269,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return;
         }
 
-        InvokeVerb(contextMenu, owner, verb);
+        InvokeVerb(contextMenu, owner, verb, directory: ItemsFolder(paths));
     }
 
     /// <summary>
@@ -284,7 +284,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             return;
         }
 
-        InvokeVerb(contextMenu, owner, verb);
+        InvokeVerb(contextMenu, owner, verb, directory: FileSystemFolder(folder));
     }
 
     /// <summary>
@@ -452,11 +452,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         }
     }
 
-    static int InvokeVerb(IContextMenu contextMenu, IntPtr owner, string verb, uint flags = 0)
+    static int InvokeVerb(IContextMenu contextMenu, IntPtr owner, string verb, uint flags = 0, string? directory = null)
     {
         var menu = CreatePopupMenu();
         var verbAnsi = Marshal.StringToHGlobalAnsi(verb);
         var verbUnicode = Marshal.StringToHGlobalUni(verb);
+        using var workingDirectory = new WorkingDirectory(directory);
         try
         {
             contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, 0);
@@ -467,6 +468,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 Window = owner,
                 Verb = verbAnsi,
                 VerbUnicode = verbUnicode,
+                Directory = workingDirectory.Ansi,
+                DirectoryUnicode = workingDirectory.Unicode,
                 Show = showNormal
             };
             return contextMenu.InvokeCommand(ref info);
@@ -488,6 +491,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         bool customFirst,
         uint flags,
         Func<string, bool> handleVerb,
+        string? directory,
         IReadOnlySet<string>? alsoRemoved = null)
     {
         Action? customAction = null;
@@ -529,7 +533,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 var verb = GetVerb(contextMenu, offset);
                 if (verb == null || !handleVerb(verb))
                 {
-                    Invoke(contextMenu, owner, offset, location);
+                    Invoke(contextMenu, owner, offset, location, directory);
                     if (verb != null && quickAccessVerbs.Contains(verb))
                     {
                         quickAccessChanged = true;
@@ -886,7 +890,45 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         }
     }
 
-    static void Invoke(IContextMenu contextMenu, IntPtr owner, uint offset, Point location)
+    // The folder the items are in, which what a verb starts works in, as Explorer has it:
+    // given none, a program would get Lode's own, System32. None for what is not on disk.
+    static string? ItemsFolder(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0 ||
+            FileSystemFolder(paths[0]) is not { } path)
+        {
+            return null;
+        }
+
+        // A drive is in no folder: it is its own.
+        return Path.GetDirectoryName(path) ?? path;
+    }
+
+    static string? FileSystemFolder(string path)
+    {
+        if (Path.IsPathFullyQualified(path))
+        {
+            return path;
+        }
+
+        return null;
+    }
+
+    // A folder for a verb to start in, as the ANSI and Unicode strings InvokeCommand is given,
+    // each zero for none.
+    sealed class WorkingDirectory(string? path) : IDisposable
+    {
+        public IntPtr Ansi { get; } = path == null ? IntPtr.Zero : Marshal.StringToHGlobalAnsi(path);
+        public IntPtr Unicode { get; } = path == null ? IntPtr.Zero : Marshal.StringToHGlobalUni(path);
+
+        public void Dispose()
+        {
+            Marshal.FreeHGlobal(Ansi);
+            Marshal.FreeHGlobal(Unicode);
+        }
+    }
+
+    static void Invoke(IContextMenu contextMenu, IntPtr owner, uint offset, Point location, string? directory)
     {
         var mask = invokeUnicode | invokePointValid;
         if (Control.ModifierKeys.HasFlag(Keys.Shift))
@@ -899,6 +941,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             mask |= invokeControlDown;
         }
 
+        using var workingDirectory = new WorkingDirectory(directory);
         var info = new InvokeCommandInfo
         {
             Size = Marshal.SizeOf<InvokeCommandInfo>(),
@@ -906,6 +949,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             Window = owner,
             Verb = (IntPtr)offset,
             VerbUnicode = (IntPtr)offset,
+            Directory = workingDirectory.Ansi,
+            DirectoryUnicode = workingDirectory.Unicode,
             Show = showNormal,
             InvokePoint = location
         };
