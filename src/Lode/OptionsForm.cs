@@ -815,6 +815,10 @@ class OptionsForm : Form
             ColumnCount = 7,
             Margin = Padding.Empty
         };
+        // Laid out once, when every row is in. The table sizes itself to what it holds, so each
+        // control added would otherwise lay out all of it again, which for a couple of hundred
+        // took most of the half second Options took to open.
+        table.SuspendLayout();
         // Empty, and sized to it, so they leave the icon and name columns as narrow as their rows.
         table.Controls.Add(new Label { AutoSize = true }, 0, 0);
         table.Controls.Add(new Label { AutoSize = true }, 1, 0);
@@ -915,6 +919,7 @@ class OptionsForm : Form
             row++;
         }
 
+        table.ResumeLayout();
         return table;
     }
 
