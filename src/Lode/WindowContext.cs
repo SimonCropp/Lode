@@ -57,6 +57,7 @@ sealed class WindowContext : ApplicationContext
 
         global::MainForm.HideLastWindowOnClose = true;
         ShellContextMenu.WarmsUpBehindMenus = true;
+        ShellWindows.Enabled = true;
         global::MainForm.WindowOpened += Track;
         global::MainForm.ExitRequested += Exit;
         Track(first);

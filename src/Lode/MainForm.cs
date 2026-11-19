@@ -1272,6 +1272,36 @@ class MainForm : Form
         {
             Retitle();
         }
+
+        ShellWindows.Sync(this);
+    }
+
+    /// <summary>
+    /// For an app that asked the shell to show items selected, a file by GitHub Desktop's Show in
+    /// Explorer say, and found <paramref name="view"/> showing their folder (see
+    /// <see cref="ShellWindows"/>): selects them, picks the tab, and brings its window to the
+    /// front, as another launch handing over a file does. The tab showing in that window is
+    /// used instead when it shows the same folder, as it would be for that launch.
+    /// </summary>
+    internal static void ShowItems(FolderView view, IReadOnlyList<string> paths)
+    {
+        if (view.IsDisposed ||
+            WindowOf(view) is not { } window)
+        {
+            return;
+        }
+
+        if (window.ActiveView is { } active &&
+            Locations.Same(active.CurrentPath, view.CurrentPath))
+        {
+            view = active;
+        }
+
+        // Before the tab shows, so a tab in the background reads its folder once.
+        view.Reveal(paths);
+        window.tabs.SelectedTab = (TabPage)view.Parent!;
+        view.FocusList();
+        window.ShowInFront();
     }
 
     /// <summary>
@@ -1399,6 +1429,7 @@ class MainForm : Form
         base.OnVisibleChanged(eventArgs);
         hidden = !Visible;
         UpdateShowing();
+        ShellWindows.Sync(this);
 
         // Once it has been in the tray a little while, not the moment it goes: closed and
         // brought straight back, it has let go of nothing.
@@ -2111,10 +2142,19 @@ class MainForm : Form
         return new CharSpan(name, Math.Max(length, 0)).Contains("Edit", StringComparison.OrdinalIgnoreCase);
     }
 
+    // What Explorer tells every window when it starts, as the taskbar: after a crash, or when
+    // restarted from Task Manager, which empties the shell's list of folder windows.
+    static readonly int explorerStartedMessage = RegisterWindowMessage("TaskbarCreated");
+
     // The mouse's back and forward buttons arrive as app commands from whichever control is
     // under the pointer.
     protected override void WndProc(ref Message message)
     {
+        if (message.Msg == explorerStartedMessage)
+        {
+            ShellWindows.ExplorerRestarted(this);
+        }
+
         if (message.Msg == WindowMessageAppCommand)
         {
             var command = (int)((message.LParam.ToInt64() >> 16) & 0xFFF);

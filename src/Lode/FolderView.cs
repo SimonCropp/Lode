@@ -107,7 +107,8 @@ sealed class FolderView : UserControl
     // machine on the network.
     bool IsSearch => filter.Length > 0 && !ListsPlaces;
 
-    string? pendingSelection;
+    // What to select once the list shows the folder, the first focused.
+    IReadOnlyList<string>? pendingSelection;
     readonly GutterMarquee marquee;
 
     /// <summary>
@@ -666,9 +667,11 @@ sealed class FolderView : UserControl
 
         // Gone to a folder above, by Up, the breadcrumb, the tree or Back, it lands with the
         // folder that leads back selected, as Explorer does.
-        if (keep == null)
+        if (keep == null &&
+            pendingSelection == null &&
+            Locations.ChildToward(CurrentPath, normalized) is { } leadingBack)
         {
-            pendingSelection ??= Locations.ChildToward(CurrentPath, normalized);
+            pendingSelection = [leadingBack];
         }
 
         var sameDrive = Locations.SameRoot(CurrentPath, normalized);
@@ -955,8 +958,16 @@ sealed class FolderView : UserControl
     /// that folder, and not filtering it, the view reads it again to select the item, rather than
     /// going there a second time.
     /// </summary>
-    public void Reveal(string path)
+    public void Reveal(string path) =>
+        Reveal([path]);
+
+    /// <summary>
+    /// As <see cref="Reveal(string)"/>, for items in one folder: all of them selected, and the
+    /// first focused.
+    /// </summary>
+    public void Reveal(IReadOnlyList<string> paths)
     {
+        var path = paths[0];
         var parent = Path.GetDirectoryName(path);
         if (parent == null)
         {
@@ -964,7 +975,7 @@ sealed class FolderView : UserControl
             return;
         }
 
-        pendingSelection = path;
+        pendingSelection = paths;
         if (filter.Length == 0 &&
             Locations.Same(parent, CurrentPath))
         {
@@ -1576,12 +1587,12 @@ sealed class FolderView : UserControl
 
         remembered = null;
 
-        var reveal = pendingSelection ?? pendingRename;
+        var reveal = pendingSelection ?? (pendingRename == null ? null : [pendingRename]);
         if (reveal != null)
         {
             selected.Clear();
-            selected.Add(reveal);
-            focused = reveal;
+            selected.UnionWith(reveal);
+            focused = reveal[0];
             topIndex = -1;
         }
 
@@ -2306,7 +2317,7 @@ sealed class FolderView : UserControl
         {
             foreach (var entry in selection)
             {
-                pendingSelection = FileOperations.CreateShortcut(entry.FullPath);
+                pendingSelection = [FileOperations.CreateShortcut(entry.FullPath)];
             }
         }
         catch (Exception exception)

@@ -6,8 +6,9 @@
 /// <remarks>
 /// Writes only to the current user's classes, so it needs no elevation and other accounts keep
 /// Explorer. Explorer is still the shell: its taskbar button, and apps that start explorer.exe
-/// themselves or ask it to show a file selected, still open Explorer. Explorer's own Open verb
-/// stays on every folder's right-click menu. The explore verb on Folder brings Lode virtual
+/// themselves, still open Explorer. Apps that ask the shell to show a file selected find Lode's
+/// tabs, which register with it while this is in place (see <see cref="ShellWindows"/>).
+/// Explorer's own Open verb stays on every folder's right-click menu. The explore verb on Folder brings Lode virtual
 /// folders too, which it passes on to Explorer (see <see cref="CommandLine.ForExplorer"/>).
 /// </remarks>
 sealed class ExplorerReplacement(string classesPath, string command, bool notifyShell = false)

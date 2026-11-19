@@ -1105,6 +1105,8 @@ class OptionsForm : Form
             MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
+        // Apps find Lode's windows to show a file selected in only while Lode opens folders.
+        ShellWindows.SyncAll();
         UpdateExplorerState();
     }
 
