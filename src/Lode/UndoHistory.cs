@@ -32,7 +32,8 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         IReadOnlyList<(string Original, string? InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths);
 
         /// <summary>
-        /// Restores items from the Recycle Bin, returning those it could not find.
+        /// Restores items from the Recycle Bin, returning those not restored: gone from it, or
+        /// still in it, skipped at the shell's prompt.
         /// </summary>
         IReadOnlyList<string> Restore(IReadOnlyList<string> inBin);
 
@@ -514,25 +515,37 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     }
 
     // Restores the items from the Recycle Bin, giving those restored. One that has left it,
-    // emptied since say, never can be.
+    // emptied since say, never can be. One still in it, skipped at the shell's prompt for
+    // something of the same name where it goes back to, still could be.
     static Outcome Restore(IFileActions actions, IReadOnlyList<(string Original, string InBin)> binned, out IReadOnlyList<(string Original, string InBin)> restored)
     {
-        var missing = actions.Restore(binned.Select(_ => _.InBin).ToList());
+        var notRestored = actions.Restore(binned.Select(_ => _.InBin).ToList());
         restored = binned
-            .Where(_ => !missing.Contains(_.InBin, StringComparer.OrdinalIgnoreCase))
+            .Where(_ => !notRestored.Contains(_.InBin, StringComparer.OrdinalIgnoreCase))
             .ToList();
-        if (missing.Count == 0)
+        if (notRestored.Count == 0)
         {
             return new(Result.Done);
         }
 
-        var failure = $"{missing.Count} of {binned.Count} items are no longer in the Recycle Bin, so can't be restored.";
-        if (restored.Count == 0)
+        var missing = notRestored.Count(_ => !actions.Exists(_));
+        if (missing == 0)
         {
-            return new(Result.Gone, failure);
+            return Counted(restored.Count, binned.Count, $"Lode restored {restored.Count} of {binned.Count} items.");
         }
 
-        return new(Result.Done, failure);
+        var failure = $"{missing} of {binned.Count} items are no longer in the Recycle Bin, so can't be restored.";
+        if (restored.Count > 0)
+        {
+            return new(Result.Done, failure);
+        }
+
+        if (missing < notRestored.Count)
+        {
+            return new(Result.Waiting, failure);
+        }
+
+        return new(Result.Gone, failure);
     }
 
     // How it went for items that are still there: done when any were, with the failure to say

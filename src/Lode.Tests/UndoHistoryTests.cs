@@ -11,6 +11,10 @@ public class UndoHistoryTests
         public List<string> Calls { get; } = [];
         public List<string> MissingFromBin { get; } = [];
 
+        // Still in the Recycle Bin when asked to restore: skipped at the shell's prompt for
+        // something of the same name where it goes back to.
+        public List<string> SkippedInBin { get; } = [];
+
         // No longer there: deleted since, behind Lode's back.
         public List<string> Gone { get; } = [];
 
@@ -61,11 +65,12 @@ public class UndoHistoryTests
         public IReadOnlyList<string> Restore(IReadOnlyList<string> inBin)
         {
             Calls.Add($"restore {string.Join(", ", inBin)}");
-            return inBin.Where(MissingFromBin.Contains).ToList();
+            return inBin.Where(_ => MissingFromBin.Contains(_) || SkippedInBin.Contains(_)).ToList();
         }
 
         public bool Exists(string path) =>
-            !Gone.Contains(path);
+            !Gone.Contains(path) &&
+            !MissingFromBin.Contains(path);
 
         public void CreateFolder(string path)
         {
@@ -182,6 +187,44 @@ public class UndoHistoryTests
                 undo = history.UndoText,
                 canRedo = history.CanRedo
             });
+    }
+
+    // A delete whose item was skipped at the shell's prompt, as something of the same name has
+    // been made where it goes back to, is not undone: it stays to be undone, not to be redone,
+    // which would send the other item to the Recycle Bin.
+    [Test]
+    public async Task ARestoreSkippedIsNotUndone()
+    {
+        var actions = new FakeActions();
+        actions.SkippedInBin.Add(@"C:\$Recycle.Bin\$RA");
+        var history = new UndoHistory(actions);
+        history.RecordDelete([(@"C:\Work\a.txt", @"C:\$Recycle.Bin\$RA")]);
+
+        var failure = await history.Undo(IntPtr.Zero);
+
+        await Assert.That(failure).IsEqualTo("Lode restored 0 of 1 items.");
+        await Assert.That((history.UndoText, history.CanRedo)).IsEqualTo(("Undo delete", false));
+    }
+
+    // On disk: an item sent to the Recycle Bin is back once restored, and counted so, as the
+    // shell's undelete is done by the time it returns.
+    [Test]
+    public async Task RestoredFromTheRecycleBinOnDisk()
+    {
+        using var fixture = Fixture.Create();
+        var outcome = ShellFileOperation.Run(
+            IntPtr.Zero,
+            ShellFileOperation.Kind.Delete,
+            [fixture.At("notes.aleph")],
+            null,
+            ShellFileOperation.AllowUndo | ShellFileOperation.RecycleOnDelete | ShellFileOperation.NoConfirmation);
+        var inBin = outcome.Changes.Single().Result!;
+
+        var notRestored = RecycleBin.Restore([inBin]);
+
+        await Assert.That(notRestored).IsEmpty();
+        await Assert.That(File.Exists(fixture.At("notes.aleph"))).IsTrue();
+        await Assert.That(Path.Exists(inBin)).IsFalse();
     }
 
     // Nor can a change to something that has gone since: a new folder deleted behind Lode's
