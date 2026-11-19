@@ -695,7 +695,6 @@ public class WindowsTests
                 form.ActiveView!.Reveal(fixture.At(selected));
                 await Pump.Loaded(form.ActiveView);
                 var commands = form.PaletteCommands();
-                File.WriteAllLines(@"C:\Users\simon\AppData\Local\Temp\claude\b4cb8d544a6def5f\599f1b82-1a1b-4412-a890-6c924b123970\scratchpad\names-" + selected + ".txt", commands.Select(_ => _.Name + " | " + _.Action.Target?.GetType().Name).Append("SELECTED " + string.Join(",", form.ActiveView.SelectedEntries().Select(_ => _.FullPath))));
                 foreach (var name in new[] { "Terminal", "Terminal (admin)", "Open in Claude", "Coding agent: Agent" })
                 {
                     commands.Single(_ => _.Name == name).Action();
