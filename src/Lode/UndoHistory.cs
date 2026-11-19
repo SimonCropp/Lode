@@ -119,6 +119,9 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     {
         public string Name { get; } = name;
 
+        // Whether the last try at it did none of it, though it still could be done.
+        internal bool Failed { get; set; }
+
         public abstract Outcome Undo(IFileActions actions, IntPtr owner);
 
         public abstract Outcome Redo(IFileActions actions, IntPtr owner);
@@ -268,6 +271,16 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         {
             // Whatever stopped it may stop it every time, so it is not left in the way.
             outcome = new(Result.Gone, exception.Message);
+        }
+
+        // Not done a second time running, access denied say, it may never be, and would keep
+        // everything before it from being reached. It is let go.
+        var failedBefore = entry.Failed;
+        entry.Failed = outcome.Result == Result.Waiting;
+        if (failedBefore &&
+            entry.Failed)
+        {
+            outcome = new(Result.Gone, $"{outcome.Failure} Not done twice running, it is let go.");
         }
 
         lock (gate)

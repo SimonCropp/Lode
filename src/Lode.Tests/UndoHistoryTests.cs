@@ -252,6 +252,26 @@ public class UndoHistoryTests
         await Assert.That(history.RedoText).IsEqualTo("Redo move");
     }
 
+    // Not undone a second time running, access denied say, a change may never be: it is let go,
+    // so the change before it can be undone.
+    [Test]
+    public async Task AChangeNotUndoneTwiceRunningIsLetGo()
+    {
+        var actions = new FakeActions();
+        var history = new UndoHistory(actions);
+        history.RecordRename(@"C:\Work\old.txt", @"C:\Work\new.txt");
+        history.RecordMove([(@"C:\Work\a.txt", @"C:\Archive\a.txt")]);
+        actions.Refused.Add(@"C:\Archive\a.txt");
+
+        await history.Undo(IntPtr.Zero);
+        var afterOnce = history.UndoText;
+        var failure = await history.Undo(IntPtr.Zero);
+
+        await Assert.That(afterOnce).IsEqualTo("Undo move");
+        await Assert.That(failure).IsEqualTo("Lode moved 0 of 1 items back. Not done twice running, it is let go.");
+        await Assert.That((history.UndoText, history.CanRedo)).IsEqualTo(("Undo rename", false));
+    }
+
     // Undone in part, a change becomes what was undone, which can be redone. The rest is let
     // go: tried again whole, it would fail for the part already back where it was.
     [Test]
