@@ -197,18 +197,19 @@ static class GitPurge
     /// </summary>
     internal static async Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, Remover remove, bool permanent, IProgress<string>? progress = null)
     {
+        // Several folders looked in at once, as git runs in each on its own.
         var found = await Task.Run(
-            () => folders
-                .Select((folder, index) =>
+            () => CodeCommands.InParallel(
+                folders,
+                Cancel.None,
+                Find,
+                done =>
                 {
                     if (folders.Count > 1)
                     {
-                        progress?.Report($"Looking in {index + 1} of {folders.Count}: {Path.GetFileName(folder)}");
+                        progress?.Report($"Looked in {done} of {folders.Count}");
                     }
-
-                    return Find(folder);
-                })
-                .ToList());
+                }));
 
         var paths = found
             .SelectMany(_ => _.Entries)

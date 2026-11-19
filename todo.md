@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 7. Git commands go through repositories one at a time
-
-**Where:** [CodeCommands.cs:147-159](src/Lode/CodeCommands.cs#L147) (`ForEach`), [GitPurge.cs:218-229](src/Lode/GitPurge.cs#L218).
-
-**What happens:** Pull on a code folder of 50 to 100 repositories is minutes of waiting on the network, one after another. Purge runs one `git clean -xdn` at a time before deleting anything. Each repository is its own working tree, so they can go together.
-
-**Fix:** `Parallel.ForEach` with 4 to 8 at once, results kept by index, progress as "n of N done".
-
-
 ### 8. Starting a watch in the tree can hold the window on a drive that does not answer
 
 **Where:** `FolderTree.cs:865-892` (`Watch`, called on the UI thread from `695`, `942` and `1009`), [FolderWatcher.cs:40-44](src/Lode/FolderWatcher.cs#L40) and [51-56](src/Lode/FolderWatcher.cs#L51), `DriveRemoval.cs:107`.

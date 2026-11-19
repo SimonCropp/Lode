@@ -173,26 +173,57 @@ static class CodeCommands
                 };
             });
 
-    // With more than one repository, reports which it is on. With one, the entry's folder
-    // already says. Cancelled, it goes on to no more of them, and gives those it went through.
+    // Several repositories at once, each its own working tree, so a code folder's worth of
+    // pulls is not one wait on the network after another. With more than one, reports how many
+    // are done. With one, the entry's folder already says. Cancelled, it starts no more of them,
+    // and gives those it went through, in the order they were given.
     static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Cancel cancel, Func<string, RepoResult> action) =>
         Task.Run(
-            () =>
-            {
-                var results = new List<RepoResult>();
-                for (var index = 0; index < repos.Count && !cancel.IsCancellationRequested; index++)
+            () => InParallel(
+                repos,
+                cancel,
+                action,
+                done =>
                 {
-                    var repo = repos[index];
                     if (repos.Count > 1)
                     {
-                        progress?.Report($"{index + 1} of {repos.Count}: {Path.GetFileName(repo)}");
+                        progress?.Report($"{done} of {repos.Count} done");
                     }
+                }),
+            cancel);
 
-                    results.Add(action(repo));
+    /// <summary>
+    /// How many repositories git is run in at once.
+    /// </summary>
+    internal const int AtOnce = 6;
+
+    /// <summary>
+    /// <paramref name="action"/> for each item, <see cref="AtOnce"/> at a time, giving what each
+    /// gave in the order the items are, and <paramref name="done"/> how many are done as each
+    /// is. Cancelled, it starts no more, and gives only those it started.
+    /// </summary>
+    internal static List<T> InParallel<T>(IReadOnlyList<string> items, Cancel cancel, Func<string, T> action, Action<int>? done = null)
+        where T : class
+    {
+        var results = new T?[items.Count];
+        var finished = 0;
+        Parallel.For(
+            0,
+            items.Count,
+            new ParallelOptions { MaxDegreeOfParallelism = AtOnce },
+            (index, state) =>
+            {
+                if (cancel.IsCancellationRequested)
+                {
+                    state.Stop();
+                    return;
                 }
 
-                return results;
-            }, cancel);
+                results[index] = action(items[index]);
+                done?.Invoke(Interlocked.Increment(ref finished));
+            });
+        return [.. results.OfType<T>()];
+    }
 
     internal static RepoResult Git(string repo, params string[] arguments) =>
         Git(repo, Cancel.None, network: false, arguments);

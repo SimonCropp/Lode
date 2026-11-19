@@ -150,11 +150,12 @@ public class CodeCommandsTests
         var two = code.CreateRepo("Two");
         using var cancel = new CancelSource();
 
-        // Cancelled as it reaches the first: that one stops, and the second is never started.
-        var results = await CodeCommands.Pull([one, two], new CancelOnReport(cancel), cancel.Token);
+        // Cancelled once the first is done: those running stop, and no more are started.
+        string[] repos = [one, two, .. Enumerable.Range(3, CodeCommands.AtOnce).Select(_ => code.CreateRepo($"Repo{_}"))];
+        var results = await CodeCommands.Pull(repos, new CancelOnReport(cancel), cancel.Token);
 
-        await Assert.That(results.Select(_ => (code.Relative(_.Repo), _.Succeeded, _.Output)))
-            .IsEquivalentTo([("One", false, "Cancelled")]);
+        await Assert.That(results.Count).IsLessThanOrEqualTo(CodeCommands.AtOnce);
+        await Assert.That(results.Count).IsLessThan(repos.Length);
     }
 
     // Cancelled before it starts, it starts nothing, and ends as cancelled.
@@ -284,8 +285,51 @@ public class CodeCommandsTests
         await CodeCommands.Pull([one, two], several);
         await CodeCommands.Pull([one], single);
 
-        await Assert.That(several.Reports).IsEquivalentTo(["1 of 2: One", "2 of 2: Two"]);
+        await Assert.That(several.Reports).IsEquivalentTo(["1 of 2 done", "2 of 2 done"]);
         await Assert.That(single.Reports).IsEmpty();
+    }
+
+    // Each repository is its own working tree, so git runs in several at once: a code folder's
+    // pulls are not one wait on the network after another. What each gave is in the order the
+    // repositories were given, whichever finished first.
+    [Test]
+    public async Task RunsInSeveralAtOnceKeepingTheirOrder()
+    {
+        var items = Enumerable.Range(0, 12).Select(_ => $"Repo{_}").ToList();
+        var running = 0;
+        var most = 0;
+
+        var results = CodeCommands.InParallel(
+            items,
+            Cancel.None,
+            item =>
+            {
+                var now = Interlocked.Increment(ref running);
+                InterlockedMax(ref most, now);
+                // The later ones quicker, so they finish first.
+                Thread.Sleep(400 - items.IndexOf(item) * 20);
+                Interlocked.Decrement(ref running);
+                return item;
+            });
+
+        await Assert.That(results).IsEquivalentTo(items, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(most).IsGreaterThan(1);
+        await Assert.That(most).IsLessThanOrEqualTo(CodeCommands.AtOnce);
+    }
+
+    static void InterlockedMax(ref int target, int value)
+    {
+        var current = Volatile.Read(ref target);
+        while (value > current)
+        {
+            var seen = Interlocked.CompareExchange(ref target, value, current);
+            if (seen == current)
+            {
+                return;
+            }
+
+            current = seen;
+        }
     }
 
     [Test]
