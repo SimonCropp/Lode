@@ -20,17 +20,6 @@ Contents:
 ## Bugs, unverified
 
 
-### 28. A menu slow to build gets an extension refused for the session, cancelled or not
-
-**Where:** [ShellExtensionGuard.cs:48-66](src/Lode/ShellExtensionGuard.cs#L48) (`CancelCall`).
-
-**What happens:** the 3 seconds run from when the guard is made, not from when a call got stuck, and whatever class was activated last is added to `refused` before `CoCancelCall`, whose result is not looked at. Every activation is recorded, in-process ones and the helper classes an extension makes included. So a first, cold, build of a menu that takes over 3 seconds, or a slow in-process extension on a share, has nothing to cancel, yet the last class activated is refused until Lode restarts, and its entries are gone from every classic menu. The readme says extensions loaded into Lode can't be cut off. It does not say they are refused. `ShellExtensionGuardTests` has this in it: it calls `CancelCall()` with no call waiting and expects the refusal.
-
-**Unverified:** that a build ever takes 3 seconds.
-
-**Fix:** refuse only where `CoCancelCall` returns `S_OK`, and time from the last activation.
-
-
 ### 29. A typographic apostrophe in a path ends a PowerShell string early
 
 **Where:** `PowerShell.cs:19-20` (`Quote` doubles only `'`). Used at `PowerShellScripts.cs:54`, `DefenderExclusion.cs:90-91`, `ToolUpdate.cs:109-120`.

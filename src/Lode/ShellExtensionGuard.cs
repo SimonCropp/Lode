@@ -1,10 +1,11 @@
 /// <summary>
 /// Keeps a stuck shell extension from freezing Lode while Windows builds a menu, as Files does.
 /// While a guard is in place, a call into an extension running in another process (a packaged
-/// app's command, a cloud provider) is cancelled once the guard has been in place longer than
-/// <see cref="Timeout"/>, and the menu is built without it. The extension most recently started
-/// when that happened is refused for the rest of the session, so later menus don't wait for it.
-/// An extension loaded into Lode's own process cannot be stopped this way.
+/// app's command, a cloud provider) is cancelled once nothing has been started for longer than
+/// <see cref="Timeout"/>, and the menu is built without it. Where a call was cancelled, the
+/// extension most recently started is refused for the rest of the session, so later menus don't
+/// wait for it. An extension loaded into Lode's own process cannot be stopped this way, and is
+/// not refused for being slow: there is no call of its to cancel.
 /// </summary>
 sealed class ShellExtensionGuard : IDisposable
 {
@@ -25,6 +26,9 @@ sealed class ShellExtensionGuard : IDisposable
     readonly Lock gate = new();
     readonly System.Threading.Timer timer;
     Guid? lastActivation;
+
+    // When the guard was made, or something was last started under it.
+    long lastActivity = Environment.TickCount64;
     bool cancelled;
     bool disposed;
 
@@ -35,8 +39,34 @@ sealed class ShellExtensionGuard : IDisposable
         previous = current;
         current = this;
         CoEnableCallCancellation(IntPtr.Zero);
-        timer = new(_ => CancelCall(), null, Timeout, TimeSpan.FromMilliseconds(100));
+        timer = new(_ => Tick(), null, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100));
     }
+
+    void Tick()
+    {
+        if (Overdue(Environment.TickCount64))
+        {
+            CancelCall();
+        }
+    }
+
+    /// <summary>
+    /// Whether, at <paramref name="now"/>, nothing has been started for longer than
+    /// <see cref="Timeout"/>: a menu that starts one extension after another is slow, not stuck.
+    /// </summary>
+    internal bool Overdue(long now)
+    {
+        lock (gate)
+        {
+            return now - lastActivity >= (long)Timeout.TotalMilliseconds;
+        }
+    }
+
+    /// <summary>
+    /// Cancels the call the thread is waiting on, giving whether there was one. Tests swap it.
+    /// </summary>
+    internal static Func<uint, bool> CancelPendingCall { get; set; } = static threadId =>
+        CoCancelCall(threadId, 0) == ok;
 
     /// <summary>
     /// Whether extensions of this class are refused, after one held up a menu.
@@ -44,12 +74,15 @@ sealed class ShellExtensionGuard : IDisposable
     internal static bool IsRefused(Guid classId) =>
         refused.ContainsKey(classId);
 
-    // Every 100ms once past the timeout, so each stuck call in turn is cancelled.
+    // Every 100ms once overdue, so each stuck call in turn is cancelled. Only one that was
+    // cancelled gets what was last started refused: with no call waiting, the menu is merely
+    // slow to build, a first one say, or held up by an extension in Lode's own process.
     internal void CancelCall()
     {
         lock (gate)
         {
-            if (disposed)
+            if (disposed ||
+                !CancelPendingCall(threadId))
             {
                 return;
             }
@@ -61,7 +94,6 @@ sealed class ShellExtensionGuard : IDisposable
             }
 
             cancelled = true;
-            CoCancelCall(threadId, 0);
         }
     }
 
@@ -70,6 +102,7 @@ sealed class ShellExtensionGuard : IDisposable
         lock (gate)
         {
             lastActivation = classId;
+            lastActivity = Environment.TickCount64;
         }
     }
 

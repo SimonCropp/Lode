@@ -155,7 +155,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
    ![Filtered](src/Lode.Tests/MainFormTests.Filtered.verified.png)
 
  * The list refreshes itself when the folder changes on disk, even after the folder is deleted and made again, as a build emptying its output folder does. Lode lets go of a drive's folders while Windows removes, locks or dismounts it, so it never blocks **Safely remove**, and watches them again if that is called off.
- * A shell extension in another process that stops answering (a packaged app's command, a cloud provider) is cut off after 3 seconds when **Show more options** builds its menu, and skipped for the rest of the session, as Files does. Extensions loaded into Lode itself can't be cut off.
+ * A shell extension in another process that stops answering (a packaged app's command, a cloud provider) is cut off once it has kept **Show more options** waiting 3 seconds, and skipped for the rest of the session, as Files does. Extensions loaded into Lode itself can't be cut off, and none is skipped for a menu merely slow to build.
  * Window size, open tabs and the options are remembered in `%AppData%\Lode\settings.json`. With several windows open, the last one closed is what the next start restores, and after **Exit**, the one used last. A Debug build (from source) keeps its own `settings.debug.json`, first copied from `settings.json`, and runs as a copy of its own beside the installed Lode, with " (Lode Debug)" after its window titles.
 
 ## Keyboard
