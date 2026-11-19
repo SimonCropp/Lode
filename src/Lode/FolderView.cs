@@ -2251,10 +2251,16 @@ sealed class FolderView : UserControl
         _ = FileOperations.Paste(Owner, clipboard, CurrentPath);
     }
 
+    /// <summary>
+    /// Deletes items: to the Recycle Bin, or outright when permanent. Replaced in tests, which
+    /// must not have the shell delete anything.
+    /// </summary>
+    internal Func<IntPtr, IReadOnlyCollection<string>, bool, Task<bool>> DeleteItems = FileOperations.Delete;
+
     public void Delete(bool permanent)
     {
         var paths = SelectedPaths();
-        var deleting = FileOperations.Delete(Owner, paths, permanent);
+        var deleting = DeleteItems(Owner, paths, permanent);
         if (found.Count > 0)
         {
             _ = DropDeletedFound(deleting, paths);
@@ -2810,9 +2816,26 @@ sealed class FolderView : UserControl
         menu.ShowForItems(Owner, paths, location, customCommands, _ => HandleItemVerb(_, selection));
     }
 
-    // The shell would run these in Explorer; keep them inside Lode instead.
-    bool HandleItemVerb(string verb, List<FileEntry> selection)
+    // The shell would run these in Explorer; keep them inside Lode instead. Delete and Create
+    // shortcut are Lode's, so Ctrl+Z hears of them, as it does from Lode's own menu. Not for a
+    // place, a drive say, which Lode's own menu doesn't delete or make a shortcut beside.
+    internal bool HandleItemVerb(string verb, List<FileEntry> selection)
     {
+        if (!selection.Any(_ => _.IsPlace))
+        {
+            if (verb.Equals("delete", StringComparison.OrdinalIgnoreCase))
+            {
+                Delete(ModifierKeys.HasFlag(Keys.Shift));
+                return true;
+            }
+
+            if (verb.Equals("link", StringComparison.OrdinalIgnoreCase))
+            {
+                CreateShortcuts(selection);
+                return true;
+            }
+        }
+
         if (verb.Equals("open", StringComparison.OrdinalIgnoreCase) && selection.All(_ => _.IsDirectory))
         {
             OpenEntries(selection);

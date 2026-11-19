@@ -598,6 +598,33 @@ public class FolderTreeTests
         await Assert.That(deleted).IsEquivalentTo(new List<(string Path, bool Permanent)> { (fixture.At("Archive"), false) });
     }
 
+    // Delete and Create shortcut chosen from Show more options are done by the tree, as from its
+    // own menu, so Ctrl+Z hears of them, rather than by the shell alone. Not for a drive, nor
+    // This PC.
+    [Test]
+    public async Task DeleteAndCreateShortcutFromTheClassicMenuAreTheTrees()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var deleted = new List<string>();
+        tree.DeleteFolder = (path, _) => deleted.Add(path);
+        tree.SelectPath(fixture.At("Archive"));
+        await Pump.Loaded(tree);
+        var archive = tree.SelectedNode!;
+        var computer = tree.Nodes.Cast<TreeNode>().Last();
+        var drive = computer.Nodes[0];
+
+        var deletes = tree.HandleShellVerb("delete", fixture.At("Archive"), archive);
+        var links = tree.HandleShellVerb("link", fixture.At("Archive"), archive);
+        var drives = tree.HandleShellVerb("delete", @"C:\", drive) ||
+                     tree.HandleShellVerb("link", @"C:\", drive);
+        var thisPC = tree.HandleShellVerb("link", (string)computer.Tag!, computer);
+
+        await Assert.That((deletes, links, drives, thisPC)).IsEqualTo((true, true, false, false));
+        await Assert.That(deleted).IsEquivalentTo([fixture.At("Archive")]);
+        await Assert.That(File.Exists(fixture.At("Archive - Shortcut.lnk"))).IsTrue();
+    }
+
     // The keys of the right-click menu's actions run its entries for the selected folder, where
     // the menu would let them: a Pinned entry can't be renamed, the section headings aren't
     // folders, and This PC's menu has only Properties of them. Shift+Delete deletes outright

@@ -423,6 +423,32 @@ public class FolderViewTests
         await Assert.That((sized.Size, sized.FreeSpace)).IsEqualTo((1_000L, 400L));
     }
 
+    // Delete and Create shortcut chosen from Show more options are done by Lode, as from its own
+    // menu, so Ctrl+Z hears of them, rather than by the shell alone.
+    [Test]
+    public async Task DeleteAndCreateShortcutFromTheClassicMenuAreLodes()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var deleted = new List<string>();
+        view.DeleteItems = (_, paths, _) =>
+        {
+            deleted.AddRange(paths);
+            return Task.FromResult(true);
+        };
+        view.Reveal(fixture.At("notes.aleph"));
+        await Pump.Loaded(view);
+        var selection = view.Entries.Where(_ => _.Name == "notes.aleph").ToList();
+
+        var deletes = view.HandleItemVerb("delete", selection);
+        var links = view.HandleItemVerb("link", selection);
+        await Pump.Loaded(view);
+
+        await Assert.That((deletes, links)).IsEqualTo((true, true));
+        await Assert.That(deleted).IsEquivalentTo([fixture.At("notes.aleph")]);
+        await Assert.That(File.Exists(fixture.At("notes - Shortcut.lnk"))).IsTrue();
+    }
+
     [Test]
     public async Task RevealSelectsTheFile()
     {

@@ -1638,23 +1638,45 @@ sealed class FolderTree : TreeView
 
         menu.ShowForItems(owner, [path], location, customCommands, HandleVerb, canRename);
 
-        bool HandleVerb(string verb)
+        bool HandleVerb(string verb) =>
+            HandleShellVerb(verb, path, node);
+    }
+
+    // Done by the tree, as its own menu does them: Rename in place, Open in the window, and
+    // Delete and Create shortcut so Ctrl+Z hears of them. Not for This PC or a drive, which its
+    // own menu doesn't delete or make a shortcut beside.
+    internal bool HandleShellVerb(string verb, string path, TreeNode node)
+    {
+        if (verb.Equals("rename", StringComparison.OrdinalIgnoreCase) &&
+            CanRename(path, node))
         {
-            if (verb.Equals("rename", StringComparison.OrdinalIgnoreCase) &&
-                canRename)
+            BeginRename(node);
+            return true;
+        }
+
+        if (!IsDrive(path) &&
+            !Locations.IsThisPC(path))
+        {
+            if (verb.Equals("delete", StringComparison.OrdinalIgnoreCase))
             {
-                BeginRename(node);
+                DeleteFolder(path, ModifierKeys.HasFlag(Keys.Shift));
                 return true;
             }
 
-            if (!verb.Equals("open", StringComparison.OrdinalIgnoreCase))
+            if (verb.Equals("link", StringComparison.OrdinalIgnoreCase))
             {
-                return false;
+                CreateShortcut(path);
+                return true;
             }
-
-            PathSelected?.Invoke(path);
-            return true;
         }
+
+        if (!verb.Equals("open", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        PathSelected?.Invoke(path);
+        return true;
     }
 
     string? DropDestination(DragEventArgs eventArgs)
