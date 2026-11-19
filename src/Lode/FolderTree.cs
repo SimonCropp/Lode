@@ -1180,10 +1180,14 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        var node = ShowingNode(path);
-        SelectedNode = node;
+        Select(ShowingNode(path));
+    }
 
-        // Taking the selection away raises no AfterSelect.
+    // Selects the node, or nothing. Taking the selection away raises no AfterSelect, so a
+    // shortcut would keep its selected look, and the folder before stay watched.
+    void Select(TreeNode? node)
+    {
+        SelectedNode = node;
         if (node == null)
         {
             ShowShortcutsSelected(null);
@@ -1251,7 +1255,7 @@ sealed class FolderTree : TreeView
                 var (node, unread) = Walk(path, read);
                 if (unread.Count == 0)
                 {
-                    SelectedNode = node;
+                    Select(node);
                     node?.EnsureVisible();
                     return;
                 }

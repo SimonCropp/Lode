@@ -227,6 +227,31 @@ public class FolderTreeTests
         await Verify(Dump(tree));
     }
 
+    // Gone from a pinned folder to a share that is in no drive and not pinned, nothing is
+    // selected, and the pinned entry loses its selected look, rather than still looking like
+    // the open folder.
+    [Test]
+    public async Task GoingToAShareInNoDriveUnselectsThePinnedEntry()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Source"));
+
+        tree.SelectByUser(tree.Nodes[0].Nodes[0]);
+        tree.SelectPath(fixture.At("Source"));
+        await Pump.Loaded(tree);
+        var picked = Dump(tree);
+
+        tree.SelectPath(@"\\nas\share\x");
+        await Pump.Loaded(tree);
+
+        await Verify(
+            new
+            {
+                picked,
+                thenAShare = Dump(tree)
+            });
+    }
+
     // With Expand to open folder off, as Explorer's tree is by default, nothing is read or
     // expanded: a folder is selected only where the tree already shows it, and where it doesn't,
     // nothing is, rather than the folder before.

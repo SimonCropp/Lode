@@ -1,0 +1,22 @@
+﻿{
+  picked:
+- Pinned
+    Source   <- selected
+- This PC
+  - FolderTreeTests.GoingToAShareInNoDriveUnselectsThePinnedEntry
+    - Projects
+        Archive
+        Docs
+      + Source   <- selected
+,
+  thenAShare:
+- Pinned
+    Source
+- This PC
+  - FolderTreeTests.GoingToAShareInNoDriveUnselectsThePinnedEntry
+    - Projects
+        Archive
+        Docs
+      + Source
+
+}

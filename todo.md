@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 23. A Pinned entry stays selected, and its folder watched, after going to a share
-
-**Where:** `FolderTree.cs:1217-1222` (`SelectAsync`), against `SelectShowing` at `1151-1156`, which handles the same case.
-
-**What happens:** with **Expand the folder tree to the open folder** on, a folder that is in no drive and not pinned, any UNC path, has `Walk` return null. Setting `SelectedNode` to null raises no `AfterSelect`, so `ShowShortcutsSelected(null)` and `WatchSelected(null)` never run. A tab on pinned `D:\Code` that goes to `\\nas\share\x` leaves **Code** looking selected under Pinned, and `D:\Code` watched.
-
-**Fix:** the `if (node == null)` block from `SelectShowing`, in `SelectAsync` too.
-
-
 ### 24. The palette's Terminal, Open in Claude and Coding agent ignore a selected folder
 
 **Where:** `MainForm.cs:1734-1745` and `1777-1779`.
