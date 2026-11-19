@@ -23,6 +23,33 @@ public class ShellContextMenuTests
                 return path;
             });
 
+    // Windows adds removable and mapped drives to Send to, which are not in the SendTo folder.
+    // However many there are, Send to is still known by what it lists from there.
+    [Test]
+    public async Task SendToKnownWithDrives()
+    {
+        var sendTo = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Desktop (create shortcut)",
+            "Documents",
+            "Mail recipient"
+        };
+        List<string> entries =
+        [
+            "Desktop (create shortcut)",
+            "Documents",
+            "Mail recipient",
+            "",
+            "USB Drive (E:)",
+            "DVD RW Drive (D:)",
+            @"Work (\\server) (Z:)"
+        ];
+
+        await Assert.That(ShellContextMenu.Lists(entries, sendTo)).IsTrue();
+        await Assert.That(ShellContextMenu.Lists(["&Open", "Print", "Edit"], sendTo)).IsFalse();
+        await Assert.That(ShellContextMenu.Lists(["USB Drive (E:)", "Pictures (F:)"], sendTo)).IsFalse();
+    }
+
     // The shell offers Rename only to a host that says it renames, so the tree's classic menu
     // leaves it off a drive and a Pinned or Recent entry, which the tree can't rename, rather
     // than offer one that would go nowhere.

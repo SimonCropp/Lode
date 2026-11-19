@@ -681,22 +681,36 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         return names;
     }
 
-    // True when a submenu lists those names. One entry may be something else, such as Include
-    // in library's "Create new library".
-    static bool Lists(IntPtr submenu, HashSet<string> names)
+    static bool Lists(IntPtr submenu, HashSet<string> names) =>
+        Lists(
+            Enumerable.Range(0, GetMenuItemCount(submenu))
+                .Select(_ => MenuText(submenu, _))
+                .ToList(),
+            names);
+
+    // True when a submenu's entries list those names. One entry may be something else, such as
+    // Include in library's "Create new library". Drives are left out: Windows adds removable and
+    // mapped ones to Send to, which are not in the SendTo folder, and there can be any number.
+    internal static bool Lists(IReadOnlyList<string> entries, IReadOnlySet<string> names)
     {
         if (names.Count == 0)
         {
             return false;
         }
 
-        var texts = Enumerable.Range(0, GetMenuItemCount(submenu))
-            .Select(_ => MenuText(submenu, _).Replace("&", ""))
-            .Where(_ => _.Length > 0)
+        var texts = entries
+            .Select(_ => _.Replace("&", ""))
+            .Where(_ => _.Length > 0 &&
+                        !IsDrive(_))
             .ToList();
         return texts.Count > 0 &&
                texts.Count(names.Contains) >= Math.Max(1, texts.Count - 1);
     }
+
+    // Ends in a drive letter, as "USB Drive (E:)" or "Work (\server) (Z:)" does.
+    static bool IsDrive(string text) =>
+        text is [.., '(', var letter, ':', ')'] &&
+        char.IsAsciiLetter(letter);
 
     static unsafe string MenuText(IntPtr menu, int position)
     {

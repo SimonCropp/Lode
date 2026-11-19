@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 22. Send to stays on the menu when it lists two or more drives
-
-**Where:** [ShellContextMenu.cs:671-684](src/Lode/ShellContextMenu/ShellContextMenu.cs#L671) (`Lists`).
-
-**What happens:** `Lists` allows one entry that is not in the SendTo folder. Windows adds removable and mapped drives to Send to, which are not in that folder. With two, a USB stick and a DVD drive or two mapped drives, the test fails and Send to stays, where the readme says it is left off. That Windows adds them is from memory.
-
-**Fix:** leave out entries ending in a drive, "(X:)", before comparing, or go by most rather than all but one.
-
-
 ### 23. A Pinned entry stays selected, and its folder watched, after going to a share
 
 **Where:** `FolderTree.cs:1217-1222` (`SelectAsync`), against `SelectShowing` at `1151-1156`, which handles the same case.
