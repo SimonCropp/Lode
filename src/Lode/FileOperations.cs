@@ -442,24 +442,12 @@ static class FileOperations
             {
                 // An elevated process starts in System32 whatever its working directory, so the
                 // prompt changes to the folder itself.
-                var fallback = new ProcessStartInfo("cmd.exe")
+                var fallback = new ProcessStartInfo("cmd.exe", PromptArguments(new(directory, command)))
                 {
                     UseShellExecute = true,
                     Verb = verb,
                     WorkingDirectory = directory
                 };
-                fallback.ArgumentList.Add("/k");
-                fallback.ArgumentList.Add("cd");
-                fallback.ArgumentList.Add("/d");
-                fallback.ArgumentList.Add(directory);
-                if (command.Count > 0)
-                {
-                    fallback.ArgumentList.Add("&&");
-                    foreach (var argument in command)
-                    {
-                        fallback.ArgumentList.Add(argument);
-                    }
-                }
 
                 try
                 {
@@ -479,6 +467,41 @@ static class FileOperations
     /// rest, the commands split by semicolons. A tab with a command runs it in place of the
     /// default profile's shell.
     /// </summary>
+    /// <summary>
+    /// What a command prompt is given for <paramref name="tab"/>: to change to its folder, then
+    /// run its command. cmd reads the line itself, so the folder and each argument are quoted
+    /// where they hold anything cmd would act on, such as the &amp; in R&amp;D, which would
+    /// otherwise end the cd there and run the rest as a command.
+    /// </summary>
+    internal static string PromptArguments(TerminalTab tab)
+    {
+        var builder = new StringBuilder($"/k cd /d {PromptQuoted(tab.Directory)}");
+        if (tab.Command.Count > 0)
+        {
+            builder.Append(" &&");
+            foreach (var argument in tab.Command)
+            {
+                builder.Append(' ');
+                builder.Append(PromptQuoted(argument));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // Left as it is only where it is plain: a switch such as /c, say, means nothing to cmd in
+    // quotes.
+    static string PromptQuoted(string argument)
+    {
+        if (argument.Length > 0 &&
+            argument.All(_ => char.IsAsciiLetterOrDigit(_) || _ is '\\' or ':' or '.' or '-' or '_' or '/'))
+        {
+            return argument;
+        }
+
+        return $"\"{argument}\"";
+    }
+
     internal static List<string> TerminalArguments(IReadOnlyList<TerminalTab> tabs)
     {
         var arguments = new List<string>();

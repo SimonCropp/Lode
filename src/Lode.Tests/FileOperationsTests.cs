@@ -16,6 +16,40 @@ public class FileOperationsTests
         await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\A;B", [@"C:\Tools;\run.exe", "-x"])]))
             .IsEquivalentTo(["-d", @"C:\Code\A\;B", @"C:\Tools\;\run.exe", "-x"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
 
+    // Without Windows Terminal, a command prompt reads the line itself, where an & in a folder's
+    // name would end the cd there and run the rest as a command.
+    [Test]
+    public async Task PromptArguments()
+    {
+        await Assert.That(FileOperations.PromptArguments(new(@"C:\Code\Lode", []))).IsEqualTo(@"/k cd /d C:\Code\Lode");
+        await Assert.That(FileOperations.PromptArguments(new(@"D:\Code\R&D", [@"C:\Tools\agent.cmd"]))).IsEqualTo(@"/k cd /d ""D:\Code\R&D"" && C:\Tools\agent.cmd");
+        await Assert.That(FileOperations.PromptArguments(new(@"D:\Two Words", [@"C:\Program Files\agent.exe", "-x"]))).IsEqualTo(@"/k cd /d ""D:\Two Words"" && ""C:\Program Files\agent.exe"" -x");
+    }
+
+    // What cmd makes of it: the prompt ends up in the folder, and the command runs there.
+    [Test]
+    public async Task PromptGoesToAFolderWithAnAmpersand()
+    {
+        using var fixture = Fixture.Create();
+        var folder = fixture.At("R&D");
+        Directory.CreateDirectory(folder);
+        var arguments = FileOperations.PromptArguments(new(folder, ["cmd.exe", "/c", "cd"]));
+
+        // /c rather than /k, so the prompt closes once the command has run.
+        var startInfo = new ProcessStartInfo("cmd.exe", $"/c{arguments[2..]}")
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = fixture.Root
+        };
+        using var process = Process.Start(startInfo)!;
+        var output = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        await Assert.That(output.Trim()).IsEqualTo(folder);
+    }
+
     [Test]
     public async Task CopyToAnotherFolder()
     {

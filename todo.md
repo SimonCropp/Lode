@@ -10,24 +10,11 @@ How sure each item is:
 
 Contents:
 
- * [Bugs, read](#bugs-read)
  * [Bugs, unverified](#bugs-unverified)
  * [Smaller bugs](#smaller-bugs)
  * [Performance](#performance)
  * [Missing features](#missing-features)
  * [Checked and found sound](#checked-and-found-sound)
-
-
-## Bugs, read
-
-
-### 25. A command prompt opened without Windows Terminal breaks on & in a path
-
-**Where:** [FileOperations.cs:304-339](src/Lode/FileOperations.cs#L304).
-
-**What happens:** only where `wt.exe` can't be started (Windows 10, Server). `ArgumentList` quotes an argument only for a space or a quote, so `D:\Code\R&D` gives `cmd.exe /k cd /d D:\Code\R&D`. cmd runs `cd /d D:\Code\R`, then `D`. An admin prompt ends up in System32, and a coding agent after `&&` never starts. The `wt.exe` path is fine: semicolons are escaped, and tested.
-
-**Fix:** build `Arguments` by hand: `/k cd /d "<directory>"`.
 
 
 ## Bugs, unverified
