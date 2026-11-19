@@ -59,11 +59,13 @@ sealed class FolderWatcher : IDisposable
         }
     }
 
+    // Not for somewhere on the network, a share or a drive mapped to one: there is no device
+    // to remove, and opening the drive's root to hear of it waits on the network.
     IDisposable SubscribeToDrive()
     {
         var root = Path.GetPathRoot(path);
         if (root is { Length: > 0 } &&
-            !Locations.IsNetwork(root))
+            !Locations.IsRemote(root))
         {
             return DriveRemoval.Subscribe(root, DriveChanged);
         }

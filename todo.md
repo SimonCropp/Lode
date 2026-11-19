@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 8. Starting a watch in the tree can hold the window on a drive that does not answer
-
-**Where:** `FolderTree.cs:865-892` (`Watch`, called on the UI thread from `695`, `942` and `1009`), [FolderWatcher.cs:40-44](src/Lode/FolderWatcher.cs#L40) and [51-56](src/Lode/FolderWatcher.cs#L51), `DriveRemoval.cs:107`.
-
-**What happens:** `new FileSystemWatcher(path)` asks whether the folder is there, and `EnableRaisingEvents` opens it. `FolderWatcher` then calls `DriveRemoval.Subscribe`, which opens the root with `CreateFileW` for anything but a UNC path, mapped drives included, holding its static gate. Click an offline mapped drive in the tree, or a folder on a disk that has to spin up: `OnAfterSelect` runs `WatchSelected` before `PathSelected`, so the window waits. The same at startup with the restored tab at `Z:\`. A registration that failed is not remembered, so every watcher on a mapped drive tries again. `FolderView` already keeps this off the UI thread for somewhere on the network.
-
-**Fix:** make the watcher on the thread pool and give it to the node once made. No `DriveRemoval` for a root that `Locations.IsRemote`.
-
-
 ### 9. Open with is looked up before the right-click menu shows
 
 **Where:** `QuickMenu.cs:174-184` (reading `command.Children` runs every `Deferred` list as the menu is built), [FolderView.cs:2538-2580](src/Lode/FolderView.cs#L2538), `OpenWith.cs:52-75`, `MainForm.cs:725-728`.

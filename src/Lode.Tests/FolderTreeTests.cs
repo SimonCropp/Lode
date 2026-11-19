@@ -319,6 +319,35 @@ public class FolderTreeTests
         await Assert.That(tree.IsWatched(drive)).IsTrue();
     }
 
+    // Selecting a folder whose drive is slow to answer, a mapped drive offline say, or a disk
+    // that has to spin up, doesn't keep the window waiting while its watcher starts: that is made
+    // off the UI thread, and given to the folder once it has been.
+    [Test]
+    public async Task SelectingAFolderDoesNotWaitForItsWatcher()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.SelectPath(fixture.At("Source"));
+        await Pump.Loaded(tree);
+        var make = tree.MakeWatcher;
+        tree.MakeWatcher = (path, changed) =>
+        {
+            Thread.Sleep(1500);
+            return make(path, changed);
+        };
+        var docs = tree.SelectedNode!.Parent!.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Docs");
+
+        var started = Stopwatch.GetTimestamp();
+        tree.SelectedNode = docs;
+        var took = Stopwatch.GetElapsedTime(started);
+        var watchedAtOnce = tree.IsWatched(fixture.At("Docs"));
+        await Pump.Loaded(tree);
+
+        await Assert.That(took).IsLessThan(TimeSpan.FromMilliseconds(500));
+        await Assert.That(watchedAtOnce).IsTrue();
+        await Assert.That(tree.HasWatcher(fixture.At("Docs"))).IsTrue();
+    }
+
     static List<string> Expanded(FolderTree tree)
     {
         var expanded = new List<string>();

@@ -1042,33 +1042,66 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        FolderWatcher? watcher;
-        try
+        // Watched from now, as far as the tree goes. Starting the watcher asks whether the folder
+        // is there and opens it, which waits on a mapped drive that is offline, or a disk that has
+        // to spin up, so is done off the UI thread, and the watcher given to the folder once made.
+        watched[node] = null;
+        var path = (string)node.Tag!;
+        Track(StartWatching(node, path));
+    }
+
+    async Task StartWatching(TreeNode node, string path)
+    {
+        var watcher = await Task.Run(() => MakeWatcher(
+            path,
+            () =>
+            {
+                changed[node] = true;
+                changes.Raise();
+            }));
+
+        // Let go of meanwhile, or another made for it first, or the tree gone.
+        if (IsDisposed ||
+            !watched.TryGetValue(node, out var current) ||
+            current != null ||
+            !Locations.Same(node.Tag as string, path))
         {
-            watcher = new(
-                (string)node.Tag!,
-                NotifyFilters.DirectoryName,
-                () =>
-                {
-                    changed[node] = true;
-                    changes.Raise();
-                });
-        }
-        catch (Exception)
-        {
-            // Some locations (an offline share, an empty drive) can't be watched. Those are
-            // read again whenever they are expanded.
-            watcher = null;
+            watcher?.Dispose();
+            return;
         }
 
         watched[node] = watcher;
     }
 
     /// <summary>
+    /// Makes the watcher for a folder, on the thread pool, or null where it can't be watched:
+    /// an offline share, an empty drive. Those are read again whenever they are expanded. Tests
+    /// swap it, for a drive slow to answer.
+    /// </summary>
+    internal Func<string, Action, FolderWatcher?> MakeWatcher = static (path, changed) =>
+    {
+        try
+        {
+            return new(path, NotifyFilters.DirectoryName, changed);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    };
+
+    /// <summary>
     /// Whether the folder at <paramref name="path"/> is watched, for tests.
     /// </summary>
     internal bool IsWatched(string path) =>
         watched.Keys.Any(_ => _.Tag is string tag && Locations.Same(tag, path));
+
+    /// <summary>
+    /// Whether the folder at <paramref name="path"/> has its watcher, made off the UI thread,
+    /// for tests.
+    /// </summary>
+    internal bool HasWatcher(string path) =>
+        watched.Any(_ => _.Value != null && _.Key.Tag is string tag && Locations.Same(tag, path));
 
     void Unwatch(TreeNode node)
     {
