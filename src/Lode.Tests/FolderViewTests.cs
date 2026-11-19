@@ -409,6 +409,20 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // A drive refusing to say how big it is, or gone meanwhile, is listed in This PC without
+    // its size, rather than making the whole listing an error.
+    [Test]
+    public async Task ADriveThatCannotBeSizedIsListedWithoutItsSize()
+    {
+        var refused = FolderView.DriveEntry(@"X:\", () => throw new UnauthorizedAccessException());
+        var gone = FolderView.DriveEntry(@"Y:\", () => throw new IOException());
+        var sized = FolderView.DriveEntry(@"Z:\", () => (1_000, 400));
+
+        await Assert.That(refused).IsEqualTo(new FileEntry(@"X:\", @"X:\", true, 0, default, FileAttributes.Directory, IsDrive: true, FreeSpace: 0));
+        await Assert.That(gone.Size).IsEqualTo(0);
+        await Assert.That((sized.Size, sized.FreeSpace)).IsEqualTo((1_000L, 400L));
+    }
+
     [Test]
     public async Task RevealSelectsTheFile()
     {

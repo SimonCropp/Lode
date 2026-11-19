@@ -35,7 +35,6 @@ Contents:
 
 All read, none run.
 
- * **This PC shows an error if a drive throws anything but `IOException`.** `DriveEntry` catches only that ([FolderView.cs:1100-1118](src/Lode/FolderView.cs#L1100)), and `Task.WaitAll` ([FolderView.cs:1138](src/Lode/FolderView.cs#L1138)) throws for a task that failed in time, so `UnauthorizedAccessException` from `TotalSize` makes the whole listing an error.
  * **A tab drag goes by index.** `ClosableTabControl` remembers the tab pressed as `pressedTab`, an index. A tab closed with Ctrl+W while dragging, and letting go moves the wrong one. Hold the `TabPage`.
  * **Redo is offered after a newer change.** A `Record` that lands while an undo is running clears redo, then the undo, done, adds its entry back (`UndoHistory.cs:213-256`).
  * **An undo that can never work blocks everything older.** A failure that will not clear, access denied say, is waiting for good (`UndoHistory.cs:292-295`, `452-455`).

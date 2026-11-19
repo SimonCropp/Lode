@@ -1129,24 +1129,38 @@ sealed class FolderView : UserControl
     internal void ReadTook(TimeSpan read) =>
         readAgainAt = Environment.TickCount64 + (long)WaitAfter(read).TotalMilliseconds;
 
-    static FileEntry DriveEntry(DriveInfo drive)
+    static FileEntry DriveEntry(DriveInfo drive) =>
+        DriveEntry(
+            drive.Name,
+            () =>
+            {
+                if (!drive.IsReady)
+                {
+                    return (0, 0);
+                }
+
+                return (drive.TotalSize, drive.AvailableFreeSpace);
+            });
+
+    /// <summary>
+    /// A drive's row in This PC. One that can't say how big it is, gone between listing and
+    /// asking, or refusing access, is listed without its size, rather than failing the whole
+    /// listing.
+    /// </summary>
+    internal static FileEntry DriveEntry(string name, Func<(long Total, long Free)> size)
     {
         long total = 0;
         long free = 0;
         try
         {
-            if (drive.IsReady)
-            {
-                total = drive.TotalSize;
-                free = drive.AvailableFreeSpace;
-            }
+            (total, free) = size();
         }
-        catch (IOException)
+        catch (Exception)
         {
-            // The drive went away between listing and querying it.
+            // Gone meanwhile, IOException, or refusing access, UnauthorizedAccessException.
         }
 
-        return new(drive.Name, drive.Name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free);
+        return new(name, name, true, total, default, FileAttributes.Directory, IsDrive: true, FreeSpace: free);
     }
 
     // How long This PC's read waits for its drives' sizes. A drive that answers later, one mapped
