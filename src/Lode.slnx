@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="Lode/Lode.csproj" />
+  <Project Path="Lode.Benchmarks/Lode.Benchmarks.csproj" />
   <Project Path="Lode.Tests/Lode.Tests.csproj" />
     <Folder Name="/Solution Items/">
         <File Path="../.gitignore" />

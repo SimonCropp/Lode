@@ -21,6 +21,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <InternalsVisibleTo Include="Lode.Tests" />
+    <InternalsVisibleTo Include="Lode.Benchmarks" />
     <PackageReference Include="ProjectDefaults" PrivateAssets="all" />
     <PackageReference Include="PackageUpdateLib" />
   </ItemGroup>

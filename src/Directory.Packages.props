@@ -4,6 +4,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="ProjectDefaults" Version="1.0.190" />
     <PackageVersion Include="PackageUpdateLib" Version="5.0.1" />
     <PackageVersion Include="TUnit" Version="1.86.6" />

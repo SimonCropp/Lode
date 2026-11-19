@@ -41,17 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 1. A search merges everything found so far, on the UI thread, four times a second
-
-**Where:** [FolderView.cs:1291-1316](src/Lode/FolderView.cs#L1291) (`AddFound`), [FolderView.cs:2011-2025](src/Lode/FolderView.cs#L2011) (`ApplyFilter`), [FolderView.cs:1479-1581](src/Lode/FolderView.cs#L1479) (`Populate`), `searchBatch` at [FolderView.cs:84](src/Lode/FolderView.cs#L84).
-
-**What happens:** every 250ms the search hands over a batch. `AddFound` merges it into all that was found before, and `Populate` then merges the folder's own matches into that again, compares the lot with what is displayed, gives the list its rows again and puts the selection back. Each is as long as everything found so far, and each comparison is a call to `StrCmpLogicalW`. Nothing limits how much is found.
-
-**Measured:** the merge by itself, of sorted names by `StrCmpLogicalW`, with 2,000 more: 28ms into 100,000, 92ms into 500,000, 202ms into 1,000,000. Lode does two a batch, and the rest of `Populate` on top. So `*.cs` across a big code folder is jerky, and one letter typed at `C:\` near enough stops the window.
-
-**Fix:** leave longer between batches as more is found, by the rule a folder's reads already go by (`WaitAfter`, [FolderView.cs:1070-1098](src/Lode/FolderView.cs#L1070)), or merge off the UI thread and hand over the merged list. Sorting by Folder also makes two strings for every comparison ([FolderView.cs:2049-2051](src/Lode/FolderView.cs#L2049)).
-
-
 ### 3. Icons of programs and shortcuts are read on the UI thread as rows come into view
 
 **Where:** [FolderView.cs:1964-1996](src/Lode/FolderView.cs#L1964) (`CreateItem`), [ShellIcons.cs:182-214](src/Lode/ShellIcons.cs#L182) (`GetIcon`), [ShellIcons.cs:294-325](src/Lode/ShellIcons.cs#L294) (`GetActualIcon`, `GetFileIcon`).
@@ -130,6 +119,7 @@ With **Expand the folder tree to the open folder** off, nothing is expanded agai
 
  * **The PATH is searched on the UI thread every 30 seconds.** `CodingAgents.FindCached` (`CodingAgents.cs:34-46`) reads the PATH and looks in every folder on it, three extensions for each agent not installed, on the next change of selection. Milliseconds as a rule, but a folder on the PATH that is on a share which does not answer stops the window. Give the old answer and look again in the background.
  * **Push and Discard look for repositories on the UI thread** ([CodeMenu.cs:62](src/Lode/CodeMenu.cs#L62) and [83](src/Lode/CodeMenu.cs#L83)), two levels of folders, where Pull's own comment says that belongs off it.
+ * **Sorting by Folder makes two strings for every comparison** ([FolderView.cs](src/Lode/FolderView.cs), `Compare`), each item's folder from its path, which a sort of what a big search found does many times over. Keep each item's folder on it.
  * **Size column to fit measures every name.** `WidestCell` ([FolderView.cs:1833-1857](src/Lode/FolderView.cs#L1833)) sends the list a message for each different text, which for Name is every row of a big folder.
 
 
@@ -180,7 +170,7 @@ No icons, tiles or thumbnails, and no preview pane. In the list a folder always 
 
  * By name only: nothing looks inside files.
  * With hidden items shown, the default, it goes through `.git`, as well as `node_modules`, `bin` and `obj`. An option to leave out what git ignores would make it quicker and what it finds more useful.
- * Nothing limits how much it finds: see [performance item 1](#1-a-search-merges-everything-found-so-far-on-the-ui-thread-four-times-a-second).
+ * Nothing limits how much it finds. What it has found is shown less often as there comes to be more of it, so the window is not kept busy, but each showing still merges in all of it on the UI thread.
 
 
 ### 8. Purge

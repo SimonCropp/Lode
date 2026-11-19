@@ -48,7 +48,7 @@ lode D:\Code\readme.md
 
 Pass a folder to open it, or a file to open its folder with that file selected. With no arguments the tabs from last time are reopened. `lode --help` lists the switches.
 
-From source: `dotnet run --project src/Lode`.
+From source: `dotnet run --project src/Lode`. Benchmarks, of how a search merges what it finds: `dotnet run -c Release --project src/Lode.Benchmarks`.
 
 
 ## Replacing File Explorer

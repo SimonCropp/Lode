@@ -4,8 +4,8 @@
 /// </summary>
 sealed class FolderView : UserControl
 {
-    const int nameColumn = 0;
-    const int folderColumn = 1;
+    internal const int nameColumn = 0;
+    internal const int folderColumn = 1;
     const int dateColumn = 2;
     const int typeColumn = 3;
     const int sizeColumn = 4;
@@ -1301,11 +1301,20 @@ sealed class FolderView : UserControl
         var sort = (sortColumn, sortAscending);
 
         // Reported on the UI thread, each in turn, and all of them before the search ends here.
-        var progress = new Progress<FoundBatch>(_ => AddFound(_, cancel));
+        // How long showing the last took sets how long the search holds the next: what was
+        // found so far is merged in, and the list given its rows, every time, which takes
+        // longer the more has been found.
+        var pace = new SearchPace();
+        var progress = new Progress<FoundBatch>(batch =>
+        {
+            var started = Stopwatch.GetTimestamp();
+            AddFound(batch, cancel);
+            pace.Shown(Stopwatch.GetElapsedTime(started));
+        });
         try
         {
             await Task.Delay(searchDelay, cancel);
-            await Task.Run(() => SearchSubfolders(root, pattern, showHidden, hiddenSystem, sort, progress, cancel), cancel);
+            await Task.Run(() => SearchSubfolders(root, pattern, showHidden, hiddenSystem, sort, progress, pace, cancel), cancel);
         }
         catch (OperationCanceledException)
         {
@@ -1339,6 +1348,31 @@ sealed class FolderView : UserControl
     /// search started.
     /// </summary>
     sealed record FoundBatch(List<FileEntry> Entries, (int Column, bool Ascending) Sort);
+
+    /// <summary>
+    /// How long a search holds what it finds before handing it over: <see cref="searchBatch"/>,
+    /// or, once showing what was found has come to take long, as a folder's reads go
+    /// (<see cref="WaitAfter"/>), so the window spends no more than a tenth of its time on it.
+    /// Set on the UI thread, read on the search's.
+    /// </summary>
+    internal sealed class SearchPace
+    {
+        long holdTicks = searchBatch.Ticks;
+
+        public TimeSpan Hold =>
+            TimeSpan.FromTicks(Interlocked.Read(ref holdTicks));
+
+        public void Shown(TimeSpan took)
+        {
+            var hold = WaitAfter(took);
+            if (hold < searchBatch)
+            {
+                hold = searchBatch;
+            }
+
+            Interlocked.Exchange(ref holdTicks, hold.Ticks);
+        }
+    }
 
     void AddFound(FoundBatch batch, Cancel cancel)
     {
@@ -1391,6 +1425,7 @@ sealed class FolderView : UserControl
         SystemItems? hiddenSystem,
         (int Column, bool Ascending) sort,
         IProgress<FoundBatch> progress,
+        SearchPace pace,
         Cancel cancel)
     {
         var options = new EnumerationOptions
@@ -1430,7 +1465,7 @@ sealed class FolderView : UserControl
                 {
                     cancel.ThrowIfCancellationRequested();
                     if (batch.Count > 0 &&
-                        Stopwatch.GetElapsedTime(sent) >= searchBatch)
+                        Stopwatch.GetElapsedTime(sent) >= pace.Hold)
                     {
                         Send();
                     }
@@ -1505,7 +1540,7 @@ sealed class FolderView : UserControl
     }
 
     // Two lists in the same order, as one, still in it.
-    static List<FileEntry> Merge(List<FileEntry> first, List<FileEntry> second, Comparison<FileEntry> compare)
+    internal static List<FileEntry> Merge(List<FileEntry> first, List<FileEntry> second, Comparison<FileEntry> compare)
     {
         var merged = new List<FileEntry>(first.Count + second.Count);
         var firstIndex = 0;
@@ -2076,7 +2111,7 @@ sealed class FolderView : UserControl
         return Merge(matches, found, Order(sortColumn, sortAscending));
     }
 
-    static Comparison<FileEntry> Order(int column, bool ascending) =>
+    internal static Comparison<FileEntry> Order(int column, bool ascending) =>
         (first, second) => Compare(first, second, column, ascending);
 
     // Static, with the column and direction handed in, so a folder can be sorted off the UI

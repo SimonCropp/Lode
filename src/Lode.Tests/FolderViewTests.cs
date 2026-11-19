@@ -822,6 +822,27 @@ public class FolderViewTests
         await Assert.That(FolderView.WaitAfter(TimeSpan.FromSeconds(30))).IsEqualTo(TimeSpan.FromSeconds(10));
     }
 
+    // A search hands over what it found a quarter of a second at a time, until showing it, all
+    // that has been found so far merged in again, comes to take long: then it holds what it
+    // finds ten times as long as that took, so the window is not kept busy with it.
+    [Test]
+    public async Task ASearchHoldsWhatItFindsLongerAsShowingItTakesLonger()
+    {
+        var pace = new FolderView.SearchPace();
+        var first = pace.Hold;
+        pace.Shown(TimeSpan.FromMilliseconds(5));
+        var quick = pace.Hold;
+        pace.Shown(TimeSpan.FromMilliseconds(200));
+        var slow = pace.Hold;
+        pace.Shown(TimeSpan.FromSeconds(5));
+        var slowest = pace.Hold;
+
+        await Assert.That(first).IsEqualTo(TimeSpan.FromMilliseconds(250));
+        await Assert.That(quick).IsEqualTo(TimeSpan.FromMilliseconds(250));
+        await Assert.That(slow).IsEqualTo(TimeSpan.FromSeconds(2));
+        await Assert.That(slowest).IsEqualTo(TimeSpan.FromSeconds(10));
+    }
+
     // A view nobody can see, such as a tab in the background, leaves changes on disk unread
     // until it shows again.
     [Test]

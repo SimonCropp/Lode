@@ -7,3 +7,4 @@ TestResults/
 *.DotSettings.user
 *.received.*
 nugets/
+BenchmarkDotNet.Artifacts/
