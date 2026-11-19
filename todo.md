@@ -35,7 +35,6 @@ Contents:
 
 All read, none run.
 
- * **A pending selection outlives a failed Reveal.** `Reveal` sets `pendingSelection`, then `Navigate` can end in "can't find" ([FolderView.cs:929-947](src/Lode/FolderView.cs#L929)). The next `Open` keeps it (`pendingSelection ??=`, [FolderView.cs:642](src/Lode/FolderView.cs#L642)), so the folder that leads back is not selected that once.
  * **This PC shows an error if a drive throws anything but `IOException`.** `DriveEntry` catches only that ([FolderView.cs:1100-1118](src/Lode/FolderView.cs#L1100)), and `Task.WaitAll` ([FolderView.cs:1138](src/Lode/FolderView.cs#L1138)) throws for a task that failed in time, so `UnauthorizedAccessException` from `TotalSize` makes the whole listing an error.
  * **A tab drag goes by index.** `ClosableTabControl` remembers the tab pressed as `pressedTab`, an index. A tab closed with Ctrl+W while dragging, and letting go moves the wrong one. Hold the `TabPage`.
  * **Redo is offered after a newer change.** A `Record` that lands while an undo is running clears redo, then the undo, done, adds its entry back (`UndoHistory.cs:213-256`).

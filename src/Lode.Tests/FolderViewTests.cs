@@ -364,6 +364,24 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // A Reveal overtaken while its folder is still being asked after selects nothing where the
+    // view went instead: going up still lands with the folder left selected.
+    [Test]
+    public async Task UpAfterAnOvertakenRevealSelectsTheFolderLeft()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Source"));
+        view.IsRemote = _ => Locations.Same(_, fixture.At("Docs"));
+
+        view.Reveal(fixture.At("Docs", "guide.aleph"));
+        view.GoUp();
+        await Pump.Loaded(view);
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(Selected(view)).IsEquivalentTo(["Source"]);
+    }
+
     // As clicking a folder above in the breadcrumb does.
     [Test]
     public async Task GoingToAFolderAboveSelectsTheFolderLeadingBack()

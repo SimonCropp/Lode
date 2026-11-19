@@ -448,7 +448,9 @@ sealed class FolderView : UserControl
     /// Otherwise going there, by the breadcrumb or the address bar say, reads it again, as
     /// Explorer does, keeping what is forward in the history, the selection, how far down it
     /// is scrolled and the filter.</param>
-    void Go(string target, int? position, bool revealFile, bool again = false)
+    /// <param name="select">What to select once the folder is open, for a Reveal. Kept only
+    /// if it is opened, so a Reveal that fails or is overtaken leaves nothing behind.</param>
+    void Go(string target, int? position, bool revealFile, bool again = false, string? select = null)
     {
         var normalized = Locations.Normalize(target);
         if (normalized == null)
@@ -475,7 +477,7 @@ sealed class FolderView : UserControl
 
         if (Locations.IsThisPC(normalized))
         {
-            Open(normalized, position);
+            Open(normalized, position, select: select);
             return;
         }
 
@@ -487,11 +489,11 @@ sealed class FolderView : UserControl
         {
             if (showing)
             {
-                Loading = FindThenOpen(target, normalized, position, revealFile);
+                Loading = FindThenOpen(target, normalized, position, revealFile, select);
                 return;
             }
 
-            Open(normalized, position);
+            Open(normalized, position, select: select);
             revealIfFile = revealFile;
             if (revealFile)
             {
@@ -503,7 +505,7 @@ sealed class FolderView : UserControl
 
         if (Directory.Exists(normalized))
         {
-            Open(normalized, position);
+            Open(normalized, position, select: select);
             return;
         }
 
@@ -526,7 +528,7 @@ sealed class FolderView : UserControl
 
     // Asks after somewhere on the network, off the UI thread, then does what Go does at once
     // for somewhere on this machine.
-    async Task FindThenOpen(string target, string normalized, int? position, bool revealFile)
+    async Task FindThenOpen(string target, string normalized, int? position, bool revealFile, string? select)
     {
         var asking = ++finding;
         looking = normalized;
@@ -543,7 +545,7 @@ sealed class FolderView : UserControl
         looking = null;
         if (found == Found.Folder)
         {
-            Open(normalized, position);
+            Open(normalized, position, select: select);
             return;
         }
 
@@ -639,7 +641,7 @@ sealed class FolderView : UserControl
     // is in the history change: going back to somewhere that has gone, or that the view is taken
     // away from while it is still being asked after, leaves the history as it was. For a folder
     // that moved, what to select once it has been read where it went is kept.
-    void Open(string normalized, int? position, Kept? keep = null)
+    void Open(string normalized, int? position, Kept? keep = null, string? select = null)
     {
         // Anywhere being asked after has been overtaken.
         finding++;
@@ -657,7 +659,9 @@ sealed class FolderView : UserControl
         }
 
         // Gone to a folder above, by Up, the breadcrumb, the tree or Back, it lands with the
-        // folder that leads back selected, as Explorer does.
+        // folder that leads back selected, as Explorer does. What was to be selected where the
+        // view was is no more.
+        pendingSelection = select;
         if (keep == null)
         {
             pendingSelection ??= Locations.ChildToward(CurrentPath, normalized);
@@ -956,16 +960,16 @@ sealed class FolderView : UserControl
             return;
         }
 
-        pendingSelection = path;
         if (filter.Length == 0 &&
             Locations.Same(parent, CurrentPath))
         {
+            pendingSelection = path;
             Reload();
             return;
         }
 
         // Again where it is already, to clear the filter, which may be hiding the file.
-        Go(parent, null, revealFile: false, again: true);
+        Go(parent, null, revealFile: false, again: true, select: path);
     }
 
     /// <summary>
