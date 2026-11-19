@@ -153,6 +153,11 @@ sealed class Settings
     // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
     public bool PurgePermanently { get; set; }
 
+    // Tabs nobody has looked at for UnusedTabHours are closed, as other apps opening folders in
+    // Lode leave a tab for each. Off unless chosen in Options. See MainForm.CloseUnusedTabs.
+    public bool CloseUnusedTabs { get; set; }
+    public int UnusedTabHours { get; set; } = 24;
+
     // When NuGet was last asked for a newer Lode, and the newer version it had then, if any.
     // See Updates.
     public DateTimeOffset? LastUpdateCheck { get; set; }
@@ -187,6 +192,11 @@ sealed class Settings
     public bool Maximized { get; set; }
     public int SplitterDistance { get; set; }
     public List<string> Tabs { get; set; } = [];
+
+    // When each of Tabs was last looked at, in the same order, so closing unused tabs counts from
+    // then after a restart, an update's say, rather than starting the hours again. Empty, or not
+    // one for each tab, in settings saved before Lode kept them.
+    public List<DateTimeOffset> TabsLastShown { get; set; } = [];
     public int ActiveTab { get; set; }
 
     internal static string Folder =>

@@ -4,5 +4,7 @@
   ShowRecent: true,
   ExpandToOpenFolder: true,
   PurgePermanently: false,
+  CloseUnusedTabs: false,
+  UnusedTabHours: 24,
   Maximized: false
 }

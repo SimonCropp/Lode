@@ -235,6 +235,110 @@ public class WindowsTests
             });
     }
 
+    // With closing unused tabs on, a tab not looked at for the hours given closes, the one looked
+    // at longest ago first, so Reopen closed tab brings back the other first. The tab the window
+    // shows stays however long it has shown, and one opened in the background has the hours from
+    // when it opened. Off, as it is unless chosen, nothing closes.
+    [Test]
+    public async Task TabsNotLookedAtCloseAfterTheHoursGiven()
+    {
+        using var fixture = Fixture.Create();
+        var clock = new Clock(new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero));
+        MainForm.Time = clock;
+        try
+        {
+            var settings = new Settings
+            {
+                UnusedTabHours = 8
+            };
+            using var form = await Show(fixture, settings, fixture.Root, fixture.At("Docs"), fixture.At("Source"));
+            var showing = form.ActiveView!;
+
+            // 10:00, Docs looked at, then back to Source.
+            clock.Now = clock.Now.AddHours(1);
+            var docs = form.Views.ElementAt(1);
+            Pick(docs);
+            await Pump.Loaded(docs);
+            Pick(showing);
+
+            // 11:00, Archive opened in the background.
+            clock.Now = clock.Now.AddHours(1);
+            form.AddTab(fixture.At("Archive"), false);
+
+            // 18:30: Projects 9.5 hours unused, Docs 8.5, Archive 7.5.
+            clock.Now = clock.Now.AddHours(7.5);
+            form.CloseUnusedTabs();
+            var off = Describe(form);
+
+            settings.CloseUnusedTabs = true;
+            form.CloseUnusedTabs();
+            var on = Describe(form);
+
+            form.ReopenClosedTab();
+            await Pump.Loaded(form.ActiveView!);
+            var reopened = Describe(form);
+
+            // 19:00: Archive 8 hours unused, untouched by the tabs closed and reopened beside it.
+            clock.Now = clock.Now.AddHours(0.5);
+            form.CloseUnusedTabs();
+
+            await Verify(
+                new
+                {
+                    off,
+                    on,
+                    reopened,
+                    archiveToo = Describe(form)
+                });
+        }
+        finally
+        {
+            MainForm.Time = TimeProvider.System;
+        }
+    }
+
+    // When each tab was last looked at is saved with the tabs, so after a restart, an update's
+    // say, each is as unused as it was rather than starting the hours again. The tab that was
+    // active stays, however long ago it was looked at, and is saved as looked at until the
+    // window closed.
+    [Test]
+    public async Task RestoredTabsAreAsUnusedAsTheyWere()
+    {
+        using var fixture = Fixture.Create();
+        var clock = new Clock(new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero));
+        MainForm.Time = clock;
+        try
+        {
+            var settings = new Settings
+            {
+                CloseUnusedTabs = true,
+                UnusedTabHours = 8,
+                Tabs = [fixture.Root, fixture.At("Docs"), fixture.At("Source")],
+                TabsLastShown = [clock.Now.AddHours(-9), clock.Now.AddHours(-4), clock.Now.AddHours(-9)],
+                ActiveTab = 2
+            };
+            using var form = await Show(fixture, settings);
+            form.CloseUnusedTabs();
+            var restored = Describe(form);
+
+            clock.Now = clock.Now.AddHours(1);
+            form.Close();
+
+            await Verify(
+                new
+                {
+                    restored,
+                    saved = settings.Tabs
+                        .Select(Path.GetFileName)
+                        .Zip(settings.TabsLastShown, (tab, shown) => $"{tab} {shown:HH:mm}")
+                });
+        }
+        finally
+        {
+            MainForm.Time = TimeProvider.System;
+        }
+    }
+
     // Another launch's folders, a GitHub Desktop "Show in Explorer" say: one a tab in any
     // window already shows, however its path is written, selects that tab, and the rest open as
     // tabs in the window used last, each once.

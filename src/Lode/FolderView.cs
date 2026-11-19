@@ -295,6 +295,14 @@ sealed class FolderView : UserControl
         }
     }
 
+    /// <summary>
+    /// When the view last stopped or started <see cref="Showing"/>, or was made, for closing tabs
+    /// nobody looks at. Kept by the window it is in, see <see cref="MainForm.CloseUnusedTabs"/>,
+    /// and carried with the tab to another.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal DateTimeOffset LastShown { get; set; }
+
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Filter
     {

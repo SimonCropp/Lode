@@ -1,0 +1,14 @@
+﻿{
+  restored: {
+    title: Source,
+    tabs: [
+      Docs,
+      Source
+    ],
+    active: {TempPath}LodeTests\WindowsTests.RestoredTabsAreAsUnusedAsTheyWere\Projects\Source
+  },
+  saved: [
+    Docs 05:00,
+    Source 10:00
+  ]
+}

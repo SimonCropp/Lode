@@ -105,6 +105,8 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
  * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing. As in Explorer, a tab follows the folder it shows when it is renamed, by Lode or another program, or moved by Lode, whether the folder itself or one above it, keeping what was selected; places in its history inside the folder follow too, so Back goes where they went. When the folder is deleted, sent to the Recycle Bin, or moved by another program, the tab goes up to the nearest folder still there.
 
+   Tabs pile up as other apps open folders in Lode, each in a tab of its own. To have Lode close the ones you have stopped using, tick **Close tabs not looked at for** on the **General** page of Options and give the hours, 24 unless changed. A tab is looked at while it is the one a window shows, in a window that is not minimized or in the tray; a tab opened in the background counts from when it opened. Lode never closes the tab a window shows, so never a window's last, and waits until you have gone to another app, so no tab moves out from under the pointer. Each closes as Close tab would, so Reopen closed tab brings it back. When each tab was last looked at is kept with the tabs, so restarting Lode, to update it say, doesn't start the hours again.
+
    ![Tabs](src/Lode.Tests/MainFormTests.Tabs.verified.png)
 
  * **Command palette** (Ctrl+Shift+P, or the ⋯ menu): type part of a command's name and press Enter. It lists the window's commands (navigation, tabs, hidden items, terminal, Claude, coding agents, pinning, options) and whatever the right-click menu offers for the selection, or for the folder when nothing is selected.
@@ -128,7 +130,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
    ![Right-click menu on a folder](src/Lode.Tests/MenuTests.FolderMenu.verified.png) ![New](src/Lode.Tests/MenuTests.NewMenu.verified.png)
 
  * **Options** in the ⋯ menu, a page each, picked from the list down the left as in Windows' Settings (Ctrl+Tab and Ctrl+Shift+Tab go through them). Changes apply straight away.
-   * **General**: the default folder new tabs open in, and the text editor.
+   * **General**: the default folder new tabs open in, the text editor, and closing tabs not looked at for a while (off by default).
    * **View**: the theme, light, dark, or the same as Windows' apps (the default), which Lode takes on when it next starts, as it does a change to Windows' own; show hidden items (on by default; also Ctrl+H), show system files (off by default: Windows, Program Files, other people's folders under Users, and the files Windows protects, in the list and the folder tree), expand the folder tree to the open folder (on by default, unlike Explorer's), and show the Recent section.
    * **Actions**: which actions show as buttons and which in the right-click menus, and in each, which are nested under their parent.
    * **Code**: the code folder, whether Git purge deletes permanently, and excluding the code folder from Microsoft Defender.

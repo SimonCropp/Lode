@@ -93,6 +93,12 @@ class MainForm : Form
         "";
 #endif
 
+    /// <summary>
+    /// When each tab was last looked at is read from this, for closing unused tabs. Tests put in
+    /// a clock of their own.
+    /// </summary>
+    internal static TimeProvider Time { get; set; } = TimeProvider.System;
+
     public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
     public IEnumerable<FolderView> Views =>
@@ -121,6 +127,16 @@ class MainForm : Form
                 ReleaseMemory();
             }
         };
+        unusedTabsTimer.Tick += (_, _) =>
+        {
+            // Not while Lode is the app in front: a tab closing moves those after it along, out
+            // from under the pointer. They close once the user has gone to another app.
+            if (ActiveForm == null)
+            {
+                CloseUnusedTabs();
+            }
+        };
+        unusedTabsTimer.Start();
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -809,8 +825,14 @@ class MainForm : Form
     {
         var paths = Openable(arguments);
         var active = paths.Count - 1;
+
+        // When each tab restored was last looked at, in the order of paths.
+        var lastShown = new List<DateTimeOffset>();
         if (paths.Count == 0)
         {
+            var saved = settings.TabsLastShown.Count == settings.Tabs.Count;
+            var now = Time.GetUtcNow();
+
             // The tab that was active is as many along as there are tabs before it still to
             // open: one whose folder has gone since leaves those after it a place earlier.
             active = 0;
@@ -830,6 +852,18 @@ class MainForm : Form
                 }
 
                 paths.Add(path);
+
+                // Not after now, which a clock put back would leave: the tab would stay until
+                // the clock caught up.
+                if (saved &&
+                    settings.TabsLastShown[index] < now)
+                {
+                    lastShown.Add(settings.TabsLastShown[index]);
+                }
+                else
+                {
+                    lastShown.Add(now);
+                }
             }
         }
 
@@ -845,6 +879,13 @@ class MainForm : Form
 
         tabs.SelectedIndex = Math.Clamp(active, 0, tabs.TabCount - 1);
         SyncToActiveView();
+
+        // Once the tab that was active is picked: before, the first tab, which showed while they
+        // were added, would be counted as looked at until it was.
+        foreach (var (view, shown) in Views.Zip(lastShown))
+        {
+            view.LastShown = shown;
+        }
     }
 
     protected override void OnLoad(EventArgs eventArgs)
@@ -934,6 +975,16 @@ class MainForm : Form
             .Cast<TabPage>()
             .Select(_ => _.Controls.OfType<FolderView>().First().CurrentPath)
             .ToList();
+        // The tab showing is looked at until now.
+        var now = Time.GetUtcNow();
+        foreach (var view in Views.Where(_ => _.Showing))
+        {
+            view.LastShown = now;
+        }
+
+        settings.TabsLastShown = Views
+            .Select(_ => _.LastShown)
+            .ToList();
         settings.ActiveTab = tabs.SelectedIndex;
         settings.Save();
 
@@ -950,7 +1001,9 @@ class MainForm : Form
         {
             Dock = DockStyle.Fill,
             // Until it is the tab showing, which is when it reads its folder.
-            Showing = false
+            Showing = false,
+            // A tab opened in the background has the hours from now before it counts as unused.
+            LastShown = Time.GetUtcNow()
         };
         var page = new TabPage
         {
@@ -1318,9 +1371,19 @@ class MainForm : Form
 
         var windowShowing = !hidden && !minimized;
         var active = ActiveView;
+        var now = Time.GetUtcNow();
         foreach (var view in Views)
         {
-            view.Showing = windowShowing && view == active;
+            var showing = windowShowing && view == active;
+
+            // A tab is looked at while it shows, so one that stops showing was last looked at
+            // now. One that starts is noted too, though while it shows it is never unused.
+            if (showing || view.Showing)
+            {
+                view.LastShown = now;
+            }
+
+            view.Showing = showing;
         }
 
         tree.Showing = windowShowing;
@@ -1372,6 +1435,39 @@ class MainForm : Form
         }
 
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+    }
+
+    // Hours are what Options counts in, so once a minute is close enough.
+    readonly Timer unusedTabsTimer = new()
+    {
+        Interval = 60_000
+    };
+
+    /// <summary>
+    /// With closing unused tabs on, in Options, closes the tabs nobody has looked at for the hours
+    /// it gives: those that have not, for that long, been the tab showing in a window that is
+    /// itself showing, rather than minimized or in the tray. Never the tab the window shows, or
+    /// shows again when it comes back, so never the last one. The tab looked at longest ago
+    /// closes first, so Reopen closed tab brings back the most recent first.
+    /// </summary>
+    internal void CloseUnusedTabs()
+    {
+        if (!settings.CloseUnusedTabs)
+        {
+            return;
+        }
+
+        // At least an hour, as Options allows, whatever the settings file says: none would close
+        // every tab the moment it stopped showing.
+        var limit = TimeSpan.FromHours(Math.Max(1, settings.UnusedTabHours));
+        var now = Time.GetUtcNow();
+        var active = ActiveView;
+        CloseTabs(
+            Views
+                .Where(_ => _ != active &&
+                            now - _.LastShown >= limit)
+                .OrderBy(_ => _.LastShown)
+                .Select(_ => (TabPage)_.Parent!));
     }
 
     // Whether it was maximized when last not minimized, which is how it comes back.
@@ -2050,6 +2146,7 @@ class MainForm : Form
             updates.Changed -= OnUpdatesChanged;
             toolTip.Dispose();
             trayTimer.Dispose();
+            unusedTabsTimer.Dispose();
         }
 
         base.Dispose(disposing);
