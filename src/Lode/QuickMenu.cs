@@ -164,7 +164,9 @@ static class QuickMenu
                 continue;
             }
 
-            var item = new ToolStripMenuItem(command.Text)
+            // An ampersand would mark the next letter as the item's access key and not show:
+            // "Snip & Sketch", or a folder named "R&D".
+            var item = new ToolStripMenuItem(command.Text.Replace("&", "&&"))
             {
                 Enabled = command.Enabled,
                 Image = Image(command, iconSize, images),

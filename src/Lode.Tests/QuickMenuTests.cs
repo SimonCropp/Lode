@@ -19,6 +19,29 @@ public class QuickMenuTests
         new(".txt", "Text Document")
     ];
 
+    // An app or folder with an ampersand in its name shows it, rather than taking it to mark
+    // the next letter as the access key: "Snip & Sketch", not "Snip  Sketch".
+    [Test]
+    public async Task AnAmpersandInANameShows()
+    {
+        using var menu = new ContextMenuStrip();
+        QuickMenu.AddItems(
+            menu.Items,
+            [
+                new("Snip & Sketch", () => { })
+                {
+                    Children = [new("R&D", () => { })]
+                }
+            ],
+            _ => { },
+            16,
+            []);
+        var item = (ToolStripMenuItem)menu.Items[0];
+
+        await Assert.That(item.Text).IsEqualTo("Snip && Sketch");
+        await Assert.That(item.DropDownItems[0].Text).IsEqualTo("R&&D");
+    }
+
     [Test]
     public async Task FileMenu()
     {
