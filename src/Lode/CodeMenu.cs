@@ -1,8 +1,8 @@
 /// <summary>
-/// The right-click entries for folders under the code folder: git pull, push, discard and
-/// purge across their repositories, and Update NuGets (optionally then building). With several
-/// folders selected, each command takes in all of them at once, as one entry in the actions
-/// panel. Each runs in the background and shows in the actions panel under the tree, without
+/// The right-click entries for folders under the code folder: git pull, switch to the default
+/// branch, push, discard and purge across their repositories, and Update NuGets (optionally
+/// then building). With several folders selected, each command takes in all of them at once,
+/// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
 /// </summary>
 static class CodeMenu
@@ -27,6 +27,10 @@ static class CodeMenu
             LodeActions.Command("gitPull", () => Pull(folders, settings.CodeDirectory)) with
             {
                 NestedText = "Pull"
+            },
+            LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)) with
+            {
+                NestedText = "Switch to default branch"
             },
             LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…") with
             {
@@ -56,6 +60,18 @@ static class CodeMenu
                 // Looking for repositories reads folders, so that is off the UI thread too.
                 var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
                 return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress, cancel));
+            });
+
+    // Nothing to ask about: a repository with uncommitted changes fails rather than switching,
+    // so nothing is lost.
+    static void SwitchToDefaultBranch(IReadOnlyList<string> folders, string? codeFolder) =>
+        _ = ActionLog.Run(
+            "Git switch to default branch",
+            folders,
+            async (progress, cancel) =>
+            {
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
+                return CodeCommands.GitOutcome(await CodeCommands.SwitchToDefaultBranch(repos, progress, cancel));
             });
 
     static void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)

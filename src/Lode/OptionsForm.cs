@@ -82,6 +82,26 @@ class OptionsForm : Form
         AutoSize = true
     };
 
+    readonly CheckBox closeUnusedTabs = new()
+    {
+        Name = "closeUnusedTabs",
+        Text = "Close tabs not looked at for",
+        AutoSize = true
+    };
+    readonly NumericUpDown unusedTabHours = new()
+    {
+        Name = "unusedTabHours",
+        AccessibleName = "Hours a tab is not looked at before it closes",
+        Minimum = 1,
+        Maximum = 999,
+        Width = 60
+    };
+    readonly Label unusedTabHoursUnit = new()
+    {
+        Text = "hours",
+        AutoSize = true
+    };
+
     readonly TextBox codeDirectory = new()
     {
         Name = "codeDirectory",
@@ -260,6 +280,15 @@ class OptionsForm : Form
         browseDefaultDirectory.Click += (_, _) => BrowseDefaultDirectory();
         resetDefaultDirectory.Click += (_, _) => SetDefaultDirectory(null);
         UpdateDefaultDirectory();
+        closeUnusedTabs.Checked = settings.CloseUnusedTabs;
+        unusedTabHours.Value = Math.Clamp(settings.UnusedTabHours, (int) unusedTabHours.Minimum, (int) unusedTabHours.Maximum);
+        unusedTabHours.Enabled = settings.CloseUnusedTabs;
+        closeUnusedTabs.CheckedChanged += (_, _) =>
+        {
+            settings.CloseUnusedTabs = closeUnusedTabs.Checked;
+            unusedTabHours.Enabled = closeUnusedTabs.Checked;
+        };
+        unusedTabHours.ValueChanged += (_, _) => settings.UnusedTabHours = (int) unusedTabHours.Value;
         showHidden.Checked = settings.ShowHidden;
         showHidden.CheckedChanged += (_, _) =>
         {
@@ -550,7 +579,13 @@ class OptionsForm : Form
         Section(
             "Text editor",
             "Edit, on the right-click menu of a text file, opens it in this editor.",
-            textEditor)
+            textEditor),
+        Section(
+            "Tabs",
+            "Other apps opening folders in Lode leave a tab for each. Lode can close those you " +
+            "haven't looked at for a while, once you have gone to another app. It never closes " +
+            "the tab a window shows, and Reopen closed tab (Ctrl+Shift+T) brings the others back.",
+            Row(closeUnusedTabs, unusedTabHours, unusedTabHoursUnit))
     ];
 
     Control[] BuildViewPage() =>
@@ -588,8 +623,8 @@ class OptionsForm : Form
     [
         Section(
             "Code folder",
-            "The folder your git repositories are in. Folders in it get a Git menu (pull, push, " +
-            "discard, purge) and Update NuGets on their right-click menu.",
+            "The folder your git repositories are in. Folders in it get a Git menu (pull, switch " +
+            "to default branch, push, discard, purge) and Update NuGets on their right-click menu.",
             Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
         Section(
             "Git purge",
@@ -1114,6 +1149,8 @@ class OptionsForm : Form
             MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
+        // Apps find Lode's windows to show a file selected in only while Lode opens folders.
+        ShellWindows.SyncAll();
         UpdateExplorerState();
     }
 

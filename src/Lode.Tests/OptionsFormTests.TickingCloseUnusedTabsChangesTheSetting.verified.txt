@@ -1,0 +1,12 @@
+﻿{
+  before: {
+    CloseUnusedTabs: false,
+    UnusedTabHours: 24,
+    hoursEnabled: false
+  },
+  after: {
+    CloseUnusedTabs: true,
+    UnusedTabHours: 8,
+    hoursEnabled: true
+  }
+}

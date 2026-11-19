@@ -271,6 +271,9 @@ static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool ShowWindow(IntPtr window, int command);
 
+    [LibraryImport("user32.dll", EntryPoint = "RegisterWindowMessageW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int RegisterWindowMessage(string name);
+
     [LibraryImport("shell32.dll")]
     public static partial int SHGetKnownFolderPath(in Guid folderId, uint flags, IntPtr token, out IntPtr path);
 

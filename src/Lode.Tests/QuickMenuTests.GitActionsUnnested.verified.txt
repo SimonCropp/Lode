@@ -21,6 +21,7 @@
   Properties,
   ----,
   Git pull,
+  Git switch to default branch,
   Git push…,
   Git discard…,
   Git purge…,

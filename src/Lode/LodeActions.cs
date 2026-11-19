@@ -39,9 +39,10 @@ static class LodeActions
     static readonly Parent packages = new("Packages", Icons.Package);
 
     /// <summary>
-    /// The git actions, which were one, Git, a submenu of them. See <see cref="Settings"/>.
+    /// The git actions. Pull, push, discard and purge were one, Git, a submenu of them. See
+    /// <see cref="Settings"/>.
     /// </summary>
-    public static IReadOnlyList<string> GitIds { get; } = ["gitPull", "gitPush", "gitDiscard", "gitPurge"];
+    public static IReadOnlyList<string> GitIds { get; } = ["gitPull", "gitSwitchToDefault", "gitPush", "gitDiscard", "gitPurge"];
 
     /// <summary>
     /// Show more options: the full Windows menu. Not a command of its own in the menus, which
@@ -76,6 +77,7 @@ static class LodeActions
         new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true, Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
         new("gitPull", "Git pull", Icons.Pull, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
+        new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
         new("gitPush", "Git push", Icons.Push, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
         new("gitDiscard", "Git discard", Icons.Discard, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
         new("gitPurge", "Git purge", Icons.Purge, 4, Button: false, Menu: true, Parent: git, MenuNested: true),

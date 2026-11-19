@@ -249,6 +249,38 @@ public class OptionsFormTests
             });
     }
 
+    // Off by default, with the hours greyed out until it is ticked.
+    [Test]
+    public async Task TickingCloseUnusedTabsChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var tick = (CheckBox) form.Controls.Find("closeUnusedTabs", true)[0];
+        var hours = (NumericUpDown) form.Controls.Find("unusedTabHours", true)[0];
+        var before = new
+        {
+            settings.CloseUnusedTabs,
+            settings.UnusedTabHours,
+            hoursEnabled = hours.Enabled
+        };
+
+        tick.Checked = true;
+        hours.Value = 8;
+
+        await Verify(
+            new
+            {
+                before,
+                after = new
+                {
+                    settings.CloseUnusedTabs,
+                    settings.UnusedTabHours,
+                    hoursEnabled = hours.Enabled
+                }
+            });
+    }
+
     // Same as Windows by default. Picking another is kept for the next start, which is when it
     // takes effect.
     [Test]

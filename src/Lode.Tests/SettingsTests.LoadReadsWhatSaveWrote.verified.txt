@@ -4,6 +4,8 @@
   ShowRecent: true,
   ExpandToOpenFolder: true,
   PurgePermanently: false,
+  CloseUnusedTabs: false,
+  UnusedTabHours: 24,
   Maximized: true,
   Tabs: [
     D:\Work

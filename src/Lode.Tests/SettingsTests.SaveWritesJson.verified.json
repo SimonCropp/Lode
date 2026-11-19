@@ -14,6 +14,8 @@
   "TextEditor": null,
   "CodeDirectory": null,
   "PurgePermanently": false,
+  "CloseUnusedTabs": false,
+  "UnusedTabHours": 24,
   "LastUpdateCheck": null,
   "AvailableUpdate": null,
   "Left": 10,
@@ -25,6 +27,10 @@
   "Tabs": [
     "C:\\Code",
     "This PC"
+  ],
+  "TabsLastShown": [
+    "2026-11-19T09:00:00+00:00",
+    "2026-11-19T17:30:00+00:00"
   ],
   "ActiveTab": 1
 }

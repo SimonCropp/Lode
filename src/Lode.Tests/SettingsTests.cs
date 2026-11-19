@@ -13,6 +13,7 @@ public class SettingsTests
         settings.Height = 800;
         settings.SplitterDistance = 250;
         settings.Tabs = [@"C:\Code", "This PC"];
+        settings.TabsLastShown = [new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero), new(2026, 11, 19, 17, 30, 0, TimeSpan.Zero)];
         settings.ActiveTab = 1;
 
         settings.Save();

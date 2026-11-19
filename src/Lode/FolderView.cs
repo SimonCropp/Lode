@@ -107,7 +107,8 @@ sealed class FolderView : UserControl
     // machine on the network.
     bool IsSearch => filter.Length > 0 && !ListsPlaces;
 
-    string? pendingSelection;
+    // What to select once the list shows the folder, the first focused.
+    IReadOnlyList<string>? pendingSelection;
     readonly GutterMarquee marquee;
 
     /// <summary>
@@ -295,6 +296,14 @@ sealed class FolderView : UserControl
         }
     }
 
+    /// <summary>
+    /// When the view last stopped or started <see cref="Showing"/>, or was made, for closing tabs
+    /// nobody looks at. Kept by the window it is in, see <see cref="MainForm.CloseUnusedTabs"/>,
+    /// and carried with the tab to another.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal DateTimeOffset LastShown { get; set; }
+
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Filter
     {
@@ -450,7 +459,7 @@ sealed class FolderView : UserControl
     /// is scrolled and the filter.</param>
     /// <param name="select">What to select once the folder is open, for a Reveal. Kept only
     /// if it is opened, so a Reveal that fails or is overtaken leaves nothing behind.</param>
-    void Go(string target, int? position, bool revealFile, bool again = false, string? select = null)
+    void Go(string target, int? position, bool revealFile, bool again = false, IReadOnlyList<string>? select = null)
     {
         var normalized = Locations.Normalize(target);
         if (normalized == null)
@@ -528,7 +537,7 @@ sealed class FolderView : UserControl
 
     // Asks after somewhere on the network, off the UI thread, then does what Go does at once
     // for somewhere on this machine.
-    async Task FindThenOpen(string target, string normalized, int? position, bool revealFile, string? select)
+    async Task FindThenOpen(string target, string normalized, int? position, bool revealFile, IReadOnlyList<string>? select)
     {
         var asking = ++finding;
         looking = normalized;
@@ -641,7 +650,7 @@ sealed class FolderView : UserControl
     // is in the history change: going back to somewhere that has gone, or that the view is taken
     // away from while it is still being asked after, leaves the history as it was. For a folder
     // that moved, what to select once it has been read where it went is kept.
-    void Open(string normalized, int? position, Kept? keep = null, string? select = null)
+    void Open(string normalized, int? position, Kept? keep = null, IReadOnlyList<string>? select = null)
     {
         // Anywhere being asked after has been overtaken.
         finding++;
@@ -662,9 +671,11 @@ sealed class FolderView : UserControl
         // folder that leads back selected, as Explorer does. What was to be selected where the
         // view was is no more.
         pendingSelection = select;
-        if (keep == null)
+        if (keep == null &&
+            pendingSelection == null &&
+            Locations.ChildToward(CurrentPath, normalized) is { } leadingBack)
         {
-            pendingSelection ??= Locations.ChildToward(CurrentPath, normalized);
+            pendingSelection = [leadingBack];
         }
 
         var sameDrive = Locations.SameRoot(CurrentPath, normalized);
@@ -951,8 +962,16 @@ sealed class FolderView : UserControl
     /// that folder, and not filtering it, the view reads it again to select the item, rather than
     /// going there a second time.
     /// </summary>
-    public void Reveal(string path)
+    public void Reveal(string path) =>
+        Reveal([path]);
+
+    /// <summary>
+    /// As <see cref="Reveal(string)"/>, for items in one folder: all of them selected, and the
+    /// first focused.
+    /// </summary>
+    public void Reveal(IReadOnlyList<string> paths)
     {
+        var path = paths[0];
         var parent = Path.GetDirectoryName(path);
         if (parent == null)
         {
@@ -963,13 +982,13 @@ sealed class FolderView : UserControl
         if (filter.Length == 0 &&
             Locations.Same(parent, CurrentPath))
         {
-            pendingSelection = path;
+            pendingSelection = paths;
             Reload();
             return;
         }
 
         // Again where it is already, to clear the filter, which may be hiding the file.
-        Go(parent, null, revealFile: false, again: true, select: path);
+        Go(parent, null, revealFile: false, again: true, select: paths);
     }
 
     /// <summary>
@@ -1621,12 +1640,12 @@ sealed class FolderView : UserControl
 
         remembered = null;
 
-        var reveal = pendingSelection ?? pendingRename;
+        var reveal = pendingSelection ?? (pendingRename == null ? null : [pendingRename]);
         if (reveal != null)
         {
             selected.Clear();
-            selected.Add(reveal);
-            focused = reveal;
+            selected.UnionWith(reveal);
+            focused = reveal[0];
             topIndex = -1;
         }
 
@@ -2386,7 +2405,7 @@ sealed class FolderView : UserControl
         {
             foreach (var entry in selection)
             {
-                pendingSelection = FileOperations.CreateShortcut(entry.FullPath);
+                pendingSelection = [FileOperations.CreateShortcut(entry.FullPath)];
             }
         }
         catch (Exception exception)
