@@ -5,10 +5,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="ProjectDefaults" Version="1.0.190" />
-    <PackageVersion Include="PackageUpdateLib" Version="5.0.1" />
-    <PackageVersion Include="TUnit" Version="1.86.6" />
-    <PackageVersion Include="Verify" Version="33.5.0" />
-    <PackageVersion Include="Verify.TUnit" Version="33.5.0" />
+    <PackageVersion Include="PackageUpdateLib" Version="5.0.2" />
+    <PackageVersion Include="TUnit" Version="1.87.0" />
+    <PackageVersion Include="Verify" Version="33.6.0" />
+    <PackageVersion Include="Verify.TUnit" Version="33.6.0" />
     <PackageVersion Include="Verify.WinForms" Version="6.0.0" />
   </ItemGroup>
 </Project>
