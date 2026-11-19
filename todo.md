@@ -21,15 +21,6 @@ Contents:
 ## Bugs, read
 
 
-### 24. The palette's Terminal, Open in Claude and Coding agent ignore a selected folder
-
-**Where:** `MainForm.cs:1734-1745` and `1777-1779`.
-
-**What happens:** the window's own commands are added first, and `DistinctBy` on the name keeps them. So with a folder selected, **Terminal** from the palette opens in the tab's folder, where the right-click menu and the actions bar open it in the folder selected. The same for **Terminal (admin)**, **Open in Claude** and **Coding agent**. The readme says the palette lists "whatever the right-click menu offers for the selection", so this looks unmeant, but it may be.
-
-**Fix:** where the selection has one of these, let it stand in for the window's.
-
-
 ### 25. A command prompt opened without Windows Terminal breaks on & in a path
 
 **Where:** [FileOperations.cs:304-339](src/Lode/FileOperations.cs#L304).

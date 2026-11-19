@@ -564,6 +564,63 @@ public class WindowsTests
         }
     }
 
+    // From the palette, Terminal, Terminal (admin), Open in Claude and Coding agent open in the
+    // folder selected, as the right-click menu and the actions bar do, and in the tab's folder
+    // with a file selected, which has none of its own.
+    [Test]
+    public async Task PaletteOpensInTheFolderSelected()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("notes.txt"), "notes");
+        using var form = await Show(fixture, fixture.Root);
+        var claude = ClaudeDesktop.IsInstalled;
+        var agents = CodingAgents.Installed;
+        var startTerminal = FileOperations.StartTerminal;
+        var startLink = ClaudeDesktop.StartLink;
+        var opened = new List<string>();
+        ClaudeDesktop.IsInstalled = () => true;
+        CodingAgents.Installed = () => [new("Agent", @"C:\Tools\agent.exe")];
+        FileOperations.StartTerminal = (tabs, admin) =>
+            opened.AddRange(tabs.Select(_ => $"{(admin ? "admin " : "")}terminal {fixture.Relative(_.Directory)} {string.Join(" ", _.Command)}".TrimEnd()));
+        ClaudeDesktop.StartLink = opened.Add;
+        try
+        {
+            async Task<List<string>> Run(string selected)
+            {
+                opened.Clear();
+                form.ActiveView!.Reveal(fixture.At(selected));
+                await Pump.Loaded(form.ActiveView);
+                var commands = form.PaletteCommands();
+                File.WriteAllLines(@"C:\Users\simon\AppData\Local\Temp\claude\b4cb8d544a6def5f\599f1b82-1a1b-4412-a890-6c924b123970\scratchpad\names-" + selected + ".txt", commands.Select(_ => _.Name + " | " + _.Action.Target?.GetType().Name).Append("SELECTED " + string.Join(",", form.ActiveView.SelectedEntries().Select(_ => _.FullPath))));
+                foreach (var name in new[] { "Terminal", "Terminal (admin)", "Open in Claude", "Coding agent: Agent" })
+                {
+                    commands.Single(_ => _.Name == name).Action();
+                }
+
+                return opened
+                    .Select(_ => _.Replace(Uri.EscapeDataString(fixture.Root), "{Root}"))
+                    .ToList();
+            }
+
+            var folder = await Run("Docs");
+            var file = await Run("notes.txt");
+
+            await Verify(
+                new
+                {
+                    folder,
+                    file
+                });
+        }
+        finally
+        {
+            ClaudeDesktop.IsInstalled = claude;
+            CodingAgents.Installed = agents;
+            FileOperations.StartTerminal = startTerminal;
+            ClaudeDesktop.StartLink = startLink;
+        }
+    }
+
     // The ⋯ menu at the right of the address bar: Lode's own commands, none of the actions.
     [Test]
     public async Task WindowMenu()

@@ -107,7 +107,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
    ![Tabs](src/Lode.Tests/MainFormTests.Tabs.verified.png)
 
- * **Command palette** (Ctrl+Shift+P, or the ⋯ menu): type part of a command's name and press Enter. It lists the window's commands (navigation, tabs, hidden items, terminal, Claude, coding agents, pinning, options) and whatever the right-click menu offers for the selection, or for the folder when nothing is selected.
+ * **Command palette** (Ctrl+Shift+P, or the ⋯ menu): type part of a command's name and press Enter. It lists the window's commands (navigation, tabs, hidden items, terminal, Claude, coding agents, pinning, options) and whatever the right-click menu offers for the selection, or for the folder when nothing is selected. With a folder selected, Terminal, Open in Claude and Coding agent open in that folder, as on its right-click menu.
 
    ![Command palette](src/Lode.Tests/MenuTests.CommandPalette.verified.png)
 

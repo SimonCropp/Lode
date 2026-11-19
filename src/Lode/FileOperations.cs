@@ -405,7 +405,16 @@ static class FileOperations
     /// the lot with <paramref name="admin"/>; or a command prompt for each where it is not
     /// installed, which runs the tab's command.
     /// </summary>
-    public static void OpenTerminal(IReadOnlyList<TerminalTab> tabs, bool admin = false)
+    public static void OpenTerminal(IReadOnlyList<TerminalTab> tabs, bool admin = false) =>
+        StartTerminal(tabs, admin);
+
+    /// <summary>
+    /// Starts the terminal for <see cref="OpenTerminal(IReadOnlyList{TerminalTab}, bool)"/>.
+    /// Tests swap it to see where one would open, without opening it.
+    /// </summary>
+    internal static Action<IReadOnlyList<TerminalTab>, bool> StartTerminal { get; set; } = Start;
+
+    static void Start(IReadOnlyList<TerminalTab> tabs, bool admin)
     {
         var verb = admin ? "runas" : "";
         try

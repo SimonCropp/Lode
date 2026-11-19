@@ -1839,7 +1839,22 @@ class MainForm : Form
                 viewCommands = [];
             }
 
-            AddViewCommands(commands, view, viewCommands, "");
+            var selectionCommands = new List<CommandPalette.Command>();
+            AddViewCommands(selectionCommands, view, viewCommands, "");
+
+            // The window's Terminal, Open in Claude and Coding agent open in the tab's folder.
+            // Where the selection has its own, that one stands in, in the window's place, so it
+            // opens in the folder selected, as the right-click menu and the actions bar do.
+            for (var position = 0; position < commands.Count; position++)
+            {
+                if (OpensInTheFolder(commands[position].Name) &&
+                    selectionCommands.FirstOrDefault(_ => SameName(_, commands[position])) is { } own)
+                {
+                    commands[position] = own;
+                }
+            }
+
+            commands.AddRange(selectionCommands);
         }
 
         Add("Options…", ShowOptions);
@@ -1851,6 +1866,13 @@ class MainForm : Form
             .DistinctBy(_ => _.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
+
+    static bool OpensInTheFolder(string name) =>
+        name is "Terminal" or "Terminal (admin)" or "Open in Claude" ||
+        name.StartsWith("Coding agent: ", StringComparison.Ordinal);
+
+    static bool SameName(CommandPalette.Command command, CommandPalette.Command other) =>
+        string.Equals(command.Name, other.Name, StringComparison.CurrentCultureIgnoreCase);
 
     // A submenu's entries are named after it: "New: Text Document", "Open with: Notepad".
     static void AddViewCommands(List<CommandPalette.Command> commands, FolderView view, IReadOnlyList<QuickMenu.Command?> viewCommands, string prefix)

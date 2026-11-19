@@ -57,6 +57,18 @@ static class ClaudeDesktop
     /// <summary>
     /// The link that opens a new session in <paramref name="folder"/>.
     /// </summary>
+    /// <summary>
+    /// Opens a link. Tests swap it to see what would be opened, without opening it.
+    /// </summary>
+    internal static Action<string> StartLink { get; set; } = static link =>
+    {
+        var startInfo = new ProcessStartInfo(link)
+        {
+            UseShellExecute = true
+        };
+        Process.Start(startInfo)?.Dispose();
+    };
+
     internal static string Link(string folder) =>
         $"claude://code/new?folder={Uri.EscapeDataString(folder)}";
 
@@ -64,11 +76,7 @@ static class ClaudeDesktop
     {
         try
         {
-            var startInfo = new ProcessStartInfo(Link(folder))
-            {
-                UseShellExecute = true
-            };
-            Process.Start(startInfo)?.Dispose();
+            StartLink(Link(folder));
         }
         catch (Exception exception)
         {

@@ -1,0 +1,14 @@
+﻿{
+  folder: [
+    terminal Projects/Docs,
+    admin terminal Projects/Docs,
+    claude://code/new?folder={Root}%5CDocs,
+    terminal Projects/Docs C:\Tools\agent.exe
+  ],
+  file: [
+    terminal Projects,
+    admin terminal Projects,
+    claude://code/new?folder={Root},
+    terminal Projects C:\Tools\agent.exe
+  ]
+}
