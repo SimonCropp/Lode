@@ -195,6 +195,22 @@ public class CodeCommandsTests
         await Assert.That(theirOwn).IsEqualTo("[]");
     }
 
+    // Git words what it prints in English, whatever the user's language, since Purge reads its
+    // "Would remove" lines. File names still come through as UTF-8.
+    [Test]
+    public async Task GitSpeaksEnglish()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "St Mary’s ä.txt"), "");
+
+        var locale = CodeCommands.Git(repo, "-c", "alias.locale=!echo \"[$LC_ALL]\"", "locale").Output;
+        var clean = CodeCommands.Git(repo, "-c", "core.quotepath=off", "clean", "-n").Output;
+
+        await Assert.That(locale).IsEqualTo("[C]");
+        await Assert.That(clean).IsEqualTo("Would remove St Mary’s ä.txt");
+    }
+
     [Test]
     public async Task PushCommitsWithTheMessageAndPushes()
     {

@@ -228,6 +228,10 @@ static class CodeCommands
             // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
             // agent holding it, or a host whose key is not known yet.
             startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+            // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
+            // File names still come as UTF-8.
+            startInfo.Environment["LC_ALL"] = "C";
             if (network &&
                 NoSshCommandSet(repo, startInfo))
             {

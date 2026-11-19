@@ -31,17 +31,6 @@ Contents:
 **Fix:** in `Git`, set `GIT_CEILING_DIRECTORIES` to the folder above the code folder, and take `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` out of the environment.
 
 
-### 32. Purge reads git's English
-
-**Where:** [GitPurge.cs:164-194](src/Lode/GitPurge.cs#L164) (`const string prefix = "Would remove "`).
-
-**What happens:** a git that words its dry run in another language would match nothing, and the entry would say "Nothing to purge", in green.
-
-**Unverified:** that Git for Windows translates what it prints with `LANG` not set. It may ship no translations at all.
-
-**Fix:** `LC_ALL=C` in `Git`, which costs nothing.
-
-
 ## Smaller bugs
 
 All read, none run.
