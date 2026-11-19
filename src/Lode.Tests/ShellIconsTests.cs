@@ -9,6 +9,26 @@
 [NotInParallel("windows")]
 public class ShellIconsTests
 {
+    // A program's or shortcut's own icon is read off the thread that asks: until it is known, the
+    // row has the icon every shortcut has, and is told once it is, when asking again gives it.
+    [Test]
+    public async Task AFilesOwnIconIsReadOffTheThreadThatAsks()
+    {
+        using var fixture = Fixture.Create();
+        var shortcut = FileOperations.CreateShortcut(fixture.At("Docs"));
+        var modified = File.GetLastWriteTime(shortcut);
+        var told = 0;
+
+        var first = ShellIcons.GetIcon(shortcut, false, modified, () => told++);
+        await Pump.Until(() => told > 0);
+        var known = ShellIcons.GetIcon(shortcut, false, modified, () => told++);
+        await Pump.For(TimeSpan.FromMilliseconds(100));
+
+        await Assert.That(first).IsNotEqualTo(ShellIcons.GetActualIcon(shortcut));
+        await Assert.That(known).IsEqualTo(ShellIcons.GetActualIcon(shortcut));
+        await Assert.That(told).IsEqualTo(1);
+    }
+
     // IDO_SHGIOI_LINK: the shell's shortcut arrow.
     const int linkOverlayId = 0x0FFFFFFE;
 

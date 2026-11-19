@@ -244,7 +244,12 @@ static class ShellIcons
 
     /// <param name="modified">When the file was last written, for one listed in a folder. Its
     /// own icon, if it has one, is then remembered until it is written again.</param>
-    public static int GetIcon(string path, bool isDirectory, DateTime? modified)
+    /// <param name="known">For a file that has its own icon, a program or shortcut, not known
+    /// yet: the file is read for it off the thread that asked, which is told once it is known,
+    /// and is given the icon its extension has until then. Reading it can take a while for a
+    /// file on a share, or a shortcut to somewhere on the network. Without this, it is read
+    /// there and then.</param>
+    public static int GetIcon(string path, bool isDirectory, DateTime? modified, Action? known = null)
     {
         if (isDirectory)
         {
@@ -254,14 +259,67 @@ static class ShellIcons
         var extension = Path.GetExtension(path.AsSpan());
         if (perFileIconExtensions.Contains(extension))
         {
-            if (modified is { } written)
+            if (modified is not { } written)
+            {
+                return GetActualIcon(path);
+            }
+
+            if (known == null)
             {
                 return GetFileIcon(path, written);
             }
 
-            return GetActualIcon(path);
+            if (iconsByFile.TryGetValue(path, out var remembered) &&
+                remembered.Modified == written)
+            {
+                return remembered.Icon;
+            }
+
+            Tell(ReadFileIcon(path, written), known);
+            return ExtensionIcon(extension);
         }
 
+        return ExtensionIcon(extension);
+    }
+
+    // Each file being read for its icon, so asking again while it is waits for the same read.
+    static readonly ConcurrentDictionary<(string Path, DateTime Modified), Task> readingFileIcons = new();
+
+    static Task ReadFileIcon(string path, DateTime modified) =>
+        readingFileIcons.GetOrAdd(
+            (path, modified),
+            static key => Task.Run(
+                () =>
+                {
+                    try
+                    {
+                        GetFileIcon(key.Path, key.Modified);
+                    }
+                    finally
+                    {
+                        readingFileIcons.TryRemove(key, out _);
+                    }
+                }));
+
+    // Back on the thread that asked, as awaiting there returns to it.
+    static async void Tell(Task reading, Action known)
+    {
+        try
+        {
+            await reading;
+        }
+        catch (Exception)
+        {
+            // The extension's icon stays.
+            return;
+        }
+
+        known();
+    }
+
+    // The icon every file of the extension shows, from the extension alone.
+    static int ExtensionIcon(CharSpan extension)
+    {
         if (iconsByExtension.TryGetValue(extension, out var cached))
         {
             return cached;

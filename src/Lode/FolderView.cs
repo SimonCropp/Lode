@@ -1993,6 +1993,35 @@ sealed class FolderView : UserControl
         return "";
     }
 
+    // Programs' and shortcuts' own icons arrive one by one, read off the UI thread as their
+    // rows are first made. The rows are made again for them once, after as many as have come.
+    bool fileIconsArriving;
+
+    void FileIconKnown()
+    {
+        if (IsDisposed ||
+            fileIconsArriving)
+        {
+            return;
+        }
+
+        // Without a window yet, nothing has been drawn: the rows are made with it as they are.
+        if (!IsHandleCreated)
+        {
+            rows.Clear();
+            return;
+        }
+
+        fileIconsArriving = true;
+        BeginInvoke(
+            () =>
+            {
+                fileIconsArriving = false;
+                rows.Clear();
+                list.Invalidate();
+            });
+    }
+
     void DriveDescribed()
     {
         if (IsDisposed ||
@@ -2068,7 +2097,7 @@ sealed class FolderView : UserControl
         ];
         // A shortcut's icon is what it points at, with the shell's arrow over it, as Explorer has it.
         var icon = ShellListView.PaddedIcon(
-            ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified),
+            ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified, FileIconKnown),
             ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory));
         var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
         if (entry.IsHidden)

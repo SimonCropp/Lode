@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 3. Icons of programs and shortcuts are read on the UI thread as rows come into view
-
-**Where:** [FolderView.cs:1964-1996](src/Lode/FolderView.cs#L1964) (`CreateItem`), [ShellIcons.cs:182-214](src/Lode/ShellIcons.cs#L182) (`GetIcon`), [ShellIcons.cs:294-325](src/Lode/ShellIcons.cs#L294) (`GetActualIcon`, `GetFileIcon`).
-
-**What happens:** for `.exe`, `.lnk`, `.ico`, `.cur`, `.ani`, `.url`, `.scr` and `.appref-ms`, the first row made for a file asks the shell for that file's own icon, `SHGetFileInfo` on its path, which reads the file. It is kept after that, by path and date. So the first scroll through a folder of programs, or of search results full of them, reads each on the UI thread, over the network for a folder on a share. A shortcut to somewhere on the network that can't be reached may hold the window for as long as the network takes to say so. That last is unverified.
-
-**Fix:** give the row the icon its extension implies, ask for the file's own off the UI thread, and make the row again once it is known, as `DriveDescribed` does for drives ([FolderView.cs:1909-1919](src/Lode/FolderView.cs#L1909)).
-
-
 ### 4. One tick in Options, or one pin, reads every window's folder again and rebuilds every tree
 
 **Where:** `OptionsForm.cs:787-791` and `800-807` (`SettingsChanged?.Invoke()`), `MainForm.cs:1484` and `1538-1566` (`RebuildActionsBar(); view.Reload(); RebuildTree();`), `FolderTree.cs:181-206` (`Rebuild`), `FolderTree.cs:527-541` (`LoadDrives`), `MainForm.cs:113` (`places.Changed`).
