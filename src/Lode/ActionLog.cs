@@ -25,6 +25,17 @@ static class ActionLog
         public string Summary { get; internal set; } = "Running…";
         public string Details { get; internal set; } = "";
 
+        /// <summary>
+        /// When it finished, while it is still running none.
+        /// </summary>
+        public DateTimeOffset? Finished { get; internal set; }
+
+        /// <summary>
+        /// Whether it leaves the list a while after it finished: it went well, or was
+        /// cancelled. One that failed stays until cleared, to be seen.
+        /// </summary>
+        public bool AgesOut { get; internal set; }
+
         // Set for work that can be stopped.
         internal CancelSource? Cancellation { get; init; }
 
@@ -169,7 +180,8 @@ static class ActionLog
         }
 
         // What it did before it stopped is in the details.
-        if (cancel.IsCancellationRequested)
+        var cancelled = cancel.IsCancellationRequested;
+        if (cancelled)
         {
             outcome = outcome with
             {
@@ -183,8 +195,59 @@ static class ActionLog
         entry.State = outcome.Succeeded ? State.Succeeded : State.Failed;
         entry.Summary = outcome.Summary;
         entry.Details = outcome.Details;
+        entry.Finished = Time.GetUtcNow();
+        entry.AgesOut = outcome.Succeeded || cancelled;
+        if (entry.AgesOut)
+        {
+            ageing.Start();
+        }
+
         Changed?.Invoke();
         return entry;
+    }
+
+    /// <summary>
+    /// How long an entry that went well, or was cancelled, stays once it has finished, so the
+    /// list needn't be cleared by hand.
+    /// </summary>
+    internal static TimeSpan AgeOutAfter { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// The time, which tests set.
+    /// </summary>
+    internal static TimeProvider Time { get; set; } = TimeProvider.System;
+
+    // Goes over the entries every few seconds while any are to leave, so each goes close to its
+    // time.
+    static readonly Timer ageing = CreateAgeing();
+
+    static Timer CreateAgeing()
+    {
+        var timer = new Timer
+        {
+            Interval = 5000
+        };
+        timer.Tick += (_, _) => AgeOut();
+        return timer;
+    }
+
+    /// <summary>
+    /// Takes out the entries that went well, or were cancelled, and finished
+    /// <see cref="AgeOutAfter"/> ago or longer.
+    /// </summary>
+    internal static void AgeOut()
+    {
+        var now = Time.GetUtcNow();
+        var removed = entries.RemoveAll(_ => _ is { AgesOut: true, Finished: { } finished } && now - finished >= AgeOutAfter);
+        if (!entries.Any(_ => _.AgesOut))
+        {
+            ageing.Stop();
+        }
+
+        if (removed > 0)
+        {
+            Changed?.Invoke();
+        }
     }
 
     // Created on the UI thread, so it can post reports made on other threads back to it.
@@ -279,6 +342,7 @@ static class ActionLog
     internal static void Reset()
     {
         entries.Clear();
+        ageing.Stop();
         Changed?.Invoke();
     }
 }

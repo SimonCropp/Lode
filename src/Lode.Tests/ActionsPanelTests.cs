@@ -31,6 +31,51 @@ public class ActionsPanelTests
         await Assert.That(three.Where).IsEqualTo("Lode, Verify, Polyfill");
     }
 
+    // A minute after it finished, an entry that went well, or was cancelled, leaves the list, so
+    // it needn't be cleared by hand. One that failed stays, to be seen, as does one still
+    // running, and one that finished since.
+    [Test]
+    public async Task FinishedEntriesAgeOut()
+    {
+        var clock = new Clock(new(2026, 11, 20, 9, 0, 0, TimeSpan.Zero));
+        ActionLog.Time = clock;
+        try
+        {
+            static Task<ActionLog.Outcome> Ended(bool succeeded) =>
+                Task.FromResult(new ActionLog.Outcome(succeeded, "", ""));
+
+            await ActionLog.Run("Git pull", @"C:\Code\Done", () => Ended(true));
+            await ActionLog.Run("Git pull", @"C:\Code\Failed", () => Ended(false));
+            var cancelling = ActionLog.Run(
+                "Git pull",
+                [@"C:\Code\Cancelled"],
+                async (_, cancel) =>
+                {
+                    await Task.Delay(Timeout.Infinite, cancel);
+                    return new(true, "", "");
+                });
+            ActionLog.Entries[^1].Cancel();
+            await cancelling;
+            _ = ActionLog.Run("Git pull", @"C:\Code\Running", () => new TaskCompletionSource<ActionLog.Outcome>().Task);
+            clock.Now += TimeSpan.FromSeconds(59);
+            await ActionLog.Run("Git pull", @"C:\Code\Since", () => Ended(true));
+            List<string> Names() =>
+                ActionLog.Entries.Select(_ => _.FolderName).ToList();
+
+            ActionLog.AgeOut();
+            var before = Names();
+            clock.Now += TimeSpan.FromSeconds(1);
+            ActionLog.AgeOut();
+
+            await Assert.That(before).IsEquivalentTo(["Done", "Failed", "Cancelled", "Running", "Since"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(Names()).IsEquivalentTo(["Failed", "Running", "Since"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        }
+        finally
+        {
+            ActionLog.Time = TimeProvider.System;
+        }
+    }
+
     // Work that can be stopped can be cancelled while it runs. It ends as failed, "Cancelled",
     // with what it did till then in its details. Work that can't be stopped can't be cancelled.
     [Test]
