@@ -91,6 +91,20 @@ static class ExplorerStyle
     public static Color SecondaryText => Pick(Color.FromArgb(0x6D, 0x6D, 0x6D), Color.FromArgb(0xA6, 0xA6, 0xA6), SystemColors.WindowText);
 
     /// <summary>
+    /// The Git column's word for what has happened to a file: amber for changes not yet staged,
+    /// green for those staged and for new files, red for a deletion or a conflict. High contrast
+    /// keeps its own text colour, the word saying it.
+    /// </summary>
+    public static Color ChangeColor(GitChange change) =>
+        change switch
+        {
+            GitChange.Modified => Pick(Color.FromArgb(0x89, 0x55, 0x03), Color.FromArgb(0xE2, 0xC0, 0x8D), SystemColors.WindowText),
+            GitChange.Untracked => Pick(Color.FromArgb(0x00, 0x71, 0x00), Color.FromArgb(0x73, 0xC9, 0x91), SystemColors.WindowText),
+            GitChange.Deleted or GitChange.Conflicted => Pick(Color.FromArgb(0xAD, 0x07, 0x07), Color.FromArgb(0xE4, 0x67, 0x6B), SystemColors.WindowText),
+            _ => Pick(Color.FromArgb(0x58, 0x7C, 0x0C), Color.FromArgb(0x81, 0xB8, 0x8B), SystemColors.WindowText)
+        };
+
+    /// <summary>
     /// A button's glyph while it does nothing: Back with nowhere to go back to.
     /// </summary>
     public static Color DisabledText => Pick(Color.FromArgb(0xA4, 0xA4, 0xA4), Color.FromArgb(0x6E, 0x6E, 0x6E), SystemColors.GrayText);

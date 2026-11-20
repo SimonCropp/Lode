@@ -5,20 +5,24 @@
 sealed class FolderView : UserControl
 {
     internal const int nameColumn = 0;
-    internal const int folderColumn = 1;
-    const int dateColumn = 2;
-    const int typeColumn = 3;
-    const int sizeColumn = 4;
+    internal const int gitColumn = 1;
+    internal const int folderColumn = 2;
+    const int dateColumn = 3;
+    const int typeColumn = 4;
+    const int sizeColumn = 5;
 
     // The list's columns, in order, by the index sorting and the cells use. Name is always
     // shown; the others can be hidden from the header's right-click menu, in every view at once.
     // On This PC, Date modified and Size show each drive's free space and total size. Folder,
-    // where each item is, only a search has, whose items come from all through the folder.
+    // where each item is, only a search has, whose items come from all through the folder. Git
+    // only a folder in the code folder has, in a repository or listing some: beside the name, as
+    // it says what has become of the file, or the repository, it names.
     sealed record ColumnDefinition(string Key, string Title, string ThisPCTitle, int Width, HorizontalAlignment Alignment);
 
     static readonly ColumnDefinition[] columnDefinitions =
     [
         new("Name", "Name", "Name", 380, HorizontalAlignment.Left),
+        new("Git", "Git", "Git", 220, HorizontalAlignment.Left),
         new("Folder", "Folder", "Folder", 220, HorizontalAlignment.Left),
         new("Date", "Date modified", "Free space", 150, HorizontalAlignment.Left),
         new("Type", "Type", "Type", 180, HorizontalAlignment.Left),
@@ -104,6 +108,62 @@ sealed class FolderView : UserControl
     bool foundPending;
 
     /// <summary>
+    /// Reads a repository's state, for the status bar and the Git column: with LibGit2Sharp, or
+    /// git for a repository of many files, whichever is faster (GitStateBenchmarks).
+    /// </summary>
+    internal static GitState.Reader ReadGit = LibGitState.FromFaster;
+
+    // The folders listed that are repositories, found as the folder is read, and the repository
+    // the folder is in, for the status bar. Only in the code folder, where the git actions are
+    // too: a repository above it, a home folder kept in git say, would have everything in the
+    // code folder changed.
+    HashSet<string> repos = new(StringComparer.OrdinalIgnoreCase);
+    string? containingRepo;
+
+    // What each of those repositories was last read to be, by its path, and what the Git column
+    // says of each item from that.
+    readonly Dictionary<string, GitState> gitStates = new(StringComparer.OrdinalIgnoreCase);
+    GitCells gitCells = GitCells.None;
+
+    // The reading of the states under way, one at a time: asked for again meanwhile, it reads
+    // again once it is done. The version stops what is read for a folder left landing in the
+    // folder gone to.
+    CancelSource? gitCancel;
+    bool gitPending;
+    int gitVersion;
+    bool gitStatesArriving;
+
+    // When the states were last read, as a Stopwatch timestamp. Zero before they ever were.
+    long gitReadAt;
+
+    // How long after the states were read the window coming back to the front reads them again.
+    // Going between windows a moment apart reads them once: a code folder is dozens of reads.
+    static readonly TimeSpan gitFresh = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// The reading of the repositories' states under way. Completes once they are all shown.
+    /// </summary>
+    internal Task GitReading { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// The state of the repository the folder is in, for the status bar. Nothing outside the
+    /// code folder, or outside a repository, or until it has been read.
+    /// </summary>
+    public string GitText
+    {
+        get
+        {
+            if (containingRepo != null &&
+                gitStates.TryGetValue(containingRepo, out var state))
+            {
+                return state.Describe();
+            }
+
+            return "";
+        }
+    }
+
+    /// <summary>
     /// The search of the subfolders under way. Completes once the list shows all it found.
     /// </summary>
     public Task Searching { get; private set; } = Task.CompletedTask;
@@ -157,7 +217,7 @@ sealed class FolderView : UserControl
     // Stands in for a row that is asked for but not needed: one that has gone, or one of those
     // being selected again, which the list asks for only to say that it changed. A cell for every
     // column there could be, so whichever it is asked for is there.
-    readonly ListViewItem blankRow = new(["", "", "", "", ""]);
+    readonly ListViewItem blankRow = new(["", "", "", "", "", ""]);
     bool restoring;
 
     // The rows are to be made again even if the folder turns out not to have changed.
@@ -295,9 +355,15 @@ sealed class FolderView : UserControl
                     ReadFolder(preserveState);
                 }
             }
-            else if (searchStale)
+            else
             {
-                SearchAgain();
+                if (searchStale)
+                {
+                    SearchAgain();
+                }
+
+                // The folder is as it was, but its repositories may not be: git changes only .git.
+                ReadGitStateUnlessFresh();
             }
         }
     }
@@ -688,6 +754,7 @@ sealed class FolderView : UserControl
         CurrentPath = normalized;
         filter = "";
         StopSearch();
+        StopGitState();
         error = null;
 
         // Each folder is sorted as it was last, as in Explorer. Following one moved or renamed,
@@ -1057,11 +1124,20 @@ sealed class FolderView : UserControl
         var freeSpace = places.FreeSpace;
         var watching = watcher;
         var watchingParent = parentWatcher;
+        string? codeFolder = null;
+        if (settings.IsCode(path))
+        {
+            codeFolder = settings.CodeDirectory;
+        }
+
+        // Not changed once made, so sorting by it there is safe.
+        var cells = gitCells;
         loading = true;
 
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
         // space is read there as well, as asking a drive mapped to a share waits on the network.
-        var (loaded, late, free, failure, nearest) = await Task.Run(
+        // So are which folders are repositories.
+        var (loaded, late, free, failure, nearest, foundRepos, containing) = await Task.Run(
             () =>
             {
                 var space = FreeSpaceOf(path, freeSpace);
@@ -1072,14 +1148,15 @@ sealed class FolderView : UserControl
                 try
                 {
                     var found = Enumerate(path, showHidden, hiddenSystem, out var late);
-                    found.Sort((first, second) => Compare(first, second, column, ascending));
-                    return (found, late, space, null, null);
+                    found.Sort((first, second) => Compare(first, second, column, ascending, cells));
+                    var (foundRepos, containing) = FindRepos(found, path, codeFolder);
+                    return (found, late, space, null, null, foundRepos, containing);
                 }
                 catch (Exception exception)
                 {
                     // Not there to read. Gone, the view goes up to the nearest folder that is.
                     var nearest = MeansGone(exception) ? NearestFolder(path) : null;
-                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message, nearest);
+                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message, nearest, new HashSet<string>(), (string?)null);
                 }
             });
 
@@ -1099,12 +1176,270 @@ sealed class FolderView : UserControl
         entries = loaded;
         entriesSort = (column, ascending);
         error = failure;
+        repos = foundRepos;
+        containingRepo = containing;
+
+        // Sorted by Git when last open: the column shows only now the repositories are known.
+        if (!preserveState &&
+            sortColumn != gitColumn &&
+            settings.SortOf(path) is { Column: "Git" })
+        {
+            (sortColumn, sortAscending) = SortOfFolder();
+        }
+
         Populate(preserveState);
         ReadTook(Stopwatch.GetElapsedTime(started));
         foreach (var drive in late)
         {
             _ = SizeLate(version, drive);
         }
+
+        ReadGitState();
+    }
+
+    // The folders listed that are repositories, and the repository the folder is in, up to the
+    // code folder. Without a code folder, none. A folder in a repository is not looked through
+    // for more: one nested in another is rare, and the folder may hold thousands of folders.
+    static (HashSet<string> Repos, string? Containing) FindRepos(List<FileEntry> entries, string path, string? codeFolder)
+    {
+        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (codeFolder == null)
+        {
+            return (found, null);
+        }
+
+        var containing = CodeCommands.RepoContaining(path, codeFolder);
+        if (containing != null)
+        {
+            return (found, containing);
+        }
+
+        foreach (var entry in entries)
+        {
+            if (entry.IsDirectory &&
+                CodeCommands.IsRepo(entry.FullPath))
+            {
+                found.Add(entry.FullPath);
+            }
+        }
+
+        return (found, null);
+    }
+
+    // Lets go of the repositories' states, and of reading them: the folder is another.
+    void StopGitState()
+    {
+        gitVersion++;
+        gitCancel?.Cancel();
+        gitCancel = null;
+        gitPending = false;
+        gitStates.Clear();
+        gitCells = GitCells.None;
+        repos = new(StringComparer.OrdinalIgnoreCase);
+        containingRepo = null;
+        gitReadAt = 0;
+        GitReading = Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reads the states again, as <see cref="ReadGitState"/> does, unless they were read only
+    /// a moment ago: the window came back to the front.
+    /// </summary>
+    public void ReadGitStateUnlessFresh()
+    {
+        if (gitReadAt != 0 &&
+            Stopwatch.GetElapsedTime(gitReadAt) < gitFresh)
+        {
+            return;
+        }
+
+        ReadGitState();
+    }
+
+    /// <summary>
+    /// Reads again the state of the repository the folder is in, and of those it lists while
+    /// the Git column shows: the folder was read, or the window came back to the front, where
+    /// a commit made in a terminal meanwhile changed it, or a git action finished. A view nobody
+    /// can see reads once it shows.
+    /// </summary>
+    public void ReadGitState()
+    {
+        if (!showing ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        var wanted = new List<string>();
+        if (containingRepo != null)
+        {
+            wanted.Add(containingRepo);
+        }
+
+        // In the order they are listed, so those at the top are read first.
+        if (IsColumnShown(gitColumn))
+        {
+            wanted.AddRange(
+                displayed
+                    .Where(_ => repos.Contains(_.FullPath))
+                    .Select(_ => _.FullPath));
+        }
+
+        if (wanted.Count == 0)
+        {
+            return;
+        }
+
+        if (gitCancel != null)
+        {
+            gitPending = true;
+            return;
+        }
+
+        var cancel = new CancelSource();
+        gitCancel = cancel;
+        GitReading = ReadGitStateAsync(wanted, gitVersion, cancel);
+    }
+
+    // Shown as each is read, then all of them once they are, so none is missed when it is done.
+    async Task ReadGitStateAsync(List<string> wanted, int version, CancelSource cancel)
+    {
+        using (cancel)
+        {
+            IProgress<GitRead> progress = new Progress<GitRead>(_ => GitStateRead(version, _));
+            var reader = ReadGit;
+            var token = cancel.Token;
+            List<GitRead> read;
+            try
+            {
+                read = await Task.Run(
+                    () => CodeCommands.InParallel(
+                        wanted,
+                        token,
+                        repo =>
+                        {
+                            var state = new GitRead(repo, reader(repo, token));
+                            progress.Report(state);
+                            return state;
+                        }),
+                    token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Let go of before it started: the folder is another, or the view closed.
+                return;
+            }
+
+            if (version != gitVersion ||
+                IsDisposed)
+            {
+                return;
+            }
+
+            gitCancel = null;
+            gitReadAt = Stopwatch.GetTimestamp();
+            foreach (var state in read)
+            {
+                GitStateRead(version, state);
+            }
+
+            // Shown now, rather than once the list gets round to it, so that once this is done
+            // the list shows them.
+            if (gitStatesArriving)
+            {
+                gitStatesArriving = false;
+                ShowGitStates();
+            }
+
+            if (gitPending)
+            {
+                gitPending = false;
+                ReadGitState();
+            }
+        }
+    }
+
+    sealed record GitRead(string Repo, GitState? State);
+
+    void GitStateRead(int version, GitRead read)
+    {
+        if (version != gitVersion ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        if (read.State == null)
+        {
+            if (!gitStates.Remove(read.Repo))
+            {
+                return;
+            }
+        }
+        else
+        {
+            if (gitStates.TryGetValue(read.Repo, out var known) &&
+                known == read.State)
+            {
+                return;
+            }
+
+            gitStates[read.Repo] = read.State;
+        }
+
+        GitStatesChanged();
+    }
+
+    // The states arrive one by one. The rows are made again for them once, after as many as have
+    // come, and the list sorted again if it is sorted by them, unless a name is being edited,
+    // which sorting would end.
+    void GitStatesChanged()
+    {
+        if (!IsHandleCreated)
+        {
+            ShowGitStates();
+            return;
+        }
+
+        if (gitStatesArriving)
+        {
+            return;
+        }
+
+        gitStatesArriving = true;
+        BeginInvoke(
+            () =>
+            {
+                // Shown already, as the reading finished first.
+                if (!gitStatesArriving ||
+                    IsDisposed)
+                {
+                    return;
+                }
+
+                gitStatesArriving = false;
+                ShowGitStates();
+            });
+    }
+
+    void ShowGitStates()
+    {
+        GitState? containing = null;
+        if (containingRepo != null)
+        {
+            gitStates.TryGetValue(containingRepo, out containing);
+        }
+
+        gitCells = new(gitStates, containingRepo, containing);
+        if (sortColumn == gitColumn &&
+            !editing)
+        {
+            entriesSort = (-1, false);
+            foundSort = (-1, false);
+        }
+
+        rowsStale = true;
+        Populate(true);
     }
 
     // A drive of This PC's that said how big it is only after it was listed without, put in the
@@ -1348,10 +1683,11 @@ sealed class FolderView : UserControl
             AddFound(batch, cancel);
             pace.Shown(Stopwatch.GetElapsedTime(started));
         });
+        var cells = gitCells;
         try
         {
             await Task.Delay(searchDelay, cancel);
-            await Task.Run(() => SearchSubfolders(root, pattern, showHidden, hiddenSystem, sort, progress, pace, cancel), cancel);
+            await Task.Run(() => SearchSubfolders(root, pattern, showHidden, hiddenSystem, sort, cells, progress, pace, cancel), cancel);
         }
         catch (OperationCanceledException)
         {
@@ -1421,7 +1757,7 @@ sealed class FolderView : UserControl
 
         // The list may have been sorted another way since the search started.
         var sort = (sortColumn, sortAscending);
-        var compare = Order(sortColumn, sortAscending);
+        var compare = Order(sortColumn, sortAscending, gitCells);
         if (foundSort != sort)
         {
             found.Sort(compare);
@@ -1461,6 +1797,7 @@ sealed class FolderView : UserControl
         bool showHidden,
         SystemItems? hiddenSystem,
         (int Column, bool Ascending) sort,
+        GitCells cells,
         IProgress<FoundBatch> progress,
         SearchPace pace,
         Cancel cancel)
@@ -1476,7 +1813,7 @@ sealed class FolderView : UserControl
             AttributesToSkip = options.AttributesToSkip,
             RecurseSubdirectories = true
         };
-        var compare = Order(sort.Column, sort.Ascending);
+        var compare = Order(sort.Column, sort.Ascending, cells);
         var batch = new List<FileEntry>();
         var sent = Stopwatch.GetTimestamp();
 
@@ -1608,13 +1945,13 @@ sealed class FolderView : UserControl
         {
             var column = sortColumn;
             var ascending = sortAscending;
-            entries.Sort((first, second) => Compare(first, second, column, ascending));
+            entries.Sort((first, second) => Compare(first, second, column, ascending, gitCells));
             entriesSort = (column, ascending);
         }
 
         if (foundSort != (sortColumn, sortAscending))
         {
-            found.Sort(Order(sortColumn, sortAscending));
+            found.Sort(Order(sortColumn, sortAscending, gitCells));
             foundSort = (sortColumn, sortAscending);
         }
 
@@ -1745,8 +2082,19 @@ sealed class FolderView : UserControl
             return false;
         }
 
+        if (column == gitColumn &&
+            !HasGitColumn)
+        {
+            return false;
+        }
+
         return !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
     }
+
+    // Git is for a folder in a repository, its items' changes, a search's from all through it
+    // included, and for one listing repositories, their states. A search of that one finds items
+    // from inside the repositories, which have no state of their own.
+    bool HasGitColumn => containingRepo != null || (repos.Count > 0 && !IsSearch);
 
     // Brings the list's columns in line with the setting. True when they changed, in which case
     // every row needs building again, since a row holds a cell per column shown.
@@ -1866,12 +2214,25 @@ sealed class FolderView : UserControl
                 return [];
             }
 
-            return Row(0).SubItems
-                .Cast<ListViewItem.ListViewSubItem>()
-                .Select(_ => _.Text)
-                .ToList();
+            return RowCells(0);
         }
     }
+
+    /// <summary>
+    /// A row's cells, by where it is in what is displayed, one per column shown. For tests.
+    /// </summary>
+    internal List<string> RowCells(int index) =>
+        Row(index).SubItems
+            .Cast<ListViewItem.ListViewSubItem>()
+            .Select(_ => _.Text)
+            .ToList();
+
+    /// <summary>
+    /// The colour of a row's cell, by where the row is in what is displayed and where the column
+    /// is among those shown. For tests.
+    /// </summary>
+    internal Color CellColor(int index, int shown) =>
+        Row(index).SubItems[shown].ForeColor;
 
     /// <summary>
     /// The image a row shows, by where it is in what is displayed, as an index into the lists'
@@ -1933,6 +2294,13 @@ sealed class FolderView : UserControl
         }
 
         Populate(true);
+
+        // Git shown again: the repositories' states weren't read while it was hidden.
+        if (IsColumnShown(gitColumn) &&
+            repos.Any(_ => !gitStates.ContainsKey(_)))
+        {
+            ReadGitState();
+        }
     }
 
     /// <summary>
@@ -1960,9 +2328,9 @@ sealed class FolderView : UserControl
         menu.Items.Add(new ToolStripSeparator());
         for (var column = 0; column < columnDefinitions.Length; column++)
         {
-            // Hidden or shown only while there is a search to show it for.
-            if (column == folderColumn &&
-                !IsSearch)
+            // Hidden or shown only while there is a search, or are repositories, to show it for.
+            if ((column == folderColumn && !IsSearch) ||
+                (column == gitColumn && !HasGitColumn))
             {
                 continue;
             }
@@ -2060,6 +2428,7 @@ sealed class FolderView : UserControl
         [
             displayName,
             "",
+            "",
             DriveSize(entry, entry.FreeSpace),
             typeName,
             DriveSize(entry, entry.Size)
@@ -2074,6 +2443,7 @@ sealed class FolderView : UserControl
         switch (column)
         {
             case folderColumn:
+            case gitColumn:
                 return "";
             case dateColumn:
                 return DriveSize(entry, entry.FreeSpace);
@@ -2155,6 +2525,8 @@ sealed class FolderView : UserControl
                 return entry.Modified.ToString("g");
             case typeColumn:
                 return ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory);
+            case gitColumn:
+                return gitCells.Text(entry);
         }
 
         if (entry.IsDirectory)
@@ -2192,6 +2564,7 @@ sealed class FolderView : UserControl
         string[] cells =
         [
             Cell(entry, nameColumn),
+            Cell(entry, gitColumn),
             Cell(entry, folderColumn),
             Cell(entry, dateColumn),
             Cell(entry, typeColumn),
@@ -2206,11 +2579,26 @@ sealed class FolderView : UserControl
         {
             item.ForeColor = SystemColors.GrayText;
             ColorDetails(item, SystemColors.GrayText);
-            return item;
+        }
+        else
+        {
+            ColorDetails(item, ExplorerStyle.SecondaryText);
         }
 
-        ColorDetails(item, ExplorerStyle.SecondaryText);
+        ColorChange(item, entry);
         return item;
+    }
+
+    // What has become of a file in a repository, in the colour for it, hidden or not: amber,
+    // green or red stands out from the gray beside it, as the change is what to see first.
+    void ColorChange(ListViewItem item, FileEntry entry)
+    {
+        var shown = shownColumns.IndexOf(gitColumn);
+        if (shown >= 0 &&
+            gitCells.Change(entry) is { } change)
+        {
+            item.SubItems[shown].ForeColor = ExplorerStyle.ChangeColor(change);
+        }
     }
 
     // Every column but the name, which is always the first, in gray, as Explorer has them: read
@@ -2239,15 +2627,15 @@ sealed class FolderView : UserControl
             return matches;
         }
 
-        return Merge(matches, found, Order(sortColumn, sortAscending));
+        return Merge(matches, found, Order(sortColumn, sortAscending, gitCells));
     }
 
-    internal static Comparison<FileEntry> Order(int column, bool ascending) =>
-        (first, second) => Compare(first, second, column, ascending);
+    internal static Comparison<FileEntry> Order(int column, bool ascending, GitCells? cells = null) =>
+        (first, second) => Compare(first, second, column, ascending, cells);
 
     // Static, with the column and direction handed in, so a folder can be sorted off the UI
-    // thread as it is read.
-    static int Compare(FileEntry first, FileEntry second, int column, bool ascending)
+    // thread as it is read. By Git, by what the column says, which is handed in too.
+    static int Compare(FileEntry first, FileEntry second, int column, bool ascending, GitCells? cells = null)
     {
         // Folders stay grouped above files whichever way the column is sorted.
         if (first.IsDirectory != second.IsDirectory)
@@ -2273,6 +2661,9 @@ sealed class FolderView : UserControl
                 ShellIcons.GetTypeName(second.FullPath, second.IsDirectory),
                 StringComparison.CurrentCultureIgnoreCase),
             sizeColumn => first.Size.CompareTo(second.Size),
+            // By what the column says: repositories by branch, so those on a branch other than
+            // the one most are on stand together; files by what has become of them.
+            gitColumn => StrCmpLogicalW((cells ?? GitCells.None).Text(first), (cells ?? GitCells.None).Text(second)),
             _ => 0
         };
 
@@ -3398,6 +3789,7 @@ sealed class FolderView : UserControl
         {
             ShellFileOperation.Moved -= OnMoved;
             search?.Cancel();
+            gitCancel?.Cancel();
             changes.Dispose();
             parentChanges.Dispose();
             watcher?.Dispose();

@@ -36,6 +36,14 @@ class MainForm : Form
         Spring = true,
         TextAlign = ContentAlignment.MiddleLeft
     };
+
+    // Before the free space: the branch and changes of the repository the folder is in.
+    ToolStripStatusLabel gitLabel = new()
+    {
+        Name = "git",
+        Margin = new(0, 3, 12, 2),
+        Visible = false
+    };
     ToolStripStatusLabel spaceLabel = new();
 
     // The instance this window listens to, so it stops listening to that one when it closes.
@@ -119,6 +127,7 @@ class MainForm : Form
         places.Changed += RebuildPlaces;
         UndoHistory.Instance.Changed += OnUndoChanged;
         updates.Changed += OnUpdatesChanged;
+        ActionLog.Changed += ReadGitState;
         trayTimer.Tick += (_, _) =>
         {
             trayTimer.Stop();
@@ -805,6 +814,7 @@ class MainForm : Form
         };
         status.Items.Add(statusLabel);
         status.Items.Add(updateLabel);
+        status.Items.Add(gitLabel);
         status.Items.Add(spaceLabel);
         updateLabel.Click += (_, _) => ShowOptions("Updates");
         ShowUpdate();
@@ -1442,7 +1452,30 @@ class MainForm : Form
         var selection = view.SelectedEntries();
         UpdateActions(selection);
         statusLabel.Text = view.StatusFor(selection);
+        var git = view.GitText;
+        gitLabel.Text = git;
+        gitLabel.Visible = git.Length > 0;
         spaceLabel.Text = view.FreeSpaceText;
+    }
+
+    // A git action that started or finished.
+    void ReadGitState()
+    {
+        foreach (var view in Views)
+        {
+            view.ReadGitState();
+        }
+    }
+
+    // Back at the front, where a commit made in a terminal meanwhile went unseen: git changes
+    // only .git, not the folder listed.
+    protected override void OnActivated(EventArgs eventArgs)
+    {
+        base.OnActivated(eventArgs);
+        foreach (var view in Views)
+        {
+            view.ReadGitStateUnlessFresh();
+        }
     }
 
     // Only the tab showing, in a window that is, reads its folder and follows the changes to
@@ -2346,6 +2379,7 @@ class MainForm : Form
             places.Changed -= RebuildPlaces;
             UndoHistory.Instance.Changed -= OnUndoChanged;
             updates.Changed -= OnUpdatesChanged;
+            ActionLog.Changed -= ReadGitState;
             toolTip.Dispose();
             trayTimer.Dispose();
             unusedTabsTimer.Dispose();

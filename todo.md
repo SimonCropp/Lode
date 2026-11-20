@@ -40,11 +40,6 @@ All read, none run.
 ## Missing features
 
 
-### 1. Git state
-
-Nothing shows what branch a repository is on, whether it has changes, or how far ahead or behind it is. For a file manager for developers that is the first thing missing: the branch in the status bar or on the tab for a folder in a repository, and a column, or a mark on the icon, for the repositories listed in the code folder. Pull and Push are there with nothing to say whether either is wanted.
-
-
 ### 2. Run a command from the address bar
 
 Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folder open, which developers use a good deal. Lode takes `cmd` for a folder of that name in the folder open, and says it can't find it. The shell's own names, `shell:downloads` and the like, are not known either.

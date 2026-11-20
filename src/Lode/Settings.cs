@@ -125,7 +125,7 @@ sealed class Settings
             MenuNested = menuNested
         };
 
-    // The file list's columns hidden from its header's right-click menu: Date, Type or Size.
+    // The file list's columns hidden from its header's right-click menu: Date, Type, Size or Git.
     public List<string> HiddenColumns { get; set; } = [];
 
     // How wide each of the file list's columns is, at 100% scale, for those widened or narrowed:

@@ -8,10 +8,10 @@
 [NotInParallel("windows")]
 public class FolderViewTests
 {
-    const int folderColumn = 1;
-    const int dateColumn = 2;
-    const int typeColumn = 3;
-    const int sizeColumn = 4;
+    const int folderColumn = 2;
+    const int dateColumn = 3;
+    const int typeColumn = 4;
+    const int sizeColumn = 5;
 
     static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
 
@@ -1355,6 +1355,250 @@ public class FolderViewTests
                 menu = menu.Items.Cast<ToolStripItem>().Select(DescribeMenuItem).ToList()
             });
     }
+
+    // The code folder's repositories each say where they are in a Git column: the branch, then
+    // what there is to commit. A folder that isn't one says nothing.
+    [Test]
+    public async Task GitColumnShowsEachRepository()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+
+        await Assert.That(view.ColumnTitles)
+            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(GitCells(view))
+            .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(view.GitText).IsEqualTo("");
+    }
+
+    // By what the column says: nothing first, then by branch, then by what there is to commit.
+    [Test]
+    public async Task SortByGit()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+
+        view.SortBy(FolderView.gitColumn);
+
+        await Assert.That(view.Entries.Select(_ => _.Name))
+            .IsEquivalentTo(["origins", "Plain", "Clean", "Changed"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // The column only shows once the folder has been read and its repositories found, so the
+    // sort it was left with is taken up then.
+    [Test]
+    public async Task AFolderSortedByGitIsSoWhenOpened()
+    {
+        using var code = Repositories();
+        var settings = InCode(code);
+        settings.SetSort(code.Root, "Git", false);
+        using var view = await Open(code.Root, settings);
+        await GitRead(view);
+
+        await Assert.That(view.Sort).IsEqualTo((FolderView.gitColumn, false));
+        await Assert.That(view.Entries.Select(_ => _.Name))
+            .IsEquivalentTo(["Changed", "Clean", "Plain", "origins"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // Hidden from the header's menu, it stays so, but the status bar still says.
+    [Test]
+    public async Task GitColumnHidden()
+    {
+        using var code = Repositories();
+        var settings = InCode(code);
+        settings.HiddenColumns = ["Git"];
+        using var view = await Open(code.Root, settings);
+        await GitRead(view);
+        using var menu = view.HeaderMenu(clickedColumn: 0);
+
+        await Assert.That(view.ColumnTitles).DoesNotContain("Git");
+        await Assert.That(menu.Items.Cast<ToolStripItem>().Select(DescribeMenuItem)).Contains("Git");
+    }
+
+    // Anywhere in a repository, the status bar says where the repository is.
+    [Test]
+    public async Task StatusSaysWhereTheRepositoryIs()
+    {
+        using var code = Repositories();
+        var src = code.At("Changed", "src");
+        Directory.CreateDirectory(src);
+        using var view = await Open(src, InCode(code));
+        await GitRead(view);
+
+        await Assert.That(view.GitText).IsEqualTo("main · 1 change");
+    }
+
+    // In a repository, each file says what has become of it, and each folder how many changes
+    // it holds. One unchanged says nothing.
+    [Test]
+    public async Task GitColumnShowsEachFile()
+    {
+        using var code = Changes();
+        using var view = await Open(code.At("Repo"), InCode(code));
+        await GitRead(view);
+
+        await Assert.That(view.ColumnTitles)
+            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(GitCells(view))
+            .IsEquivalentTo(
+                [
+                    "New: Untracked",
+                    "src: 2 changes",
+                    "Unchanged: ",
+                    "added.txt: Added",
+                    "loose.txt: Untracked",
+                    "same.txt: ",
+                    "tracked.txt: Modified"
+                ],
+                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(view.GitText).IsEqualTo("main · 6 changes · 1 ahead");
+    }
+
+    // Each in the colour for what has become of it, a folder holding changes as Modified, and
+    // one unchanged in the gray of every other detail.
+    [Test]
+    public async Task GitColumnColoursEachChange()
+    {
+        using var code = Changes();
+        using var view = await Open(code.At("Repo"), InCode(code));
+        await GitRead(view);
+
+        await Assert.That(GitColor(view, "tracked.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Modified));
+        await Assert.That(GitColor(view, "loose.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Untracked));
+        await Assert.That(GitColor(view, "added.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Added));
+        await Assert.That(GitColor(view, "src")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Modified));
+        await Assert.That(GitColor(view, "same.txt")).IsEqualTo(ExplorerStyle.SecondaryText);
+    }
+
+    // Deeper in, a file is found by its path from the top of the repository.
+    [Test]
+    public async Task GitColumnInAFolderOfTheRepository()
+    {
+        using var code = Changes();
+        using var view = await Open(code.At("Repo", "src"), InCode(code));
+        await GitRead(view);
+
+        await Assert.That(GitCells(view))
+            .IsEquivalentTo(["Deep: 1 change", "changed.cs: Modified", "same.cs: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // A search in a repository says what has become of what it finds in the folders below.
+    [Test]
+    public async Task GitColumnInASearch()
+    {
+        using var code = Changes();
+        using var view = await Open(code.At("Repo"), InCode(code));
+        await GitRead(view);
+
+        view.Filter = "*.cs";
+        await Pump.Loaded(view);
+
+        await Assert.That(view.ColumnTitles.Take(3))
+            .IsEquivalentTo(["Name", "Git", "Folder"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(GitCells(view))
+            .IsEquivalentTo(["changed.cs: Modified", "deeper.cs: Modified", "same.cs: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // Sorted by Git in a repository, what has changed comes together, by what has become of it.
+    [Test]
+    public async Task SortFilesByGit()
+    {
+        using var code = Changes();
+        using var view = await Open(code.At("Repo"), InCode(code));
+        await GitRead(view);
+
+        view.SortBy(FolderView.gitColumn);
+
+        await Assert.That(view.Entries.Select(_ => _.Name))
+            .IsEquivalentTo(["Unchanged", "src", "New", "same.txt", "added.txt", "tracked.txt", "loose.txt"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // A repository in the code folder with a file changed, one staged as new, one untracked, a
+    // folder of them, a folder with changes deeper in, and a file and a folder unchanged.
+    static CodeCommandsTests.Scratch Changes()
+    {
+        var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        Write(repo, "same.txt");
+        Write(repo, "Unchanged", "kept.txt");
+        Write(repo, "src", "changed.cs");
+        Write(repo, "src", "same.cs");
+        Write(repo, "src", "Deep", "deeper.cs");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "More");
+
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        File.WriteAllText(Path.Combine(repo, "src", "changed.cs"), "changed");
+        File.WriteAllText(Path.Combine(repo, "src", "Deep", "deeper.cs"), "changed");
+        Write(repo, "added.txt");
+        CodeCommandsTests.Scratch.Git(repo, "add", "added.txt");
+        Write(repo, "loose.txt");
+        Write(repo, "New", "one.txt");
+        return code;
+
+        static void Write(string repo, params string[] parts)
+        {
+            var path = Path.Combine([repo, .. parts]);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, parts[^1]);
+        }
+    }
+
+    // The colour of a row's Git cell, the second column.
+    static Color GitColor(FolderView view, string name)
+    {
+        var index = view.Entries.ToList().FindIndex(_ => _.Name == name);
+        return view.CellColor(index, 1);
+    }
+
+    // Outside the code folder, as the git actions aren't offered there, nothing is read.
+    [Test]
+    public async Task NoGitOutsideTheCodeFolder()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root);
+        await GitRead(view);
+
+        await Assert.That(view.ColumnTitles).DoesNotContain("Git");
+
+        view.Navigate(code.At("Changed"));
+        await Pump.Loaded(view);
+        await GitRead(view);
+
+        await Assert.That(view.GitText).IsEqualTo("");
+    }
+
+    // A clean repository, one with a file changed, and a folder that isn't a repository.
+    static CodeCommandsTests.Scratch Repositories()
+    {
+        var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Clean");
+        var changed = code.CreateRepo("Changed");
+        File.WriteAllText(Path.Combine(changed, "tracked.txt"), "changed");
+        Directory.CreateDirectory(code.At("Plain"));
+        return code;
+    }
+
+    static Settings InCode(CodeCommandsTests.Scratch code) =>
+        new()
+        {
+            ShowHidden = false,
+            CodeDirectory = code.Root
+        };
+
+    static async Task GitRead(FolderView view)
+    {
+        await Pump.Until(() => view.GitReading.IsCompleted);
+        await view.GitReading;
+    }
+
+    // Each row's name, and what its Git cell says.
+    static List<string> GitCells(FolderView view) =>
+        view.Entries
+            .Select((entry, index) => $"{entry.Name}: {view.RowCells(index)[1]}")
+            .ToList();
 
     static string DescribeMenuItem(ToolStripItem item)
     {
