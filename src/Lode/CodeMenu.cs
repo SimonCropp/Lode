@@ -135,8 +135,8 @@ static class CodeMenu
     }
 
     // Deletes what git doesn't track, ignored files too. Finding the repositories can mean
-    // reading a whole tree of folders, so that is off the UI thread; then it asks, saying where
-    // the files go.
+    // reading a whole tree of folders, so that is off the UI thread. It asks once the dry run, in
+    // the Actions panel, has found what will go, saying how much, and where it goes.
     static async void Purge(Control owner, Settings settings, IReadOnlyList<string> selected)
     {
         var folders = await Task.Run(() => GitPurge.Folders(selected, settings.CodeDirectory ?? selected[0]));
@@ -152,29 +152,22 @@ static class CodeMenu
         }
 
         var permanent = settings.PurgePermanently;
-        var where = "They go to the Recycle Bin.";
-        if (permanent)
-        {
-            where = "They are deleted permanently, as set in Options. This cannot be undone.";
-        }
-
-        var answer = MessageBox.Show(
-            owner,
-            $"Delete every file and folder git doesn't track, ignored ones included (such as bin and obj), in {Describe(folders)}?\n\n{where}",
-            "Git purge",
-            MessageBoxButtons.OKCancel,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
-        if (answer != DialogResult.OK)
-        {
-            return;
-        }
-
         var window = owner.FindForm()?.Handle ?? owner.Handle;
         _ = ActionLog.Run(
             "Git purge",
             selected,
-            progress => GitPurge.Run(folders, permanent, window, progress));
+            progress => GitPurge.Run(folders, permanent, window, progress, question => Ask(owner, question)));
+    }
+
+    // The window may have closed while the dry run ran.
+    static bool Ask(Control owner, string question)
+    {
+        if (owner.IsDisposed)
+        {
+            return MessageBox.Show(question, "Git purge", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK;
+        }
+
+        return MessageBox.Show(owner, question, "Git purge", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK;
     }
 
     static void UpdateNugets(IReadOnlyList<string> folders) =>

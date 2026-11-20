@@ -33,7 +33,6 @@ Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folde
 
 ### 8. Purge
 
- * It asks before it knows what will go. The dry run is worked out anyway, so the prompt could come after it, with how many and how big, or the list.
  * No way to purge only what git ignores (`git clean -Xd`). New source files not yet added go with `bin` and `obj`, for good if **Delete them permanently** is ticked.
 
 

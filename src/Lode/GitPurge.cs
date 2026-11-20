@@ -178,9 +178,10 @@ static class GitPurge
     /// <summary>
     /// Purges <paramref name="folders"/>, to the Recycle Bin unless
     /// <paramref name="permanent"/>. <paramref name="owner"/> is the window the shell's progress
-    /// dialog belongs to.
+    /// dialog belongs to. Once what will go is known, <paramref name="confirm"/>, if given, is
+    /// asked, with <see cref="Question"/>, and nothing goes unless it says yes.
     /// </summary>
-    public static Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, bool permanent, IntPtr owner, IProgress<string>? progress = null)
+    public static Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, bool permanent, IntPtr owner, IProgress<string>? progress = null, Func<string, bool>? confirm = null)
     {
         var remove = ToRecycleBin(owner);
         if (permanent)
@@ -188,14 +189,14 @@ static class GitPurge
             remove = Outright;
         }
 
-        return Run(folders, remove, permanent, progress);
+        return Run(folders, remove, permanent, progress, confirm);
     }
 
     /// <summary>
-    /// Finds what git doesn't track in each folder, then deletes all of it in one go with
+    /// Finds what git doesn't track in each folder, asks, then deletes all of it in one go with
     /// <paramref name="remove"/>.
     /// </summary>
-    internal static async Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, Remover remove, bool permanent, IProgress<string>? progress = null)
+    internal static async Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, Remover remove, bool permanent, IProgress<string>? progress = null, Func<string, bool>? confirm = null)
     {
         // Several folders looked in at once, as git runs in each on its own.
         var found = await Task.Run(
@@ -215,6 +216,17 @@ static class GitPurge
             .SelectMany(_ => _.Entries)
             .Select(_ => _.Path)
             .ToList();
+        if (paths.Count > 0 &&
+            confirm != null)
+        {
+            progress?.Report($"Measuring {Items(paths.Count)}");
+            var size = await Task.Run(() => paths.Sum(Size));
+            if (!confirm(Question(found, size, permanent)))
+            {
+                return new(false, "Cancelled", "");
+            }
+        }
+
         IReadOnlyList<Failure> failures = [];
         if (paths.Count > 0)
         {
@@ -223,6 +235,95 @@ static class GitPurge
 
         return Outcome(found, failures, permanent);
     }
+
+    // How many entries the question lists before saying how many more there are.
+    const int listed = 10;
+
+    /// <summary>
+    /// What a purge asks, once its dry run has found what will go: how many items, how big, the
+    /// first of them by name, where they go, and the folders git couldn't look in.
+    /// </summary>
+    internal static string Question(IReadOnlyList<Found> found, long size, bool permanent)
+    {
+        var withEntries = found.Where(_ => _.Entries.Count > 0).ToList();
+        var entries = withEntries
+            .SelectMany(_ => _.Entries.Select(entry => (_.Folder, entry.Name)))
+            .ToList();
+        var folders = withEntries
+            .Select(_ => _.Folder)
+            .ToList();
+        var question = new StringBuilder();
+        question.AppendLine($"Delete {Items(entries.Count)}, {Formatting.Size(size)}, that git doesn't track, ignored ones included, in {CodeMenu.Describe(folders)}?");
+        question.AppendLine();
+        foreach (var (folder, name) in entries.Take(listed))
+        {
+            if (folders.Count > 1)
+            {
+                question.AppendLine($"    {Path.GetFileName(folder)}/{name}");
+                continue;
+            }
+
+            question.AppendLine($"    {name}");
+        }
+
+        if (entries.Count > listed)
+        {
+            question.AppendLine($"    and {entries.Count - listed:N0} more");
+        }
+
+        question.AppendLine();
+        if (permanent)
+        {
+            question.Append("They are deleted permanently, as set in Options. This cannot be undone.");
+        }
+        else
+        {
+            question.Append("They go to the Recycle Bin.");
+        }
+
+        var errors = found.Count(_ => _.Error != null);
+        if (errors > 0)
+        {
+            question.AppendLine();
+            question.AppendLine();
+            question.Append($"Git couldn't look in {Count(errors, "folder")}, which stays as it is.");
+        }
+
+        return question.ToString();
+    }
+
+    // How much a file, or all a folder holds, takes up. Links aren't followed, as they are
+    // deleted as links.
+    static long Size(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                return new DirectoryInfo(path)
+                    .EnumerateFiles("*", sizeOptions)
+                    .Sum(_ => _.Length);
+            }
+
+            if (File.Exists(path))
+            {
+                return new FileInfo(path).Length;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            // Unreadable, so not counted.
+        }
+
+        return 0;
+    }
+
+    static readonly EnumerationOptions sizeOptions = new()
+    {
+        AttributesToSkip = FileAttributes.ReparsePoint,
+        IgnoreInaccessible = true,
+        RecurseSubdirectories = true
+    };
 
     // As one shell operation, so there is one progress dialog for the lot. Lode has asked
     // already, so the shell doesn't, except to warn before deleting outright something too big

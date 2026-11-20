@@ -159,6 +159,91 @@ public class GitPurgeTests
             });
     }
 
+    // It asks once the dry run has found what will go, saying how many items, how big, the first
+    // of them, and where they go; turned down, nothing goes.
+    [Test]
+    public async Task AsksOnceItKnowsWhatWillGo()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = Untidy(code, "Repo");
+        var before = Left(repo);
+        var questions = new List<string>();
+
+        var outcome = await GitPurge.Run(
+            [repo],
+            permanent: true,
+            IntPtr.Zero,
+            confirm: question =>
+            {
+                questions.Add(question);
+                return false;
+            });
+
+        await Assert.That(Left(repo)).IsEquivalentTo(before);
+        await Verify(
+            new
+            {
+                questions,
+                outcome
+            });
+    }
+
+    // Of several repositories, each entry is named with the one it is in, and what doesn't fit
+    // is counted. Said yes to, it all goes.
+    [Test]
+    public async Task AsksOnceForEveryRepo()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var one = Untidy(code, "One");
+        var two = Untidy(code, "Two");
+        var questions = new List<string>();
+        var removed = new List<string>();
+
+        var outcome = await GitPurge.Run(
+            [one, two],
+            (paths, _) =>
+            {
+                removed.AddRange(paths.Select(code.Relative));
+                return Task.FromResult<IReadOnlyList<GitPurge.Failure>>([]);
+            },
+            permanent: false,
+            confirm: question =>
+            {
+                questions.Add(question);
+                return true;
+            });
+
+        await Verify(
+            new
+            {
+                questions,
+                removed,
+                outcome
+            });
+    }
+
+    // With nothing to purge, there is nothing to ask.
+    [Test]
+    public async Task NothingToPurgeAsksNothing()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        var asked = false;
+
+        var outcome = await GitPurge.Run(
+            [repo],
+            permanent: true,
+            IntPtr.Zero,
+            confirm: _ =>
+            {
+                asked = true;
+                return true;
+            });
+
+        await Assert.That(asked).IsFalse();
+        await Assert.That(outcome).IsEqualTo(new(true, "Nothing to purge", ""));
+    }
+
     [Test]
     public async Task NothingToPurge()
     {
