@@ -1030,6 +1030,7 @@ class MainForm : Form
         // another window.
         view.PathChanged += () => WindowOf(view)?.OnViewPathChanged(view);
         view.ColumnsChanged += RefreshColumnsInAllWindows;
+        view.ColumnWidthsChanged += RefreshColumnWidthsInAllWindows;
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
         view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false);
         tabs.TabPages.Add(page);
@@ -1766,6 +1767,23 @@ class MainForm : Form
             foreach (var view in window.Views)
             {
                 view.RefreshColumns();
+            }
+        }
+    }
+
+    // A column sized in one view is as wide in every other tab of every window. Not the one it
+    // was sized in, which has it to the pixel, where the width kept at 100% scale may round to
+    // one off it.
+    static void RefreshColumnWidthsInAllWindows(FolderView sized)
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            foreach (var view in window.Views)
+            {
+                if (view != sized)
+                {
+                    view.RefreshColumnWidths();
+                }
             }
         }
     }

@@ -79,6 +79,27 @@ public class WindowsTests
         await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Source", "Projects", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
+    // A column sized in one window is that wide in every tab of every window, the tab in the
+    // background included.
+    [Test]
+    public async Task ColumnWidthsGoToEveryWindow()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        using var first = await Show(fixture, settings, fixture.Root, fixture.At("Docs"));
+        using var second = await Show(fixture, settings, fixture.At("Source"));
+        var list = first.ActiveView!.Controls.OfType<ListView>().Single();
+
+        Header.LetGoOfDivider(list, 0, first.ActiveView.LogicalToDeviceUnits(250));
+
+        var widths = first.Views
+            .Concat(second.Views)
+            .Where(_ => _ != first.ActiveView)
+            .Select(_ => _.ColumnWidth(0) == _.LogicalToDeviceUnits(250))
+            .ToList();
+        await Assert.That(widths).IsEquivalentTo([true, true]);
+    }
+
     static List<string> Titles(MainForm form) =>
         form.Views.Select(_ => ((TabPage)_.Parent!).Text).ToList();
 

@@ -128,6 +128,40 @@ sealed class Settings
     // The file list's columns hidden from its header's right-click menu: Date, Type or Size.
     public List<string> HiddenColumns { get; set; } = [];
 
+    // How wide each of the file list's columns is, at 100% scale, for those widened or narrowed:
+    // one for every tab and window. The rest are as wide as FolderView makes them.
+    public Dictionary<string, int> ColumnWidths { get; set; } = [];
+
+    // How each folder was last sorted, for those sorted other than by Name, A to Z, which the
+    // rest are. The most recently sorted last, so the longest ago go first once there are more
+    // than maximumFolderSorts.
+    public List<FolderSort> FolderSorts { get; set; } = [];
+
+    const int maximumFolderSorts = 500;
+
+    public FolderSort? SortOf(string folder) =>
+        FolderSorts.FindLast(_ => Locations.Same(_.Folder, folder));
+
+    /// <summary>
+    /// Notes how a folder is sorted, by the key of a column, or forgets it when that is by
+    /// Name, A to Z, which every folder is unless noted.
+    /// </summary>
+    public void SetSort(string folder, string column, bool ascending)
+    {
+        FolderSorts.RemoveAll(_ => Locations.Same(_.Folder, folder));
+        if (column == "Name" &&
+            ascending)
+        {
+            return;
+        }
+
+        FolderSorts.Add(new(folder, column, ascending));
+        if (FolderSorts.Count > maximumFolderSorts)
+        {
+            FolderSorts.RemoveRange(0, FolderSorts.Count - maximumFolderSorts);
+        }
+    }
+
     // The tree's sections (Pinned, Recent) the user collapsed, so they stay that way.
     public List<string> CollapsedSections { get; set; } = [];
 
@@ -384,6 +418,11 @@ sealed class Settings
         }
     }
 }
+
+/// <summary>
+/// How a folder is sorted: by which of the file list's columns, by its key, and which way.
+/// </summary>
+sealed record FolderSort(string Folder, string Column, bool Ascending);
 
 /// <summary>
 /// Whether an action shows as a button on the actions bar, in the right-click menu, or both, and

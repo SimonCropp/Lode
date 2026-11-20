@@ -3,6 +3,16 @@
   ShowSystem: false,
   ShowRecent: true,
   ExpandToOpenFolder: true,
+  ColumnWidths: {
+    Type: 140
+  },
+  FolderSorts: [
+    {
+      Folder: D:\Work,
+      Column: Size,
+      Ascending: true
+    }
+  ],
   PurgePermanently: false,
   CloseUnusedTabs: false,
   UnusedTabHours: 24,

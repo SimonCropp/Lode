@@ -25,15 +25,20 @@ sealed class FolderView : UserControl
         new("Size", "Size", "Total size", 110, HorizontalAlignment.Right)
     ];
 
-    // The columns the list has now, in the order shown, and the widths of any taken away, so
-    // one shown again comes back as wide as it was.
+    // The columns the list has now, in the order shown. How wide the user sized each is in the
+    // settings, shared by every view, so one shown again is as wide as it was.
     List<int> shownColumns = [];
-    readonly Dictionary<int, int> columnWidths = [];
 
     /// <summary>
     /// A column was hidden or shown. Every view shares the setting, so each should refresh.
     /// </summary>
     public event Action? ColumnsChanged;
+
+    /// <summary>
+    /// The user sized a column in this view. Every view shares the widths, so each of the others
+    /// should take them up (<see cref="RefreshColumnWidths"/>).
+    /// </summary>
+    public event Action<FolderView>? ColumnWidthsChanged;
 
     readonly Settings settings;
     readonly Places places;
@@ -225,6 +230,7 @@ sealed class FolderView : UserControl
         list.RetrieveVirtualItem += (_, eventArgs) => eventArgs.Item = Row(eventArgs.ItemIndex);
         list.SearchForVirtualItem += OnSearchForVirtualItem;
         list.ColumnFitRequested += SizeColumnToFit;
+        list.ColumnResized += KeepWidth;
         UpdateColumns();
 
         list.ItemActivate += (_, _) => OpenEntries(SelectedEntries());
@@ -683,6 +689,18 @@ sealed class FolderView : UserControl
         filter = "";
         StopSearch();
         error = null;
+
+        // Each folder is sorted as it was last, as in Explorer. Following one moved or renamed,
+        // the view keeps how it was sorted, and the folder is noted as sorted so where it is now.
+        if (keep == null)
+        {
+            (sortColumn, sortAscending) = SortOfFolder();
+        }
+        else if (sortColumn != folderColumn)
+        {
+            settings.SetSort(normalized, columnDefinitions[sortColumn].Key, sortAscending);
+        }
+
         remembered = keep;
         if (!showing)
         {
@@ -1698,6 +1716,11 @@ sealed class FolderView : UserControl
 
     int SortArrowColumn => shownColumns.IndexOf(sortColumn);
 
+    /// <summary>
+    /// The column the list is sorted by, and which way. For tests.
+    /// </summary>
+    internal (int Column, bool Ascending) Sort => (sortColumn, sortAscending);
+
     string ColumnTitle(int column)
     {
         var definition = columnDefinitions[column];
@@ -1737,11 +1760,6 @@ sealed class FolderView : UserControl
             return false;
         }
 
-        for (var index = 0; index < shownColumns.Count; index++)
-        {
-            columnWidths[shownColumns[index]] = list.Columns[index].Width;
-        }
-
         // The list can ask for a row at any time, and a row must have a cell for every column the
         // list has. So the columns go first, then the rows made for them are forgotten and made
         // from here on for the columns wanted, and only then are those added.
@@ -1750,22 +1768,84 @@ sealed class FolderView : UserControl
         rows.Clear();
         foreach (var column in wanted)
         {
-            var definition = columnDefinitions[column];
-            if (!columnWidths.TryGetValue(column, out var width))
-            {
-                width = LogicalToDeviceUnits(definition.Width);
-            }
-
-            list.Columns.Add(ColumnTitle(column), width, definition.Alignment);
+            list.Columns.Add(ColumnTitle(column), WidthOf(column), columnDefinitions[column].Alignment);
         }
 
+        // Sorted by a column taken away, Folder as a search ends say, the list goes back to how
+        // its folder is sorted, or by Name if that is the column gone.
         if (!shownColumns.Contains(sortColumn))
         {
-            sortColumn = nameColumn;
-            sortAscending = true;
+            (sortColumn, sortAscending) = SortOfFolder();
         }
 
         return true;
+    }
+
+    // How wide a column is, in pixels at the list's scale: as the user last sized it, in any
+    // view, or as it is built.
+    int WidthOf(int column)
+    {
+        var definition = columnDefinitions[column];
+        if (!settings.ColumnWidths.TryGetValue(definition.Key, out var width))
+        {
+            width = definition.Width;
+        }
+
+        return LogicalToDeviceUnits(width);
+    }
+
+    /// <summary>
+    /// Brings the columns' widths in line with the settings, as another view has sized one.
+    /// </summary>
+    public void RefreshColumnWidths()
+    {
+        for (var index = 0; index < shownColumns.Count; index++)
+        {
+            var width = WidthOf(shownColumns[index]);
+            if (list.Columns[index].Width != width)
+            {
+                list.Columns[index].Width = width;
+            }
+        }
+    }
+
+    // On a monitor at another scale, the same widths, at that scale.
+    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    {
+        base.OnDpiChangedAfterParent(eventArgs);
+        RefreshColumnWidths();
+    }
+
+    // A column the user sized, by where it is among those shown: as wide in every view from now
+    // on, and the next time Lode starts. Kept at 100% scale, so it is as wide on any monitor.
+    void KeepWidth(int shown, int width)
+    {
+        if (shown < 0 ||
+            shown >= shownColumns.Count)
+        {
+            return;
+        }
+
+        var key = columnDefinitions[shownColumns[shown]].Key;
+        settings.ColumnWidths[key] = (int)Math.Round(width * 96.0 / DeviceDpi);
+        ColumnWidthsChanged?.Invoke(this);
+    }
+
+    // How the folder open was last sorted, by a column shown: by Name, A to Z, unless it was
+    // sorted otherwise.
+    (int Column, bool Ascending) SortOfFolder()
+    {
+        if (settings.SortOf(CurrentPath) is { } sort)
+        {
+            var column = Array.FindIndex(columnDefinitions, _ => _.Key == sort.Column);
+            if (column >= 0 &&
+                IsColumnShown(column))
+            {
+                return (column, sort.Ascending);
+            }
+        }
+
+        return (nameColumn, true);
     }
 
     /// <summary>
@@ -1914,7 +1994,7 @@ sealed class FolderView : UserControl
     /// Sizes a column to fit its header and the widest of its cells in the whole folder, as
     /// Explorer's Size Column to Fit does. The list measures the rows it asks for, which are only
     /// those on screen. So the widest cell is found here, and for as long as the list is
-    /// measuring, every row it asks for has that in the column.
+    /// measuring, every row it asks for has that in the column. Every view then has it that wide.
     /// </summary>
     void SizeColumnToFit(int shown)
     {
@@ -1933,6 +2013,8 @@ sealed class FolderView : UserControl
             // Anything drawn meanwhile showed the row being measured.
             list.Invalidate();
         }
+
+        KeepWidth(shown, list.Columns[shown].Width);
     }
 
     // The text of the widest cell a column has, in any row.
@@ -2255,7 +2337,9 @@ sealed class FolderView : UserControl
         SortBy(shownColumns[eventArgs.Column]);
 
     /// <summary>
-    /// Sorts by a column, as clicking its header does: ascending first, then toggling.
+    /// Sorts by a column, as clicking its header does: ascending first, then toggling. The
+    /// folder is sorted so from then on, in any tab, and the next time Lode starts, as Explorer
+    /// keeps each folder's. Folder, which only a search has, is for the search alone.
     /// </summary>
     public void SortBy(int column)
     {
@@ -2267,6 +2351,11 @@ sealed class FolderView : UserControl
         {
             sortColumn = column;
             sortAscending = true;
+        }
+
+        if (column != folderColumn)
+        {
+            settings.SetSort(CurrentPath, columnDefinitions[column].Key, sortAscending);
         }
 
         Populate(true);

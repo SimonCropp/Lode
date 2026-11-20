@@ -155,6 +155,13 @@ sealed class ShellListView : ListView
     public event Action<int>? ColumnFitRequested;
 
     /// <summary>
+    /// The divider at the right of a column's header was dragged and let go, leaving the column,
+    /// by its index, this wide. Raised for the user's sizing only: not for a width set in code,
+    /// nor one Windows changes with the screen's scale.
+    /// </summary>
+    public event Action<int, int>? ColumnResized;
+
+    /// <summary>
     /// The horizontal scrollbar showed or went, or its range, page or position changed, or the
     /// list was moved or resized, which moves it.
     /// </summary>
@@ -197,9 +204,12 @@ sealed class ShellListView : ListView
         }
     }
 
-    // NMHDR is a window, an id and a code; NMHEADER follows it with the header item's index.
+    // NMHDR is a window, an id and a code; NMHEADER follows it with the header item's index, the
+    // mouse button, and the HDITEM, which starts with its mask and then its width.
     static readonly int notificationCodeOffset = 2 * IntPtr.Size;
     static readonly int headerNotificationItemOffset = 3 * IntPtr.Size;
+    static readonly int headerNotificationHeaderItemOffset = 3 * IntPtr.Size + 2 * sizeof(int);
+    const int headerItemWidthOffset = sizeof(uint);
 
     public ShellListView() =>
         DoubleBuffered = true;
@@ -283,6 +293,32 @@ sealed class ShellListView : ListView
             Marshal.ReadIntPtr(message.LParam) == Header)
         {
             ColumnFitRequested(Marshal.ReadInt32(message.LParam, headerNotificationItemOffset));
+            return;
+        }
+
+        // A divider let go of: its column is as wide as the HDITEM says, or else as the list has
+        // it, once the list has had the notification.
+        if (message.Msg == WindowMessageNotify &&
+            Marshal.ReadInt32(message.LParam, notificationCodeOffset) is HeaderEndTrack or HeaderEndTrackAnsi &&
+            Marshal.ReadIntPtr(message.LParam) == Header)
+        {
+            base.WndProc(ref message);
+            var column = Marshal.ReadInt32(message.LParam, headerNotificationItemOffset);
+            var item = Marshal.ReadIntPtr(message.LParam, headerNotificationHeaderItemOffset);
+            if (column < 0 ||
+                column >= Columns.Count)
+            {
+                return;
+            }
+
+            var width = Columns[column].Width;
+            if (item != IntPtr.Zero &&
+                (Marshal.ReadInt32(item) & HeaderItemWidth) != 0)
+            {
+                width = Marshal.ReadInt32(item, headerItemWidthOffset);
+            }
+
+            ColumnResized?.Invoke(column, width);
             return;
         }
 

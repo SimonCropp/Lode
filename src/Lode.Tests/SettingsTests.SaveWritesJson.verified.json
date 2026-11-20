@@ -6,6 +6,16 @@
   "ExpandToOpenFolder": true,
   "Actions": {},
   "HiddenColumns": [],
+  "ColumnWidths": {
+    "Name": 420
+  },
+  "FolderSorts": [
+    {
+      "Folder": "C:\\Code",
+      "Column": "Date",
+      "Ascending": false
+    }
+  ],
   "CollapsedSections": [],
   "PinnedFolders": [],
   "RecentFolders": [],

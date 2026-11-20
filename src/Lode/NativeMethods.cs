@@ -24,6 +24,9 @@ static partial class NativeMethods
 
     public const int HeaderDividerDoubleClick = -325;
     public const int HeaderDividerDoubleClickAnsi = -305;
+    public const int HeaderEndTrack = -327;
+    public const int HeaderEndTrackAnsi = -307;
+    public const uint HeaderItemWidth = 0x0001;
     public const int HeaderGetItem = 0x120B;
     public const int HeaderSetItem = 0x120C;
     public const uint HeaderItemFormat = 0x0004;

@@ -59,13 +59,6 @@ A USB drive plugged in, or a drive mapped, This PC's own **Map network drive** i
 **Fix:** handle `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`, `DBT_DEVICEREMOVECOMPLETE`), a little after the last of a burst, and refresh only the drives that changed.
 
 
-### 5. Column widths and sort order are not remembered
-
-**Where:** [FolderView.cs:30-31](src/Lode/FolderView.cs#L30) and [71-72](src/Lode/FolderView.cs#L71) (each view's own), `Settings.cs:128` (only `HiddenColumns` is saved).
-
-A column widened, or a list sorted by date, is so in that tab until it is closed. A new tab, and every start, is back to Name ascending at the widths built in.
-
-
 ### 6. Only a details list
 
 No icons, tiles or thumbnails, and no preview pane. In the list a folder always has the plain folder icon ([ShellIcons.cs:184-187](src/Lode/ShellIcons.cs#L184)), where the tree and the tabs show a folder's own (Downloads, Documents, one with a `desktop.ini`).

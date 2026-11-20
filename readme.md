@@ -122,7 +122,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
    ![This PC's right-click menu](src/Lode.Tests/MenuTests.ThisPCMenu.verified.png)
 
- * Details list with shell icons and type names, natural sort order, and click-to-sort columns. A shortcut shows the icon of what it points at, with the shell's arrow in the corner, as Explorer draws it. As in Explorer, there is a margin left of the list: drag from it to select the rows the rectangle covers (Ctrl+drag adds to the selection), or click it to clear the selection. Right-click the column headers to size a column, or all of them, to fit, or to hide or show Date modified, Type and Size, in every tab and window; Name always shows.
+ * Details list with shell icons and type names, natural sort order, and click-to-sort columns. A shortcut shows the icon of what it points at, with the shell's arrow in the corner, as Explorer draws it. As in Explorer, there is a margin left of the list: drag from it to select the rows the rectangle covers (Ctrl+drag adds to the selection), or click it to clear the selection. Right-click the column headers to size a column, or all of them, to fit, or to hide or show Date modified, Type and Size, in every tab and window; Name always shows. A column widened or narrowed, by its divider or sized to fit, is that wide in every tab and window, and the next time Lode starts. As in Explorer, each folder keeps the sort it was last given, in any tab and from one start to the next, so Downloads sorted by date stays so; a folder never sorted is by name.
 
    ![Column header menu](src/Lode.Tests/MenuTests.ColumnMenu.verified.png)
 

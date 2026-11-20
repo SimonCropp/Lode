@@ -15,6 +15,8 @@ public class SettingsTests
         settings.Tabs = [@"C:\Code", "This PC"];
         settings.TabsLastShown = [new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero), new(2026, 11, 19, 17, 30, 0, TimeSpan.Zero)];
         settings.ActiveTab = 1;
+        settings.ColumnWidths["Name"] = 420;
+        settings.SetSort(@"C:\Code", "Date", ascending: false);
 
         settings.Save();
 
@@ -29,6 +31,8 @@ public class SettingsTests
         var settings = Settings.Load(path);
         settings.Maximized = true;
         settings.Tabs = [@"D:\Work"];
+        settings.ColumnWidths["Type"] = 140;
+        settings.SetSort(@"D:\Work", "Size", ascending: true);
         settings.Save();
 
         await Verify(Settings.Load(path));

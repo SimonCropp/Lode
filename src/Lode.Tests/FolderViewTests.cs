@@ -971,6 +971,112 @@ public class FolderViewTests
         await Assert.That(view.ColumnWidth(0)).IsLessThan(text + 100);
     }
 
+    // A column sized by dragging its divider, or sized to fit, is that wide in every view from
+    // then on, and the next time Lode starts, kept at 100% scale. Hidden and shown again, it is as
+    // wide as it was. A width set otherwise, as Windows might set one, is not kept.
+    [Test]
+    public async Task ColumnWidthsAreKeptForEveryView()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings {ShowHidden = false};
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root, settings);
+        var list = view.Controls.OfType<ListView>().Single();
+        var sized = new List<FolderView>();
+        view.ColumnWidthsChanged += sized.Add;
+
+        // Name, Date modified, Type and Size: Folder only a search has.
+        list.Columns[3].Width = 333;
+        Header.LetGoOfDivider(list, 1, view.LogicalToDeviceUnits(200));
+        using (var menu = view.HeaderMenu(clickedColumn: 0))
+        {
+            menu.Items[0].PerformClick();
+        }
+
+        var nameWidth = (int)Math.Round(view.ColumnWidth(0) * 96.0 / view.DeviceDpi);
+        using var other = await Open(fixture.Root, settings);
+        var opened = (other.ColumnWidth(0), other.ColumnWidth(1));
+        other.SetColumnShown(dateColumn, false);
+        other.SetColumnShown(dateColumn, true);
+
+        await Assert.That(settings.ColumnWidths.OrderBy(_ => _.Key).Select(_ => (_.Key, _.Value)))
+            .IsEquivalentTo([("Date", 200), ("Name", nameWidth)], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(sized).IsEquivalentTo([view, view], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(opened).IsEqualTo((other.LogicalToDeviceUnits(nameWidth), other.LogicalToDeviceUnits(200)));
+        await Assert.That(other.ColumnWidth(1)).IsEqualTo(other.LogicalToDeviceUnits(200));
+    }
+
+    // Each folder is sorted as it was last, in any view, as Explorer keeps each folder's: gone
+    // away from and back to, or opened in another view. Other folders are by Name, A to Z. Sorted
+    // back to that, a folder is noted no more.
+    [Test]
+    public async Task EachFolderKeepsItsSort()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings {ShowHidden = false};
+        using var view = await Open(fixture.Root, settings);
+        view.SortBy(sizeColumn);
+        view.SortBy(sizeColumn);
+
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        var elsewhere = view.Sort;
+        view.GoBack();
+        await Pump.Loaded(view);
+        var back = view.Sort;
+        using var other = await Open(fixture.Root, settings);
+        var opened = other.Sort;
+        var noted = settings.FolderSorts.Select(_ => (_.Column, _.Ascending)).ToList();
+
+        other.SortBy(FolderView.nameColumn);
+
+        await Assert.That(elsewhere).IsEqualTo((FolderView.nameColumn, true));
+        await Assert.That(back).IsEqualTo((sizeColumn, false));
+        await Assert.That(opened).IsEqualTo((sizeColumn, false));
+        await Assert.That(noted).IsEquivalentTo([("Size", false)]);
+        await Assert.That(settings.FolderSorts).IsEmpty();
+    }
+
+    // Sorted by Folder, a search goes back, once it ends, to how its folder is sorted, which it
+    // leaves as it was: Folder is the search's alone.
+    [Test]
+    public async Task EndingASearchSortedByFolderGoesBackToTheFoldersSort()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings {ShowHidden = false};
+        using var view = await Open(fixture.Root, settings);
+        view.SortBy(dateColumn);
+
+        view.Filter = "*.aleph";
+        await Pump.Loaded(view);
+        view.SortBy(folderColumn);
+        var searching = view.Sort;
+        view.Filter = "";
+        await Pump.Loaded(view);
+
+        await Assert.That(searching).IsEqualTo((folderColumn, true));
+        await Assert.That(view.Sort).IsEqualTo((dateColumn, true));
+        await Assert.That(settings.FolderSorts.Select(_ => (_.Column, _.Ascending))).IsEquivalentTo([("Date", true)]);
+    }
+
+    // A folder renamed while a view shows it, the view follows, sorted as it was, and the folder
+    // is sorted so under its new name.
+    [Test]
+    public async Task ARenamedFolderKeepsItsSort()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings {ShowHidden = false};
+        using var view = await Open(fixture.At("Docs"), settings);
+        view.SortBy(typeColumn);
+
+        FileOperations.Rename(IntPtr.Zero, fixture.At("Docs"), "Documents");
+        await Pump.Until(() => view.CurrentPath == fixture.At("Documents"));
+        await Pump.Loaded(view);
+
+        await Assert.That(view.Sort).IsEqualTo((typeColumn, true));
+        await Assert.That(settings.SortOf(fixture.At("Documents"))?.Column).IsEqualTo("Type");
+    }
+
     // Typing the start of a name moves to the next item that has it, going round to the top.
     [Test]
     public async Task TypingTheStartOfANameFindsTheNextWithIt()
@@ -1089,9 +1195,9 @@ public class FolderViewTests
             ClientSize = new(900, 400)
         };
 
-    static async Task<FolderView> OpenIn(Form form, string path)
+    static async Task<FolderView> OpenIn(Form form, string path, Settings? settings = null)
     {
-        var view = new FolderView(new() {ShowHidden = false}, noPlaces)
+        var view = new FolderView(settings ?? new() {ShowHidden = false}, noPlaces)
         {
             Dock = DockStyle.Fill
         };
