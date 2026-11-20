@@ -1920,20 +1920,39 @@ class MainForm : Form
         }
         else if (eventArgs.Button == MouseButtons.Right)
         {
-            var view = page.Controls.OfType<FolderView>().First();
-            var menu = new ExplorerMenu();
-            menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true));
-            menu.Items.Add("Close tab", null, (_, _) => CloseTab(page));
-            var index = tabs.TabPages.IndexOf(page);
-            menu.Items.Add("Close other tabs", null, (_, _) => CloseOtherTabs(page));
-            menu.Items.Add(new ToolStripMenuItem("Close tabs to the left", null, (_, _) => CloseTabsToTheLeft(page)) { Enabled = index > 0 });
-            menu.Items.Add(new ToolStripMenuItem("Close tabs to the right", null, (_, _) => CloseTabsToTheRight(page)) { Enabled = index < tabs.TabCount - 1 });
-            menu.Items.Add("Close all tabs", null, (_, _) => CloseAllTabs());
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { Enabled = CanReopenClosedTab, ShortcutKeyDisplayString = "Ctrl+Shift+T" });
+            var menu = TabMenu(page);
             menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
             menu.Show(tabs, eventArgs.Location);
         }
+    }
+
+    /// <summary>
+    /// What right-clicking <paramref name="page"/> offers. Pin and Unpin are for the folder that
+    /// tab shows, which need not be the tab selected.
+    /// </summary>
+    internal ExplorerMenu TabMenu(TabPage page)
+    {
+        var view = page.Controls.OfType<FolderView>().First();
+        var menu = new ExplorerMenu();
+        menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true));
+        var path = view.CurrentPath;
+        if (!Locations.IsThisPC(path))
+        {
+            var pinned = IsPinned(path);
+            var pinText = pinned ? "Unpin from Quick access" : "Pin to Quick access";
+            menu.Items.Add(pinText, null, (_, _) => ShellContextMenu.SetPinned(Handle, path, !pinned));
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Close tab", null, (_, _) => CloseTab(page));
+        var index = tabs.TabPages.IndexOf(page);
+        menu.Items.Add("Close other tabs", null, (_, _) => CloseOtherTabs(page));
+        menu.Items.Add(new ToolStripMenuItem("Close tabs to the left", null, (_, _) => CloseTabsToTheLeft(page)) { Enabled = index > 0 });
+        menu.Items.Add(new ToolStripMenuItem("Close tabs to the right", null, (_, _) => CloseTabsToTheRight(page)) { Enabled = index < tabs.TabCount - 1 });
+        menu.Items.Add("Close all tabs", null, (_, _) => CloseAllTabs());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { Enabled = CanReopenClosedTab, ShortcutKeyDisplayString = "Ctrl+Shift+T" });
+        return menu;
     }
 
     void ShowCommandPalette() =>

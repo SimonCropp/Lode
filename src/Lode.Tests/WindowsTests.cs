@@ -749,6 +749,46 @@ public class WindowsTests
         return $"{command.Text} (disabled)";
     }
 
+    // Right-clicking a tab: Unpin for the fixture's folder, which is pinned, and Pin for Docs,
+    // which is not, whichever tab is selected.
+    [Test]
+    public async Task TabMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root, fixture.At("Docs"));
+        var pages = form.Views.Select(_ => (TabPage)_.Parent!).ToList();
+
+        await Verify(
+            new
+            {
+                pinned = DescribeMenu(form.TabMenu(pages[0])),
+                notPinned = DescribeMenu(form.TabMenu(pages[1]))
+            });
+    }
+
+    static List<string> DescribeMenu(ToolStripDropDown menu)
+    {
+        using (menu)
+        {
+            return menu.Items.Cast<ToolStripItem>().Select(DescribeItem).ToList();
+        }
+    }
+
+    static string DescribeItem(ToolStripItem item)
+    {
+        if (item is ToolStripSeparator)
+        {
+            return "----";
+        }
+
+        if (item.Enabled)
+        {
+            return item.Text!;
+        }
+
+        return $"{item.Text} (disabled)";
+    }
+
     // What Ctrl+Shift+P lists with nothing selected.
     [Test]
     public async Task PaletteCommands()
