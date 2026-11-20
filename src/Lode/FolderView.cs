@@ -3835,7 +3835,7 @@ sealed class FolderView : UserControl
             new("New folder", CreateFolder)
         ];
 
-        var shown = menu.ShowForFolder(Owner, CurrentPath, location, customCommands, HandleBackgroundVerb);
+        var shown = menu.ShowForFolder(Owner, CurrentPath, location, customCommands, _ => HandleBackgroundVerb(_));
         if (shown)
         {
             return;
@@ -3851,11 +3851,28 @@ sealed class FolderView : UserControl
         fallback.Show(location);
     }
 
-    bool HandleBackgroundVerb(string verb)
+    // New's entries come with verbs: NewFolder, and a file type's extension. Lode makes those,
+    // as its own New does, so Ctrl+Z hears of them and the name is ready to edit. A type Lode
+    // doesn't know, one made by a program of its own say, and Shortcut, which is a wizard, are
+    // the shell's.
+    internal bool HandleBackgroundVerb(string verb, IReadOnlyList<ShellNew.Entry>? newTypes = null)
     {
         if (verb.Equals("paste", StringComparison.OrdinalIgnoreCase))
         {
             Paste();
+            return true;
+        }
+
+        if (verb.Equals("NewFolder", StringComparison.OrdinalIgnoreCase))
+        {
+            CreateFolder();
+            return true;
+        }
+
+        if (verb.StartsWith('.') &&
+            (newTypes ?? ShellNew.Current).FirstOrDefault(_ => _.Extension.Equals(verb, StringComparison.OrdinalIgnoreCase)) is { } type)
+        {
+            CreateFile(type);
             return true;
         }
 

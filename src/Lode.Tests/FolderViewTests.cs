@@ -449,6 +449,28 @@ public class FolderViewTests
         await Assert.That(File.Exists(fixture.At("notes - Shortcut.lnk"))).IsTrue();
     }
 
+    // New's entries chosen from Show more options are done by Lode, as from its own New, so
+    // Ctrl+Z hears of them: by the shell's verbs, NewFolder and a type's extension. A type Lode
+    // doesn't know, and Shortcut, a wizard, are left to the shell.
+    [Test]
+    public async Task NewFromTheClassicMenuIsLodes()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Archive"));
+        ShellNew.Entry[] types = [new(".txt", "Text Document")];
+
+        var folder = view.HandleBackgroundVerb("NewFolder", types);
+        await Pump.Loaded(view);
+        var file = view.HandleBackgroundVerb(".txt", types);
+        await Pump.Loaded(view);
+        var unknown = view.HandleBackgroundVerb(".docx", types);
+        var shortcut = view.HandleBackgroundVerb("NewLink", types);
+
+        await Assert.That((folder, file, unknown, shortcut)).IsEqualTo((true, true, false, false));
+        await Assert.That(Directory.Exists(fixture.At("Archive", "New folder"))).IsTrue();
+        await Assert.That(File.Exists(fixture.At("Archive", "New Text Document.txt"))).IsTrue();
+    }
+
     [Test]
     public async Task RevealSelectsTheFile()
     {

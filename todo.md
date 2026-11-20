@@ -11,7 +11,6 @@ How sure each item is:
 Contents:
 
  * [Bugs, unverified](#bugs-unverified)
- * [Smaller bugs](#smaller-bugs)
  * [Missing features](#missing-features)
  * [Checked and found sound](#checked-and-found-sound)
 
@@ -28,13 +27,6 @@ Contents:
 **Unverified:** that git goes on upward past a `.git` folder it won't take. Unlikely to be met either way.
 
 **Fix:** in `Git`, set `GIT_CEILING_DIRECTORIES` to the folder above the code folder, and take `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` out of the environment.
-
-
-## Smaller bugs
-
-All read, none run.
-
- * **New chosen from the classic menu** goes through the shell alone, so Lode's Ctrl+Z never hears of what it made. Delete and Create shortcut are caught by their verbs, `delete` and `link`, and done by Lode; New's entries are filled in only as its submenu opens, and whether they have verbs to catch is unverified.
 
 
 ## Missing features
