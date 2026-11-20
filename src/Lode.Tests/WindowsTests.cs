@@ -949,6 +949,67 @@ public class WindowsTests
         await Assert.That(form.Views.Select(_ => Path.GetFileName(_.CurrentPath))).IsEquivalentTo(["Archive"]);
     }
 
+    // A drive plugged in or taken out is in the tree, or gone from it, without F5, as Windows
+    // tells every window: once, a little after the last of a burst. A device that isn't a drive,
+    // a mouse say, reads nothing.
+    [Test]
+    public async Task DrivesComeAndGoWithoutRefresh()
+    {
+        using var fixture = Fixture.Create();
+        var drive = Path.GetDirectoryName(fixture.Root)!;
+        var drives = new List<string> { drive };
+        var places = new Places([], [], ShowComputer: true, _ => "", drives);
+        using var form = new QuietForm([fixture.Root], new(), places)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000)
+        };
+        form.Show();
+        await Pump.Loaded(form.ActiveView!);
+        List<string> Drives() =>
+            form.Tree.Nodes.Cast<TreeNode>().Last().Nodes.Cast<TreeNode>().Select(_ => (string)_.Tag!).ToList();
+        void Tell(int change, int deviceType)
+        {
+            // DEV_BROADCAST_VOLUME: size, device type, reserved, unit mask, flags.
+            var broadcast = Marshal.AllocHGlobal(18);
+            try
+            {
+                Marshal.WriteInt32(broadcast, 0, 18);
+                Marshal.WriteInt32(broadcast, 4, deviceType);
+                Marshal.WriteInt32(broadcast, 8, 0);
+                Marshal.WriteInt32(broadcast, 12, 1 << 25);
+                Marshal.WriteInt16(broadcast, 16, 0);
+                NativeMethods.SendMessage(form.Handle, 0x0219, change, broadcast);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(broadcast);
+            }
+        }
+
+        const int arrival = 0x8000;
+        const int removed = 0x8004;
+        const int volume = 2;
+        const int deviceInterface = 5;
+
+        drives.Add(fixture.At("Docs"));
+        Tell(arrival, volume);
+        Tell(arrival, volume);
+        var atOnce = Drives();
+        await Pump.Until(() => Drives().Count == 2);
+
+        drives.RemoveAt(1);
+        Tell(removed, deviceInterface);
+        await Pump.For(TimeSpan.FromMilliseconds(700));
+        var notADrive = Drives();
+        Tell(removed, volume);
+        await Pump.Until(() => Drives().Count == 1);
+
+        await Assert.That(atOnce).IsEquivalentTo([drive]);
+        await Assert.That(notADrive).IsEquivalentTo([drive, fixture.At("Docs")]);
+    }
+
     // Ctrl+1 to Ctrl+8 go to the tab at that place, on the top row or the number pad, and Ctrl+9
     // to the last, as in Explorer and the browsers. A number past the last tab does nothing.
     [Test]

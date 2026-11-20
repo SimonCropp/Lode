@@ -107,6 +107,8 @@ class MainForm : Form
     /// </summary>
     internal static TimeProvider Time { get; set; } = TimeProvider.System;
 
+    internal FolderTree Tree => tree;
+
     public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
     public IEnumerable<FolderView> Views =>
@@ -146,6 +148,11 @@ class MainForm : Form
             }
         };
         unusedTabsTimer.Start();
+        drivesTimer.Tick += (_, _) =>
+        {
+            drivesTimer.Stop();
+            DrivesChanged();
+        };
 
         SuspendLayout();
         AutoScaleDimensions = new(96F, 96F);
@@ -2403,11 +2410,46 @@ class MainForm : Form
     // restarted from Task Manager, which empties the shell's list of folder windows.
     static readonly int explorerStartedMessage = RegisterWindowMessage("TaskbarCreated");
 
-    // The mouse's back and forward buttons arrive as app commands from whichever control is
-    // under the pointer.
     // WM_CLIPBOARDUPDATE.
     const int clipboardUpdate = 0x031D;
 
+    // WM_DEVICECHANGE, a device's arrival and removal, and the broadcast's type for a volume.
+    // Windows tells every top-level window of a drive plugged in, mapped, taken out or
+    // disconnected.
+    const int deviceChange = 0x0219;
+    const int deviceArrival = 0x8000;
+    const int deviceRemoveComplete = 0x8004;
+    const int volumeDevice = 2;
+
+    // DEV_BROADCAST_HDR's device type, after its size.
+    static bool IsVolume(IntPtr broadcast) =>
+        broadcast != IntPtr.Zero &&
+        Marshal.ReadInt32(broadcast, 4) == volumeDevice;
+
+    // A drive coming or going is told of more than once, as each of its parts arrives, and
+    // several drives can come at once, from a card reader say; the drives are read once, a
+    // little after the last.
+    readonly Timer drivesTimer = new()
+    {
+        Interval = 300
+    };
+
+    // The drives in the tree, and in the tabs showing This PC, read again: only those that came
+    // or went change, as on F5.
+    void DrivesChanged()
+    {
+        tree.RefreshDrives();
+        foreach (var view in Views)
+        {
+            if (Locations.IsThisPC(view.CurrentPath))
+            {
+                view.Reload();
+            }
+        }
+    }
+
+    // The mouse's back and forward buttons arrive as app commands from whichever control is
+    // under the pointer.
     protected override void WndProc(ref Message message)
     {
         if (message.Msg == explorerStartedMessage)
@@ -2418,6 +2460,14 @@ class MainForm : Form
         if (message.Msg == clipboardUpdate)
         {
             CutItems.Refresh();
+        }
+
+        if (message.Msg == deviceChange &&
+            (int)message.WParam is deviceArrival or deviceRemoveComplete &&
+            IsVolume(message.LParam))
+        {
+            drivesTimer.Stop();
+            drivesTimer.Start();
         }
 
         if (message.Msg == WindowMessageAppCommand)
@@ -2453,6 +2503,7 @@ class MainForm : Form
             toolTip.Dispose();
             trayTimer.Dispose();
             unusedTabsTimer.Dispose();
+            drivesTimer.Dispose();
         }
 
         base.Dispose(disposing);

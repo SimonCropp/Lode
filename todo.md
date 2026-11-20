@@ -15,19 +15,6 @@ Contents:
  * [Checked and found sound](#checked-and-found-sound)
 
 
-## Bugs, unverified
-
-
-### 31. Purge and Push go by a .git being there, where git decides for itself
-
-**Where:** [CodeCommands.cs:76-80](src/Lode/CodeCommands.cs#L76) (`IsRepo`), [CodeCommands.cs:161-194](src/Lode/CodeCommands.cs#L161) (`Git`), [GitPurge.cs:147-156](src/Lode/GitPurge.cs#L147).
-
-**What happens:** with the home folder a repository, and `Code\Foo\.git` a folder git won't take (empty, or its `HEAD` zeroed in a crash), Lode counts Foo a repository, and git walks past it up to the home one, where all of Foo is untracked. The dry run then lists all of Foo, and Purge deletes it. Push there would commit to, and push, the home repository. The same if Lode is started with `GIT_DIR` or `GIT_WORK_TREE` set, from a git alias or hook: only `GIT_TERMINAL_PROMPT` is set.
-
-**Unverified:** that git goes on upward past a `.git` folder it won't take. Unlikely to be met either way.
-
-**Fix:** in `Git`, set `GIT_CEILING_DIRECTORIES` to the folder above the code folder, and take `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` out of the environment.
-
 
 ## Missing features
 
@@ -35,20 +22,6 @@ Contents:
 ### 2. Run a command from the address bar
 
 Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folder open, which developers use a good deal. Lode takes `cmd` for a folder of that name in the folder open, and says it can't find it. The shell's own names, `shell:downloads` and the like, are not known either.
-
-
-### 3. Drives come and go only on F5
-
-**Where:** `MainForm.cs:1366-1373` is the only caller of `FolderTree.RefreshDrives`. `MainForm.WndProc` (`1956-1978`) handles only `WM_APPCOMMAND`. Nothing in `src/Lode` handles `WM_DEVICECHANGE` or registers with `SHChangeNotify`. This PC's list is not watched: `FolderView.Watch` returns at once for it.
-
-A USB drive plugged in, or a drive mapped, This PC's own **Map network drive** included, is not in the tree or in This PC until F5, and one taken out stays, with what was beneath it. Explorer shows both at once.
-
-**Fix:** handle `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`, `DBT_DEVICEREMOVECOMPLETE`), a little after the last of a burst, and refresh only the drives that changed.
-
-
-### 6. Only a details list
-
-No icons, tiles or thumbnails, and no preview pane. In the list a folder always has the plain folder icon ([ShellIcons.cs:184-187](src/Lode/ShellIcons.cs#L184)), where the tree and the tabs show a folder's own (Downloads, Documents, one with a `desktop.ini`).
 
 
 ### 7. Search
