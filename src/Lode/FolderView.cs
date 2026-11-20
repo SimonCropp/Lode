@@ -2837,7 +2837,32 @@ sealed class FolderView : UserControl
             return;
         }
 
-        _ = FileOperations.Paste(Owner, clipboard, CurrentPath);
+        Paste(clipboard);
+    }
+
+    /// <summary>
+    /// Pastes what the clipboard holds, <paramref name="clipboard"/>, selecting it once it is
+    /// there. Tests call it, leaving the clipboard alone.
+    /// </summary>
+    internal void Paste(FileOperations.ClipboardFiles clipboard) =>
+        Loading = PasteAndSelect(clipboard);
+
+    // What was pasted is selected once it is there, as Explorer has it: the folder is read
+    // again for it, unless the view has gone somewhere else meanwhile.
+    async Task PasteAndSelect(FileOperations.ClipboardFiles clipboard)
+    {
+        var folder = CurrentPath;
+        var placed = await FileOperations.Paste(Owner, clipboard, folder);
+        if (IsDisposed ||
+            placed.Count == 0 ||
+            !Locations.Same(folder, CurrentPath))
+        {
+            return;
+        }
+
+        pendingSelection = placed;
+        Reload();
+        await Loading;
     }
 
     /// <summary>

@@ -14,12 +14,28 @@ static class FileOperations
     const int controlKeyState = 8;
     const int cancelledByUser = 1223;
 
-    public static Task<bool> Transfer(IntPtr owner, IReadOnlyCollection<string> sources, string destination, bool move)
+    public static async Task<bool> Transfer(IntPtr owner, IReadOnlyCollection<string> sources, string destination, bool move) =>
+        (await TransferPlacing(owner, sources, destination, move)).Succeeded;
+
+    /// <summary>
+    /// As <see cref="Transfer"/>, giving too what is in <paramref name="destination"/> for it:
+    /// each item copied or moved there, under the name it was given, a folder merged into one
+    /// already there included, and on a move each already there.
+    /// </summary>
+    static Task<(bool Succeeded, List<string> Placed)> TransferPlacing(IntPtr owner, IReadOnlyCollection<string> sources, string destination, bool move)
     {
         var batches = Batches(sources, destination, move);
+        List<string> already = [];
+        if (move)
+        {
+            already = sources
+                .Where(_ => Locations.IsChildOf(_, destination))
+                .ToList();
+        }
+
         if (batches.Count == 0)
         {
-            return Task.FromResult(true);
+            return Task.FromResult((true, already));
         }
 
         var kind = ShellFileOperation.Kind.Copy;
@@ -44,17 +60,39 @@ static class FileOperations
 
                 // One change, for one Ctrl+Z, however many batches it took.
                 var pairs = outcomes.SelectMany(Pairs).ToList();
+                var placed = Placed(pairs.Select(_ => _.To), destination)
+                    .Concat(already)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
                 if (move)
                 {
                     UndoHistory.Instance.RecordMove(pairs, outcomes.SelectMany(Emptied).ToList());
-                    return succeeded;
+                    return (succeeded, placed);
                 }
 
                 // A folder merged into one already there is not among the changes, so undoing
                 // the copy sends to the Recycle Bin what it brought, not what was there before.
                 UndoHistory.Instance.RecordCreated("copy", pairs.Select(_ => _.To).ToList());
-                return succeeded;
+                return (succeeded, placed);
             });
+    }
+
+    // What is directly in the destination for what was done: a folder merged into one there is
+    // done item by item, each inside it, so that folder.
+    static IEnumerable<string> Placed(IEnumerable<string> done, string destination)
+    {
+        foreach (var path in done)
+        {
+            var relative = Path.GetRelativePath(destination, path);
+            if (relative.StartsWith("..", StringComparison.Ordinal) ||
+                Path.IsPathRooted(relative))
+            {
+                continue;
+            }
+
+            var first = relative.Split(Path.DirectorySeparatorChar)[0];
+            yield return Path.Combine(destination, first);
+        }
     }
 
     /// <summary>
@@ -161,15 +199,16 @@ static class FileOperations
     /// Pastes what was copied or cut into <paramref name="destination"/>. What was cut is taken
     /// off the clipboard once it has been moved, unless something else has been put there since.
     /// </summary>
-    public static async Task Paste(IntPtr owner, ClipboardFiles clipboard, string destination)
+    /// <returns>What is in <paramref name="destination"/> for the paste, for it to be selected.</returns>
+    public static async Task<IReadOnlyList<string>> Paste(IntPtr owner, ClipboardFiles clipboard, string destination)
     {
-        var moved = await Transfer(owner, clipboard.Paths, destination, clipboard.Move);
+        var (moved, placed) = await TransferPlacing(owner, clipboard.Paths, destination, clipboard.Move);
         if (!clipboard.Move ||
             !moved ||
             ReadClipboard() is not { Move: true } now ||
             !now.Paths.SequenceEqual(clipboard.Paths, StringComparer.OrdinalIgnoreCase))
         {
-            return;
+            return placed;
         }
 
         try
@@ -180,6 +219,8 @@ static class FileOperations
         {
             // Another process is holding the clipboard open.
         }
+
+        return placed;
     }
 
     // The shell runs the operation on the calling thread, so a large copy on the UI thread
@@ -660,7 +701,7 @@ static class FileOperations
         }
 
         var sources = (string[])eventArgs.Data!.GetData(DataFormats.FileDrop)!;
-        Transfer(owner, sources, destination!, effect == DragDropEffects.Move);
+        _ = Transfer(owner, sources, destination!, effect == DragDropEffects.Move);
 
         // We move the files ourselves. Reporting Move back would tell the drag source
         // (Explorer, for one) to delete the originals as well.

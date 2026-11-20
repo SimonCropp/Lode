@@ -1228,6 +1228,28 @@ public class FolderViewTests
         }
     }
 
+    // What is pasted is selected once it is there, as Explorer has it: under the name it was
+    // given, a copy into its own folder becoming "- Copy", and nothing else that was selected.
+    [Test]
+    public async Task WhatIsPastedIsSelected()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Archive"));
+        await File.WriteAllTextAsync(fixture.At("Archive", "already.aleph"), "");
+        view.Reveal(fixture.At("Archive", "already.aleph"));
+        await Pump.Loaded(view);
+
+        view.Paste(new([fixture.At("notes.aleph"), fixture.At("Docs")], false));
+        await Pump.Loaded(view);
+        var intoArchive = Selected(view);
+
+        view.Paste(new([fixture.At("Archive", "notes.aleph")], false));
+        await Pump.Loaded(view);
+
+        await Assert.That(intoArchive).IsEquivalentTo(["Docs", "notes.aleph"]);
+        await Assert.That(Selected(view)).IsEquivalentTo(["notes - Copy.aleph"]);
+    }
+
     // A window for a view, off screen. Only in a window does the list draw rows, and measure them.
     static Form Host() =>
         new QuietForm
