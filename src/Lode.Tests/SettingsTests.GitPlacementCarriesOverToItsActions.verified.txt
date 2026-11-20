@@ -23,6 +23,20 @@
       menuNested: true
     },
     {
+      id: gitTag,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
+      id: gitDeleteTag,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
       id: gitDiscard,
       button: true,
       menu: false,

@@ -20,6 +20,8 @@
   Git pull (disabled),
   Git switch to default branch (disabled),
   Git push (disabled),
+  Git tag (disabled),
+  Git delete tag (disabled),
   Git discard (disabled),
   Git purge (disabled),
   Update NuGets (disabled),

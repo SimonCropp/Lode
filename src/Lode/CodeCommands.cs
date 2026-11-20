@@ -255,6 +255,83 @@ static class CodeCommands
     }
 
     /// <summary>
+    /// Tags the commit each repository is at with <paramref name="name"/>, then pushes the tag to
+    /// origin. One that has a tag of that name already fails, and keeps the tag it has.
+    /// </summary>
+    public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(
+            repos,
+            progress,
+            cancel,
+            repo =>
+            {
+                var tag = Git(repo, cancel, network: false, "tag", name);
+                if (!tag.Succeeded)
+                {
+                    return tag;
+                }
+
+                var push = Git(repo, cancel, network: true, "push", "origin", $"refs/tags/{name}");
+                return push with
+                {
+                    Output = $"Tagged {name}\n{push.Output}".Trim()
+                };
+            });
+
+    /// <summary>
+    /// Deletes the tag <paramref name="name"/> from each repository and from origin. Gone from
+    /// one of them already, or never pushed, it goes from the other; in neither, it fails.
+    /// </summary>
+    public static Task<List<RepoResult>> DeleteTag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(
+            repos,
+            progress,
+            cancel,
+            repo =>
+            {
+                var local = Git(repo, cancel, network: false, "tag", "-d", name);
+                var remote = Git(repo, cancel, network: true, "push", "origin", "--delete", $"refs/tags/{name}");
+
+                // Git speaks English here, as Git asks it to, so what it says can be read. Origin
+                // without the tag refuses, as GitHub does, or deletes it all the same with a
+                // warning, as origin in a folder does.
+                var notLocal = !local.Succeeded && local.Output.Contains("not found", StringComparison.Ordinal);
+                var notRemote = remote.Succeeded switch
+                {
+                    true => remote.Output.Contains("non-existent ref", StringComparison.Ordinal),
+                    false => remote.Output.Contains("remote ref does not exist", StringComparison.Ordinal)
+                };
+                var remoteDeleted = remote.Succeeded && !notRemote;
+                var succeeded = (local.Succeeded || notLocal) &&
+                                (remoteDeleted || notRemote) &&
+                                (local.Succeeded || remoteDeleted);
+                return remote with
+                {
+                    Succeeded = succeeded,
+                    Output = $"{local.Output}\n{remote.Output}".Trim()
+                };
+            });
+
+    /// <summary>
+    /// The tags in the repositories, the newest first, each once.
+    /// </summary>
+    public static List<string> Tags(IReadOnlyList<string> repos) =>
+        repos
+            .SelectMany(
+                repo =>
+                {
+                    var result = Git(repo, "tag", "--sort=-creatordate");
+                    if (!result.Succeeded)
+                    {
+                        return [];
+                    }
+
+                    return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                })
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
     /// Commits every tracked change with the message, then pushes to origin.
     /// </summary>
     public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, Cancel cancel = default) =>

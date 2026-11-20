@@ -61,6 +61,17 @@ static class CodeMenu
                 });
         }
 
+        commands.Add(
+            LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…") with
+            {
+                NestedText = "Tag…"
+            });
+        commands.Add(
+            LodeActions.Command("gitDeleteTag", () => DeleteTag(owner, folders, settings.CodeDirectory), text: "Git delete tag…") with
+            {
+                NestedText = "Delete tag…"
+            });
+
         commands.AddRange(
         [
             LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…") with
@@ -128,6 +139,82 @@ static class CodeMenu
             "Git push",
             folders,
             async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress, cancel)));
+    }
+
+    // Asks for the tag's name, then tags the commit each repository is at and pushes the tag.
+    static async void Tag(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    {
+        var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
+        if (repos.Count == 0)
+        {
+            NoRepos("Git tag", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
+        using var form = new GitTextForm(
+            "Git tag",
+            $"Tag the commit {Describe(repos)} is at, and push the tag to origin.",
+            "Tag:",
+            "",
+            "Tag",
+            [],
+            isTagName: true);
+        if (form.ShowDialog(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var name = form.Value;
+        _ = ActionLog.Run(
+            "Git tag",
+            folders,
+            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Tag(repos, name, progress, cancel)));
+    }
+
+    // Asks which tag, offering those there are, newest first, then deletes it from each
+    // repository and from origin.
+    static async void DeleteTag(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    {
+        var (repos, tags) = await Task.Run(
+            () =>
+            {
+                var found = CodeCommands.FindRepos(folders, codeFolder);
+                return (found, CodeCommands.Tags(found));
+            });
+        if (repos.Count == 0)
+        {
+            NoRepos("Git delete tag", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
+        using var form = new GitTextForm(
+            "Git delete tag",
+            $"Delete a tag from {Describe(repos)}, and from origin. This cannot be undone.",
+            "Tag:",
+            tags.FirstOrDefault() ?? "",
+            "Delete",
+            tags,
+            isTagName: true);
+        if (form.ShowDialog(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var name = form.Value;
+        _ = ActionLog.Run(
+            "Git delete tag",
+            folders,
+            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.DeleteTag(repos, name, progress, cancel)));
     }
 
     static async void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
@@ -229,30 +316,56 @@ static class CodeMenu
     // Asks for the commit message, which doubles as the confirmation. Null when cancelled.
     static string? AskCommitMessage(Control owner, IReadOnlyList<string> repos)
     {
-        using var form = new CommitMessageForm($"Commit all changes in {Describe(repos)} and push to origin.", defaultCommitMessage);
+        using var form = new GitTextForm(
+            "Git push",
+            $"Commit all changes in {Describe(repos)} and push to origin.",
+            "Commit message:",
+            defaultCommitMessage,
+            "Push",
+            []);
         if (form.ShowDialog(owner) != DialogResult.OK)
         {
             return null;
         }
 
-        return form.Message;
+        return form.Value;
     }
 
-    internal sealed class CommitMessageForm : Form
+    /// <summary>
+    /// Asks for the text a git action needs: Push's commit message, or a tag. With
+    /// <paramref name="choices"/>, a drop-down of them, which can still be typed in.
+    /// </summary>
+    internal sealed class GitTextForm : Form
     {
-        TextBox message = new()
-        {
-            Name = "message",
-            Width = 380
-        };
+        readonly Control input;
 
-        public string Message => message.Text.Trim();
+        public string Value => input.Text.Trim();
 
-        public CommitMessageForm(string description, string defaultMessage)
+        public GitTextForm(string title, string description, string prompt, string text, string accept, IReadOnlyList<string> choices, bool isTagName = false)
         {
+            if (choices.Count > 0)
+            {
+                var combo = new ComboBox
+                {
+                    Name = "value",
+                    Width = 380,
+                    DropDownStyle = ComboBoxStyle.DropDown
+                };
+                combo.Items.AddRange([.. choices]);
+                input = combo;
+            }
+            else
+            {
+                input = new TextBox
+                {
+                    Name = "value",
+                    Width = 380
+                };
+            }
+
             AutoScaleDimensions = new(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            Text = "Git push";
+            Text = title;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -262,18 +375,18 @@ static class CodeMenu
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Padding = new(9);
 
-            message.Text = defaultMessage;
+            input.Text = text;
             var label = new Label
             {
                 AutoSize = true,
                 MaximumSize = new(380, 0),
                 Margin = new(3, 3, 3, 6),
-                Text = $"{description}\n\nCommit message:"
+                Text = $"{description}\n\n{prompt}"
             };
             var push = new Button
             {
-                Name = "push",
-                Text = "Push",
+                Name = "accept",
+                Text = accept,
                 DialogResult = DialogResult.OK,
                 AutoSize = true
             };
@@ -286,8 +399,9 @@ static class CodeMenu
             AcceptButton = push;
             CancelButton = cancel;
 
-            // An empty message would make git refuse the commit.
-            message.TextChanged += (_, _) => push.Enabled = Message.Length > 0;
+            // Git refuses an empty commit message, and a tag with a space in it.
+            input.TextChanged += (_, _) => push.Enabled = IsValid(Value, isTagName);
+            push.Enabled = IsValid(Value, isTagName);
 
             var buttons = new FlowLayoutPanel
             {
@@ -308,9 +422,24 @@ static class CodeMenu
                 Location = new(Padding.Left, Padding.Top)
             };
             layout.Controls.Add(label);
-            layout.Controls.Add(message);
+            layout.Controls.Add(input);
             layout.Controls.Add(buttons);
             Controls.Add(layout);
+        }
+
+        internal static bool IsValid(string value, bool isTagName)
+        {
+            if (value.Length == 0)
+            {
+                return false;
+            }
+
+            if (!isTagName)
+            {
+                return true;
+            }
+
+            return !value.Any(char.IsWhiteSpace);
         }
     }
 }

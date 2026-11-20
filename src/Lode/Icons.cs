@@ -52,6 +52,7 @@ static class Icons
     public const char Git = '\uE895';
     public const char Pull = '\uE896';
     public const char Push = '\uE898';
+    public const char Tag = '\uE8EC';
     // Two arrows, one each way.
     public const char SwitchBranch = '\uE8AB';
     public const char Discard = '\uE7A7';

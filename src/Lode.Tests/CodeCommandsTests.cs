@@ -273,6 +273,66 @@ public class CodeCommandsTests
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("from elsewhere");
     }
 
+    // A tag goes on the commit each repository is at, and to origin. A second of the same name
+    // fails, leaving the first.
+    [Test]
+    public async Task TagTagsAndPushes()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+
+        var tagged = (await CodeCommands.Tag([repo], "v1.0")).Single();
+        var again = (await CodeCommands.Tag([repo], "v1.0")).Single();
+
+        await Assert.That(tagged.Succeeded).IsTrue();
+        await Assert.That(again.Succeeded).IsFalse();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "v1.0^{commit}")).IsEqualTo(Scratch.Git(repo, "rev-parse", "HEAD"));
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "tag")).IsEqualTo("v1.0");
+    }
+
+    // Deleting a tag takes it from the repository and from origin. One never pushed goes from
+    // the repository alone; one in neither fails.
+    [Test]
+    public async Task DeleteTagDeletesItEverywhere()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await CodeCommands.Tag([repo], "v1.0");
+        Scratch.Git(repo, "tag", "local-only");
+
+        var pushed = (await CodeCommands.DeleteTag([repo], "v1.0")).Single();
+        var localOnly = (await CodeCommands.DeleteTag([repo], "local-only")).Single();
+        var missing = (await CodeCommands.DeleteTag([repo], "missing")).Single();
+
+        await Assert.That((pushed.Succeeded, localOnly.Succeeded, missing.Succeeded)).IsEqualTo((true, true, false));
+        await Assert.That(Scratch.Git(repo, "tag")).IsEqualTo("");
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "tag")).IsEqualTo("");
+    }
+
+    // The tags in every repository, each once, for Delete tag to offer.
+    [Test]
+    public async Task TagsOfEveryRepo()
+    {
+        using var code = new Scratch();
+        var one = code.CreateRepo("One");
+        var two = code.CreateRepo("Two");
+        Scratch.Git(one, "tag", "v1");
+        Scratch.Git(one, "tag", "shared");
+        Scratch.Git(two, "tag", "shared");
+
+        await Assert.That(CodeCommands.Tags([one, two])).IsEquivalentTo(["v1", "shared"]);
+    }
+
+    // Git refuses an empty commit message, and a tag with a space in it.
+    [Test]
+    public async Task WhatTheGitDialogTakes()
+    {
+        await Assert.That(CodeMenu.GitTextForm.IsValid("refs or cleanup", isTagName: false)).IsTrue();
+        await Assert.That(CodeMenu.GitTextForm.IsValid("", isTagName: false)).IsFalse();
+        await Assert.That(CodeMenu.GitTextForm.IsValid("v1.0", isTagName: true)).IsTrue();
+        await Assert.That(CodeMenu.GitTextForm.IsValid("v 1", isTagName: true)).IsFalse();
+    }
+
     // A clone records origin's default branch, which need not be called main, and switching
     // makes a local branch of it where there is none yet.
     [Test]

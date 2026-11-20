@@ -24,6 +24,8 @@
   Git pull,
   Git switch to default branch,
   Git push…,
+  Git tag…,
+  Git delete tag…,
   Git discard…,
   Git purge…,
   Packages,

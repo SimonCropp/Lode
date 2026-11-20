@@ -21,6 +21,8 @@
     Pull,
     Switch to default branch,
     Push…,
+    Tag…,
+    Delete tag…,
     Discard…,
     Purge…
   ]
