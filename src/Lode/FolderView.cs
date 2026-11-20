@@ -233,6 +233,11 @@ sealed class FolderView : UserControl
     /// </summary>
     internal string? EmptyText => list.EmptyText;
 
+    /// <summary>
+    /// The list the rows are in. For tests.
+    /// </summary>
+    internal ShellListView List => list;
+
     string? pendingRename;
     bool editing;
     bool statusPending;
@@ -288,6 +293,10 @@ sealed class FolderView : UserControl
         // it, so a folder of any size costs it only the rows on screen.
         list.VirtualMode = true;
         list.RetrieveVirtualItem += (_, eventArgs) => eventArgs.Item = Row(eventArgs.ItemIndex);
+        list.IsCut = index =>
+            index < displayed.Count &&
+            CutItems.Contains(displayed[index].FullPath);
+        CutItems.Changed += OnCutChanged;
         list.SearchForVirtualItem += OnSearchForVirtualItem;
         list.ColumnFitRequested += SizeColumnToFit;
         list.ColumnResized += KeepWidth;
@@ -2494,6 +2503,24 @@ sealed class FolderView : UserControl
             });
     }
 
+    // Something cut, or pasted, here or in Explorer: the rows are drawn again, as dimmed or not.
+    void OnCutChanged()
+    {
+        if (IsDisposed ||
+            !IsHandleCreated)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(OnCutChanged);
+            return;
+        }
+
+        list.Invalidate();
+    }
+
     void DriveDescribed()
     {
         if (IsDisposed ||
@@ -3788,6 +3815,7 @@ sealed class FolderView : UserControl
         if (disposing)
         {
             ShellFileOperation.Moved -= OnMoved;
+            CutItems.Changed -= OnCutChanged;
             search?.Cancel();
             gitCancel?.Cancel();
             changes.Dispose();

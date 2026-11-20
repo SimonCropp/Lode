@@ -1185,6 +1185,49 @@ public class FolderViewTests
         return folder;
     }
 
+    // What is cut, by Lode or Explorer, is dimmed, as Explorer dims it: the list asks as it draws
+    // each row, and is told so for those on the clipboard as cut, and not once they are pasted
+    // or something else is copied.
+    [Test]
+    public async Task CutItemsAreDimmed()
+    {
+        using var fixture = Fixture.Create();
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root);
+        var list = view.List;
+        int Index(string name) =>
+            view.Entries.ToList().FindIndex(_ => _.Name == name);
+        byte[] Draw()
+        {
+            using var bitmap = new Bitmap(list.Width, list.Height);
+            list.DrawToBitmap(bitmap, new(Point.Empty, list.Size));
+            using var stream = new MemoryStream();
+            bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+            return stream.ToArray();
+        }
+
+        try
+        {
+            var plain = Draw();
+            CutItems.Set([fixture.At("notes.aleph"), fixture.At("Docs")]);
+            var askedBefore = list.CutAsked;
+            var dimmed = Draw();
+            var asked = list.CutAsked > askedBefore;
+            var cut = (list.DrawsCut(Index("notes.aleph")), list.DrawsCut(Index("Docs")), list.DrawsCut(Index("summary.gamma")));
+            CutItems.Set([]);
+            var pasted = list.DrawsCut(Index("notes.aleph"));
+
+            await Assert.That(asked).IsTrue();
+            await Assert.That(dimmed.SequenceEqual(plain)).IsFalse();
+            await Assert.That(cut).IsEqualTo((true, true, false));
+            await Assert.That(pasted).IsFalse();
+        }
+        finally
+        {
+            CutItems.Set([]);
+        }
+    }
+
     // A window for a view, off screen. Only in a window does the list draw rows, and measure them.
     static Form Host() =>
         new QuietForm

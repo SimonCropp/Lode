@@ -260,6 +260,9 @@ sealed class ShellListView : ListView
         // take their height from it. Windows leaves the list alone when this window closes, as
         // every ListView asks it to.
         SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(DeviceDpi));
+
+        // Each row's cut state is asked for as it is drawn, as the rows are.
+        SendMessage(Handle, listViewSetCallbackMask, listViewItemCut, IntPtr.Zero);
         base.OnHandleCreated(eventArgs);
         BackColor = ExplorerStyle.Window;
         SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
@@ -271,8 +274,95 @@ sealed class ShellListView : ListView
         }
     }
 
+    // LVN_GETDISPINFOW, and in its LVITEM the state flag and the cut state.
+    const int listViewGetDisplayInfo = -177;
+    const int listViewItemState = 0x8;
+    const int listViewItemCut = 0x4;
+    const int listViewSetCallbackMask = 0x100B;
+
+    // NMLVDISPINFO is NMHDR, then LVITEM: mask, item, subitem, state, state mask. LVITEM holds
+    // pointers, so starts on a pointer's boundary.
+    static readonly int itemOffset = IntPtr.Size == 8 ? 24 : 12;
+
+    /// <summary>
+    /// Whether the row at an index is of an item cut to the clipboard, which the list draws
+    /// dimmed, its icon faded, as Explorer does. Asked as each row is drawn.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Func<int, bool>? IsCut { get; set; }
+
+    /// <summary>
+    /// Whether the list draws the row at <paramref name="index"/> as cut, as it would ask. For
+    /// tests.
+    /// </summary>
+    internal bool DrawsCut(int index)
+    {
+        var size = itemOffset + 20;
+        var notification = Marshal.AllocHGlobal(size + 64);
+        try
+        {
+            for (var offset = 0; offset < size + 64; offset++)
+            {
+                Marshal.WriteByte(notification, offset, 0);
+            }
+
+            Marshal.WriteInt32(notification, notificationCodeOffset, listViewGetDisplayInfo);
+            Marshal.WriteInt32(notification, itemOffset, listViewItemState);
+            Marshal.WriteInt32(notification, itemOffset + 4, index);
+            Marshal.WriteInt32(notification, itemOffset + 16, listViewItemCut);
+            AnswerCut(notification);
+            return (Marshal.ReadInt32(notification, itemOffset + 12) & listViewItemCut) != 0;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(notification);
+        }
+    }
+
+    /// <summary>
+    /// How many times the list has asked whether a row is cut, as it draws. For tests.
+    /// </summary>
+    internal int CutAsked { get; private set; }
+
+    // The list asks for the cut state of each row as it draws it, as it was told to when made.
+    // Whether it was asked.
+    bool AnswerCut(IntPtr notification)
+    {
+        var mask = Marshal.ReadInt32(notification, itemOffset);
+        var index = Marshal.ReadInt32(notification, itemOffset + 4);
+        var stateMask = Marshal.ReadInt32(notification, itemOffset + 16);
+        if ((mask & listViewItemState) == 0 ||
+            (stateMask & listViewItemCut) == 0 ||
+            IsCut is not { } isCut)
+        {
+            return false;
+        }
+
+        var state = Marshal.ReadInt32(notification, itemOffset + 12) & ~listViewItemCut;
+        if (index >= 0 &&
+            isCut(index))
+        {
+            state |= listViewItemCut;
+        }
+
+        Marshal.WriteInt32(notification, itemOffset + 12, state);
+        return true;
+    }
+
     protected override void WndProc(ref Message message)
     {
+        if (message.Msg == reflectedNotify &&
+            Marshal.ReadInt32(message.LParam, notificationCodeOffset) == listViewGetDisplayInfo)
+        {
+            base.WndProc(ref message);
+            if (AnswerCut(message.LParam))
+            {
+                CutAsked++;
+            }
+
+            return;
+        }
+
         if (message.Msg == WindowMessageContextMenu && message.WParam == Handle)
         {
             var packed = unchecked((int)message.LParam.ToInt64());

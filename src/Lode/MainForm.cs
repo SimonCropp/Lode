@@ -952,10 +952,15 @@ class MainForm : Form
         // the setting.
         var backdrop = DwmSystemBackdropMainWindow;
         DwmSetWindowAttribute(Handle, DwmWindowSystemBackdropType, ref backdrop, sizeof(int));
+
+        // Told of every change to the clipboard, so what is cut, here or in Explorer, shows dimmed.
+        AddClipboardFormatListener(Handle);
+        CutItems.Refresh();
     }
 
     protected override void OnHandleDestroyed(EventArgs eventArgs)
     {
+        RemoveClipboardFormatListener(Handle);
         TaskbarIdentity.Clear(Handle);
         base.OnHandleDestroyed(eventArgs);
     }
@@ -2343,11 +2348,19 @@ class MainForm : Form
 
     // The mouse's back and forward buttons arrive as app commands from whichever control is
     // under the pointer.
+    // WM_CLIPBOARDUPDATE.
+    const int clipboardUpdate = 0x031D;
+
     protected override void WndProc(ref Message message)
     {
         if (message.Msg == explorerStartedMessage)
         {
             ShellWindows.ExplorerRestarted(this);
+        }
+
+        if (message.Msg == clipboardUpdate)
+        {
+            CutItems.Refresh();
         }
 
         if (message.Msg == WindowMessageAppCommand)
