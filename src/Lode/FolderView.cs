@@ -2781,7 +2781,22 @@ sealed class FolderView : UserControl
 
     void OnListKeyDown(object? sender, KeyEventArgs eventArgs)
     {
-        switch (eventArgs.KeyData)
+        if (!HandleKey(eventArgs.KeyData))
+        {
+            return;
+        }
+
+        eventArgs.Handled = true;
+        eventArgs.SuppressKeyPress = true;
+    }
+
+    /// <summary>
+    /// Does what a key pressed in the list does, giving whether it does anything. Tests press
+    /// keys through it, as a message can't hold Ctrl or Shift down.
+    /// </summary>
+    internal bool HandleKey(Keys keyData)
+    {
+        switch (keyData)
         {
             case Keys.Back:
                 GoBack();
@@ -2807,6 +2822,14 @@ sealed class FolderView : UserControl
             case Keys.Control | Keys.V:
                 Paste();
                 break;
+            case Keys.Control | Keys.Shift | Keys.C:
+                // As in Windows 11's Explorer.
+                if (SelectedPaths() is { Length: > 0 } selected)
+                {
+                    CopyAsPath(selected);
+                }
+
+                break;
             case Keys.Control | Keys.Shift | Keys.N:
                 CreateFolder();
                 break;
@@ -2814,11 +2837,10 @@ sealed class FolderView : UserControl
                 ShowProperties();
                 break;
             default:
-                return;
+                return false;
         }
 
-        eventArgs.Handled = true;
-        eventArgs.SuppressKeyPress = true;
+        return true;
     }
 
     public void Copy(bool cut) =>
@@ -3403,7 +3425,12 @@ sealed class FolderView : UserControl
     }
 
     internal static void CopyAsPath(IEnumerable<string> paths) =>
-        Clipboard.SetText(PathsText(paths));
+        SetClipboardText(PathsText(paths));
+
+    /// <summary>
+    /// Puts text on the clipboard. Tests swap it, leaving the clipboard alone.
+    /// </summary>
+    internal static Action<string> SetClipboardText = Clipboard.SetText;
 
     // As Explorer's Copy as path puts them: quoted, one per line.
     internal static string PathsText(IEnumerable<string> paths) =>

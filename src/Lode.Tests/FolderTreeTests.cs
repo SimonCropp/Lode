@@ -752,8 +752,8 @@ public class FolderTreeTests
     // the menu would let them: a Pinned entry can't be renamed, the section headings aren't
     // folders, and This PC's menu has only Properties of them. Shift+Delete deletes outright
     // what Delete sends to the Recycle Bin, and Ctrl+Shift+N is New's Folder, asking for a
-    // folder in the selected one. Ctrl+A is not one of them. Paste hangs on what is on the
-    // clipboard, which tests leave alone.
+    // folder in the selected one. Ctrl+Shift+C copies it as a path. Ctrl+A is not one of them.
+    // Paste hangs on what is on the clipboard, which tests leave alone.
     [Test]
     public async Task KeysRunTheRightClickMenusEntries()
     {
@@ -770,6 +770,7 @@ public class FolderTreeTests
             Keys.Shift | Keys.Delete,
             Keys.Control | Keys.X,
             Keys.Control | Keys.C,
+            Keys.Control | Keys.Shift | Keys.C,
             Keys.Alt | Keys.Enter,
             Keys.Control | Keys.Shift | Keys.N,
             Keys.Control | Keys.A
@@ -801,10 +802,10 @@ public class FolderTreeTests
         tree.SelectedNode = tree.Nodes.Cast<TreeNode>().Last();
         var onThisPC = Describe();
 
-        await Assert.That(onFolder).IsEqualTo("rename, delete, delete, cut, copy, properties, Folder, -");
-        await Assert.That(onPinned).IsEqualTo("-, delete, delete, cut, copy, properties, Folder, -");
-        await Assert.That(onHeading).IsEqualTo("-, -, -, -, -, -, -, -");
-        await Assert.That(onThisPC).IsEqualTo("-, -, -, -, -, properties, -, -");
+        await Assert.That(onFolder).IsEqualTo("rename, delete, delete, cut, copy, copyAsPath, properties, Folder, -");
+        await Assert.That(onPinned).IsEqualTo("-, delete, delete, cut, copy, copyAsPath, properties, Folder, -");
+        await Assert.That(onHeading).IsEqualTo("-, -, -, -, -, -, -, -, -");
+        await Assert.That(onThisPC).IsEqualTo("-, -, -, -, -, -, properties, -, -");
         await Assert.That(deleted).IsEquivalentTo(new List<(string Path, bool Permanent)> { (fixture.At("Archive"), false), (fixture.At("Archive"), true) });
         await Assert.That(asked).IsEquivalentTo(new List<(string Folder, ShellNew.Entry? Type)> { (fixture.At("Archive"), null) });
     }

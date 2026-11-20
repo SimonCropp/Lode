@@ -103,7 +103,6 @@ Windows' own popup menus go dark only for a process that asks, through uxtheme's
 
 ### 13. Smaller
 
- * No Ctrl+Shift+C for **Copy as path**, which Windows 11's Explorer has.
  * No Ctrl+1 to Ctrl+9 to go to a tab by where it is.
  * Dragging with the right button gives no menu of Copy here and Move here.
 

@@ -502,6 +502,7 @@ sealed class FolderTree : TreeView
             Keys.Delete => "delete",
             Keys.Control | Keys.X => "cut",
             Keys.Control | Keys.C => "copy",
+            Keys.Control | Keys.Shift | Keys.C => "copyAsPath",
             Keys.Control | Keys.V => "paste",
             Keys.Alt | Keys.Enter => "properties",
             Keys.Control | Keys.Shift | Keys.N => "new",

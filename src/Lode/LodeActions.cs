@@ -74,7 +74,7 @@ static class LodeActions
         new("agent", "Coding agent", Icons.Agent, 2, Button: false, Menu: true, Submenu: true, Parent: ai, MenuNested: true),
         new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true, Parent: file),
         new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true, Parent: file),
-        new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true, Parent: clipboard),
+        new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true, "Ctrl+Shift+C", Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
         new("gitPull", "Git pull", Icons.Pull, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
         new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: false, Menu: true, Parent: git, MenuNested: true),

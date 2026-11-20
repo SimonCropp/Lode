@@ -1250,6 +1250,32 @@ public class FolderViewTests
         await Assert.That(Selected(view)).IsEquivalentTo(["notes - Copy.aleph"]);
     }
 
+    // Ctrl+Shift+C copies what is selected as paths, as in Windows 11's Explorer: quoted, one
+    // a line. With nothing selected it copies nothing.
+    [Test]
+    public async Task CtrlShiftCCopiesAsPath()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var copied = new List<string>();
+        var setClipboardText = FolderView.SetClipboardText;
+        FolderView.SetClipboardText = copied.Add;
+        try
+        {
+            var withNothing = view.HandleKey(Keys.Control | Keys.Shift | Keys.C);
+            view.Reveal([fixture.At("notes.aleph"), fixture.At("Docs")]);
+            await Pump.Loaded(view);
+            var handled = view.HandleKey(Keys.Control | Keys.Shift | Keys.C);
+
+            await Assert.That((withNothing, handled)).IsEqualTo((true, true));
+            await Assert.That(copied).IsEquivalentTo([$"\"{fixture.At("Docs")}\"{Environment.NewLine}\"{fixture.At("notes.aleph")}\""]);
+        }
+        finally
+        {
+            FolderView.SetClipboardText = setClipboardText;
+        }
+    }
+
     // A window for a view, off screen. Only in a window does the list draw rows, and measure them.
     static Form Host() =>
         new QuietForm
