@@ -21,6 +21,30 @@ static class ExplorerStyle
         };
         Application.SetColorMode(mode);
         isDark = Application.IsDarkModeEnabled;
+        UseDarkMenus(isDark);
+    }
+
+    // uxtheme's PreferredAppMode: Windows' own, and forced dark.
+    internal const int DefaultMenus = 0;
+    internal const int DarkMenus = 2;
+
+    /// <summary>
+    /// Has Windows draw its own popup menus, Show more options and the shell's submenus in it, in
+    /// dark, as Explorer's are, or as it would. Windows Forms draws its own menus, so leaves
+    /// these light: they go dark only for a process that asks. Dark is as <see cref="IsDark"/>
+    /// has it, so they stay as the rest of Lode is when Windows changes. Gives what they were.
+    /// </summary>
+    internal static int UseDarkMenus(bool dark)
+    {
+        var mode = DefaultMenus;
+        if (dark)
+        {
+            mode = DarkMenus;
+        }
+
+        var previous = SetPreferredAppMode(mode);
+        FlushMenuThemes();
+        return previous;
     }
 
     static bool isDark;

@@ -195,6 +195,13 @@ static partial class NativeMethods
     [LibraryImport("user32.dll")]
     public static partial uint GetDpiForSystem();
 
+    // Undocumented, by ordinal only, as Explorer, Notepad and the Windows Terminal use them.
+    [LibraryImport("uxtheme.dll", EntryPoint = "#135")]
+    public static partial int SetPreferredAppMode(int mode);
+
+    [LibraryImport("uxtheme.dll", EntryPoint = "#136")]
+    public static partial void FlushMenuThemes();
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AddClipboardFormatListener(IntPtr window);

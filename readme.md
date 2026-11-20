@@ -132,7 +132,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 
  * **Options** in the ⋯ menu, a page each, picked from the list down the left as in Windows' Settings (Ctrl+Tab and Ctrl+Shift+Tab go through them). Changes apply straight away.
    * **General**: the default folder new tabs open in, the text editor, and closing tabs not looked at for a while (off by default).
-   * **View**: the theme, light, dark, or the same as Windows' apps (the default), which Lode takes on when it next starts, as it does a change to Windows' own; show hidden items (on by default; also Ctrl+H), show system files (off by default: Windows, Program Files, other people's folders under Users, and the files Windows protects, in the list and the folder tree), expand the folder tree to the open folder (on by default, unlike Explorer's), and show the Recent section.
+   * **View**: the theme, light, dark, or the same as Windows' apps (the default), which Lode takes on when it next starts, as it does a change to Windows' own, Windows' own menus included, such as **Show more options**; show hidden items (on by default; also Ctrl+H), show system files (off by default: Windows, Program Files, other people's folders under Users, and the files Windows protects, in the list and the folder tree), expand the folder tree to the open folder (on by default, unlike Explorer's), and show the Recent section.
    * **Actions**: which actions show as buttons and which in the right-click menus, and in each, which are nested under their parent.
    * **Code**: the code folder, whether Git purge deletes permanently, and excluding the code folder from Microsoft Defender.
    * **File Explorer**: replace or restore it.

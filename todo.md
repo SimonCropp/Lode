@@ -51,15 +51,6 @@ Dragging files over the tree shows no folder as the one that would take them, op
 A tab on a share has nowhere in the tree unless that very folder is pinned. See [bug 23](#23-a-pinned-entry-stays-selected-and-its-folder-watched-after-going-to-a-share).
 
 
-### 11. The classic menu is light in the dark theme
-
-**Where:** [ShellContextMenu.cs:503](src/Lode/ShellContextMenu/ShellContextMenu.cs#L503) (`TrackPopupMenuEx`).
-
-Windows' own popup menus go dark only for a process that asks, through uxtheme's `SetPreferredAppMode` (ordinal 135) and `FlushMenuThemes` (136). Lode makes no such call, and Windows Forms 11.0.0 has no import of it. So in dark, **Show more options** would be a white menu over a dark window, where Explorer's is dark. Unverified: not run.
-
-**Fix:** `SetPreferredAppMode`, allow dark, or force it for the Dark theme, once in `ExplorerStyle.Use`.
-
-
 ### 12. Accessibility
 
  * **High contrast:** the entry selected in a menu is `Blend(background, ControlText, 0.06f)` with its text in `MenuText` (`ExplorerRenderer.cs:196-241`, `ExplorerStyle.cs:126-134`). On a black high contrast menu that is #0F0F0F on black, so what is selected can't be seen. `ShadeButton` (`349-367`) and `GlyphButton`'s hover are the same. With high contrast on, fill with `SystemColors.Highlight` and draw in `HighlightText`.
