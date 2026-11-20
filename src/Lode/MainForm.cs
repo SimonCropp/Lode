@@ -1950,7 +1950,7 @@ class MainForm : Form
         {
             eventArgs.Handled = true;
             eventArgs.SuppressKeyPress = true;
-            view.Navigate(Locations.Normalize(addressBox.Text, view.CurrentPath) ?? addressBox.Text);
+            view.GoToTyped(addressBox.Text);
             breadcrumb.Path = view.CurrentPath;
             view.FocusList();
         }

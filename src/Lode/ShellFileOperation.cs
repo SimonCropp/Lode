@@ -266,6 +266,50 @@ static class ShellFileOperation
     const uint fileSystemPath = 0x80058000;
     const uint desktopAbsoluteParsing = 0x80028000;
 
+    /// <summary>
+    /// Where on disk the shell's name for a folder is, "shell:downloads" say. Null for one it
+    /// doesn't know, or one with no place on disk, such as the Recycle Bin.
+    /// </summary>
+    internal static string? FileSystemPathOf(string parsingName)
+    {
+        IShellItem? item;
+        try
+        {
+            item = TryCreateItem(parsingName);
+        }
+        catch (Exception exception) when (exception is COMException or ArgumentException)
+        {
+            return null;
+        }
+
+        if (item == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (item.GetDisplayName(fileSystemPath, out var name) < 0 ||
+                name == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(name);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(name);
+            }
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(item);
+        }
+    }
+
     // A file system path where the item has one, otherwise the shell's own name for it.
     static string? PathOf(IShellItem? item)
     {

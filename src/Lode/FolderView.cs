@@ -558,6 +558,88 @@ sealed class FolderView : UserControl
         Go(target, null, revealFile: false);
 
     /// <summary>
+    /// What is typed in the address bar, as Explorer takes it: a shell name, "shell:downloads"
+    /// say, goes to that folder; a path goes there, one that isn't full taken from the folder
+    /// open; and anything else that isn't a path to something here, `cmd`, `powershell`, `wt` or
+    /// `code .`, is run, in the folder open.
+    /// </summary>
+    public void GoToTyped(string typed)
+    {
+        var text = typed.Trim();
+        if (text.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ShellFileOperation.FileSystemPathOf(text) is { } path)
+            {
+                Navigate(path);
+                return;
+            }
+
+            // One with no place on disk, the Recycle Bin say, which Lode can't show.
+            Run(text, "", text);
+            return;
+        }
+
+        var normalized = Locations.Normalize(text, CurrentPath);
+        if (TypedCommand.Parse(text) is { } command &&
+            !IsSomewhere(normalized))
+        {
+            Run(command.Program, command.Arguments, text);
+            return;
+        }
+
+        Navigate(normalized ?? text);
+    }
+
+    // Whether what was typed is somewhere to go: This PC, or a folder or file here, which a
+    // command never shadows.
+    static bool IsSomewhere(string? normalized) =>
+        normalized != null &&
+        (Locations.IsThisPC(normalized) ||
+         Directory.Exists(normalized) ||
+         File.Exists(normalized));
+
+    /// <summary>
+    /// Starts what is typed in the address bar, as Run would, in the folder open. Tests swap it.
+    /// </summary>
+    internal static Action<ProcessStartInfo> StartTyped = startInfo => Process.Start(startInfo)?.Dispose();
+
+    void Run(string program, string arguments, string typed)
+    {
+        // Somewhere a program can't start in, This PC or a zip, starts it in the home folder.
+        var directory = CurrentPath;
+        if (!Directory.Exists(directory))
+        {
+            directory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        try
+        {
+            StartTyped(
+                new(program, arguments)
+                {
+                    UseShellExecute = true,
+                    WorkingDirectory = directory
+                });
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode is fileNotFound or pathNotFound)
+        {
+            SayNotFound(typed);
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
+        {
+            // The user dismissed an elevation prompt.
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    const int fileNotFound = 2;
+    const int pathNotFound = 3;
+    const int cancelledByUser = 1223;
+
+    /// <summary>
     /// Where a tab starts: a folder, or a file, which means "show me this file", so its folder
     /// with the file selected. A zip is such a file, unless <paramref name="intoZip"/>, for a tab
     /// that was inside it, restored say, which opens inside it again. Somewhere on the network is

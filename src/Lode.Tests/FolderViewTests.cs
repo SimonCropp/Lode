@@ -471,6 +471,80 @@ public class FolderViewTests
         await Assert.That(File.Exists(fixture.At("Archive", "New Text Document.txt"))).IsTrue();
     }
 
+    // Typed in the address bar, what isn't somewhere here is run in the folder open, as Explorer
+    // runs cmd, powershell, wt or code there. A folder of that name here, and This PC, are gone
+    // to instead.
+    [Test]
+    public async Task TypedCommandsRunInTheFolder()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("cmd"));
+        using var view = await Open(fixture.At("Docs"));
+        var started = new List<string>();
+        var startTyped = FolderView.StartTyped;
+        FolderView.StartTyped = _ => started.Add($"{_.FileName}|{_.Arguments}|{_.WorkingDirectory == fixture.At("Docs")}|{_.UseShellExecute}");
+        try
+        {
+            view.GoToTyped("code .");
+            view.GoToTyped("  powershell  ");
+            var stayed = view.CurrentPath;
+            view.GoToTyped(@"..\cmd");
+            await Pump.Loaded(view);
+            var folder = view.CurrentPath;
+            view.GoToTyped("This PC");
+            await Pump.Loaded(view);
+
+            await Assert.That(started).IsEquivalentTo(["code|.|True|True", "powershell||True|True"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(stayed).IsEqualTo(fixture.At("Docs"));
+            await Assert.That(folder).IsEqualTo(fixture.At("cmd"));
+            await Assert.That(view.CurrentPath).IsEqualTo(Locations.ThisPC);
+        }
+        finally
+        {
+            FolderView.StartTyped = startTyped;
+        }
+    }
+
+    // Run for real, a program is found as Run finds it, on the PATH, and starts in the folder
+    // open.
+    [Test]
+    public async Task ATypedCommandRunsForReal()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.At("Docs"));
+        var startTyped = FolderView.StartTyped;
+        FolderView.StartTyped = startInfo =>
+        {
+            startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+            using var process = Process.Start(startInfo)!;
+            process.WaitForExit();
+        };
+        try
+        {
+            view.GoToTyped("cmd /c cd > here.txt");
+
+            var here = await File.ReadAllTextAsync(fixture.At("Docs", "here.txt"));
+            await Assert.That(here.Trim()).IsEqualTo(fixture.At("Docs"));
+        }
+        finally
+        {
+            FolderView.StartTyped = startTyped;
+        }
+    }
+
+    // The shell's names for folders go to where they are on disk.
+    [Test]
+    public async Task ShellNamesGoToTheirFolders()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+
+        view.GoToTyped("shell:SendTo");
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(Environment.GetFolderPath(Environment.SpecialFolder.SendTo));
+    }
+
     [Test]
     public async Task RevealSelectsTheFile()
     {

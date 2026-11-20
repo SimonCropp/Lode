@@ -19,11 +19,6 @@ Contents:
 ## Missing features
 
 
-### 2. Run a command from the address bar
-
-Explorer runs `cmd`, `powershell` or `wt` typed in the address bar, in the folder open, which developers use a good deal. Lode takes `cmd` for a folder of that name in the folder open, and says it can't find it. The shell's own names, `shell:downloads` and the like, are not known either.
-
-
 ### 7. Search
 
  * By name only: nothing looks inside files.
