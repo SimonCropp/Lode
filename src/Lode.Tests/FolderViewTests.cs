@@ -1281,6 +1281,34 @@ public class FolderViewTests
         return folder;
     }
 
+    // A drag over a folder in the list has it highlighted, as Explorer has it, as where the drop
+    // would go. Over a file, the drop would go into the folder open, so nothing is.
+    [Test]
+    public async Task TheFolderADragWouldGoIntoIsHighlighted()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("Archive", "dragged.txt"), "");
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root);
+        var list = view.List;
+        int Index(string name) =>
+            view.Entries.ToList().FindIndex(_ => _.Name == name);
+        DragEventArgs Over(string name)
+        {
+            var bounds = list.GetItemRect(Index(name));
+            var screen = list.PointToScreen(new(bounds.Left + 20, bounds.Top + bounds.Height / 2));
+            return new(new DataObject(DataFormats.FileDrop, new[] { fixture.At("Archive", "dragged.txt") }), 0, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move, DragDropEffects.None);
+        }
+
+        view.OnDragOver(null, Over("Docs"));
+        var overFolder = (list.DrawsDropTarget(Index("Docs")), list.DrawsDropTarget(Index("notes.aleph")));
+        view.OnDragOver(null, Over("notes.aleph"));
+        var overFile = (list.DrawsDropTarget(Index("Docs")), list.DrawsDropTarget(Index("notes.aleph")));
+
+        await Assert.That(overFolder).IsEqualTo((true, false));
+        await Assert.That(overFile).IsEqualTo((false, false));
+    }
+
     // What is cut, by Lode or Explorer, is dimmed, as Explorer dims it: the list asks as it draws
     // each row, and is told so for those on the clipboard as cut, and not once they are pasted
     // or something else is copied.

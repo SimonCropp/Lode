@@ -347,6 +347,7 @@ sealed class FolderView : UserControl
         list.DragEnter += OnDragOver;
         list.DragOver += OnDragOver;
         list.DragDrop += OnDragDrop;
+        list.DragLeave += (_, _) => list.DropTarget = -1;
         Controls.Add(list);
 
         // Over the list's own scrollbar, so in front of it.
@@ -4030,14 +4031,32 @@ sealed class FolderView : UserControl
     // by the drop.
     bool rightDrag;
 
-    void OnDragOver(object? sender, DragEventArgs eventArgs)
+    /// <summary>
+    /// What a drag over the list would do, with the folder it would go into highlighted, as
+    /// Explorer highlights it. Not the folder open, which is the list as a whole.
+    /// </summary>
+    internal void OnDragOver(object? sender, DragEventArgs eventArgs)
     {
         rightDrag = FileOperations.RightButton(eventArgs);
         eventArgs.Effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        var target = -1;
+        if (eventArgs.Effect != DragDropEffects.None)
+        {
+            var point = list.PointToClient(new(eventArgs.X, eventArgs.Y));
+            if (list.GetItemAt(point.X, point.Y) is { Tag: FileEntry { IsDirectory: true, InArchive: false } } item)
+            {
+                target = item.Index;
+            }
+        }
+
+        list.DropTarget = target;
     }
 
-    void OnDragDrop(object? sender, DragEventArgs eventArgs) =>
+    void OnDragDrop(object? sender, DragEventArgs eventArgs)
+    {
+        list.DropTarget = -1;
         FileOperations.Drop(Owner, eventArgs, DropDestination(eventArgs), rightDrag);
+    }
 
     void Watch()
     {

@@ -1873,26 +1873,103 @@ sealed class FolderTree : TreeView
         return path;
     }
 
-    bool IsPinnedHeader(Point clientLocation) =>
-        GetNodeAt(clientLocation)?.Tag is Section { Name: "Pinned" };
+    /// <summary>
+    /// Where a folder dropped at a point is pinned, as in Explorer: on the Pinned heading, at the
+    /// end; at the top or bottom of a pinned folder, before or after it, where the insert mark
+    /// shows. Over the middle of a pinned folder a drop goes into it, so null, as it is
+    /// anywhere else.
+    /// </summary>
+    internal (int Index, TreeNode? Mark, bool After)? PinTarget(Point clientLocation)
+    {
+        var node = GetNodeAt(clientLocation);
+        if (node?.Tag is Section { Name: "Pinned" })
+        {
+            return (places.Pinned.Count, null, false);
+        }
+
+        if (!IsPinnedEntry(node))
+        {
+            return null;
+        }
+
+        var bounds = node!.Bounds;
+        var third = bounds.Height / 3;
+        var index = places.Pinned.ToList().FindIndex(_ => Locations.Same(_, node.Tag as string));
+        if (index < 0)
+        {
+            return null;
+        }
+
+        if (clientLocation.Y < bounds.Top + third)
+        {
+            return (index, node, false);
+        }
+
+        if (clientLocation.Y >= bounds.Bottom - third)
+        {
+            return (index + 1, node, true);
+        }
+
+        return null;
+    }
 
     /// <summary>
-    /// Pins the folder when the screen point is over the Pinned header. True when it was over
-    /// the header, so the caller treats the drop as handled.
+    /// Pins the folder where the screen point is in the Pinned list, as <see cref="PinTarget"/>
+    /// has it. True when it was there, so the caller treats the drop as handled.
     /// </summary>
     public bool PinIfOverPinned(Point screenLocation, string path)
     {
-        if (!IsPinnedHeader(PointToClient(screenLocation)))
+        ClearInsertMark();
+        if (PinTarget(PointToClient(screenLocation)) is not { } target)
         {
             return false;
         }
 
-        foreach (var folder in Pinnable([path]))
+        PinAt(Pinnable([path]), target.Index);
+        return true;
+    }
+
+    /// <summary>
+    /// Shows where a folder dragged to the screen point would be pinned, as it is dragged: the
+    /// insert mark between two pinned folders, or none. For a tab dragged off its row, which is
+    /// no drag and drop the tree hears of; null once it has gone.
+    /// </summary>
+    public void ShowPinTarget(Point? screenLocation)
+    {
+        if (screenLocation is { } location &&
+            PinTarget(PointToClient(location)) is { Mark: { } mark } target)
+        {
+            ShowInsertMark(mark, target.After);
+            return;
+        }
+
+        ClearInsertMark();
+    }
+
+    /// <summary>
+    /// Pins folders at <paramref name="index"/> in the Pinned list. Pinning puts each at the
+    /// end, so those pinned already from there on are then moved after them.
+    /// </summary>
+    internal void PinAt(IReadOnlyList<string> folders, int index)
+    {
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        var after = places.Pinned.Skip(index).ToList();
+        foreach (var folder in folders)
         {
             Pin(folder);
         }
 
-        return true;
+        if (after.Count == 0 ||
+            pinnedMove != null)
+        {
+            return;
+        }
+
+        pinnedMove = MovePinnedToEnd(after);
     }
 
     /// <summary>
@@ -1905,11 +1982,11 @@ sealed class FolderTree : TreeView
                         !places.Pinned.Any(pinned => Locations.Same(pinned, _)))
             .ToArray();
 
-    // Folders dropped on the Pinned header get pinned to Quick access, as in Explorer.
-    string[]? FoldersToPin(DragEventArgs eventArgs)
+    // Folders dropped in the Pinned list get pinned to Quick access there, as in Explorer.
+    (string[] Folders, int Index, TreeNode? Mark, bool After)? FoldersToPin(DragEventArgs eventArgs)
     {
         var point = PointToClient(new(eventArgs.X, eventArgs.Y));
-        if (!IsPinnedHeader(point) ||
+        if (PinTarget(point) is not { } target ||
             eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] paths)
         {
             return null;
@@ -1921,13 +1998,44 @@ sealed class FolderTree : TreeView
             return null;
         }
 
-        return folders;
+        return (folders, target.Index, target.Mark, target.After);
     }
 
-    DragDropEffects DropEffect(DragEventArgs eventArgs)
+    // TVM_SELECTITEM and TVM_GETNEXTITEM, for the item drawn as where a drop would go.
+    const int treeViewSelectItem = 0x110B;
+    const int treeViewGetNextItem = 0x110A;
+    const int dropHighlight = 0x8;
+
+    /// <summary>
+    /// The folder drawn as where what is dragged would be dropped, as Explorer draws it. For
+    /// tests.
+    /// </summary>
+    internal TreeNode? DropHighlighted
+    {
+        get
+        {
+            var handle = SendMessage(Handle, treeViewGetNextItem, dropHighlight, IntPtr.Zero);
+            if (handle == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            return TreeNode.FromHandle(this, handle);
+        }
+    }
+
+    void HighlightDrop(TreeNode? node) =>
+        SendMessage(Handle, treeViewSelectItem, dropHighlight, node?.Handle ?? IntPtr.Zero);
+
+    /// <summary>
+    /// What a drag over the tree would do, shown as it goes: the folder it would go into
+    /// highlighted, or where it would be pinned marked.
+    /// </summary>
+    internal DragDropEffects DropEffect(DragEventArgs eventArgs)
     {
         if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
         {
+            HighlightDrop(null);
             if (PinnedDropTarget(eventArgs) is { } target)
             {
                 if (target.Node.Tag is Section)
@@ -1946,12 +2054,31 @@ sealed class FolderTree : TreeView
             return DragDropEffects.None;
         }
 
-        if (FoldersToPin(eventArgs) != null)
+        if (FoldersToPin(eventArgs) is { } pin)
         {
+            HighlightDrop(null);
+            if (pin.Mark is { } mark)
+            {
+                ShowInsertMark(mark, pin.After);
+            }
+            else
+            {
+                ClearInsertMark();
+            }
+
             return DragDropEffects.Link;
         }
 
-        return FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        ClearInsertMark();
+        var effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        TreeNode? into = null;
+        if (effect != DragDropEffects.None)
+        {
+            into = GetNodeAt(PointToClient(new(eventArgs.X, eventArgs.Y)));
+        }
+
+        HighlightDrop(into);
+        return effect;
     }
 
     // Whether what is being dragged over the tree is dragged with the right button, which is up
@@ -1969,6 +2096,7 @@ sealed class FolderTree : TreeView
     {
         base.OnDragLeave(eventArgs);
         ClearInsertMark();
+        HighlightDrop(null);
     }
 
     protected override void OnDragOver(DragEventArgs eventArgs)
@@ -1982,6 +2110,7 @@ sealed class FolderTree : TreeView
     {
         base.OnDragDrop(eventArgs);
         ClearInsertMark();
+        HighlightDrop(null);
         var owner = FindForm()?.Handle ?? Handle;
         if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
         {
@@ -1994,13 +2123,9 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        if (FoldersToPin(eventArgs) is { } folders)
+        if (FoldersToPin(eventArgs) is { } pin)
         {
-            foreach (var folder in folders)
-            {
-                Pin(folder);
-            }
-
+            PinAt(pin.Folders, pin.Index);
             return;
         }
 

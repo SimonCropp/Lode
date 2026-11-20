@@ -479,6 +479,62 @@ public class QuickMenuTests
         await Assert.That(pinned).IsEmpty();
     }
 
+    // Dropped at the top or bottom of a pinned folder, a folder is pinned before or after it, as
+    // in Explorer: pinned, it goes at the end, so those after where it was dropped are moved
+    // after it. Dropped on the middle of one, it goes into it, which is left to the caller.
+    [Test]
+    public async Task DroppingAmongThePinnedPinsThere()
+    {
+        using var fixture = Fixture.Create();
+        var pinned = new List<string>();
+        var moved = new List<string>();
+        using var tree = CreateTree([fixture.At("Docs"), fixture.At("Archive")], []);
+        tree.Pin = pinned.Add;
+        tree.MovePinnedToEnd = folders =>
+        {
+            moved.AddRange(folders);
+            return Task.CompletedTask;
+        };
+        var archive = tree.Nodes[0].Nodes[1];
+        Point At(int y) =>
+            tree.PointToScreen(new(archive.Bounds.Left + 10, y));
+
+        var before = tree.PinIfOverPinned(At(archive.Bounds.Top + 1), fixture.At("Source"));
+        var movedBefore = moved.ToList();
+        tree.RebuildPlaces();
+        archive = tree.Nodes[0].Nodes[1];
+        moved.Clear();
+        var after = tree.PinIfOverPinned(At(archive.Bounds.Bottom - 1), fixture.At("Cache"));
+        var into = tree.PinIfOverPinned(At(archive.Bounds.Top + archive.Bounds.Height / 2), fixture.At("Source"));
+
+        await Assert.That((before, after, into)).IsEqualTo((true, true, false));
+        await Assert.That(pinned.Select(fixture.Relative)).IsEquivalentTo(["Projects/Source", "Projects/Cache"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(movedBefore.Select(fixture.Relative)).IsEquivalentTo(["Projects/Archive"]);
+        await Assert.That(moved).IsEmpty();
+    }
+
+    // A folder dragged over the tree has the folder it would go into highlighted, as Explorer
+    // has it, and none where it would be pinned instead.
+    [Test]
+    public async Task TheFolderADragWouldGoIntoIsHighlighted()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = CreateTree([fixture.At("Docs"), fixture.At("Archive")], []);
+        var archive = tree.Nodes[0].Nodes[1];
+        DragEventArgs Drag(Point screen) =>
+            new(new DataObject(DataFormats.FileDrop, new[] { fixture.At("Source") }), 0, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, DragDropEffects.None);
+
+        var intoEffect = tree.DropEffect(Drag(Over(tree, archive)));
+        var into = tree.DropHighlighted;
+        var pinEffect = tree.DropEffect(Drag(tree.PointToScreen(new(archive.Bounds.Left + 10, archive.Bounds.Top + 1))));
+        var pinning = tree.DropHighlighted;
+
+        await Assert.That(intoEffect).IsEqualTo(DragDropEffects.Move);
+        await Assert.That(into).IsEqualTo(archive);
+        await Assert.That(pinEffect).IsEqualTo(DragDropEffects.Link);
+        await Assert.That(pinning).IsNull();
+    }
+
     // Recent's header is not a place to pin to; the drop is left to the caller.
     [Test]
     public async Task DroppingElsewhereIsNotHandled()

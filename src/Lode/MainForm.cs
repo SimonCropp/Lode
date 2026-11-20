@@ -797,6 +797,7 @@ class MainForm : Form
         tabs.Dock = DockStyle.Fill;
         tabs.CloseRequested += CloseTab;
         tabs.TabDraggedOff += OnTabDraggedOff;
+        tabs.TabDraggingOff += OnTabDraggingOff;
         tabs.SelectedIndexChanged += (_, _) => SyncToActiveView();
         tabs.MouseUp += OnTabsMouseUp;
 
@@ -1214,9 +1215,31 @@ class MainForm : Form
     static MainForm? WindowOf(Control? control) =>
         control?.FindForm() as MainForm;
 
+    // The tree a tab being dragged off its row is over, in any window, showing where it would be
+    // pinned.
+    FolderTree? tabOverTree;
+
+    void OnTabDraggingOff(Point? screenLocation)
+    {
+        FolderTree? tree = null;
+        if (screenLocation is { } location)
+        {
+            tree = WindowAt(location) as FolderTree;
+        }
+
+        if (tabOverTree != tree &&
+            tabOverTree is { IsDisposed: false })
+        {
+            tabOverTree.ShowPinTarget(null);
+        }
+
+        tabOverTree = tree;
+        tree?.ShowPinTarget(screenLocation);
+    }
+
     void OnTabDraggedOff(TabPage page, Point screenLocation)
     {
-        // A tab dropped on the Pinned header pins its folder, and stays where it was.
+        // A tab dropped in the Pinned list pins its folder there, and stays where it was.
         if (WindowAt(screenLocation) is FolderTree tree &&
             tree.PinIfOverPinned(screenLocation, page.Controls.OfType<FolderView>().First().CurrentPath))
         {

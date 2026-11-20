@@ -47,6 +47,12 @@ sealed class ClosableTabControl : TabControl
     /// </summary>
     public event Action<TabPage, Point>? TabDraggedOff;
 
+    /// <summary>
+    /// Where on the screen a tab being dragged off the row is, as it moves, for what it would be
+    /// dropped on to show it; null once it is back on the row, dropped or given up on.
+    /// </summary>
+    public event Action<Point?>? TabDraggingOff;
+
     public ClosableTabControl()
     {
         // Painted here rather than by Windows, so the cross can be part of each tab. Windows
@@ -597,6 +603,7 @@ sealed class ClosableTabControl : TabControl
         {
             Capture = false;
             Cursor = Cursors.Default;
+            TabDraggingOff?.Invoke(null);
         }
     }
 
@@ -629,12 +636,14 @@ sealed class ClosableTabControl : TabControl
             if (!TabRow.Contains(eventArgs.Location))
             {
                 Cursor = Cursors.SizeAll;
+                TabDraggingOff?.Invoke(PointToScreen(eventArgs.Location));
                 return;
             }
 
             // Along the row, the tab goes where the pointer is, past the tabs it crosses. They
             // are all as wide, so it is then under the pointer, and stays put until it moves on.
             Cursor = Cursors.Default;
+            TabDraggingOff?.Invoke(null);
             MoveTab(pressedTab, TabAlong(eventArgs.X));
             return;
         }

@@ -261,8 +261,9 @@ sealed class ShellListView : ListView
         // every ListView asks it to.
         SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(DeviceDpi));
 
-        // Each row's cut state is asked for as it is drawn, as the rows are.
-        SendMessage(Handle, listViewSetCallbackMask, listViewItemCut, IntPtr.Zero);
+        // Each row's cut state, and whether a drop would go into it, are asked for as it is
+        // drawn, as the rows are.
+        SendMessage(Handle, listViewSetCallbackMask, listViewItemCut | listViewItemDropHighlighted, IntPtr.Zero);
         base.OnHandleCreated(eventArgs);
         BackColor = ExplorerStyle.Window;
         SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
@@ -274,10 +275,11 @@ sealed class ShellListView : ListView
         }
     }
 
-    // LVN_GETDISPINFOW, and in its LVITEM the state flag and the cut state.
+    // LVN_GETDISPINFOW, and in its LVITEM the state flag, the cut state and the drop highlight.
     const int listViewGetDisplayInfo = -177;
     const int listViewItemState = 0x8;
     const int listViewItemCut = 0x4;
+    const int listViewItemDropHighlighted = 0x8;
     const int listViewSetCallbackMask = 0x100B;
 
     // NMLVDISPINFO is NMHDR, then LVITEM: mask, item, subitem, state, state mask. LVITEM holds
@@ -291,11 +293,55 @@ sealed class ShellListView : ListView
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Func<int, bool>? IsCut { get; set; }
 
+    int dropTarget = -1;
+
+    /// <summary>
+    /// The row of the folder what is being dragged would be dropped into, drawn highlighted, as
+    /// Explorer draws it; -1 for none.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int DropTarget
+    {
+        get => dropTarget;
+        set
+        {
+            if (value == dropTarget)
+            {
+                return;
+            }
+
+            var was = dropTarget;
+            dropTarget = value;
+            Redraw(was);
+            Redraw(value);
+        }
+    }
+
+    void Redraw(int index)
+    {
+        if (IsHandleCreated &&
+            index >= 0 &&
+            index < VirtualListSize)
+        {
+            RedrawItems(index, index, false);
+        }
+    }
+
     /// <summary>
     /// Whether the list draws the row at <paramref name="index"/> as cut, as it would ask. For
     /// tests.
     /// </summary>
-    internal bool DrawsCut(int index)
+    internal bool DrawsCut(int index) =>
+        Draws(index, listViewItemCut);
+
+    /// <summary>
+    /// Whether the list draws the row at <paramref name="index"/> as where a drop would go, as
+    /// it would ask. For tests.
+    /// </summary>
+    internal bool DrawsDropTarget(int index) =>
+        Draws(index, listViewItemDropHighlighted);
+
+    bool Draws(int index, int flag)
     {
         var size = itemOffset + 20;
         var notification = Marshal.AllocHGlobal(size + 64);
@@ -309,9 +355,9 @@ sealed class ShellListView : ListView
             Marshal.WriteInt32(notification, notificationCodeOffset, listViewGetDisplayInfo);
             Marshal.WriteInt32(notification, itemOffset, listViewItemState);
             Marshal.WriteInt32(notification, itemOffset + 4, index);
-            Marshal.WriteInt32(notification, itemOffset + 16, listViewItemCut);
-            AnswerCut(notification);
-            return (Marshal.ReadInt32(notification, itemOffset + 12) & listViewItemCut) != 0;
+            Marshal.WriteInt32(notification, itemOffset + 16, flag);
+            AnswerState(notification);
+            return (Marshal.ReadInt32(notification, itemOffset + 12) & flag) != 0;
         }
         finally
         {
@@ -324,29 +370,43 @@ sealed class ShellListView : ListView
     /// </summary>
     internal int CutAsked { get; private set; }
 
-    // The list asks for the cut state of each row as it draws it, as it was told to when made.
-    // Whether it was asked.
-    bool AnswerCut(IntPtr notification)
+    // The list asks for the cut state of each row, and its drop highlight, as it draws it, as
+    // it was told to when made. Whether it was asked whether the row is cut.
+    bool AnswerState(IntPtr notification)
     {
         var mask = Marshal.ReadInt32(notification, itemOffset);
         var index = Marshal.ReadInt32(notification, itemOffset + 4);
         var stateMask = Marshal.ReadInt32(notification, itemOffset + 16);
-        if ((mask & listViewItemState) == 0 ||
-            (stateMask & listViewItemCut) == 0 ||
-            IsCut is not { } isCut)
+        if ((mask & listViewItemState) == 0)
         {
             return false;
         }
 
-        var state = Marshal.ReadInt32(notification, itemOffset + 12) & ~listViewItemCut;
-        if (index >= 0 &&
-            isCut(index))
+        var state = Marshal.ReadInt32(notification, itemOffset + 12);
+        if ((stateMask & listViewItemDropHighlighted) != 0)
         {
-            state |= listViewItemCut;
+            state &= ~listViewItemDropHighlighted;
+            if (index >= 0 &&
+                index == dropTarget)
+            {
+                state |= listViewItemDropHighlighted;
+            }
+        }
+
+        var askedCut = (stateMask & listViewItemCut) != 0 &&
+                       IsCut != null;
+        if (askedCut)
+        {
+            state &= ~listViewItemCut;
+            if (index >= 0 &&
+                IsCut!(index))
+            {
+                state |= listViewItemCut;
+            }
         }
 
         Marshal.WriteInt32(notification, itemOffset + 12, state);
-        return true;
+        return askedCut;
     }
 
     protected override void WndProc(ref Message message)
@@ -355,7 +415,7 @@ sealed class ShellListView : ListView
             Marshal.ReadInt32(message.LParam, notificationCodeOffset) == listViewGetDisplayInfo)
         {
             base.WndProc(ref message);
-            if (AnswerCut(message.LParam))
+            if (AnswerState(message.LParam))
             {
                 CutAsked++;
             }
