@@ -1,0 +1,63 @@
+public class RemoteSiteTests
+{
+    // The repository's page, from origin's url however it is written: https, ssh, or git's
+    // user@host:path, with or without .git. Azure DevOps under both its names.
+    [Test]
+    public async Task For()
+    {
+        static string? Site(string remote)
+        {
+            if (RemoteSite.For(remote) is not { } site)
+            {
+                return null;
+            }
+
+            return $"{site.Name} {site.Url}";
+        }
+
+        await Assert.That(Site("https://github.com/octo/repo.git")).IsEqualTo("GitHub https://github.com/octo/repo");
+        await Assert.That(Site("https://github.com/octo/repo")).IsEqualTo("GitHub https://github.com/octo/repo");
+        await Assert.That(Site("git@github.com:octo/repo.git")).IsEqualTo("GitHub https://github.com/octo/repo");
+        await Assert.That(Site("ssh://git@github.com/octo/repo.git")).IsEqualTo("GitHub https://github.com/octo/repo");
+        await Assert.That(Site("https://GitHub.com/octo/repo/")).IsEqualTo("GitHub https://github.com/octo/repo");
+        await Assert.That(Site("https://gitlab.com/group/sub/repo.git")).IsEqualTo("GitLab https://gitlab.com/group/sub/repo");
+        await Assert.That(Site("git@bitbucket.org:team/repo.git")).IsEqualTo("Bitbucket https://bitbucket.org/team/repo");
+        await Assert.That(Site("https://dev.azure.com/org/Project/_git/repo")).IsEqualTo("Azure DevOps https://dev.azure.com/org/Project/_git/repo");
+        await Assert.That(Site("https://org@dev.azure.com/org/Project/_git/repo")).IsEqualTo("Azure DevOps https://dev.azure.com/org/Project/_git/repo");
+        await Assert.That(Site("git@ssh.dev.azure.com:v3/org/Project/repo")).IsEqualTo("Azure DevOps https://dev.azure.com/org/Project/_git/repo");
+        await Assert.That(Site("org@vs-ssh.visualstudio.com:v3/org/Project/repo")).IsEqualTo("Azure DevOps https://dev.azure.com/org/Project/_git/repo");
+        await Assert.That(Site("https://org.visualstudio.com/DefaultCollection/Project/_git/repo")).IsEqualTo("Azure DevOps https://org.visualstudio.com/DefaultCollection/Project/_git/repo");
+    }
+
+    // Origins on no site Lode knows, or none at all, a folder say, have no page.
+    [Test]
+    public async Task NoSite()
+    {
+        await Assert.That(RemoteSite.For(@"C:\Code\origins\Repo.git")).IsNull();
+        await Assert.That(RemoteSite.For("/srv/git/repo.git")).IsNull();
+        await Assert.That(RemoteSite.For("https://git.example.com/repo.git")).IsNull();
+        await Assert.That(RemoteSite.For("https://github.com/octo")).IsNull();
+        await Assert.That(RemoteSite.For("")).IsNull();
+    }
+
+    // Origin's url, from the config's own section for it, not another remote's.
+    [Test]
+    public async Task OriginUrl()
+    {
+        string[] config =
+        [
+            "[core]",
+            "\tbare = false",
+            "[remote \"upstream\"]",
+            "\turl = https://github.com/other/repo.git",
+            "[remote \"origin\"]",
+            "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+            "\turl = git@github.com:octo/repo.git",
+            "[branch \"main\"]",
+            "\tremote = origin"
+        ];
+
+        await Assert.That(RemoteSite.OriginUrl(config)).IsEqualTo("git@github.com:octo/repo.git");
+        await Assert.That(RemoteSite.OriginUrl(["[core]", "\tbare = false"])).IsNull();
+    }
+}

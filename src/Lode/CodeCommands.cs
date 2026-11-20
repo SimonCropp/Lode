@@ -127,7 +127,7 @@ static class CodeCommands
     }
 
     // The .git folder, or, for a worktree or submodule, the folder its .git file names.
-    static string? GitDirectory(string repo)
+    internal static string? GitDirectory(string repo)
     {
         var git = Path.Combine(repo, ".git");
         if (Directory.Exists(git))
@@ -145,8 +145,9 @@ static class CodeCommands
         return Path.GetFullPath(Path.Combine(repo, text[prefix.Length..]));
     }
 
-    // Where a worktree's branches are: the repository it was added to, as its commondir says.
-    static string CommonDirectory(string git)
+    // Where a worktree's branches and config are: the repository it was added to, as its
+    // commondir says.
+    internal static string CommonDirectory(string git)
     {
         var common = Path.Combine(git, "commondir");
         if (!File.Exists(common))

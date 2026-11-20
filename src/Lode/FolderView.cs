@@ -123,6 +123,9 @@ sealed class FolderView : UserControl
     // What each of those repositories was last read to be, by its path, and what the Git column
     // says of each item from that.
     readonly Dictionary<string, GitState> gitStates = new(StringComparer.OrdinalIgnoreCase);
+
+    // The sites the repositories' origins are on, read with their states.
+    readonly Dictionary<string, RemoteSite> gitSites = new(StringComparer.OrdinalIgnoreCase);
     GitCells gitCells = GitCells.None;
 
     // The reading of the states under way, one at a time: asked for again meanwhile, it reads
@@ -160,6 +163,24 @@ sealed class FolderView : UserControl
             }
 
             return "";
+        }
+    }
+
+    /// <summary>
+    /// The site the origin of the repository the folder is in is on, GitHub say, for the status
+    /// bar to link to. Null where it shows no state, or for an origin on no site Lode knows.
+    /// </summary>
+    public RemoteSite? GitSite
+    {
+        get
+        {
+            if (containingRepo != null &&
+                gitStates.ContainsKey(containingRepo))
+            {
+                return gitSites.GetValueOrDefault(containingRepo);
+            }
+
+            return null;
         }
     }
 
@@ -1401,6 +1422,7 @@ sealed class FolderView : UserControl
         gitCancel = null;
         gitPending = false;
         gitStates.Clear();
+        gitSites.Clear();
         gitCells = GitCells.None;
         repos = new(StringComparer.OrdinalIgnoreCase);
         containingRepo = null;
@@ -1485,7 +1507,7 @@ sealed class FolderView : UserControl
                         token,
                         repo =>
                         {
-                            var state = new GitRead(repo, reader(repo, token));
+                            var state = new GitRead(repo, reader(repo, token), RemoteSite.OfRepo(repo));
                             progress.Report(state);
                             return state;
                         }),
@@ -1526,7 +1548,7 @@ sealed class FolderView : UserControl
         }
     }
 
-    sealed record GitRead(string Repo, GitState? State);
+    sealed record GitRead(string Repo, GitState? State, RemoteSite? Site);
 
     void GitStateRead(int version, GitRead read)
     {
@@ -1536,9 +1558,20 @@ sealed class FolderView : UserControl
             return;
         }
 
+        var siteChanged = gitSites.GetValueOrDefault(read.Repo) != read.Site;
+        if (read.Site == null)
+        {
+            gitSites.Remove(read.Repo);
+        }
+        else
+        {
+            gitSites[read.Repo] = read.Site;
+        }
+
         if (read.State == null)
         {
-            if (!gitStates.Remove(read.Repo))
+            if (!gitStates.Remove(read.Repo) &&
+                !siteChanged)
             {
                 return;
             }
@@ -1546,7 +1579,8 @@ sealed class FolderView : UserControl
         else
         {
             if (gitStates.TryGetValue(read.Repo, out var known) &&
-                known == read.State)
+                known == read.State &&
+                !siteChanged)
             {
                 return;
             }

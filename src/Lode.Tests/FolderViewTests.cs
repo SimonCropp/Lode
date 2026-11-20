@@ -1865,6 +1865,25 @@ public class FolderViewTests
         await Assert.That(view.GitText).IsEqualTo("main · 1 change");
     }
 
+    // In a repository whose origin is on GitHub, the status bar links to its page there. One
+    // whose origin is a folder links nowhere.
+    [Test]
+    public async Task StatusLinksToTheSite()
+    {
+        using var code = Repositories();
+        CodeCommandsTests.Scratch.Git(code.At("Changed"), "remote", "set-url", "origin", "git@github.com:octo/repo.git");
+        using var view = await Open(code.At("Changed"), InCode(code));
+        await GitRead(view);
+        var onGitHub = view.GitSite;
+
+        view.Navigate(code.At("Clean"));
+        await Pump.Loaded(view);
+        await GitRead(view);
+
+        await Assert.That(onGitHub).IsEqualTo(new RemoteSite("GitHub", "https://github.com/octo/repo"));
+        await Assert.That(view.GitSite).IsNull();
+    }
+
     // In a repository, each file says what has become of it, and each folder how many changes
     // it holds. One unchanged says nothing.
     [Test]

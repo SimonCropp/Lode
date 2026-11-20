@@ -44,6 +44,16 @@ class MainForm : Form
         Margin = new(0, 3, 12, 2),
         Visible = false
     };
+
+    // After the branch: the site the repository's origin is on, GitHub say, which it opens.
+    ToolStripStatusLabel siteLabel = new()
+    {
+        Name = "site",
+        IsLink = true,
+        LinkBehavior = LinkBehavior.HoverUnderline,
+        Margin = new(0, 3, 12, 2),
+        Visible = false
+    };
     ToolStripStatusLabel spaceLabel = new();
 
     // The instance this window listens to, so it stops listening to that one when it closes.
@@ -123,6 +133,7 @@ class MainForm : Form
     {
         this.settings = settings;
         this.places = places;
+        OpenSite = url => FileOperations.Open(this, url);
         tree = new(settings, places);
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
@@ -823,8 +834,16 @@ class MainForm : Form
         status.Items.Add(statusLabel);
         status.Items.Add(updateLabel);
         status.Items.Add(gitLabel);
+        status.Items.Add(siteLabel);
         status.Items.Add(spaceLabel);
         updateLabel.Click += (_, _) => ShowOptions("Updates");
+        siteLabel.Click += (_, _) =>
+        {
+            if (siteLabel.Tag is RemoteSite site)
+            {
+                OpenSite(site.Url);
+            }
+        };
         ShowUpdate();
         return status;
     }
@@ -1498,8 +1517,22 @@ class MainForm : Form
         var git = view.GitText;
         gitLabel.Text = git;
         gitLabel.Visible = git.Length > 0;
+        var site = view.GitSite;
+        siteLabel.Tag = site;
+        siteLabel.Visible = site != null;
+        if (site != null)
+        {
+            siteLabel.Text = site.Name;
+            siteLabel.ToolTipText = $"Open {site.Url}";
+        }
+
         spaceLabel.Text = view.FreeSpaceText;
     }
+
+    /// <summary>
+    /// Opens the repository's page on its site, in the browser. Tests swap it.
+    /// </summary>
+    internal Action<string> OpenSite;
 
     // A git action that started or finished.
     void ReadGitState()
