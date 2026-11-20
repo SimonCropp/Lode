@@ -949,6 +949,29 @@ public class WindowsTests
         await Assert.That(form.Views.Select(_ => Path.GetFileName(_.CurrentPath))).IsEquivalentTo(["Archive"]);
     }
 
+    // Ctrl+1 to Ctrl+8 go to the tab at that place, on the top row or the number pad, and Ctrl+9
+    // to the last, as in Explorer and the browsers. A number past the last tab does nothing.
+    [Test]
+    public async Task CtrlAndANumberGoToTheTabThere()
+    {
+        using var fixture = Fixture.Create();
+        using var form = (QuietForm)await Show(fixture, fixture.At("Archive"), fixture.At("Docs"), fixture.At("Source"), fixture.At("Cache"));
+        var shown = new List<string>();
+        void Press(Keys keys)
+        {
+            form.Press(keys);
+            shown.Add(Path.GetFileName(form.ActiveView!.CurrentPath));
+        }
+
+        Press(Keys.Control | Keys.D2);
+        Press(Keys.Control | Keys.NumPad3);
+        Press(Keys.Control | Keys.D9);
+        Press(Keys.Control | Keys.D1);
+        Press(Keys.Control | Keys.D5);
+
+        await Assert.That(string.Join(", ", shown)).IsEqualTo("Docs, Source, Cache, Archive, Archive");
+    }
+
     // Twenty tabs from last time ask the shell for each one's icon once, not every tab's again as
     // each opens, two hundred and ten times. Moving between them asks for none again.
     [Test]
@@ -1051,5 +1074,13 @@ public class WindowsTests
         MainForm(arguments, settings, places)
     {
         protected override bool ShowWithoutActivation => true;
+
+        // As the keys would: the modifiers of a real key press come from the keyboard.
+        public void Press(Keys keys)
+        {
+            var message = new Message();
+            ProcessCmdKey(ref message, keys);
+            Application.DoEvents();
+        }
     }
 }

@@ -177,6 +177,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
 | Ctrl+Shift+T                      | Reopen closed tab             |
 | Ctrl+Shift+P                      | Command palette               |
 | Ctrl+Tab, Ctrl+Shift+Tab          | Next tab, previous tab        |
+| Ctrl+1 to Ctrl+8, Ctrl+9          | That tab, the last tab        |
 | Ctrl+L, Alt+D, F4                 | Address bar                   |
 | Ctrl+F, F3                        | Search box                    |
 | F5                                | Refresh                       |

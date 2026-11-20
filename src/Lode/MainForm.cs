@@ -2261,8 +2261,56 @@ class MainForm : Form
         }
     }
 
+    // Ctrl+1 to Ctrl+8 go to the tab at that place, and Ctrl+9 to the last, as in Explorer and
+    // the browsers. One that isn't there does nothing.
+    void SelectTabAt(int number)
+    {
+        var index = number - 1;
+        if (number == 9)
+        {
+            index = tabs.TabCount - 1;
+        }
+
+        if (index < 0 ||
+            index >= tabs.TabCount)
+        {
+            return;
+        }
+
+        tabs.SelectedIndex = index;
+        ActiveView?.FocusList();
+    }
+
+    // The number Ctrl was held with, on the top row or the number pad, or 0.
+    static int TabNumber(Keys keyData)
+    {
+        if ((keyData & Keys.Modifiers) != Keys.Control)
+        {
+            return 0;
+        }
+
+        var key = keyData & Keys.KeyCode;
+        if (key is >= Keys.D1 and <= Keys.D9)
+        {
+            return key - Keys.D0;
+        }
+
+        if (key is >= Keys.NumPad1 and <= Keys.NumPad9)
+        {
+            return key - Keys.NumPad0;
+        }
+
+        return 0;
+    }
+
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
+        if (TabNumber(keyData) is > 0 and var number)
+        {
+            SelectTabAt(number);
+            return true;
+        }
+
         switch (keyData)
         {
             case Keys.Alt | Keys.Left:
