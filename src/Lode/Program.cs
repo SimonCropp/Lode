@@ -116,6 +116,9 @@ static class Program
             }
         };
 
+        // What was extracted from zips to be opened, copied or dragged more than a day ago.
+        _ = Task.Run(Zip.ClearOldTemp);
+
         JumpList.Follow(places, settings);
         Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
         return 0;

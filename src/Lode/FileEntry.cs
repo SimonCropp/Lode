@@ -1,3 +1,5 @@
+/// <param name="InArchive">In a zip, which Lode shows but doesn't change: opened, copied or
+/// dragged out by extracting it first, never renamed, cut or deleted.</param>
 record FileEntry(
     string Name,
     string FullPath,
@@ -7,7 +9,8 @@ record FileEntry(
     FileAttributes Attributes,
     bool IsDrive = false,
     long FreeSpace = 0,
-    bool IsShare = false)
+    bool IsShare = false,
+    bool InArchive = false)
 {
     // An entry made from another with a new path, by with, is in that path's folder.
     public string FullPath

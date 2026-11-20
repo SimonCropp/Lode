@@ -1319,6 +1319,226 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    static string MakeZip(Fixture fixture, string name, params string[] entries)
+    {
+        var zip = fixture.At(name);
+        using var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create);
+        foreach (var entry in entries)
+        {
+            var created = archive.CreateEntry(entry);
+            if (entry.EndsWith('/'))
+            {
+                continue;
+            }
+
+            using var stream = created.Open();
+            stream.Write(new byte[entry.Length]);
+        }
+
+        return zip;
+    }
+
+    static readonly string[] bundle = ["readme.aleph", "Docs/guide.aleph", "Docs/Deep/", "tool.exe"];
+
+    // A zip lists as a folder: what is at its top, its folders first, those it has no entries
+    // of its own for included.
+    [Test]
+    public async Task ListsAZip()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(zip);
+
+        await Assert.That(view.InArchive).IsTrue();
+        await Verify(Describe(view, fixture));
+    }
+
+    // Opened, a zip is gone into, as in Explorer, and so is a folder in it. Up from inside comes
+    // back out with what led there selected.
+    [Test]
+    public async Task GoingIntoAndUpOutOfAZip()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(fixture.Root);
+        view.Reveal(zip);
+        await Pump.Loaded(view);
+
+        OpenSelected(view);
+        await Pump.Loaded(view);
+        var atTop = view.CurrentPath;
+        view.Reveal(Path.Combine(zip, "Docs"));
+        await Pump.Loaded(view);
+        OpenSelected(view);
+        await Pump.Loaded(view);
+        var inDocs = view.CurrentPath;
+        var docsNames = Names(view);
+        view.GoUp();
+        await Pump.Loaded(view);
+        var upToTop = Selected(view);
+        view.GoUp();
+        await Pump.Loaded(view);
+
+        await Assert.That(atTop).IsEqualTo(zip);
+        await Assert.That(inDocs).IsEqualTo(Path.Combine(zip, "Docs"));
+        await Assert.That(docsNames).IsEquivalentTo(["Deep", "guide.aleph"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(upToTop).IsEquivalentTo(["Docs"]);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(Selected(view)).IsEquivalentTo(["Bundle.zip"]);
+    }
+
+    static void OpenSelected(FolderView view) =>
+        view.ItemCommands(view.SelectedEntries()).First(_ => _?.Id == "open")!.Action();
+
+    // Typed in the address bar, or reached from the breadcrumb, a folder in a zip opens, and a
+    // file in one is shown selected.
+    [Test]
+    public async Task NavigatingToSomewhereInAZip()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(Path.Combine(zip, "Docs", "Deep"));
+        var deep = view.CurrentPath;
+        var deepNames = Names(view);
+
+        view.Navigate(Path.Combine(zip, "Docs", "guide.aleph"));
+        await Pump.Loaded(view);
+
+        await Assert.That(deep).IsEqualTo(Path.Combine(zip, "Docs", "Deep"));
+        await Assert.That(deepNames).IsEmpty();
+        await Assert.That(view.CurrentPath).IsEqualTo(Path.Combine(zip, "Docs"));
+        await Assert.That(Selected(view)).IsEquivalentTo(["guide.aleph"]);
+    }
+
+    // Lode doesn't change a zip: what is in one can be opened, copied and its path copied, and
+    // nothing can be made, pasted, dropped, cut, renamed or deleted there. Windows' own menu,
+    // which would change it, isn't offered.
+    [Test]
+    public async Task AZipIsReadOnly()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(zip);
+        var deleted = new List<string>();
+        view.DeleteItems = (_, paths, _) =>
+        {
+            deleted.AddRange(paths);
+            return Task.FromResult(true);
+        };
+        view.Reveal([Path.Combine(zip, "Docs"), Path.Combine(zip, "readme.aleph")]);
+        await Pump.Loaded(view);
+
+        var itemCommands = view.ItemCommands(view.SelectedEntries()).Select(_ => _?.Id).ToList();
+        var backgroundCommands = view.BackgroundCommands(canPaste: true).Select(_ => _?.Id).ToList();
+        view.Delete(false);
+        view.Paste(new([fixture.At("notes.aleph")], false));
+        view.CreateFolder();
+        await Pump.Loaded(view);
+
+        await Assert.That(view.IsReadOnly).IsTrue();
+        await Assert.That(view.CanShowShellMenu).IsFalse();
+        await Assert.That(itemCommands).IsEquivalentTo(["open", null, "copy", "copyAsPath"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(backgroundCommands).IsEquivalentTo(["undo", "redo", null, "extractAll", "copyAsPath"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(deleted).IsEmpty();
+        await Assert.That(Names(view)).IsEquivalentTo(["Docs", "readme.aleph", "tool.exe"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // A zip renamed by another program, the view inside it follows it to its new name.
+    [Test]
+    public async Task AZipRenamedElsewhereIsFollowed()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(Path.Combine(zip, "Docs"));
+
+        File.Move(zip, fixture.At("Renamed.zip"));
+        await Pump.Until(() => view.CurrentPath == fixture.At("Renamed.zip", "Docs"));
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).Contains("guide.aleph");
+    }
+
+    // A zip deleted from under the view takes it to the folder the zip was in.
+    [Test]
+    public async Task ADeletedZipIsLeftForTheFolderItWasIn()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(Path.Combine(zip, "Docs"));
+
+        File.Delete(zip);
+        await Pump.Until(() => view.CurrentPath == fixture.Root);
+        await Pump.Loaded(view);
+
+        await Assert.That(Names(view)).DoesNotContain("Bundle.zip");
+    }
+
+    // A zip written to while the view is in it is read again.
+    [Test]
+    public async Task AZipWrittenToIsReadAgain()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", bundle);
+        using var view = await Open(zip);
+
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Update))
+        {
+            archive.CreateEntry("arrived.aleph");
+        }
+
+        await Pump.Until(() => Names(view).Contains("arrived.aleph"));
+    }
+
+    // A folder named as a zip is a folder.
+    [Test]
+    public async Task AFolderNamedAsAZipIsAFolder()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Folder.zip"));
+        await File.WriteAllTextAsync(fixture.At("Folder.zip", "inside.aleph"), "");
+        using var view = await Open(fixture.At("Folder.zip"));
+
+        await Assert.That(view.InArchive).IsFalse();
+        await Assert.That(Names(view)).IsEquivalentTo(["inside.aleph"]);
+    }
+
+    // Compress to ZIP file makes the zip beside what is selected and selects it, ready to rename,
+    // as Explorer has it.
+    [Test]
+    public async Task CompressSelectsTheNewZip()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Reveal([fixture.At("Docs"), fixture.At("notes.aleph")]);
+        await Pump.Loaded(view);
+
+        view.Compress(view.SelectedEntries());
+        await Pump.Loaded(view);
+
+        await Assert.That(Selected(view)).IsEquivalentTo(["Docs.zip"]);
+        ActionLog.Reset();
+    }
+
+    // Extract All selects the folder it made.
+    [Test]
+    public async Task ExtractAllSelectsTheFolder()
+    {
+        using var fixture = Fixture.Create();
+        var zip = fixture.At("Bundle.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            archive.CreateEntry("inside.txt");
+        }
+
+        using var view = await Open(fixture.Root);
+
+        view.Extract([zip], false);
+        await Pump.Loaded(view);
+
+        await Assert.That(Selected(view)).IsEquivalentTo(["Bundle"]);
+        ActionLog.Reset();
+    }
+
     // A drag from the margin left of the list selects the rows it spans.
     [Test]
     public async Task MarqueeFromTheMargin()

@@ -19,6 +19,7 @@
     Copy,
     Copy as path,
   ----,
+  Compress to ZIP file,
   Properties,
   ----,
   Show more options

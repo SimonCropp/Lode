@@ -1,0 +1,10 @@
+﻿{
+  Succeeded: true,
+  Summary: Compressed 3 files into Source.zip,
+  entries: [
+    Source/Deep/leaf.aleph (40 bytes),
+    Source/Empty/ (0 bytes),
+    Source/main.aleph (5,000 bytes),
+    notes.aleph (12 bytes)
+  ]
+}

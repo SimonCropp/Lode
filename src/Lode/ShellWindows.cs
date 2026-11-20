@@ -315,8 +315,10 @@ public static partial class ShellWindows
         {
             parsingName = Locations.ThisPCParsingName;
         }
-        else if (Locations.IsRemote(path))
+        else if (Locations.IsRemote(path) ||
+                 Zip.IsArchivePath(path))
         {
+            // Inside a zip, the shell's own zip folder would be what the tab is registered as.
             return null;
         }
         else

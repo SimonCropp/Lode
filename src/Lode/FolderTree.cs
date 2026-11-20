@@ -1676,6 +1676,7 @@ sealed class FolderTree : TreeView
             null,
             LodeActions.Pin([path], places, SetPinned),
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
+            LodeActions.Command("compress", () => _ = Zip.CompressInBackground([path], Path.GetDirectoryName(path)!), !isDrive),
             LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
             LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties")),
             .. CodeMenu.Commands(this, settings, [path])

@@ -832,13 +832,18 @@ class MainForm : Form
             .Where(_ => Locations.IsThisPC(_) ||
                         Locations.IsRemote(_) ||
                         Directory.Exists(_) ||
-                        File.Exists(_))
+                        File.Exists(_) ||
+                        Zip.IsArchivePath(_))
             .ToList();
 
     void OpenInitialTabs(string[] arguments)
     {
         var paths = Openable(arguments);
         var active = paths.Count - 1;
+
+        // Restored, a tab that was inside a zip opens inside it again. A zip launched with is
+        // shown selected, as any file is.
+        var restoring = paths.Count == 0;
 
         // When each tab restored was last looked at, in the order of paths.
         var lastShown = new List<DateTimeOffset>();
@@ -855,7 +860,8 @@ class MainForm : Form
                 var path = settings.Tabs[index];
                 if (!Locations.IsThisPC(path) &&
                     !Locations.IsRemote(path) &&
-                    !Directory.Exists(path))
+                    !Directory.Exists(path) &&
+                    !Zip.IsArchivePath(path))
                 {
                     continue;
                 }
@@ -892,7 +898,7 @@ class MainForm : Form
         {
             foreach (var path in paths)
             {
-                AddTab(path, false);
+                AddTab(path, false, intoZip: restoring);
             }
         }
         finally
@@ -1025,7 +1031,9 @@ class MainForm : Form
         }
     }
 
-    public FolderView AddTab(string path, bool activate)
+    /// <param name="intoZip">For somewhere a tab was, inside a zip: the tab opens inside it,
+    /// rather than showing the zip selected, as for a file.</param>
+    public FolderView AddTab(string path, bool activate, bool intoZip = false)
     {
         var view = new FolderView(settings, places)
         {
@@ -1047,9 +1055,9 @@ class MainForm : Form
         view.ColumnsChanged += RefreshColumnsInAllWindows;
         view.ColumnWidthsChanged += RefreshColumnWidthsInAllWindows;
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
-        view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false);
+        view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false, intoZip: true);
         tabs.TabPages.Add(page);
-        view.OpenAt(path);
+        view.OpenAt(path, intoZip);
 
         if (activate)
         {
@@ -1193,7 +1201,7 @@ class MainForm : Form
             path = nearest;
         }
 
-        AddTab(path, true);
+        AddTab(path, true, intoZip: true);
     }
 
     static MainForm? WindowOf(Control? control) =>
@@ -1667,7 +1675,7 @@ class MainForm : Form
 
     void OpenTerminal(bool admin)
     {
-        if (ActiveView is {ListsPlaces: false} view)
+        if (ActiveView is {IsReadOnly: false} view)
         {
             FileOperations.OpenTerminal(view.CurrentPath, admin);
         }
@@ -1692,7 +1700,8 @@ class MainForm : Form
     string? PinnablePath()
     {
         if (ActiveView is not { } view ||
-            Locations.IsThisPC(view.CurrentPath))
+            Locations.IsThisPC(view.CurrentPath) ||
+            view.InArchive)
         {
             return null;
         }
@@ -1744,7 +1753,7 @@ class MainForm : Form
     {
         var offset = new Size(LogicalToDeviceUnits(30), LogicalToDeviceUnits(30));
         var window = CreateWindow(new(Location + offset, NormalSize));
-        window.AddTab(path, true);
+        window.AddTab(path, true, intoZip: true);
         window.Show();
     }
 
@@ -2000,7 +2009,7 @@ class MainForm : Form
     {
         var view = page.Controls.OfType<FolderView>().First();
         var menu = new ExplorerMenu();
-        menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true));
+        menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true, intoZip: true));
         var path = view.CurrentPath;
         if (!Locations.IsThisPC(path))
         {
@@ -2066,7 +2075,7 @@ class MainForm : Form
         Add("New window", NewWindow, "Ctrl+N");
         if (page != null)
         {
-            Add("Duplicate tab", () => AddTab(view!.CurrentPath, true));
+            Add("Duplicate tab", () => AddTab(view!.CurrentPath, true, intoZip: true));
             Add("Close tab", () => CloseTab(page), "Ctrl+W");
             Add("Close other tabs", () => CloseOtherTabs(page), enabled: tabs.TabCount > 1);
             Add("Close tabs to the left", () => CloseTabsToTheLeft(page), enabled: index > 0);

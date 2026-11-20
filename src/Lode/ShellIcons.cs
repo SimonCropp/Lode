@@ -282,6 +282,20 @@ static class ShellIcons
         return ExtensionIcon(extension);
     }
 
+    /// <summary>
+    /// The icon for a file of <paramref name="path"/>'s type, or a folder, without reading it:
+    /// for one that isn't on disk, in a zip say, where a program's or shortcut's own can't be read.
+    /// </summary>
+    public static int GetTypeIcon(string path, bool isDirectory)
+    {
+        if (isDirectory)
+        {
+            return FolderIcon;
+        }
+
+        return ExtensionIcon(Path.GetExtension(path.AsSpan()));
+    }
+
     // Each file being read for its icon, so asking again while it is waits for the same read.
     static readonly ConcurrentDictionary<(string Path, DateTime Modified), Task> readingFileIcons = new();
 

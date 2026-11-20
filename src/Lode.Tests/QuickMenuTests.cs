@@ -233,7 +233,7 @@ public class QuickMenuTests
     {
         using var fixture = Fixture.Create();
         var settings = new Settings {ShowHidden = false};
-        foreach (var id in new[] {"cut", "copy", "rename", "delete", "properties", "createShortcut", "copyAsPath"})
+        foreach (var id in new[] {"cut", "copy", "rename", "delete", "properties", "createShortcut", "compress", "copyAsPath"})
         {
             settings.SetPlacement(id, button: false, menu: false);
         }

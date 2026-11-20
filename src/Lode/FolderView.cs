@@ -168,9 +168,9 @@ sealed class FolderView : UserControl
     /// </summary>
     public Task Searching { get; private set; } = Task.CompletedTask;
 
-    // Whether the filter searches the subfolders too, as it does everywhere but This PC and a
-    // machine on the network.
-    bool IsSearch => filter.Length > 0 && !ListsPlaces;
+    // Whether the filter searches the subfolders too, as it does everywhere but This PC, a
+    // machine on the network and a zip.
+    bool IsSearch => filter.Length > 0 && !IsReadOnly;
 
     // What to select once the list shows the folder, the first focused.
     IReadOnlyList<string>? pendingSelection;
@@ -269,6 +269,36 @@ sealed class FolderView : UserControl
     /// not a folder that holds anything, so nothing can be made, pasted or dropped there.
     /// </summary>
     public bool ListsPlaces => IsThisPC || Locations.IsServer(CurrentPath);
+
+    // Where in a zip the view is, worked out once for each place it goes. See Zip.Split.
+    (string Path, Zip.Location? Location) archive = ("", null);
+
+    /// <summary>
+    /// The zip the view is in, and where in it, or null when it shows anywhere else.
+    /// </summary>
+    internal Zip.Location? Archive
+    {
+        get
+        {
+            if (!string.Equals(archive.Path, CurrentPath, StringComparison.Ordinal))
+            {
+                archive = (CurrentPath, Zip.Split(CurrentPath));
+            }
+
+            return archive.Location;
+        }
+    }
+
+    /// <summary>
+    /// Inside a zip, which Lode shows but doesn't change.
+    /// </summary>
+    public bool InArchive => Archive != null;
+
+    /// <summary>
+    /// Somewhere nothing can be made, pasted or dropped: where <see cref="ListsPlaces"/>, or
+    /// inside a zip.
+    /// </summary>
+    public bool IsReadOnly => ListsPlaces || InArchive;
     IntPtr Owner => FindForm()?.Handle ?? Handle;
 
     public FolderView(Settings settings, Places places)
@@ -499,6 +529,23 @@ sealed class FolderView : UserControl
             return Found.Folder;
         }
 
+        // The zip itself is a file, to be revealed as one. Inside it, what it holds.
+        if (Zip.Split(path) is { Inner.Length: > 0 } inArchive)
+        {
+            var kind = Zip.Find(inArchive);
+            if (kind == Zip.Kind.Folder)
+            {
+                return Found.Folder;
+            }
+
+            if (kind == Zip.Kind.File)
+            {
+                return Found.File;
+            }
+
+            return Found.Nothing;
+        }
+
         if (File.Exists(path))
         {
             return Found.File;
@@ -512,18 +559,21 @@ sealed class FolderView : UserControl
 
     /// <summary>
     /// Where a tab starts: a folder, or a file, which means "show me this file", so its folder
-    /// with the file selected. Somewhere on the network is taken on trust until the view shows,
-    /// and asked after then, off the UI thread.
+    /// with the file selected. A zip is such a file, unless <paramref name="intoZip"/>, for a tab
+    /// that was inside it, restored say, which opens inside it again. Somewhere on the network is
+    /// taken on trust until the view shows, and asked after then, off the UI thread.
     /// </summary>
-    public void OpenAt(string path)
+    public void OpenAt(string path, bool intoZip = false)
     {
+        var reveal = !intoZip || !Zip.IsZip(path);
         if (IsRemote(path))
         {
-            Go(path, null, revealFile: true);
+            Go(path, null, revealFile: reveal);
             return;
         }
 
-        if (File.Exists(path))
+        if (reveal &&
+            File.Exists(path))
         {
             Reveal(path);
             return;
@@ -599,6 +649,26 @@ sealed class FolderView : UserControl
             return;
         }
 
+        // A zip opens as a folder, as in Explorer. A file inside one is shown in its folder.
+        if (Zip.Split(normalized) is { } inArchive)
+        {
+            var kind = Zip.Find(inArchive);
+            if (kind == Zip.Kind.Folder)
+            {
+                Open(normalized, position, select: select);
+                return;
+            }
+
+            if (kind == Zip.Kind.File)
+            {
+                Reveal(normalized);
+                return;
+            }
+
+            SayNotFound(target);
+            return;
+        }
+
         if (File.Exists(normalized))
         {
             FileOperations.Open(this, normalized);
@@ -633,7 +703,8 @@ sealed class FolderView : UserControl
         }
 
         looking = null;
-        if (found == Found.Folder)
+        if (found == Found.Folder ||
+            (found == Found.File && !revealFile && Zip.IsZip(normalized)))
         {
             Open(normalized, position, select: select);
             return;
@@ -703,7 +774,9 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (found == Found.Folder)
+        // A zip, the view inside it.
+        if (found == Found.Folder ||
+            (found == Found.File && !revealIfFile && Zip.IsZip(path)))
         {
             ReadFolder(preserveState);
             return;
@@ -1133,8 +1206,10 @@ sealed class FolderView : UserControl
         var freeSpace = places.FreeSpace;
         var watching = watcher;
         var watchingParent = parentWatcher;
+        // A zip holds no repositories to show the state of.
         string? codeFolder = null;
-        if (settings.IsCode(path))
+        if (settings.IsCode(path) &&
+            !InArchive)
         {
             codeFolder = settings.CodeDirectory;
         }
@@ -1597,6 +1672,11 @@ sealed class FolderView : UserControl
             }
 
             return result;
+        }
+
+        if (Zip.Split(path) is { } inArchive)
+        {
+            return Zip.List(inArchive, path);
         }
 
         var options = new EnumerationOptions
@@ -2598,9 +2678,19 @@ sealed class FolderView : UserControl
             Cell(entry, sizeColumn)
         ];
         // A shortcut's icon is what it points at, with the shell's arrow over it, as Explorer has it.
-        var icon = ShellListView.PaddedIcon(
-            ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified, FileIconKnown),
-            ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory));
+        // In a zip there is no file to read for one, so each has its type's.
+        int icon;
+        if (entry.InArchive)
+        {
+            icon = ShellListView.PaddedIcon(ShellIcons.GetTypeIcon(entry.Name, entry.IsDirectory), 0);
+        }
+        else
+        {
+            icon = ShellListView.PaddedIcon(
+                ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified, FileIconKnown),
+                ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory));
+        }
+
         var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
         if (entry.IsHidden)
         {
@@ -2723,9 +2813,11 @@ sealed class FolderView : UserControl
         return selection;
     }
 
+    // What is selected that can be cut, copied, deleted or dragged as it is: not a drive or a
+    // share, nor what is in a zip, which is copied or dragged by extracting it first.
     string[] SelectedPaths() =>
         SelectedEntries()
-            .Where(_ => !_.IsPlace)
+            .Where(_ => _ is { IsPlace: false, InArchive: false })
             .Select(_ => _.FullPath)
             .ToArray();
 
@@ -2734,7 +2826,16 @@ sealed class FolderView : UserControl
         var navigated = false;
         foreach (var entry in selection)
         {
-            var folder = entry.IsDirectory ? entry.FullPath : FileOperations.ResolveFolderShortcut(entry.FullPath);
+            // In a zip, a file is opened from a copy extracted to the temp folder, and a zip in
+            // one is gone into there.
+            if (entry is { InArchive: true, IsDirectory: false })
+            {
+                _ = OpenFromArchive(entry, !navigated);
+                navigated |= Zip.IsZip(entry.Name);
+                continue;
+            }
+
+            var folder = FolderToOpen(entry);
             if (folder == null)
             {
                 FileOperations.Open(this, entry.FullPath);
@@ -2749,6 +2850,61 @@ sealed class FolderView : UserControl
                 Navigate(folder);
             }
         }
+    }
+
+    // Where opening an item goes: a folder, a zip, as Explorer goes into one, or where a shortcut
+    // to a folder leads. Null for a file to open.
+    static string? FolderToOpen(FileEntry entry)
+    {
+        if (entry.IsDirectory ||
+            Zip.IsZip(entry.FullPath))
+        {
+            return entry.FullPath;
+        }
+
+        return FileOperations.ResolveFolderShortcut(entry.FullPath);
+    }
+
+    /// <summary>
+    /// Extracts a file in a zip to the temp folder, off the UI thread, and opens it from there:
+    /// a zip in the zip by going into it, here or, unless <paramref name="here"/>, in a new tab;
+    /// anything else with its app. What it has open is a copy, so changes to it stay out of the zip.
+    /// </summary>
+    internal async Task OpenFromArchive(FileEntry entry, bool here)
+    {
+        string extracted;
+        try
+        {
+            extracted = (await Task.Run(() => Zip.ExtractToTemp([entry.FullPath])))[0];
+        }
+        catch (Exception exception)
+        {
+            if (!IsDisposed)
+            {
+                MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
+            return;
+        }
+
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (!Zip.IsZip(extracted))
+        {
+            FileOperations.Open(this, extracted);
+            return;
+        }
+
+        if (here)
+        {
+            Navigate(extracted);
+            return;
+        }
+
+        NewTabRequested?.Invoke(extracted);
     }
 
     void OnColumnClick(object? sender, ColumnClickEventArgs eventArgs) =>
@@ -2824,7 +2980,11 @@ sealed class FolderView : UserControl
                 break;
             case Keys.Control | Keys.Shift | Keys.C:
                 // As in Windows 11's Explorer.
-                if (SelectedPaths() is { Length: > 0 } selected)
+                var selected = SelectedEntries()
+                    .Where(_ => !_.IsPlace)
+                    .Select(_ => _.FullPath)
+                    .ToList();
+                if (selected.Count > 0)
                 {
                     CopyAsPath(selected);
                 }
@@ -2843,12 +3003,54 @@ sealed class FolderView : UserControl
         return true;
     }
 
-    public void Copy(bool cut) =>
+    public void Copy(bool cut)
+    {
+        var selection = SelectedEntries();
+        if (selection.Any(_ => _.InArchive))
+        {
+            // Nothing can be taken out of a zip, only copied.
+            if (!cut)
+            {
+                _ = CopyOutOfArchive(selection.Select(_ => _.FullPath).ToList());
+            }
+
+            return;
+        }
+
         FileOperations.CopyToClipboard(SelectedPaths(), cut);
+    }
+
+    /// <summary>
+    /// What is in a zip, extracted to the temp folder for <see cref="Copy"/> and drags. Replaced
+    /// in tests.
+    /// </summary>
+    internal Func<IReadOnlyList<string>, IReadOnlyList<string>> ExtractToTemp = Zip.ExtractToTemp;
+
+    // Items in a zip are on the clipboard as copies extracted to the temp folder, off the UI
+    // thread, so they paste anywhere as files do.
+    async Task CopyOutOfArchive(List<string> paths)
+    {
+        IReadOnlyList<string> extracted;
+        try
+        {
+            extracted = await Task.Run(() => ExtractToTemp(paths));
+        }
+        catch (Exception exception)
+        {
+            if (!IsDisposed)
+            {
+                MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+
+            return;
+        }
+
+        FileOperations.CopyToClipboard(extracted, false);
+    }
 
     public void Paste()
     {
-        if (ListsPlaces)
+        if (IsReadOnly)
         {
             return;
         }
@@ -2866,8 +3068,15 @@ sealed class FolderView : UserControl
     /// Pastes what the clipboard holds, <paramref name="clipboard"/>, selecting it once it is
     /// there. Tests call it, leaving the clipboard alone.
     /// </summary>
-    internal void Paste(FileOperations.ClipboardFiles clipboard) =>
+    internal void Paste(FileOperations.ClipboardFiles clipboard)
+    {
+        if (IsReadOnly)
+        {
+            return;
+        }
+
         Loading = PasteAndSelect(clipboard);
+    }
 
     // What was pasted is selected once it is there, as Explorer has it: the folder is read
     // again for it, unless the view has gone somewhere else meanwhile.
@@ -2896,6 +3105,11 @@ sealed class FolderView : UserControl
     public void Delete(bool permanent)
     {
         var paths = SelectedPaths();
+        if (paths.Length == 0)
+        {
+            return;
+        }
+
         var deleting = DeleteItems(Owner, paths, permanent);
         if (found.Count > 0)
         {
@@ -2969,10 +3183,63 @@ sealed class FolderView : UserControl
         Loading = LoadAsync(true);
     }
 
+    /// <summary>
+    /// A zip of the selection beside it, named for the first item, shown with its name ready to
+    /// edit once it is made, as Explorer has it. In what a search found, where the items can be in
+    /// different folders, it goes in the first item's.
+    /// </summary>
+    internal void Compress(List<FileEntry> selection)
+    {
+        if (selection.Count == 0)
+        {
+            return;
+        }
+
+        Loading = CompressAndRename(selection.Select(_ => _.FullPath).ToList(), selection[0].Folder);
+    }
+
+    async Task CompressAndRename(List<string> paths, string folder)
+    {
+        var zip = await Zip.CompressInBackground(paths, folder);
+        if (IsDisposed ||
+            zip == null ||
+            !Locations.Same(folder, CurrentPath))
+        {
+            return;
+        }
+
+        pendingRename = zip;
+        Reload();
+        await Loading;
+    }
+
+    /// <summary>
+    /// Extracts each zip: to a new folder beside it named for it, or, <paramref name="here"/>, into
+    /// the folder it is in. What it put there is selected once it is done.
+    /// </summary>
+    internal void Extract(List<string> zips, bool here) =>
+        Loading = ExtractAndSelect(zips, here);
+
+    async Task ExtractAndSelect(List<string> zips, bool here)
+    {
+        var folder = CurrentPath;
+        var placed = await Zip.ExtractInBackground(zips, here);
+        if (IsDisposed ||
+            placed.Count == 0 ||
+            !Locations.Same(folder, CurrentPath))
+        {
+            return;
+        }
+
+        pendingSelection = placed;
+        Reload();
+        await Loading;
+    }
+
     // Makes the item, then shows it with its name ready to edit.
     void Create(Func<string, string> create)
     {
-        if (ListsPlaces)
+        if (IsReadOnly)
         {
             return;
         }
@@ -2995,9 +3262,12 @@ sealed class FolderView : UserControl
         var selection = SelectedEntries();
         if (selection.Count > 0)
         {
-            ShellContextMenu.InvokeVerb(Owner, selection.Select(_ => _.FullPath).ToArray(), "properties");
+            if (!selection.Any(_ => _.InArchive))
+            {
+                ShellContextMenu.InvokeVerb(Owner, selection.Select(_ => _.FullPath).ToArray(), "properties");
+            }
         }
-        else if (!ListsPlaces)
+        else if (!IsReadOnly)
         {
             ShellContextMenu.InvokeVerb(Owner, [CurrentPath], "properties");
         }
@@ -3006,7 +3276,8 @@ sealed class FolderView : UserControl
     void OnBeforeLabelEdit(object? sender, LabelEditEventArgs eventArgs)
     {
         if (eventArgs.Item >= displayed.Count ||
-            displayed[eventArgs.Item].IsPlace)
+            displayed[eventArgs.Item].IsPlace ||
+            displayed[eventArgs.Item].InArchive)
         {
             eventArgs.CancelEdit = true;
             return;
@@ -3169,13 +3440,18 @@ sealed class FolderView : UserControl
                 using var menu = new ShellContextMenu();
                 ShowItemMenu(menu, selection, location);
             },
-            settings.ShowsInMenu(LodeActions.More));
+            settings.ShowsInMenu(LodeActions.More) && !InArchive);
 
     /// <summary>
     /// The fixed right-click menu for selected items. A null entry is a separator.
     /// </summary>
     internal List<QuickMenu.Command?> ItemCommands(List<FileEntry> selection)
     {
+        if (selection.Any(_ => _.InArchive))
+        {
+            return ArchiveItemCommands(selection);
+        }
+
         // Worked out in one pass: the actions bar asks for these each time the selection changes.
         var anyPlace = false;
         var allFolders = true;
@@ -3229,6 +3505,12 @@ sealed class FolderView : UserControl
             {
                 commands.Add(LodeActions.Submenu("openWith", QuickMenu.Deferred(() => OpenWithCommands(extension, paths))));
             }
+
+            if (paths.All(Zip.IsZip))
+            {
+                commands.Add(LodeActions.Command("extractAll", () => Extract(paths, false)));
+                commands.Add(LodeActions.Command("extractHere", () => Extract(paths, true)));
+            }
         }
 
         commands.AddRange(
@@ -3240,10 +3522,32 @@ sealed class FolderView : UserControl
             LodeActions.Command("delete", () => Delete(false), !anyPlace),
             null,
             LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyPlace),
+            LodeActions.Command("compress", () => Compress(selection), !anyPlace),
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             LodeActions.Command("properties", ShowProperties)
         ]);
         commands.AddRange(CodeMenu.Commands(this, settings, folders));
+        return commands;
+    }
+
+    // In a zip, what leaves it as it is: opening, copying, which extracts, and copying as path.
+    List<QuickMenu.Command?> ArchiveItemCommands(List<FileEntry> selection)
+    {
+        var commands = new List<QuickMenu.Command?>
+        {
+            LodeActions.Command("open", () => OpenEntries(selection))
+        };
+        if (selection.All(_ => _.IsDirectory))
+        {
+            commands.Add(LodeActions.Command("openInNewTab", () => OpenInNewTabs(selection)));
+        }
+
+        commands.AddRange(
+        [
+            null,
+            LodeActions.Command("copy", () => Copy(false)),
+            LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath)))
+        ]);
         return commands;
     }
 
@@ -3279,7 +3583,7 @@ sealed class FolderView : UserControl
                 using var menu = new ShellContextMenu();
                 ShowBackgroundMenu(menu, location);
             },
-            settings.ShowsInMenu(LodeActions.More));
+            settings.ShowsInMenu(LodeActions.More) && !InArchive);
 
     /// <summary>
     /// The full Windows menu, as Show more options opens it, for the selection, or for the
@@ -3295,22 +3599,41 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!ListsPlaces)
+        if (!IsReadOnly)
         {
             ShowBackgroundMenu(menu, location);
         }
     }
 
     /// <summary>
-    /// Whether there is anything for <see cref="ShowShellMenu"/> to show a menu for.
+    /// Whether there is anything for <see cref="ShowShellMenu"/> to show a menu for. Nothing in a
+    /// zip: Windows' menu for it would change it.
     /// </summary>
     public bool CanShowShellMenu =>
-        list.SelectedIndices.Count > 0 || !ListsPlaces;
+        !InArchive &&
+        (list.SelectedIndices.Count > 0 || !ListsPlaces);
 
     /// <summary>
     /// The fixed right-click menu for the empty part of the list. A null entry is a separator.
     /// </summary>
-    internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes = null) =>
+    internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes = null)
+    {
+        // In a zip nothing can be made or pasted, but all of it can be extracted.
+        if (Archive is { } inArchive)
+        {
+            return
+            [
+                .. UndoCommands(),
+                null,
+                LodeActions.Command("extractAll", () => Extract([inArchive.Archive], false)),
+                LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath]))
+            ];
+        }
+
+        return FolderCommands(canPaste, newTypes);
+    }
+
+    List<QuickMenu.Command?> FolderCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes) =>
     [
         LodeActions.Submenu("new", NewCommands(newTypes ?? ShellNew.Current, CreateFolder, CreateFile)),
         LodeActions.Command("paste", Paste, canPaste),
@@ -3436,8 +3759,15 @@ sealed class FolderView : UserControl
     internal static string PathsText(IEnumerable<string> paths) =>
         string.Join(Environment.NewLine, paths.Select(_ => $"\"{_}\""));
 
+    // Windows' own menu. Not for what is in a zip, which it would change: Shift+right-click
+    // there opens nothing.
     void ShowItemMenu(ShellContextMenu menu, List<FileEntry> selection, Point location)
     {
+        if (selection.Any(_ => _.InArchive))
+        {
+            return;
+        }
+
         var customCommands = new List<ShellContextMenu.CustomCommand>();
         if (selection.All(_ => _.IsDirectory))
         {
@@ -3494,6 +3824,11 @@ sealed class FolderView : UserControl
 
     void ShowBackgroundMenu(ShellContextMenu menu, Point location)
     {
+        if (InArchive)
+        {
+            return;
+        }
+
         ShellContextMenu.CustomCommand[] customCommands =
         [
             new("Refresh", Reload),
@@ -3529,6 +3864,13 @@ sealed class FolderView : UserControl
 
     void OnItemDrag(object? sender, ItemDragEventArgs eventArgs)
     {
+        var selection = SelectedEntries();
+        if (selection.Any(_ => _.InArchive))
+        {
+            DragOutOfArchive(selection);
+            return;
+        }
+
         var paths = SelectedPaths();
         if (paths.Length == 0)
         {
@@ -3539,15 +3881,41 @@ sealed class FolderView : UserControl
         list.DoDragDrop(data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
     }
 
+    // What is in a zip is dragged as copies extracted to the temp folder, there and then, as the
+    // drag can't start until they are, and only copied: moving one would take it out of the temp
+    // folder, not the zip.
+    void DragOutOfArchive(List<FileEntry> selection)
+    {
+        IReadOnlyList<string> extracted;
+        var cursor = Cursor.Current;
+        Cursor.Current = Cursors.WaitCursor;
+        try
+        {
+            extracted = ExtractToTemp(selection.Select(_ => _.FullPath).ToList());
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        finally
+        {
+            Cursor.Current = cursor;
+        }
+
+        var data = new DataObject(DataFormats.FileDrop, extracted.ToArray());
+        list.DoDragDrop(data, DragDropEffects.Copy);
+    }
+
     string? DropDestination(DragEventArgs eventArgs)
     {
         var point = list.PointToClient(new(eventArgs.X, eventArgs.Y));
-        if (list.GetItemAt(point.X, point.Y)?.Tag is FileEntry { IsDirectory: true } target)
+        if (list.GetItemAt(point.X, point.Y)?.Tag is FileEntry { IsDirectory: true, InArchive: false } target)
         {
             return target.FullPath;
         }
 
-        if (ListsPlaces)
+        if (IsReadOnly)
         {
             return null;
         }
@@ -3569,6 +3937,12 @@ sealed class FolderView : UserControl
         renames.Clear();
         if (ListsPlaces)
         {
+            return;
+        }
+
+        if (Archive is { } inArchive)
+        {
+            WatchArchive(inArchive.Archive);
             return;
         }
 
@@ -3607,6 +3981,35 @@ sealed class FolderView : UserControl
         catch (Exception)
         {
             // Not to be watched. Reading the folder still finds that it has gone.
+            parentWatcher = null;
+        }
+    }
+
+    // Inside a zip, at any depth, the zip itself is watched, in its folder. Written to, it is
+    // read again. Renamed, the view follows it; gone, it leaves.
+    void WatchArchive(string zip)
+    {
+        if (IsRemote(zip))
+        {
+            return;
+        }
+
+        try
+        {
+            parentWatcher = new(
+                Path.GetDirectoryName(zip)!,
+                NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                () =>
+                {
+                    changes.Raise();
+                    parentChanges.Raise();
+                },
+                Path.GetFileName(zip),
+                (from, to) => renames.Enqueue((from, to)));
+        }
+        catch (Exception)
+        {
+            // Not to be watched. F5 still reads it again.
             parentWatcher = null;
         }
     }
@@ -3786,6 +4189,12 @@ sealed class FolderView : UserControl
     // have gone.
     static bool IsGone(string path)
     {
+        // In a zip that is there, a folder it no longer holds.
+        if (Zip.Split(path) is { } inArchive)
+        {
+            return Zip.Find(inArchive) != Zip.Kind.Folder;
+        }
+
         try
         {
             return !File.GetAttributes(path).HasFlag(FileAttributes.Directory);

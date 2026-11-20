@@ -47,6 +47,8 @@ static class Icons
     public const char Shortcut = '\uE71B';
     public const char CopyAsPath = '\uE62F';
     public const char Folder = '\uE8B7';
+    // A folder with a zip down it, as Explorer's Compress to ZIP file and Extract All have.
+    public const char Zip = '\uF012';
     public const char Git = '\uE895';
     public const char Pull = '\uE896';
     public const char Push = '\uE898';

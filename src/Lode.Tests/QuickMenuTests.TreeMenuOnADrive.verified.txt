@@ -22,6 +22,7 @@
   ----,
   Pin to Quick access,
   Create shortcut (disabled),
+  Compress to ZIP file (disabled),
   Copy as path,
   Properties,
   ----,

@@ -895,6 +895,31 @@ public class WindowsTests
         await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source"));
     }
 
+    // A tab that was inside a zip opens inside it again. A zip launched with is a file, shown
+    // selected in its folder.
+    [Test]
+    public async Task TabsInsideAZipAreRestored()
+    {
+        using var fixture = Fixture.Create();
+        var zip = fixture.At("Bundle.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            archive.CreateEntry("Inner/deep.aleph");
+        }
+
+        var settings = new Settings
+        {
+            Tabs = [zip, Path.Combine(zip, "Inner")]
+        };
+        using var restored = await Show(fixture, settings);
+        using var launched = await Show(fixture, new Settings(), zip);
+
+        await Assert.That(restored.Views.Select(_ => _.CurrentPath)).IsEquivalentTo(
+            [zip, Path.Combine(zip, "Inner")],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(launched.ActiveView!.CurrentPath).IsEqualTo(fixture.Root);
+    }
+
     // Closing the selected tab goes straight to the one that takes its place, once: not by way
     // of the first tab, which would show and read its folder. Closing others with the selected
     // one among them goes straight to the nearest that stays, not through each going in turn.

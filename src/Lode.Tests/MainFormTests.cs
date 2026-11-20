@@ -24,6 +24,26 @@ public class MainFormTests
             form.ActiveView.Navigate(fixture.At("Source", "Deep"));
         });
 
+    // Inside a zip: what it holds, listed as a folder's, the zip in the address bar.
+    [Test]
+    public Task InsideAZip() =>
+        Capture((form, fixture) =>
+        {
+            var zip = fixture.At("Bundle.zip");
+            using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                foreach (var (name, size) in new[] {("Docs/guide.aleph", 900), ("Source/main.aleph", 5_000), ("readme.aleph", 120), ("notes.gamma", 12)})
+                {
+                    var entry = archive.CreateEntry(name);
+                    entry.LastWriteTime = new(new DateTime(2025, 3, 14, 9, 26, 0));
+                    using var stream = entry.Open();
+                    stream.Write(new byte[size]);
+                }
+            }
+
+            form.ActiveView!.Navigate(zip);
+        });
+
     [Test]
     public Task Tabs() =>
         Capture((form, fixture) =>

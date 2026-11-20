@@ -7,6 +7,7 @@
   Delete,
   ----,
   Create shortcut,
+  Compress to ZIP file,
   Copy as path,
   Properties,
   ----,
