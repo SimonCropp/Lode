@@ -46,7 +46,10 @@ static class LibGitState
                 .Where(_ => _.State is not (FileStatus.Unaltered or FileStatus.Ignored))
                 .Select(_ => new GitFile(_.FilePath.Replace('\\', '/').TrimEnd('/'), ChangeOf(_.State)));
             var tracking = head.TrackingDetails;
-            return new(branch, head.Tip?.Sha, tracking.AheadBy ?? 0, tracking.BehindBy ?? 0, GitState.InOrder(files));
+            return new(branch, head.Tip?.Sha, tracking.AheadBy ?? 0, tracking.BehindBy ?? 0, GitState.InOrder(files))
+            {
+                Upstream = head.IsTracking
+            };
         }
         // Not a repository libgit2 will take, or libgit2 itself not loaded: its native library
         // missing, or not for this processor.

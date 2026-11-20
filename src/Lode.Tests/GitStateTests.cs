@@ -20,7 +20,7 @@ public class GitStateTests
                 "# branch.upstream origin/main",
                 "# branch.ab +0 -0"));
 
-        await Assert.That(state).IsEqualTo(new("main", commit, 0, 0, []));
+        await Assert.That(state).IsEqualTo(new GitState("main", commit, 0, 0, []) with { Upstream = true });
     }
 
     // One entry a path, whatever has happened to it, in order of their paths. A rename's entry
@@ -94,7 +94,7 @@ public class GitStateTests
                 "# branch.upstream origin/feature",
                 "# branch.ab +12 -3"));
 
-        await Assert.That(state).IsEqualTo(new("feature", commit, 12, 3, []));
+        await Assert.That(state).IsEqualTo(new GitState("feature", commit, 12, 3, []) with { Upstream = true });
     }
 
     [Test]
@@ -163,7 +163,7 @@ public class GitStateTests
 
         var state = await Read(repo);
 
-        await Assert.That(state).IsEqualTo(new("main", Head(repo), 0, 0, []));
+        await Assert.That(state).IsEqualTo(new GitState("main", Head(repo), 0, 0, []) with { Upstream = true });
     }
 
     // A file changed, one staged, one untracked and a folder of them, each one change, and one
@@ -193,7 +193,7 @@ public class GitStateTests
         var state = await Read(repo);
 
         await Assert.That(state).IsEqualTo(
-            new(
+            new GitState(
                 "main",
                 Head(repo),
                 1,
@@ -204,7 +204,10 @@ public class GitStateTests
                     new("src/deep.txt", GitChange.Modified),
                     new("staged.txt", GitChange.Added),
                     new("tracked.txt", GitChange.Modified)
-                ]));
+                ]) with
+            {
+                Upstream = true
+            });
     }
 
     // Staged as a rename, the file is one change, not one gone and one new. One deleted, staged
@@ -243,11 +246,11 @@ public class GitStateTests
         CodeCommandsTests.Scratch.Git(other, "push");
         Commit(repo, "mine.txt");
 
-        await Assert.That(await Read(repo)).IsEqualTo(new("main", Head(repo), 1, 0, []));
+        await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 0, []) with { Upstream = true });
 
         CodeCommandsTests.Scratch.Git(repo, "fetch");
 
-        await Assert.That(await Read(repo)).IsEqualTo(new("main", Head(repo), 1, 1, []));
+        await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { Upstream = true });
     }
 
     // Both changed the same line: the file is unmerged, mid-merge.
@@ -267,7 +270,7 @@ public class GitStateTests
 
         var state = await Read(repo);
 
-        await Assert.That(state).IsEqualTo(new("main", Head(repo), 1, 1, [new("tracked.txt", GitChange.Conflicted)]));
+        await Assert.That(state).IsEqualTo(new GitState("main", Head(repo), 1, 1, [new("tracked.txt", GitChange.Conflicted)]) with { Upstream = true });
     }
 
     [Test]

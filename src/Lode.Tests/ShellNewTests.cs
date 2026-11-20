@@ -19,6 +19,10 @@ public class ShellNewTests
         scratch.Set(@".cmd\ShellNew", "Command", "notepad.exe");
         // A shortcut, made by a wizard.
         scratch.Set(@".lnk\ShellNew", "NullFile", "");
+        // Access databases, which nobody makes from a folder's menu.
+        scratch.Set(@".accdb\ShellNew", "NullFile", "");
+        scratch.Set(".mdb", null, "Access.MDBFile");
+        scratch.Set(@".mdb\Access.MDBFile\ShellNew", "FileName", "blank.mdb");
         // Not an extension.
         scratch.Set(@"txtfile\ShellNew", "NullFile", "");
 

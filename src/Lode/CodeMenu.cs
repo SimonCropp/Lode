@@ -11,9 +11,11 @@ static class CodeMenu
 
     /// <summary>
     /// The entries for the folders, after a separator, or none unless every one is under the
-    /// code folder.
+    /// code folder. Switch to default branch is left off when every repository is on it, and
+    /// Push when every one has nothing to push, as <paramref name="stateOf"/> has it, which
+    /// gives a repository's state where it has been read.
     /// </summary>
-    public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders)
+    public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
     {
         if (folders.Count == 0 ||
             !folders.All(settings.IsCode))
@@ -21,21 +23,46 @@ static class CodeMenu
             return [];
         }
 
-        return
+        // Each folder's repository. A folder in none acts on every repository below it, which
+        // there is no telling about without reading them, so everything is offered.
+        var repos = folders
+            .Select(_ => CodeCommands.RepoContaining(_, settings.CodeDirectory ?? _))
+            .ToList();
+        var allInRepos = repos.All(_ => _ != null);
+        var onDefault = allInRepos &&
+                        repos.All(_ => CodeCommands.OnDefaultBranch(_!));
+        var nothingToPush = allInRepos &&
+                            stateOf != null &&
+                            repos.All(_ => stateOf(_!) is { NothingToPush: true });
+
+        List<QuickMenu.Command?> commands =
         [
             null,
             LodeActions.Command("gitPull", () => Pull(folders, settings.CodeDirectory)) with
             {
                 NestedText = "Pull"
-            },
-            LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)) with
-            {
-                NestedText = "Switch to default branch"
-            },
-            LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…") with
-            {
-                NestedText = "Push…"
-            },
+            }
+        ];
+        if (!onDefault)
+        {
+            commands.Add(
+                LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)) with
+                {
+                    NestedText = "Switch to default branch"
+                });
+        }
+
+        if (!nothingToPush)
+        {
+            commands.Add(
+                LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…") with
+                {
+                    NestedText = "Push…"
+                });
+        }
+
+        commands.AddRange(
+        [
             LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…") with
             {
                 NestedText = "Discard…"
@@ -46,7 +73,8 @@ static class CodeMenu
             },
             LodeActions.Command("updateNugets", () => UpdateNugets(folders)),
             LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folders))
-        ];
+        ]);
+        return commands;
     }
 
     // Each runs in the background and shows in the actions panel; Lode stays usable. A folder

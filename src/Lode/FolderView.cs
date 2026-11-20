@@ -3526,7 +3526,7 @@ sealed class FolderView : UserControl
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             LodeActions.Command("properties", ShowProperties)
         ]);
-        commands.AddRange(CodeMenu.Commands(this, settings, folders));
+        commands.AddRange(CodeMenu.Commands(this, settings, folders, KnownGitState));
         return commands;
     }
 
@@ -3645,8 +3645,12 @@ sealed class FolderView : UserControl
         .. CodingAgents.Commands([CurrentPath]),
         LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath])),
         LodeActions.Command("properties", ShowProperties),
-        .. CodeMenu.Commands(this, settings, [CurrentPath])
+        .. CodeMenu.Commands(this, settings, [CurrentPath], KnownGitState)
     ];
+
+    // A repository's state, as the Git column and the status bar show it, once it has been read.
+    GitState? KnownGitState(string repo) =>
+        gitStates.GetValueOrDefault(repo);
 
     /// <summary>
     /// Undo and Redo, worded for what they would do ("Undo rename"), for the history every

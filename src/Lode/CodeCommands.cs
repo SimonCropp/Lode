@@ -97,6 +97,66 @@ static class CodeCommands
         return null;
     }
 
+    /// <summary>
+    /// Whether the repository is on origin's default branch, main say, as clone recorded it.
+    /// Read from the files git keeps, as git would take too long for a menu opening. False when
+    /// that can't be told: detached, no origin, or a repository made by init and given an origin
+    /// later, which has no default branch recorded.
+    /// </summary>
+    internal static bool OnDefaultBranch(string repo)
+    {
+        const string local = "ref: refs/heads/";
+        const string remote = "ref: " + originHead;
+        try
+        {
+            if (GitDirectory(repo) is not { } git)
+            {
+                return false;
+            }
+
+            var head = File.ReadAllText(Path.Combine(git, "HEAD")).Trim();
+            var origin = File.ReadAllText(Path.Combine(CommonDirectory(git), "refs", "remotes", "origin", "HEAD")).Trim();
+            return head.StartsWith(local, StringComparison.Ordinal) &&
+                   origin.StartsWith(remote, StringComparison.Ordinal) &&
+                   head[local.Length..] == origin[remote.Length..];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    // The .git folder, or, for a worktree or submodule, the folder its .git file names.
+    static string? GitDirectory(string repo)
+    {
+        var git = Path.Combine(repo, ".git");
+        if (Directory.Exists(git))
+        {
+            return git;
+        }
+
+        const string prefix = "gitdir: ";
+        var text = File.ReadAllText(git).Trim();
+        if (!text.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(Path.Combine(repo, text[prefix.Length..]));
+    }
+
+    // Where a worktree's branches are: the repository it was added to, as its commondir says.
+    static string CommonDirectory(string git)
+    {
+        var common = Path.Combine(git, "commondir");
+        if (!File.Exists(common))
+        {
+            return git;
+        }
+
+        return Path.GetFullPath(Path.Combine(git, File.ReadAllText(common).Trim()));
+    }
+
     // A .git folder, or a .git file as a worktree or submodule has.
     internal static bool IsRepo(string folder)
     {

@@ -11,13 +11,16 @@ static class ShellNew
     /// </summary>
     public record Entry(string Extension, string TypeName, byte[]? Data = null, string? Template = null);
 
-    // Made by commands or wizards of their own, which Lode does not run.
+    // Made by commands or wizards of their own, which Lode does not run, and Access databases,
+    // which nobody makes from a folder's menu.
     static HashSet<string> skipped =
     [
         with(StringComparer.OrdinalIgnoreCase),
         ".lnk",
         ".url",
-        ".library-ms"
+        ".library-ms",
+        ".accdb",
+        ".mdb"
     ];
 
     static Lazy<IReadOnlyList<Entry>> current = new(() => Read(Registry.ClassesRoot, _ => ShellIcons.GetTypeName($"x{_}", false)));

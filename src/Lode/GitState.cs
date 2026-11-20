@@ -15,10 +15,28 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
 
     public int Changes => Files.Count;
 
+    /// <summary>
+    /// Whether the branch tracks one, on origin say, which <see cref="Ahead"/> and
+    /// <see cref="Behind"/> count against. Without one, both are 0.
+    /// </summary>
+    public bool Upstream { get; init; }
+
+    /// <summary>
+    /// Whether Git push would have nothing to do: no change to a file git tracks, staged or not,
+    /// for it to commit, and no commit the branch it tracks hasn't got. Files git doesn't track
+    /// don't count, as the commit leaves them. Never without a branch tracked, as the push could
+    /// be what makes it.
+    /// </summary>
+    public bool NothingToPush =>
+        Upstream &&
+        Ahead == 0 &&
+        Files.All(_ => _.Change == GitChange.Untracked);
+
     // The same files too, not just the same list.
     public bool Equals(GitState? other) =>
         other != null &&
         Branch == other.Branch &&
+        Upstream == other.Upstream &&
         Commit == other.Commit &&
         Ahead == other.Ahead &&
         Behind == other.Behind &&
@@ -125,6 +143,7 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         string? branch = null;
         var ahead = 0;
         var behind = 0;
+        var upstream = false;
         var files = new List<GitFile>();
         var entries = output.Split('\0');
         for (var index = 0; index < entries.Length; index++)
@@ -149,6 +168,12 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
                     branch = null;
                 }
 
+                continue;
+            }
+
+            if (entry.StartsWith("# branch.upstream ", StringComparison.Ordinal))
+            {
+                upstream = true;
                 continue;
             }
 
@@ -192,7 +217,10 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             }
         }
 
-        return new(branch, commit, ahead, behind, InOrder(files));
+        return new(branch, commit, ahead, behind, InOrder(files))
+        {
+            Upstream = upstream
+        };
     }
 
     // The path, after as many fields before it as there are, each followed by a space. The path
