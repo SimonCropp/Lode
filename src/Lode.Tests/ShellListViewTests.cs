@@ -71,7 +71,7 @@ public class ShellListViewTests
         }
     }
 
-    [System.Runtime.InteropServices.DllImport("comctl32.dll")]
+    [DllImport("comctl32.dll")]
     static extern int ImageList_GetImageCount(IntPtr imageList);
 
     static int ImageCount(IntPtr imageList) =>

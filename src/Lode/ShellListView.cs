@@ -478,7 +478,7 @@ sealed class ShellListView : ListView
         {
             foreach (var character in text)
             {
-                if (character is < ' ' or (>= '\x7F' and < '\xA0') or >= latinEnd)
+                if (character is < ' ' or >= '\x7F' and < '\xA0' or >= latinEnd)
                 {
                     return false;
                 }

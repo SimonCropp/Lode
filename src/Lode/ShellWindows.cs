@@ -213,7 +213,7 @@ public static partial class ShellWindows
         // asked to select anything. Register then finds the pending one by the window's thread,
         // so the two go together, with nothing registered in between.
         object? root = null;
-        var location = (object)folder;
+        object location = folder;
         if (target.RegisterPending(GetCurrentThreadId(), ref location, ref root, browserWindow, out var cookie) < 0)
         {
             Disconnected(target);

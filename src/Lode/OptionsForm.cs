@@ -459,6 +459,7 @@ class OptionsForm : Form
         }
 
         // Each page from its top, rather than as far down as the last one was scrolled.
+        // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract
         host?.AutoScrollPosition = Point.Empty;
     }
 

@@ -418,7 +418,7 @@ public class FolderViewTests
         var gone = FolderView.DriveEntry(@"Y:\", () => throw new IOException());
         var sized = FolderView.DriveEntry(@"Z:\", () => (1_000, 400));
 
-        await Assert.That(refused).IsEqualTo(new FileEntry(@"X:\", @"X:\", true, 0, default, FileAttributes.Directory, IsDrive: true, FreeSpace: 0));
+        await Assert.That(refused).IsEqualTo(new(@"X:\", @"X:\", true, 0, default, FileAttributes.Directory, IsDrive: true, FreeSpace: 0));
         await Assert.That(gone.Size).IsEqualTo(0);
         await Assert.That((sized.Size, sized.FreeSpace)).IsEqualTo((1_000L, 400L));
     }

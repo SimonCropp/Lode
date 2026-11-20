@@ -94,7 +94,7 @@ public class ClosableTabControlTests
         await Assert.That(Texts(tabs)).IsEquivalentTo(["Third", "First", "Second"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("Third");
         await Assert.That(selectionChanges).IsEqualTo(0);
-        await Assert.That(tabs.TabPages.Cast<TabPage>().Select(_ => tabs.IconOf(_))).IsEquivalentTo(new int?[] { 3, 1, 2 }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(tabs.TabPages.Cast<TabPage>().Select(tabs.IconOf)).IsEquivalentTo(new int?[] { 3, 1, 2 }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
     // Escape gives up on the drag, and the tab goes back where it was.

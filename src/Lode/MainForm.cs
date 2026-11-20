@@ -2224,7 +2224,7 @@ class MainForm : Form
             var staying = all
                 .Where(_ => !closing.Contains(_))
                 .OrderBy(_ => Math.Abs(all.IndexOf(_) - index))
-                .ThenByDescending(_ => all.IndexOf(_))
+                .ThenByDescending(all.IndexOf)
                 .FirstOrDefault();
             if (staying != null)
             {

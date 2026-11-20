@@ -296,7 +296,10 @@ static class CodeCommands
         Parallel.For(
             0,
             items.Count,
-            new ParallelOptions { MaxDegreeOfParallelism = AtOnce },
+            new()
+            {
+                MaxDegreeOfParallelism = AtOnce
+            },
             (index, state) =>
             {
                 if (cancel.IsCancellationRequested)

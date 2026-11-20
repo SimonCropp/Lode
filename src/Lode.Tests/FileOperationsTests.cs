@@ -22,8 +22,8 @@ public class FileOperationsTests
     public async Task PromptArguments()
     {
         await Assert.That(FileOperations.PromptArguments(new(@"C:\Code\Lode", []))).IsEqualTo(@"/k cd /d C:\Code\Lode");
-        await Assert.That(FileOperations.PromptArguments(new(@"D:\Code\R&D", [@"C:\Tools\agent.cmd"]))).IsEqualTo(@"/k cd /d ""D:\Code\R&D"" && C:\Tools\agent.cmd");
-        await Assert.That(FileOperations.PromptArguments(new(@"D:\Two Words", [@"C:\Program Files\agent.exe", "-x"]))).IsEqualTo(@"/k cd /d ""D:\Two Words"" && ""C:\Program Files\agent.exe"" -x");
+        await Assert.That(FileOperations.PromptArguments(new(@"D:\Code\R&D", [@"C:\Tools\agent.cmd"]))).IsEqualTo("""/k cd /d "D:\Code\R&D" && C:\Tools\agent.cmd""");
+        await Assert.That(FileOperations.PromptArguments(new(@"D:\Two Words", [@"C:\Program Files\agent.exe", "-x"]))).IsEqualTo("""/k cd /d "D:\Two Words" && "C:\Program Files\agent.exe" -x""");
     }
 
     // What cmd makes of it: the prompt ends up in the folder, and the command runs there.
