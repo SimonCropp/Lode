@@ -3923,11 +3923,18 @@ sealed class FolderView : UserControl
         return CurrentPath;
     }
 
-    void OnDragOver(object? sender, DragEventArgs eventArgs) =>
+    // Whether what is being dragged over the list is dragged with the right button, which is up
+    // by the drop.
+    bool rightDrag;
+
+    void OnDragOver(object? sender, DragEventArgs eventArgs)
+    {
+        rightDrag = FileOperations.RightButton(eventArgs);
         eventArgs.Effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+    }
 
     void OnDragDrop(object? sender, DragEventArgs eventArgs) =>
-        FileOperations.Drop(Owner, eventArgs, DropDestination(eventArgs));
+        FileOperations.Drop(Owner, eventArgs, DropDestination(eventArgs), rightDrag);
 
     void Watch()
     {

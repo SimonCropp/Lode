@@ -10,6 +10,7 @@ static class FileOperations
     const int dropEffectMove = 2;
     const int dropEffectCopyOrLink = 5;
 
+    const int rightButtonKeyState = 2;
     const int shiftKeyState = 4;
     const int controlKeyState = 8;
     const int cancelledByUser = 1223;
@@ -380,19 +381,46 @@ static class FileOperations
     /// A shortcut to <paramref name="target"/> beside it, named as Explorer names one
     /// ("notes - Shortcut.lnk", then "notes - Shortcut (2).lnk"). Returns its path.
     /// </summary>
-    public static string CreateShortcut(string target)
+    public static string CreateShortcut(string target) =>
+        CreateShortcuts([target], Path.GetDirectoryName(target)!)[0];
+
+    /// <summary>
+    /// A shortcut in <paramref name="folder"/> to each of <paramref name="targets"/>, named as
+    /// Explorer names them, as one change to undo. Returns their paths.
+    /// </summary>
+    public static List<string> CreateShortcuts(IReadOnlyList<string> targets, string folder)
     {
-        var parent = Path.GetDirectoryName(target)!;
-        var stem = Directory.Exists(target) ? Path.GetFileName(target) : Path.GetFileNameWithoutExtension(target);
-        var path = Path.Combine(parent, $"{stem} - Shortcut.lnk");
-        for (var counter = 2; Directory.Exists(path) || File.Exists(path); counter++)
+        List<string> created = [];
+        try
         {
-            path = Path.Combine(parent, $"{stem} - Shortcut ({counter}).lnk");
+            foreach (var target in targets)
+            {
+                var stem = Directory.Exists(target) ? Path.GetFileName(target) : Path.GetFileNameWithoutExtension(target);
+                if (stem.Length == 0)
+                {
+                    // A drive: "C - Shortcut.lnk".
+                    stem = target.TrimEnd('\\', ':');
+                }
+
+                var path = Path.Combine(folder, $"{stem} - Shortcut.lnk");
+                for (var counter = 2; Directory.Exists(path) || File.Exists(path); counter++)
+                {
+                    path = Path.Combine(folder, $"{stem} - Shortcut ({counter}).lnk");
+                }
+
+                ShellLink.Save(path, target);
+                created.Add(path);
+            }
+        }
+        finally
+        {
+            if (created.Count > 0)
+            {
+                UndoHistory.Instance.RecordCreated("create shortcut", created);
+            }
         }
 
-        ShellLink.Save(path, target);
-        UndoHistory.Instance.RecordCreated("create shortcut", [path]);
-        return path;
+        return created;
     }
 
     public static void Open(IWin32Window owner, string path)
@@ -652,7 +680,64 @@ static class FileOperations
         }
     }
 
+    /// <summary>
+    /// Whether a drag is with the right button, which on dropping asks what to do. The button is
+    /// up by the drop, so a drop target notes it as the drag goes over.
+    /// </summary>
+    public static bool RightButton(DragEventArgs eventArgs) =>
+        (eventArgs.KeyState & rightButtonKeyState) != 0;
+
+    /// <summary>
+    /// What can be done with what is dragged to <paramref name="destination"/>, of what the
+    /// source allows: none of it where any of it is the destination itself, and no move where
+    /// all of it is there already.
+    /// </summary>
+    internal record Possible(string[] Sources, bool Copy, bool Move, bool Link);
+
+    internal static Possible? PossibleDrop(DragEventArgs eventArgs, string? destination)
+    {
+        if (destination == null ||
+            eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources ||
+            sources.Any(_ => Locations.Same(_, destination)))
+        {
+            return null;
+        }
+
+        var allowed = eventArgs.AllowedEffect;
+        return new(
+            sources,
+            allowed.HasFlag(DragDropEffects.Copy),
+            allowed.HasFlag(DragDropEffects.Move) && !sources.All(_ => Locations.IsChildOf(_, destination)),
+            allowed.HasFlag(DragDropEffects.Link));
+    }
+
     public static DragDropEffects GetDropEffect(DragEventArgs eventArgs, string? destination)
+    {
+        var effect = DefaultDropEffect(eventArgs, destination);
+        if (effect != DragDropEffects.None ||
+            !RightButton(eventArgs) ||
+            PossibleDrop(eventArgs, destination) is not { } possible)
+        {
+            return effect;
+        }
+
+        // Dragged with the right button, it can go where a left drag couldn't, such as the
+        // folder it is in, for the menu to offer a copy or a shortcut there.
+        if (possible.Copy)
+        {
+            return DragDropEffects.Copy;
+        }
+
+        if (possible.Link)
+        {
+            return DragDropEffects.Link;
+        }
+
+        return DragDropEffects.None;
+    }
+
+    // What a drop with the left button does.
+    static DragDropEffects DefaultDropEffect(DragEventArgs eventArgs, string? destination)
     {
         if (destination == null ||
             eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources)
@@ -691,8 +776,24 @@ static class FileOperations
         return DragDropEffects.None;
     }
 
-    public static void Drop(IntPtr owner, DragEventArgs eventArgs, string? destination)
+    /// <param name="rightButton">Whether it was dragged with the right button, as noted while
+    /// it was dragged over: if so the drop asks what to do, as Explorer does.</param>
+    public static void Drop(IntPtr owner, DragEventArgs eventArgs, string? destination, bool rightButton = false)
     {
+        if (rightButton)
+        {
+            // Done, if at all, once a choice is made, so the source is told nothing was moved
+            // for it to delete.
+            eventArgs.Effect = DragDropEffects.None;
+            if (PossibleDrop(eventArgs, destination) is { } possible &&
+                DropMenu(owner, possible, destination!, DefaultDropEffect(eventArgs, destination)) is { } menu)
+            {
+                ShowDropMenu(menu);
+            }
+
+            return;
+        }
+
         var effect = GetDropEffect(eventArgs, destination);
         if (effect == DragDropEffects.None)
         {
@@ -714,4 +815,78 @@ static class FileOperations
             eventArgs.Effect = effect;
         }
     }
+
+    /// <summary>
+    /// What a drop with the right button asks, as Explorer's does: Copy here, Move here and Create
+    /// shortcuts here, those that can be done, the one a left drag would do in bold, then Cancel.
+    /// Null when none can be.
+    /// </summary>
+    internal static ExplorerMenu? DropMenu(IntPtr owner, Possible possible, string destination, DragDropEffects effect)
+    {
+        if (possible is { Copy: false, Move: false, Link: false })
+        {
+            return null;
+        }
+
+        var menu = new ExplorerMenu();
+        void Add(string text, DragDropEffects itemEffect, Action action)
+        {
+            var item = new ToolStripMenuItem(text, null, (_, _) => action());
+            if (itemEffect == effect)
+            {
+                item.Font = new(item.Font, FontStyle.Bold);
+            }
+
+            menu.Items.Add(item);
+        }
+
+        var sources = possible.Sources;
+        if (possible.Copy)
+        {
+            Add("Copy here", DragDropEffects.Copy, () => _ = Transfer(owner, sources, destination, false));
+        }
+
+        if (possible.Move)
+        {
+            Add("Move here", DragDropEffects.Move, () => _ = Transfer(owner, sources, destination, true));
+        }
+
+        if (possible.Link)
+        {
+            Add("Create shortcuts here", DragDropEffects.Link, () => CreateShortcutsIn(owner, sources, destination));
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Cancel");
+        menu.Closed += (_, _) => menu.BeginInvoke(menu.Dispose);
+        return menu;
+    }
+
+    static void CreateShortcutsIn(IntPtr owner, string[] targets, string folder)
+    {
+        try
+        {
+            CreateShortcuts(targets, folder);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(Control.FromHandle(owner), exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Shows the menu a drop with the right button asks with, at the pointer, once the drop is
+    /// over, so the drag's source isn't held while it is up. Tests swap it, to show nothing.
+    /// </summary>
+    internal static Action<ExplorerMenu> ShowDropMenu = menu =>
+    {
+        var at = Cursor.Position;
+        if (SynchronizationContext.Current is { } context)
+        {
+            context.Post(_ => menu.Show(at), null);
+            return;
+        }
+
+        menu.Show(at);
+    };
 }

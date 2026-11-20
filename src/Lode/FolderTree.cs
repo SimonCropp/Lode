@@ -1954,9 +1954,14 @@ sealed class FolderTree : TreeView
         return FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
     }
 
+    // Whether what is being dragged over the tree is dragged with the right button, which is up
+    // by the drop.
+    bool rightDrag;
+
     protected override void OnDragEnter(DragEventArgs eventArgs)
     {
         base.OnDragEnter(eventArgs);
+        rightDrag = FileOperations.RightButton(eventArgs);
         eventArgs.Effect = DropEffect(eventArgs);
     }
 
@@ -1969,6 +1974,7 @@ sealed class FolderTree : TreeView
     protected override void OnDragOver(DragEventArgs eventArgs)
     {
         base.OnDragOver(eventArgs);
+        rightDrag = FileOperations.RightButton(eventArgs);
         eventArgs.Effect = DropEffect(eventArgs);
     }
 
@@ -1998,7 +2004,7 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        FileOperations.Drop(owner, eventArgs, DropDestination(eventArgs));
+        FileOperations.Drop(owner, eventArgs, DropDestination(eventArgs), rightDrag);
     }
 
     protected override void Dispose(bool disposing)

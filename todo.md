@@ -101,11 +101,6 @@ Windows' own popup menus go dark only for a process that asks, through uxtheme's
  * **Names:** a `GlyphButton`'s text is a private-use character from the icon font, and it has no `AccessibleName` (`GlyphButton.cs`, `MainForm.cs:204-216`). Back, Forward, Up, Refresh, New tab and Menu have no name for a screen reader. Only the address, search and palette boxes do. Give each its tooltip's text in `CreateButton`.
 
 
-### 13. Smaller
-
- * Dragging with the right button gives no menu of Copy here and Move here.
-
-
 ## Checked and found sound
 
 So that nobody goes over them again for nothing.
