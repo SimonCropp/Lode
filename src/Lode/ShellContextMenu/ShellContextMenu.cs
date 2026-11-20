@@ -595,6 +595,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         var sendTo = DisplayNames(Environment.GetFolderPath(Environment.SpecialFolder.SendTo));
         var libraries = DisplayNames(
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Windows", "Libraries"));
+        if (sendTo.Count > 0 ||
+            libraries.Count > 0)
+        {
+            AwaitFilling(menu, sendTo, libraries);
+        }
+
         for (var position = GetMenuItemCount(menu) - 1; position >= 0; position--)
         {
             var submenu = GetSubMenu(menu, position);
@@ -603,25 +609,6 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             {
                 remove = Lists(submenu, sendTo) ||
                          Lists(submenu, libraries);
-                if (!remove &&
-                    (sendTo.Count > 0 ||
-                     libraries.Count > 0) &&
-                    LoneEntry(submenu))
-                {
-                    // Include in library holds only a "Retrieving libraries..." placeholder until
-                    // the shell fills it in, which it does on a message posted back to this
-                    // thread. Send to can be filled in late the same way, which CI hits where a
-                    // local run does not. Pump briefly so the shell can, then look again for both.
-                    var stopwatch = Stopwatch.StartNew();
-                    while (LoneEntry(submenu) && stopwatch.ElapsedMilliseconds < 500)
-                    {
-                        Application.DoEvents();
-                        Thread.Sleep(5);
-                    }
-
-                    remove = Lists(submenu, sendTo) ||
-                             Lists(submenu, libraries);
-                }
             }
             else
             {
@@ -641,8 +628,117 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         TidySeparators(menu);
     }
 
-    static bool LoneEntry(IntPtr submenu) =>
-        GetMenuItemCount(submenu) == 1;
+    // The longest the shell is given to fill in the menu's submenus, all of them together.
+    const int fillTimeout = 500;
+
+    /// <summary>
+    /// Send to and Include in library can only be known by what they list, and the shell fills
+    /// both in after the menu is built, on messages posted back to this thread: Send to holds a
+    /// blank entry until then, then one entry at a time, Include in library a greyed "Retrieving
+    /// libraries...". So the shell is let fill those in, until each lists more than one entry or
+    /// one it is known by, for <see cref="fillTimeout"/> at most for the whole menu. Other
+    /// submenus hold one entry too: Open with and Cast to Device one of their own name, which
+    /// the shell fills in only once the submenu is opened, so they are not waited on: they would
+    /// only run out the time, on every image's menu.
+    /// </summary>
+    static void AwaitFilling(IntPtr menu, HashSet<string> sendTo, HashSet<string> libraries)
+    {
+        var filling = new List<IntPtr>();
+        for (var position = 0; position < GetMenuItemCount(menu); position++)
+        {
+            var submenu = GetSubMenu(menu, position);
+            if (submenu != IntPtr.Zero &&
+                HoldsPlaceholder(submenu))
+            {
+                filling.Add(submenu);
+            }
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        while (filling.Count > 0)
+        {
+            if (!RunPosted())
+            {
+                return;
+            }
+
+            filling.RemoveAll(
+                _ => GetMenuItemCount(_) != 1 ||
+                     Lists(_, sendTo) ||
+                     Lists(_, libraries));
+            var remaining = fillTimeout - stopwatch.ElapsedMilliseconds;
+            if (filling.Count == 0 ||
+                remaining <= 0)
+            {
+                return;
+            }
+
+            MsgWaitForMultipleObjects(0, IntPtr.Zero, false, (uint)remaining, postedOrSent);
+        }
+    }
+
+    // MF_GRAYED and MF_DISABLED.
+    const uint menuUnavailable = 0x3;
+
+    // One entry that can't be chosen, as the placeholders the shell fills in on its own are:
+    // blank, as Send to's is, or greyed, as Include in library's is. Not known by its command:
+    // a placeholder has one in the range the handler was given, as any entry has. One that can
+    // be chosen, as Open with's can, waits for the submenu to be opened.
+    static bool HoldsPlaceholder(IntPtr submenu)
+    {
+        if (GetMenuItemCount(submenu) != 1 ||
+            GetSubMenu(submenu, 0) != IntPtr.Zero)
+        {
+            return false;
+        }
+
+        return MenuText(submenu, 0).Length == 0 ||
+               (GetMenuState(submenu, 0, menuByPosition) & menuUnavailable) != 0;
+    }
+
+    const uint removeMessage = 0x1;
+    // PM_QS_POSTMESSAGE and PM_QS_SENDMESSAGE: posted messages, timers and hot keys, and those
+    // sent from other threads.
+    const uint postedOrSentMessages = 0x00D80000;
+    // QS_POSTMESSAGE, QS_TIMER, QS_HOTKEY and QS_SENDMESSAGE, what wakes a wait for those.
+    const uint postedOrSent = 0xD8;
+    const uint quitMessage = 0x12;
+
+    /// <summary>
+    /// Runs what has been posted to this thread, as the shell's fill-ins are, but not input,
+    /// which Application.DoEvents would run too: a second right-click, or a key, waits for this
+    /// menu rather than starting on another while this one is still being built. False on
+    /// WM_QUIT, which is left for the message loop.
+    /// </summary>
+    static bool RunPosted()
+    {
+        while (PeekMessage(out var message, IntPtr.Zero, 0, 0, removeMessage | postedOrSentMessages))
+        {
+            if (message.Message == quitMessage)
+            {
+                PostQuitMessage((int)message.WParam);
+                return false;
+            }
+
+            TranslateMessage(in message);
+            DispatchMessage(in message);
+        }
+
+        return true;
+    }
+
+    // MSG.
+    [StructLayout(LayoutKind.Sequential)]
+    struct WindowMessage
+    {
+        public IntPtr Window;
+        public uint Message;
+        public IntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public int X;
+        public int Y;
+    }
 
     // Asking the shell for every name took most of the time this class adds to a right-click, so
     // each folder's names are kept, and read again only once the folder has changed.
@@ -1173,4 +1269,21 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     [LibraryImport("user32.dll")]
     private static partial uint TrackPopupMenuEx(IntPtr menu, uint flags, int left, int top, IntPtr window, IntPtr parameters);
+
+    [LibraryImport("user32.dll", EntryPoint = "PeekMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool PeekMessage(out WindowMessage message, IntPtr window, uint first, uint last, uint remove);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool TranslateMessage(in WindowMessage message);
+
+    [LibraryImport("user32.dll", EntryPoint = "DispatchMessageW")]
+    private static partial IntPtr DispatchMessage(in WindowMessage message);
+
+    [LibraryImport("user32.dll")]
+    private static partial void PostQuitMessage(int exitCode);
+
+    [LibraryImport("user32.dll")]
+    private static partial uint MsgWaitForMultipleObjects(uint count, IntPtr handles, [MarshalAs(UnmanagedType.Bool)] bool waitAll, uint milliseconds, uint wakeMask);
 }

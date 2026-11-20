@@ -41,15 +41,6 @@ All read, none run.
 ## Performance
 
 
-### 10. Show more options waits half a second for each submenu with one entry
-
-**Where:** [ShellContextMenu.cs:587-605](src/Lode/ShellContextMenu/ShellContextMenu.cs#L587).
-
-**What happens:** a submenu holding exactly one entry, which is not Send to or Include in library, is waited on for the full 500ms, `Application.DoEvents()` and `Thread.Sleep(5)` in a loop on the UI thread, each one, each time. `DoEvents` also lets a second right-click or a key in while the first menu is still being built. Whether Windows 11's own submenus that fill late (Open with, Cast to Device) hold one placeholder at that point is unverified. If so, this is most files.
-
-**Fix:** one deadline for the whole menu, and wait only on a submenu whose one entry has no command of the shell's.
-
-
 ### 11. Smaller
 
  * **Push and Discard look for repositories on the UI thread** ([CodeMenu.cs:62](src/Lode/CodeMenu.cs#L62) and [83](src/Lode/CodeMenu.cs#L83)), two levels of folders, where Pull's own comment says that belongs off it.
