@@ -26,10 +26,6 @@ Contents:
  * Nothing limits how much it finds. What it has found is shown less often as there comes to be more of it, so the window is not kept busy, but each showing still merges in all of it on the UI thread.
 
 
-### 8. Purge
-
- * No way to purge only what git ignores (`git clean -Xd`). New source files not yet added go with `bin` and `obj`, for good if **Delete them permanently** is ticked.
-
 
 ### 9. Drag and drop on the tree
 
