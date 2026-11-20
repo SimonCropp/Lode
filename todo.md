@@ -59,15 +59,6 @@ A USB drive plugged in, or a drive mapped, This PC's own **Map network drive** i
 **Fix:** handle `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL`, `DBT_DEVICEREMOVECOMPLETE`), a little after the last of a burst, and refresh only the drives that changed.
 
 
-### 4. Tabs can't be put in another order
-
-**Where:** `ClosableTabControl.cs:430-436` and `499`, `MainForm.cs:1078-1081` and `1141`.
-
-Dragging a tab along its own row does nothing, which the test `DraggingATabAlongTheRowKeepsIt` holds it to. Dropped on another window's row between two tabs, `AdoptTab` puts it at the end. Explorer and browsers do both.
-
-**Fix:** let go inside the row over another tab: `Remove` and `Insert` the page. Give `AdoptTab` where it was dropped.
-
-
 ### 5. Column widths and sort order are not remembered
 
 **Where:** [FolderView.cs:30-31](src/Lode/FolderView.cs#L30) and [71-72](src/Lode/FolderView.cs#L71) (each view's own), `Settings.cs:128` (only `HiddenColumns` is saved).

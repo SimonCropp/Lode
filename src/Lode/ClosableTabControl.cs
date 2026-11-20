@@ -1,6 +1,7 @@
 /// <summary>
 /// A tab strip drawn as Explorer's: each tab carries a cross that closes it, and the selected
-/// one, its top corners rounded, joins the page below it.
+/// one, its top corners rounded, joins the page below it. A tab dragged along the row moves
+/// along it; dragged off the row, it is handed over (<see cref="TabDraggedOff"/>).
 /// </summary>
 sealed class ClosableTabControl : TabControl
 {
@@ -30,10 +31,14 @@ sealed class ClosableTabControl : TabControl
     // The tab under a left button press, and where it was pressed, until the button is
     // released. Moving far enough with the button down turns the press into a drag. The page,
     // not its index, so a tab closed meanwhile, by Ctrl+W say, doesn't move the drag onto
-    // another.
+    // another. Its index is where it goes back to if the drag is given up.
     TabPage? pressedTab;
+    int pressedIndex;
     Point pressedAt;
     bool dragging;
+
+    // While tabs are being put in another order: a tab taken out is going straight back in.
+    bool moving;
 
     public event Action<TabPage>? CloseRequested;
 
@@ -92,7 +97,8 @@ sealed class ClosableTabControl : TabControl
     protected override void OnControlRemoved(ControlEventArgs eventArgs)
     {
         base.OnControlRemoved(eventArgs);
-        if (eventArgs.Control is TabPage page)
+        if (!moving &&
+            eventArgs.Control is TabPage page)
         {
             icons.Remove(page);
         }
@@ -213,6 +219,106 @@ sealed class ClosableTabControl : TabControl
         }
 
         return -1;
+    }
+
+    // The tab across from a point along the row, or the first or last beyond them all. Tabs
+    // scrolled off to the left are left of every point.
+    int TabAlong(int x)
+    {
+        for (var index = 0; index < TabCount; index++)
+        {
+            if (x < GetTabRect(index).Right)
+            {
+                return index;
+            }
+        }
+
+        return TabCount - 1;
+    }
+
+    /// <summary>
+    /// Puts a tab at <paramref name="index"/>, the rest keeping their order. Taken out while
+    /// selected, a tab would have Windows Forms select the first, which would show, read its
+    /// folder and have the tree walk to it. So the tab selected stays in, and the tabs it passes
+    /// go round to its other side.
+    /// </summary>
+    public void MoveTab(TabPage page, int index)
+    {
+        var from = TabPages.IndexOf(page);
+        if (from < 0 ||
+            from == index)
+        {
+            return;
+        }
+
+        moving = true;
+        try
+        {
+            if (page != SelectedTab)
+            {
+                Reinsert(page, index);
+            }
+            else
+            {
+                for (; from < index; from++)
+                {
+                    Reinsert(TabPages[from + 1], from);
+                }
+
+                for (; from > index; from--)
+                {
+                    Reinsert(TabPages[from - 1], from);
+                }
+            }
+        }
+        finally
+        {
+            moving = false;
+        }
+
+        Invalidate();
+    }
+
+    void Reinsert(TabPage page, int index)
+    {
+        TabPages.Remove(page);
+        TabPages.Insert(index, page);
+    }
+
+    /// <summary>
+    /// Where a tab from another window, dropped at a point on the screen, goes among these:
+    /// on the row, before the first tab whose middle is past the point; anywhere else, at the
+    /// end.
+    /// </summary>
+    public int DropIndex(Point screen)
+    {
+        var location = PointToClient(screen);
+        if (TabRow.Contains(location))
+        {
+            for (var index = 0; index < TabCount; index++)
+            {
+                var tab = GetTabRect(index);
+                if (location.X < tab.Left + tab.Width / 2)
+                {
+                    return index;
+                }
+            }
+        }
+
+        return TabCount;
+    }
+
+    /// <summary>
+    /// The icon a tab shows, or null for none. For tests.
+    /// </summary>
+    internal int? IconOf(TabPage page)
+    {
+        if (icons.TryGetValue(page, out var icon))
+        {
+            return icon;
+        }
+
+        return null;
     }
 
     // The pages fill the control below the row of tabs, edge to edge, as Explorer's folder fills
@@ -423,6 +529,7 @@ sealed class ClosableTabControl : TabControl
                 pressedTab = TabPages[index];
             }
 
+            pressedIndex = index;
             pressedAt = eventArgs.Location;
         }
     }
@@ -454,7 +561,7 @@ sealed class ClosableTabControl : TabControl
         // Another window took the mouse (Alt+Tab, say): give up on the drag.
         if (dragging && !Capture)
         {
-            EndDrag();
+            CancelDrag();
         }
     }
 
@@ -465,7 +572,19 @@ sealed class ClosableTabControl : TabControl
             eventArgs.KeyCode == Keys.Escape)
         {
             eventArgs.Handled = true;
-            EndDrag();
+            CancelDrag();
+        }
+    }
+
+    // Given up on, a drag puts its tab back where it was, as near as the tabs closed meanwhile
+    // allow.
+    void CancelDrag()
+    {
+        var page = pressedTab;
+        EndDrag();
+        if (page != null)
+        {
+            MoveTab(page, Math.Min(pressedIndex, TabCount - 1));
         }
     }
 
@@ -507,7 +626,16 @@ sealed class ClosableTabControl : TabControl
                 SetHovered(-1, -1);
             }
 
-            Cursor = TabRow.Contains(eventArgs.Location) ? Cursors.Default : Cursors.SizeAll;
+            if (!TabRow.Contains(eventArgs.Location))
+            {
+                Cursor = Cursors.SizeAll;
+                return;
+            }
+
+            // Along the row, the tab goes where the pointer is, past the tabs it crosses. They
+            // are all as wide, so it is then under the pointer, and stays put until it moves on.
+            Cursor = Cursors.Default;
+            MoveTab(pressedTab, TabAlong(eventArgs.X));
             return;
         }
 

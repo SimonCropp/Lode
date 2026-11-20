@@ -12,8 +12,9 @@ public class ClosableTabControlTests
     public Task DraggingATabOffTheRowHandsItOver() =>
         VerifyDrag(tab => new(tab.Left + 10, 250));
 
+    // Over the tab after it, it goes after that tab, and is handed nowhere.
     [Test]
-    public Task DraggingATabAlongTheRowKeepsIt() =>
+    public Task DraggingATabAlongTheRowMovesIt() =>
         VerifyDrag(tab => new(tab.Right + 40, tab.Top + tab.Height / 2));
 
     // Less than the system's drag distance: a click that wobbled, not a drag.
@@ -64,6 +65,93 @@ public class ClosableTabControlTests
 
         await Assert.That(draggedOff).IsEquivalentTo(["Second"]);
     }
+
+    // Dragged along the row, the tab moves past each it crosses, right to the start, beyond the
+    // first. It stays the tab selected all the while, with nothing saying the selection changed,
+    // which would have the window show another tab, and every tab keeps its icon.
+    [Test]
+    public async Task DraggingATabAlongTheRowKeepsItSelected()
+    {
+        using var tabs = Create(out _);
+        for (var index = 0; index < tabs.TabCount; index++)
+        {
+            tabs.SetIcon(tabs.TabPages[index], index + 1);
+        }
+
+        var third = tabs.GetTabRect(2);
+        var middle = third.Top + third.Height / 2;
+        Send(tabs, leftButtonDown, third.Left + 10, middle);
+        var selectionChanges = 0;
+        tabs.SelectedIndexChanged += (_, _) => selectionChanges++;
+        tabs.Selecting += (_, _) => selectionChanges++;
+
+        Send(tabs, mouseMove, tabs.GetTabRect(1).Left + 10, middle);
+        var past = Texts(tabs);
+        Send(tabs, mouseMove, 2, middle);
+        Send(tabs, leftButtonUp, 2, middle);
+
+        await Assert.That(past).IsEquivalentTo(["First", "Third", "Second"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Texts(tabs)).IsEquivalentTo(["Third", "First", "Second"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("Third");
+        await Assert.That(selectionChanges).IsEqualTo(0);
+        await Assert.That(tabs.TabPages.Cast<TabPage>().Select(_ => tabs.IconOf(_))).IsEquivalentTo(new int?[] { 3, 1, 2 }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // Escape gives up on the drag, and the tab goes back where it was.
+    [Test]
+    public async Task EscapePutsTheTabBack()
+    {
+        const int keyDown = 0x0100;
+        const int escape = 0x1B;
+        using var tabs = Create(out _);
+        var first = tabs.GetTabRect(0);
+        var middle = first.Top + first.Height / 2;
+        Send(tabs, leftButtonDown, first.Left + 10, middle);
+        Send(tabs, mouseMove, tabs.GetTabRect(2).Left + 10, middle);
+        var dragged = Texts(tabs);
+
+        NativeMethods.SendMessage(tabs.Handle, keyDown, escape, IntPtr.Zero);
+        Send(tabs, leftButtonUp, tabs.GetTabRect(2).Left + 10, middle);
+
+        await Assert.That(dragged).IsEquivalentTo(["Second", "Third", "First"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Texts(tabs)).IsEquivalentTo(["First", "Second", "Third"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("First");
+    }
+
+    // A tab that isn't the one selected moves itself, and the selection stays where it was.
+    [Test]
+    public async Task MovingATabNotSelected()
+    {
+        using var tabs = Create(out _);
+        tabs.SelectedIndex = 1;
+
+        tabs.MoveTab(tabs.TabPages[0], 2);
+
+        await Assert.That(Texts(tabs)).IsEquivalentTo(["Second", "Third", "First"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("Second");
+    }
+
+    // A tab from another window goes in between the two it was dropped between, on the row, and
+    // at the end beyond the last, or anywhere off the row.
+    [Test]
+    public async Task WhereADroppedTabGoes()
+    {
+        using var tabs = Create(out _);
+        var first = tabs.GetTabRect(0);
+        var last = tabs.GetTabRect(2);
+        var middle = first.Top + first.Height / 2;
+        Point Screen(int left, int top) =>
+            tabs.PointToScreen(new(left, top));
+
+        await Assert.That(tabs.DropIndex(Screen(first.Left + 2, middle))).IsEqualTo(0);
+        await Assert.That(tabs.DropIndex(Screen(first.Right - 2, middle))).IsEqualTo(1);
+        await Assert.That(tabs.DropIndex(Screen(last.Left + 2, middle))).IsEqualTo(2);
+        await Assert.That(tabs.DropIndex(Screen(last.Right + 40, middle))).IsEqualTo(3);
+        await Assert.That(tabs.DropIndex(Screen(first.Left + 2, 250))).IsEqualTo(3);
+    }
+
+    static List<string> Texts(TabControl tabs) =>
+        tabs.TabPages.Cast<TabPage>().Select(_ => _.Text).ToList();
 
     static void Send(Control control, int message, int left, int top) =>
         NativeMethods.SendMessage(control.Handle, message, 1, (top << 16) | (left & 0xFFFF));

@@ -1192,11 +1192,12 @@ class MainForm : Form
             return;
         }
 
+        // Between two of another window's tabs, it goes in there.
         var target = WindowOf(WindowAt(screenLocation));
         if (target != null &&
             target != this)
         {
-            MoveTab(page, target);
+            MoveTab(page, target, target.tabs.DropIndex(screenLocation));
             target.Activate();
             return;
         }
@@ -1215,13 +1216,14 @@ class MainForm : Form
         FromChildHandle(WindowFromPoint(new(screenLocation.X, screenLocation.Y)));
 
     /// <summary>
-    /// Moves a tab, with its history, to the end of another window's tabs and shows it there.
-    /// This window closes if that was its last tab.
+    /// Moves a tab, with its history, to another window's tabs, at <paramref name="index"/>
+    /// among them or else at the end, and shows it there. This window closes if that was its
+    /// last tab.
     /// </summary>
-    public void MoveTab(TabPage page, MainForm target)
+    public void MoveTab(TabPage page, MainForm target, int? index = null)
     {
         RemoveTab(page);
-        target.AdoptTab(page);
+        target.AdoptTab(page, index ?? target.tabs.TabCount);
     }
 
     /// <summary>
@@ -1254,9 +1256,17 @@ class MainForm : Form
         return window;
     }
 
-    void AdoptTab(TabPage page)
+    void AdoptTab(TabPage page, int index)
     {
-        tabs.TabPages.Add(page);
+        if (index < tabs.TabCount)
+        {
+            tabs.TabPages.Insert(index, page);
+        }
+        else
+        {
+            tabs.TabPages.Add(page);
+        }
+
         tabs.SelectedTab = page;
         var view = page.Controls.OfType<FolderView>().First();
         OnViewPathChanged(view);

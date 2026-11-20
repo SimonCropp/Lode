@@ -30,6 +30,58 @@ public class WindowsTests
             });
     }
 
+    // Dropped between two of another window's tabs, a tab goes in there, and is the one shown.
+    [Test]
+    public async Task MoveTabBetweenAnotherWindowsTabs()
+    {
+        using var fixture = Fixture.Create();
+        using var source = await Show(fixture, fixture.At("Source"), fixture.At("Docs"));
+        using var target = await Show(fixture, fixture.Root, fixture.At("Archive"));
+
+        source.MoveTab((TabPage)source.Views.Last().Parent!, target, 1);
+
+        await Assert.That(Titles(target)).IsEquivalentTo(["Projects", "Docs", "Archive"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(target.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Docs"));
+    }
+
+    // A tab dragged along the row goes where it is dragged, and stays the one shown: the window
+    // doesn't show another on the way, nor bring itself in line again. Saved in that order.
+    [Test]
+    public async Task DraggingATabAlongTheRow()
+    {
+        const int leftButtonDown = 0x0201;
+        const int leftButtonUp = 0x0202;
+        const int mouseMove = 0x0200;
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        using var form = await Show(fixture, settings, fixture.Root, fixture.At("Docs"), fixture.At("Source"));
+        var tabs = (ClosableTabControl)form.ActiveView!.Parent!.Parent!;
+        var source = tabs.GetTabRect(2);
+        var middle = source.Top + source.Height / 2;
+        void Send(int message, int left) =>
+            NativeMethods.SendMessage(tabs.Handle, message, 1, (middle << 16) | (left & 0xFFFF));
+
+        // Pressed, the tab is selected, and shown, before any drag.
+        Send(leftButtonDown, source.Left + 10);
+        var showing = form.ActiveView!;
+        var synced = new List<string>();
+        form.Synced += _ => synced.Add(Path.GetFileName(_.CurrentPath));
+        Send(mouseMove, tabs.GetTabRect(0).Left + 10);
+        Send(leftButtonUp, tabs.GetTabRect(0).Left + 10);
+        var titles = Titles(form);
+        var shown = form.ActiveView;
+        form.Close();
+
+        await Assert.That(titles).IsEquivalentTo(["Source", "Projects", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(showing.CurrentPath).IsEqualTo(fixture.At("Source"));
+        await Assert.That(shown).IsSameReferenceAs(showing);
+        await Assert.That(synced).IsEmpty();
+        await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Source", "Projects", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    static List<string> Titles(MainForm form) =>
+        form.Views.Select(_ => ((TabPage)_.Parent!).Text).ToList();
+
     [Test]
     public async Task MovingTheLastTabClosesItsWindow()
     {
