@@ -118,6 +118,61 @@ public class ClosableTabControlTests
         await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("First");
     }
 
+    // Painted while the selected tab, the last, is being taken out, dragged to another window
+    // say: Windows Forms counts it gone before the window is told, so the window still has it
+    // selected, past the tabs counted. Here the paint comes just as the window is told.
+    [Test]
+    public async Task PaintingWhileTheSelectedTabGoes()
+    {
+        using var tabs = Create(out _);
+        tabs.SelectedIndex = 2;
+        using var spy = new PaintOnDelete(tabs);
+
+        tabs.TabPages.RemoveAt(2);
+
+        await Assert.That(spy.Thrown).IsNull();
+        await Assert.That(spy.Painted).IsTrue();
+    }
+
+    // Paints the tabs as the window is told to delete one, before it does.
+    sealed class PaintOnDelete : NativeWindow, IDisposable
+    {
+        const int deleteItem = 0x1308;
+        readonly ClosableTabControl tabs;
+
+        public PaintOnDelete(ClosableTabControl tabs)
+        {
+            this.tabs = tabs;
+            AssignHandle(tabs.Handle);
+        }
+
+        public Exception? Thrown { get; private set; }
+        public bool Painted { get; private set; }
+
+        protected override void WndProc(ref Message message)
+        {
+            if (message.Msg == deleteItem)
+            {
+                try
+                {
+                    using var bitmap = new Bitmap(tabs.Width, tabs.Height);
+                    using var graphics = Graphics.FromImage(bitmap);
+                    tabs.PaintTabs(graphics);
+                    Painted = true;
+                }
+                catch (Exception exception)
+                {
+                    Thrown = exception;
+                }
+            }
+
+            base.WndProc(ref message);
+        }
+
+        public void Dispose() =>
+            ReleaseHandle();
+    }
+
     // A tab that isn't the one selected moves itself, and the selection stays where it was.
     [Test]
     public async Task MovingATabNotSelected()

@@ -342,7 +342,14 @@ sealed class ClosableTabControl : TabControl
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
         QueueFit();
-        var graphics = eventArgs.Graphics;
+        PaintTabs(eventArgs.Graphics);
+    }
+
+    /// <summary>
+    /// Paints the row of tabs, and the line they sit on.
+    /// </summary>
+    internal void PaintTabs(Graphics graphics)
+    {
         graphics.Clear(SystemColors.Control);
         if (TabCount == 0)
         {
@@ -355,18 +362,27 @@ sealed class ClosableTabControl : TabControl
         var baseline = DisplayRectangle.Top - 1;
         graphics.DrawLine(border, 0, baseline, Width, baseline);
 
+        // Windows Forms counts a tab taken out gone before it tells the window, so a paint
+        // between the two, as the selected tab is dragged to another window say, finds the window
+        // still selecting it, past the tabs counted. Then none is painted as selected.
+        var selected = SelectedIndex;
+        if (selected >= TabCount)
+        {
+            selected = -1;
+        }
+
         for (var index = 0; index < TabCount; index++)
         {
-            if (index != SelectedIndex)
+            if (index != selected)
             {
                 PaintTab(graphics, border, index, baseline);
             }
         }
 
         PaintDividers(graphics, border, baseline);
-        if (SelectedIndex >= 0)
+        if (selected >= 0)
         {
-            PaintTab(graphics, border, SelectedIndex, baseline);
+            PaintTab(graphics, border, selected, baseline);
         }
     }
 
