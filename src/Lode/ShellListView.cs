@@ -398,6 +398,61 @@ sealed class ShellListView : ListView
         (int)SendMessage(Handle, ListViewGetStringWidth, IntPtr.Zero, text);
 
     /// <summary>
+    /// Measures text as <see cref="TextWidth"/> does, for as much of it as a big folder has. The
+    /// list takes some 15 microseconds a text, more for text in another script: seconds for a
+    /// folder of a hundred thousand names. But the list measures as GDI does, which on screen
+    /// neither kerns Latin nor joins its letters, so text of printable Latin, all in the list's
+    /// own font, is as wide as its characters, each as wide as it is alone. Such text is measured
+    /// a character at a time, each character asked of the list once. Text with anything else in
+    /// it, which may be joined up or drawn from another font, is asked of the list whole.
+    /// </summary>
+    public sealed class TextMeasure(ShellListView list)
+    {
+        // To the end of Latin Extended-A: accented letters, and the signs Latin-1 has.
+        const char latinEnd = (char)0x180;
+
+        // Each character's width, -1 for one not yet asked of the list.
+        readonly int[] widths = Enumerable.Repeat(-1, latinEnd).ToArray();
+
+        public int Width(string text)
+        {
+            if (!IsLatin(text))
+            {
+                return list.TextWidth(text);
+            }
+
+            var width = 0;
+            foreach (var character in text)
+            {
+                ref var known = ref widths[character];
+                if (known < 0)
+                {
+                    known = list.TextWidth(character.ToString());
+                }
+
+                width += known;
+            }
+
+            return width;
+        }
+
+        // Printable Latin, so none of the control characters: those below a space, and those
+        // from delete to the no-break space.
+        static bool IsLatin(string text)
+        {
+            foreach (var character in text)
+            {
+                if (character is < ' ' or (>= '\x7F' and < '\xA0') or >= latinEnd)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Widens or narrows a column to fit both its header and the widest of its cells, as
     /// Explorer's Size Column to Fit does. The cells measured are those of the rows the list
     /// asks for, which in a list that holds no rows of its own are only the ones on screen.

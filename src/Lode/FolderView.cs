@@ -1943,6 +1943,7 @@ sealed class FolderView : UserControl
 
         // Dates, types and sizes repeat. Each is measured once.
         var measured = new HashSet<string>();
+        var measure = new ShellListView.TextMeasure(list);
         foreach (var entry in displayed)
         {
             var text = entry.IsDrive ? DriveCell(entry, column) : Cell(entry, column);
@@ -1951,7 +1952,7 @@ sealed class FolderView : UserControl
                 continue;
             }
 
-            var width = list.TextWidth(text);
+            var width = measure.Width(text);
             if (width > widestWidth)
             {
                 widestWidth = width;

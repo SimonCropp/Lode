@@ -12,7 +12,6 @@ Contents:
 
  * [Bugs, unverified](#bugs-unverified)
  * [Smaller bugs](#smaller-bugs)
- * [Performance](#performance)
  * [Missing features](#missing-features)
  * [Checked and found sound](#checked-and-found-sound)
 
@@ -36,14 +35,6 @@ Contents:
 All read, none run.
 
  * **New chosen from the classic menu** goes through the shell alone, so Lode's Ctrl+Z never hears of what it made. Delete and Create shortcut are caught by their verbs, `delete` and `link`, and done by Lode; New's entries are filled in only as its submenu opens, and whether they have verbs to catch is unverified.
-
-
-## Performance
-
-
-### 11. Smaller
-
- * **Size column to fit measures every name.** `WidestCell` ([FolderView.cs:1833-1857](src/Lode/FolderView.cs#L1833)) sends the list a message for each different text, which for Name is every row of a big folder.
 
 
 ## Missing features

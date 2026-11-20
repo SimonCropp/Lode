@@ -43,6 +43,34 @@ public class ShellListViewTests
         await Assert.That(ImageCount(list.RowImages)).IsEqualTo(ImageCount(first));
     }
 
+    // Printable Latin, measured a character at a time, is as wide as the list makes it whole,
+    // letters a font kerns, such as AV and To, among them. Anything else is measured whole.
+    [Test]
+    public async Task MeasuringTextAgreesWithTheList()
+    {
+        using var list = new ShellListView();
+        _ = list.Handle;
+        var measure = new ShellListView.TextMeasure(list);
+        string[] texts =
+        [
+            "",
+            "AVATAR WAVE.txt",
+            "Today's To-do (final) v2.docx",
+            "LT.YT.F,P.\"A'A",
+            "iiii WWWW 1111 mmmm",
+            "Übersicht Straße café naïve ±½©.pdf",
+            "Œuvre ŁÓDŹ žluťoučký kůň.png",
+            "日本語のファイル.txt",
+            "تقرير.docx",
+            "👍🏽 thumbs.png",
+            "áè"
+        ];
+        foreach (var text in texts)
+        {
+            await Assert.That(measure.Width(text)).IsEqualTo(list.TextWidth(text));
+        }
+    }
+
     [System.Runtime.InteropServices.DllImport("comctl32.dll")]
     static extern int ImageList_GetImageCount(IntPtr imageList);
 
