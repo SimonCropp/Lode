@@ -74,12 +74,19 @@ static class CodeMenu
                 return CodeCommands.GitOutcome(await CodeCommands.SwitchToDefaultBranch(repos, progress, cancel));
             });
 
-    static void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    // Looking for the repositories reads two levels of folders, so that is off the UI thread, as
+    // Pull's is, and Discard's. Then it asks for the commit message.
+    static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var repos = CodeCommands.FindRepos(folders, codeFolder);
+        var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
         if (repos.Count == 0)
         {
             NoRepos("Git push", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
             return;
         }
 
@@ -95,12 +102,17 @@ static class CodeMenu
             async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress, cancel)));
     }
 
-    static void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    static async void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var repos = CodeCommands.FindRepos(folders, codeFolder);
+        var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
         if (repos.Count == 0)
         {
             NoRepos("Git discard", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
             return;
         }
 

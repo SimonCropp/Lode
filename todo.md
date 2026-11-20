@@ -43,7 +43,6 @@ All read, none run.
 
 ### 11. Smaller
 
- * **Push and Discard look for repositories on the UI thread** ([CodeMenu.cs:62](src/Lode/CodeMenu.cs#L62) and [83](src/Lode/CodeMenu.cs#L83)), two levels of folders, where Pull's own comment says that belongs off it.
  * **Sorting by Folder makes two strings for every comparison** ([FolderView.cs](src/Lode/FolderView.cs), `Compare`), each item's folder from its path, which a sort of what a big search found does many times over. Keep each item's folder on it.
  * **Size column to fit measures every name.** `WidestCell` ([FolderView.cs:1833-1857](src/Lode/FolderView.cs#L1833)) sends the list a message for each different text, which for Name is every row of a big folder.
 
