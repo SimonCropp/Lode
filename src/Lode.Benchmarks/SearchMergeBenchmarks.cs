@@ -2,8 +2,7 @@
 /// What a search does with each batch it hands over: merges it, sorted, into everything found
 /// so far, on the UI thread. That grows with how much has been found, which is why a search
 /// holds what it finds longer as showing it comes to take longer (FolderView.SearchPace).
-/// Sorted by Name, and by Folder, which makes each item's folder from its path for every
-/// comparison.
+/// Sorted by Name, and by Folder, which compares the folder kept on each item.
 /// </summary>
 [MemoryDiagnoser]
 public class SearchMergeBenchmarks

@@ -2086,8 +2086,8 @@ sealed class FolderView : UserControl
     // folder open itself.
     string FolderCell(FileEntry entry)
     {
-        var folder = Path.GetDirectoryName(entry.FullPath);
-        if (folder == null ||
+        var folder = entry.Folder;
+        if (folder.Length == 0 ||
             Locations.Same(folder, CurrentPath))
         {
             return "";
@@ -2181,9 +2181,7 @@ sealed class FolderView : UserControl
         {
             // Every item is beneath the folder open, so ordering by where they are from there is
             // ordering by their whole paths.
-            folderColumn => StrCmpLogicalW(
-                Path.GetDirectoryName(first.FullPath) ?? "",
-                Path.GetDirectoryName(second.FullPath) ?? ""),
+            folderColumn => StrCmpLogicalW(first.Folder, second.Folder),
             dateColumn => first.IsDrive
                 ? first.FreeSpace.CompareTo(second.FreeSpace)
                 : first.Modified.CompareTo(second.Modified),
