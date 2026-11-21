@@ -127,6 +127,12 @@ class OptionsForm : Form
     /// </summary>
     internal Func<string?> BrowseForCodeDirectory;
 
+    /// <summary>
+    /// Asks whether to use the folder as the code folder, saying what watching it means.
+    /// Replaced in tests.
+    /// </summary>
+    internal Func<string, bool> ConfirmCodeDirectory;
+
     readonly CheckBox purgePermanently = new()
     {
         Name = "purgePermanently",
@@ -262,9 +268,13 @@ class OptionsForm : Form
         ActionLog.Changed += OnUpdatesChanged;
         BrowseForEditor = ShowBrowseDialog;
         BrowseForCodeDirectory = ShowCodeDirectoryDialog;
+        ConfirmCodeDirectory = ShowCodeDirectoryPrompt;
         browseCodeDirectory.Click += (_, _) =>
         {
-            if (BrowseForCodeDirectory() is { } chosen)
+            // The one it is already is not asked about again.
+            if (BrowseForCodeDirectory() is { } chosen &&
+                !Locations.Same(chosen, settings.CodeDirectory) &&
+                ConfirmCodeDirectory(chosen))
             {
                 SetCodeDirectory(chosen);
             }
@@ -625,7 +635,9 @@ class OptionsForm : Form
         Section(
             "Code folder",
             "The folder your git repositories are in. Folders in it get a Git menu (pull, switch " +
-            "to default branch, push, discard, purge) and Update NuGets on their right-click menu.",
+            "to default branch, push, discard, purge) and Update NuGets on their right-click menu. " +
+            "Lode watches it while it runs, so Windows won't let a folder it is in be renamed or " +
+            "moved until it is cleared here, or Lode exits.",
             Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
         Section(
             "Git purge",
@@ -962,8 +974,38 @@ class OptionsForm : Form
         return dialog.SelectedPath;
     }
 
+    // Lode watches the code folder, and Windows lets nobody rename or move a folder that one
+    // being watched is in. Nor does Lode follow the code folder itself when something else
+    // renames, moves or deletes it.
+    bool ShowCodeDirectoryPrompt(string folder)
+    {
+        var use = new TaskDialogButton("Use folder");
+        var page = new TaskDialogPage
+        {
+            Caption = "Lode",
+            Heading = "Use this as the code folder?",
+            Text = $"Lode watches {folder} for changes while it runs, to keep the Git column up to " +
+                   "date. While it does:\n\n" +
+                   "• Windows won't let a folder it is in be renamed or moved.\n" +
+                   "• If it is renamed, moved or deleted itself, Lode goes on looking for it " +
+                   "where it was.\n\n" +
+                   "Before doing any of that, clear the code folder here in Options, or exit Lode.",
+            Icon = TaskDialogIcon.Information,
+            Buttons = { use, TaskDialogButton.Cancel },
+            DefaultButton = use
+        };
+        return TaskDialog.ShowDialog(this, page) == use;
+    }
+
+    // The one it was is watched no longer, so nothing of Lode's holds it.
     void SetCodeDirectory(string? path)
     {
+        if (settings.CodeDirectory is { } was &&
+            !Locations.Same(was, path))
+        {
+            GitCache.LetGo(was);
+        }
+
         settings.CodeDirectory = path;
         UpdateCodeDirectory();
     }

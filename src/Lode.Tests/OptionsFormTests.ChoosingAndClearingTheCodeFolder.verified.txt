@@ -1,4 +1,8 @@
 ﻿{
+  asked: [
+    C:\Code,
+    C:\Code
+  ],
   chosen: {
     setting: C:\Code,
     shown: C:\Code,

@@ -1,5 +1,19 @@
 public class SettingsTests
 {
+    // Renamed, moved or deleted while Lode wasn't running, the code folder is missed as Lode
+    // starts, which then says so. Not one on a share, which would wait on the network.
+    [Test]
+    public async Task ACodeFolderNoLongerThereIsMissing()
+    {
+        using var fixture = Fixture.Create();
+        var gone = fixture.At("Gone");
+
+        await Assert.That(new Settings().MissingCodeDirectory()).IsNull();
+        await Assert.That(new Settings {CodeDirectory = fixture.Root}.MissingCodeDirectory()).IsNull();
+        await Assert.That(new Settings {CodeDirectory = gone}.MissingCodeDirectory()).IsEqualTo(gone);
+        await Assert.That(new Settings {CodeDirectory = @"\\NotAServer\Share\Code"}.MissingCodeDirectory()).IsNull();
+    }
+
     [Test]
     public async Task SaveWritesJson()
     {

@@ -1,11 +1,13 @@
 /// <summary>
 /// What was last read of each repository's git state, kept until something in it changes, as
 /// TortoiseGit's cache keeps it: a folder listing repositories, gone into again, shows them as
-/// they were without reading them again. The drive the code folder is on is watched, everything
-/// on it, from its root, which no folder needs letting go of to be moved, renamed or deleted. A
-/// change in a repository, to its files or in .git, makes it stale, and once its changes have
-/// stopped for a moment the views showing it read it again. Where the drive can't be watched,
-/// a share say, nothing is kept fresh, so each is read every time, as before.
+/// they were without reading them again. The code folder is watched, everything in it, and
+/// nothing else on its drive is heard of. While it is, Windows lets nobody rename or move a
+/// folder the code folder is in, so it is let go of once it is the code folder no longer: see
+/// <see cref="LetGo"/>. A change in a repository, to its files or in .git, makes it stale, and
+/// once its changes have stopped for a moment the views showing it read it again. Where the
+/// folder can't be watched, on a share say, or not there, nothing is kept fresh, so each is read
+/// every time, as before.
 /// What git writes for itself, that no state shows, is no change: see <see cref="IsNoise"/>.
 /// And a repository whose changes go on, a build's output say, while reading it finds nothing
 /// new, is read less and less often until they stop: see <see cref="Known"/>.
@@ -173,10 +175,13 @@ static class GitCache
     // git folder shared, the worktrees sharing it.
     static readonly Dictionary<string, (string Repo, bool Shares)> gitFolders = new(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, List<string>> sharing = new(StringComparer.OrdinalIgnoreCase);
-    static FolderWatcher? watcher;
-    static string? watchedRoot;
-    // Every code folder watched for, as Options may change it, and tests have many.
-    static readonly HashSet<string> codeFolders = new(StringComparer.OrdinalIgnoreCase);
+
+    // The watch on each code folder: one, but for tests, which have many. Null for one that
+    // can't be watched, on a share say, or not there when it was first shown.
+    static readonly Dictionary<string, FolderWatcher?> watchers = new(StringComparer.OrdinalIgnoreCase);
+
+    // Whether a watch that failed, its folder deleted say, is being started again.
+    static bool reviving;
 
     // The repositories changing, until the views are told of each: see Known.Due. The timer is
     // set for the first of them due, and when that is, which is never while none is.
@@ -203,38 +208,60 @@ static class GitCache
     public static event Action<IReadOnlyCollection<string>>? Stale;
 
     /// <summary>
-    /// Whether changes are being heard, so what is cached stays fresh until one comes.
+    /// Whether changes in <paramref name="folder"/>, the code folder, are being heard, so what
+    /// is cached of its repositories stays fresh until one comes.
     /// </summary>
-    public static bool Watching
+    public static bool IsWatching(string? folder)
     {
-        get
+        if (folder == null)
         {
-            lock (gate)
+            return false;
+        }
+
+        lock (gate)
+        {
+            return watchers.GetValueOrDefault(folder) is { IsWatching: true };
+        }
+    }
+
+    // Whether changes to what is at the path are being heard. Under the gate.
+    static bool Heard(CharSpan path)
+    {
+        foreach (var (folder, watcher) in watchers)
+        {
+            if (Locations.IsWithin(path, folder))
             {
                 return watcher is { IsWatching: true };
             }
         }
+
+        return false;
     }
 
     /// <summary>
-    /// Watches the drive <paramref name="folder"/>, the code folder, is on, unless it is watched
-    /// already.
+    /// Watches <paramref name="folder"/>, the code folder, unless it is watched already. One
+    /// whose watch failed, the folder deleted and made again say, is watched again.
     /// </summary>
     public static void Watch(string folder)
     {
-        var root = Path.GetPathRoot(folder);
         lock (gate)
         {
-            codeFolders.Add(folder);
-            if (string.Equals(root, watchedRoot, StringComparison.OrdinalIgnoreCase))
+            if (watchers.TryGetValue(folder, out var existing))
             {
+                // Starting a watch can wait on the drive, and this is a window's thread.
+                if (existing is { IsWatching: false } &&
+                    !reviving)
+                {
+                    reviving = true;
+                    Task.Run(() => Revive(folder, existing));
+                }
+
                 return;
             }
 
-            watcher?.Dispose();
-            watcher = null;
-            watchedRoot = root;
-            MarkAllStale();
+            watchers[folder] = null;
+            MarkStaleIn(folder);
+            var root = Path.GetPathRoot(folder);
             if (root is null or "" ||
                 Locations.IsRemote(root))
             {
@@ -246,9 +273,9 @@ static class GitCache
         try
         {
             started = new(
-                root,
+                folder,
                 NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                AllChanged,
+                () => AllChanged(folder),
                 subfolders: true,
                 changedAt: ChangedAt);
         }
@@ -259,15 +286,51 @@ static class GitCache
 
         lock (gate)
         {
-            if (watcher == null &&
-                string.Equals(root, watchedRoot, StringComparison.OrdinalIgnoreCase))
+            if (watchers.TryGetValue(folder, out var existing) &&
+                existing == null)
             {
-                watcher = started;
+                watchers[folder] = started;
                 return;
             }
         }
 
         started?.Dispose();
+    }
+
+    // Anything may have changed while it wasn't watched, and what was read then would count as
+    // fresh from here on.
+    static void Revive(string folder, FolderWatcher failed)
+    {
+        failed.Revive();
+        lock (gate)
+        {
+            reviving = false;
+            if (failed.IsWatching)
+            {
+                MarkStaleIn(folder);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops watching <paramref name="folder"/>, which is the code folder no longer: Options
+    /// has another, or none. Nothing of Lode's then stops a folder it is in being renamed or
+    /// moved.
+    /// </summary>
+    public static void LetGo(string folder)
+    {
+        FolderWatcher? watcher;
+        lock (gate)
+        {
+            if (!watchers.Remove(folder, out watcher))
+            {
+                return;
+            }
+
+            MarkStaleIn(folder);
+        }
+
+        watcher?.Dispose();
     }
 
     /// <summary>
@@ -290,7 +353,7 @@ static class GitCache
 
             state = entry.State;
             site = entry.Site;
-            fresh = entry.Fresh(Environment.TickCount64) && watcher is { IsWatching: true };
+            fresh = entry.Fresh(Environment.TickCount64) && Heard(repo);
             return true;
         }
     }
@@ -667,17 +730,17 @@ static class GitCache
         return true;
     }
 
-    // On a background thread, for everything changed on the drive, so as little as it can be for
-    // what is outside the code folder. Stale at once, so a view going to it reads it; the views
-    // showing it are told once its changes stop.
+    // On a background thread, for everything changed in the code folder, so as little as it can
+    // be. Stale at once, so a view going to it reads it; the views showing it are told once its
+    // changes stop.
     internal static void ChangedAt(string path)
     {
         lock (gate)
         {
             // Nothing is made for a change, not a string for each folder above it either: there
-            // is one for everything written anywhere on the drive.
+            // is one for everything a build writes.
             string? codeFolder = null;
-            foreach (var folder in codeFolders)
+            foreach (var folder in watchers.Keys)
             {
                 if (Locations.IsWithin(path, folder))
                 {
@@ -914,11 +977,12 @@ static class GitCache
         Raise(stale);
     }
 
-    // Too many changes at once to keep track of, or a watch that failed or was let go of and is
-    // back: anything may have changed. Every repository is stale at once, and the views are told
-    // as they are of any change, once it has settled: too many changes come again and again
-    // while whatever is making them goes on, and each telling is a read of all that are shown.
-    internal static void AllChanged()
+    // Too many changes at once in a code folder to keep track of, or its watch failed or was
+    // let go of and is back: anything in it may have changed. Every repository in it is stale
+    // at once, and the views are told as they are of any change, once it has settled: too many
+    // changes come again and again while whatever is making them goes on, and each telling is a
+    // read of all that are shown.
+    internal static void AllChanged(string folder)
     {
         lock (gate)
         {
@@ -926,6 +990,11 @@ static class GitCache
             var first = long.MaxValue;
             foreach (var (repo, entry) in known)
             {
+                if (!Locations.IsWithin(repo, folder))
+                {
+                    continue;
+                }
+
                 entry.AnyChanged(now);
                 Forget(entry);
                 changing[repo] = entry;
@@ -939,11 +1008,17 @@ static class GitCache
         }
     }
 
-    // Under the gate.
-    static void MarkAllStale()
+    // The repositories in a code folder are to be read whatever has been seen of them: its
+    // watch is new, back, or gone. Under the gate.
+    static void MarkStaleIn(string folder)
     {
-        foreach (var entry in known.Values)
+        foreach (var (repo, entry) in known)
         {
+            if (!Locations.IsWithin(repo, folder))
+            {
+                continue;
+            }
+
             entry.Ask();
             Forget(entry);
         }
@@ -973,10 +1048,12 @@ static class GitCache
             folders.Clear();
             toLearn.Clear();
             changing.Clear();
-            watcher?.Dispose();
-            watcher = null;
-            watchedRoot = null;
-            codeFolders.Clear();
+            foreach (var watcher in watchers.Values)
+            {
+                watcher?.Dispose();
+            }
+
+            watchers.Clear();
         }
     }
 }

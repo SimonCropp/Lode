@@ -1,7 +1,6 @@
 /// <summary>
-/// What Lode does with each change on the drive the code folder is on. It hears all of them
-/// (GitCache), so what one costs is paid for everything written anywhere on that drive.
-/// Elsewhere is a change outside the code folder, as nearly all are. Source is to a file in a
+/// What Lode does with each change in the code folder. It hears all of them (GitCache), so what
+/// one costs is paid for everything a build writes there. Source is to a file in a
 /// repository, a few folders down, and Output to one a build wrote, further down. Index is to
 /// git's own, as a commit or a stage writes it, and Objects to what git writes beside it, which
 /// no state shows.
@@ -12,11 +11,9 @@
 [MemoryDiagnoser]
 public class GitCacheBenchmarks
 {
-    const string drive = @"\\Benchmarks\Share";
-    const string code = $@"{drive}\Code";
+    const string code = @"\\Benchmarks\Share\Code";
     const string repo = $@"{code}\Repo";
 
-    string elsewhere = "";
     string source = "";
     string output = "";
     string index = "";
@@ -32,16 +29,11 @@ public class GitCacheBenchmarks
         }
 
         GitCache.Changes(repo);
-        elsewhere = $@"{drive}\Users\Someone\AppData\Local\Temp\Build\0a1b2c3d\entry.tmp";
         source = $@"{repo}\src\Project\Areas\Things\Thing.cs";
         output = $@"{repo}\src\Project\obj\Debug\net11.0-windows\ref\Project.dll";
         index = $@"{repo}\.git\index";
         objects = $@"{repo}\.git\objects\3f\9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a";
     }
-
-    [Benchmark]
-    public void Elsewhere() =>
-        GitCache.ChangedAt(elsewhere);
 
     [Benchmark]
     public void Source() =>

@@ -153,6 +153,7 @@ public class OptionsFormTests
         var enabledWithoutFolder = button.Enabled;
 
         form.BrowseForCodeDirectory = () => @"D:\Code";
+        form.ConfirmCodeDirectory = _ => true;
         ((Button) form.Controls.Find("browseCodeDirectory", true)[0]).PerformClick();
         var enabledWithFolder = button.Enabled;
 
@@ -546,6 +547,20 @@ public class OptionsFormTests
         form.ShowPage("Code");
         form.BrowseForCodeDirectory = () => @"C:\Code";
 
+        // Asked first, as Lode watches the folder: not used when the answer is no.
+        var asked = new List<string>();
+        var answer = false;
+        form.ConfirmCodeDirectory = folder =>
+        {
+            asked.Add(folder);
+            return answer;
+        };
+        Click(form, "browseCodeDirectory");
+        var declined = settings.CodeDirectory;
+        answer = true;
+        Click(form, "browseCodeDirectory");
+
+        // The one it already is isn't asked about again.
         Click(form, "browseCodeDirectory");
         var chosen = new
         {
@@ -558,6 +573,8 @@ public class OptionsFormTests
         await Verify(
             new
             {
+                asked,
+                declined,
                 chosen,
                 cleared = new
                 {

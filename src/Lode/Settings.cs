@@ -206,6 +206,23 @@ sealed class Settings
         Locations.IsWithin(folder, CodeDirectory);
 
     /// <summary>
+    /// <see cref="CodeDirectory"/> when it is set and no longer there: renamed, moved or deleted
+    /// while Lode wasn't running, or on a drive that isn't plugged in. Not one on the network,
+    /// as asking after that waits on it.
+    /// </summary>
+    public string? MissingCodeDirectory()
+    {
+        if (CodeDirectory == null ||
+            Locations.IsRemote(CodeDirectory) ||
+            Directory.Exists(CodeDirectory))
+        {
+            return null;
+        }
+
+        return CodeDirectory;
+    }
+
+    /// <summary>
     /// <see cref="DefaultDirectory"/> when it is set and still there, otherwise the user folder.
     /// </summary>
     public string StartLocation()

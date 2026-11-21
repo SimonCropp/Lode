@@ -95,8 +95,8 @@ sealed class FolderWatcher : IDisposable
 
         if (subfolders)
         {
-            // All of a drive changes far more than one folder: the most Windows allows, so fewer
-            // are lost.
+            // Everything beneath a folder changes far more than what is in it: the most Windows
+            // allows, so fewer are lost.
             started.InternalBufferSize = 64 * 1024;
         }
 

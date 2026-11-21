@@ -1450,7 +1450,7 @@ sealed class FolderView : UserControl
     public void ReadGitStateUnlessFresh()
     {
         // Watched, only what has changed is read, which is nothing if nothing has.
-        if (!GitCache.Watching &&
+        if (!GitCache.IsWatching(settings.CodeDirectory) &&
             gitReadAt != 0 &&
             Stopwatch.GetElapsedTime(gitReadAt) < gitFresh)
         {

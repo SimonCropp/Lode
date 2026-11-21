@@ -2270,8 +2270,8 @@ public class FolderViewTests
         try
         {
             GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
-            GitCache.AllChanged();
-            GitCache.AllChanged();
+            GitCache.AllChanged(code.Root);
+            GitCache.AllChanged(code.Root);
             var toldAtOnce = Told();
             GitCache.TryGet(repo, out _, out _, out var fresh);
             await Pump.Until(() => Told() > 0);
@@ -2285,6 +2285,77 @@ public class FolderViewTests
         {
             GitCache.Stale -= OnStale;
         }
+    }
+
+    // Only the code folder is watched, and while it is Windows lets nobody rename a folder it is
+    // in. Let go of, Options having another or none, nothing of Lode's stops that.
+    [Test]
+    public async Task TheCodeFolderIsWatchedUntilLetGoOf()
+    {
+        using var code = Repositories();
+        var holder = code.At("Holder");
+        var folder = Path.Combine(holder, "Code");
+        var renamed = code.At("Renamed");
+        Directory.CreateDirectory(folder);
+
+        GitCache.Watch(folder);
+        var watching = GitCache.IsWatching(folder);
+        var renamedWhileWatched = TryRename(holder, renamed);
+        GitCache.LetGo(folder);
+        var watchingOnceLetGo = GitCache.IsWatching(folder);
+        var renamedOnceLetGo = TryRename(holder, renamed);
+
+        await Assert.That(watching).IsTrue();
+        await Assert.That(renamedWhileWatched).IsFalse();
+        await Assert.That(watchingOnceLetGo).IsFalse();
+        await Assert.That(renamedOnceLetGo).IsTrue();
+
+        static bool TryRename(string from, string to)
+        {
+            try
+            {
+                Directory.Move(from, to);
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+    }
+
+    // A code folder that isn't there, renamed or deleted while Lode wasn't running, is not
+    // watched, so nothing of it is kept fresh. Nothing fails for it.
+    [Test]
+    public async Task ACodeFolderThatIsNotThereIsNotWatched()
+    {
+        using var code = Repositories();
+        var folder = code.At("NotThere");
+        var repo = Path.Combine(folder, "Repo");
+
+        GitCache.Watch(folder);
+        GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
+        GitCache.TryGet(repo, out _, out _, out var fresh);
+
+        await Assert.That(GitCache.IsWatching(folder)).IsFalse();
+        await Assert.That(fresh).IsFalse();
+    }
+
+    // Too many changes in one code folder say nothing of another's repositories.
+    [Test]
+    public async Task TooManyChangesInOneCodeFolderLeaveAnotherFresh()
+    {
+        using var code = Repositories();
+        using var other = Repositories();
+        var repo = code.At("Plain");
+        GitCache.Watch(code.Root);
+        GitCache.Watch(other.Root);
+        GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
+
+        GitCache.AllChanged(other.Root);
+        GitCache.TryGet(repo, out _, out _, out var fresh);
+
+        await Assert.That(fresh).IsTrue();
     }
 
     // A repository whose files go on changing while reading it finds nothing new, a build's

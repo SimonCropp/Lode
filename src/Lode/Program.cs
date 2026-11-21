@@ -85,6 +85,20 @@ static class Program
             IssueLauncher.LaunchForException("Failed to load settings", settings.LoadBug);
         }
 
+        // The code folder gone, nothing in it gets a Git menu or state, which would otherwise
+        // only look as though Lode had lost them.
+        if (settings.MissingCodeDirectory() is { } missing)
+        {
+            MessageBox.Show(
+                $"Lode can't find the code folder:{Environment.NewLine}{Environment.NewLine}" +
+                $"{missing}{Environment.NewLine}{Environment.NewLine}" +
+                "It may have been renamed, moved or deleted. Until another is chosen on the Code " +
+                "page of Options, folders get no Git menu or Git column.",
+                "Lode",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
         // Before the first window, which takes its colours from it.
         ExplorerStyle.Use(settings.Theme);
 

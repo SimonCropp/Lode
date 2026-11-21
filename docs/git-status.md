@@ -2,20 +2,20 @@
 
 Lode shows the git state of repositories in the code folder: in the **Git** column, and in the status bar of a folder inside a repository. This page explains how that state is read, kept, and brought up to date.
 
-The short version: each repository is read once and cached. One watch on the whole drive reports every change, and a change in a repository marks it stale. Once its changes have stopped for a moment, the views showing it read it again. Most of the code is about not reading when there is no need to.
+The short version: each repository is read once and cached. One watch on the code folder reports every change in it, and a change in a repository marks it stale. Once its changes have stopped for a moment, the views showing it read it again. Most of the code is about not reading when there is no need to.
 
 | Part | File | What it does |
 | --- | --- | --- |
 | `GitState` | [src/Lode/GitState.cs](../src/Lode/GitState.cs) | What is known of a repository, and the reader that runs `git status` |
 | `LibGitState` | [src/Lode/LibGitState.cs](../src/Lode/LibGitState.cs) | The in-process reader, and which folders git ignores |
-| `GitCache` | [src/Lode/GitCache.cs](../src/Lode/GitCache.cs) | The cache, the drive watch, and when a repository is read again |
+| `GitCache` | [src/Lode/GitCache.cs](../src/Lode/GitCache.cs) | The cache, the watch on the code folder, and when a repository is read again |
 | `FolderView` | [src/Lode/FolderView.cs](../src/Lode/FolderView.cs) | Decides which repositories it shows, reads them, and draws the result |
 
 ## Overview
 
 ```mermaid
 flowchart TD
-    Drive[("Drive of the code folder")] -->|every change| Watch["FolderWatcher<br/>on the drive root"]
+    Code[("Code folder")] -->|every change| Watch["FolderWatcher<br/>on the code folder"]
     Watch -->|path| Filter["GitCache.ChangedAt<br/>drops what doesn't matter"]
     Filter -->|repository is stale| Timer["Settle timer"]
     Timer -->|Stale event| Views["FolderViews that show<br/>one of the repositories"]
@@ -80,20 +80,35 @@ A view reads its repositories in parallel on background threads, in the order th
 
 `GitCache` keeps one `Known` entry per repository that a view has asked about. It holds the last `GitState`, the repository's remote site, and a count of the changes seen in it. An entry is **fresh** while that count is the same as when it was last read.
 
-`GitCache.Watch` puts a single `FileSystemWatcher` on the root of the drive the code folder is on, with subfolders included. Watching the root rather than the code folder means no folder is held open that someone might want to move, rename or delete.
+`GitCache.Watch` puts a single `FileSystemWatcher` on the code folder, with subfolders included, so nothing else on the drive is heard of.
 
-Where the drive can't be watched, a network share say, nothing is ever fresh. Repositories are then read whenever the folder is, and when its tab or window comes back to the front.
+Where the code folder can't be watched, on a network share say, or because it isn't there, nothing is ever fresh. Repositories are then read whenever the folder is, and when its tab or window comes back to the front.
+
+### What the watch holds
+
+The watch keeps the code folder open for as long as it is the code folder and Lode is running. Windows treats that as follows:
+
+| Done outside Lode | What happens |
+| --- | --- |
+| Rename, move or delete something inside the code folder | Works |
+| Rename or move a folder the code folder is in | Refused by Windows: the folder is in use |
+| Rename or move the code folder itself | Works, but Lode goes on looking for it where it was |
+| Delete the code folder | Works. The watch fails, and is started again if the folder comes back |
+
+So choosing a code folder in Options asks first, saying this. Clearing it there, or choosing another, calls `GitCache.LetGo`, which stops the watch at once. Exiting Lode does too.
+
+Lode's own moves, renames and deletes are not affected: `FolderWatcher.LetGo` lets go of every watch at or beneath what is being moved, for as long as that takes.
+
+A code folder that is no longer there when Lode starts is reported in a message before the first window, as `Settings.MissingCodeDirectory` finds it. Nothing then gets a Git menu or column until another is chosen.
 
 ## What happens to a change
 
-Every change on the drive reaches `GitCache.ChangedAt`, on a background thread, so it does as little as it can and allocates nothing.
+Every change in the code folder reaches `GitCache.ChangedAt`, on a background thread, so it does as little as it can and allocates nothing.
 
 ```mermaid
 flowchart TD
-    Change(["A path changed on the drive"]) --> InCode{"In a code folder?"}
-    InCode -->|no| Drop(["Dropped"])
-    InCode -->|yes| Noise{"Git's own noise<br/>in .git?"}
-    Noise -->|yes| Drop
+    Change(["A path changed in the code folder"]) --> Noise{"Git's own noise<br/>in .git?"}
+    Noise -->|yes| Drop(["Dropped"])
     Noise -->|no| Ignored{"In a folder known<br/>to be ignored?"}
     Ignored -->|yes| Drop
     Ignored -->|no| Walk["Walk up the path to the<br/>innermost known repository"]
@@ -227,7 +242,7 @@ In both cases the second view reads for itself.
 
 ## When the watch loses track
 
-The watcher's buffer can overflow when too many changes come at once, and a watch can fail and come back. Either way anything may have changed, so `AllChanged` makes every known repository stale, ends every hold, and forgets what was learned of ignored folders.
+The watcher's buffer can overflow when too many changes come at once, and a watch can fail and come back. Either way anything may have changed, so `AllChanged` makes every known repository in that code folder stale, ends every hold, and forgets what was learned of ignored folders.
 
 The views are still told through the settle timer: 500 ms after the last overflow, and no later than 3 seconds after the first. Overflows come again and again while whatever is causing them goes on, and reading every repository shown for each one would add to the load.
 
@@ -237,7 +252,6 @@ The views are still told through the settle timer: 500 ms after the last overflo
 
 | Change | Time |
 | --- | --- |
-| Outside the code folder | 15 ns |
 | In `.git/objects` | 24 ns |
 | To `.git/index` | 167 ns |
 | To a source file | 374 ns |
@@ -252,6 +266,7 @@ dotnet run -c Release --project src/Lode.Benchmarks
 ## Limits
 
 - Nothing here applies outside the code folder.
+- A code folder that wasn't there when it was first shown is not watched until Lode is restarted, or it is cleared in Options and chosen again.
 - A repository is tracked only once a view has asked about it.
 - A worktree whose main repository is outside the code folder, or one pointed at another git folder after it was first read, is not followed.
 - A single ignored file, in a folder that isn't ignored, still makes its repository stale.
