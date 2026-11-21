@@ -946,9 +946,9 @@ class MainForm : Form
 
     bool openingTabs;
 
-    protected override void OnLoad(EventArgs eventArgs)
+    protected override void OnLoad(EventArgs args)
     {
-        base.OnLoad(eventArgs);
+        base.OnLoad(args);
         if (restoreBounds)
         {
             var saved = new Rectangle(settings.Left, settings.Top, settings.Width, settings.Height);
@@ -968,16 +968,16 @@ class MainForm : Form
         split.SplitterDistance = Math.Clamp(distance, split.Panel1MinSize, Math.Max(split.Panel1MinSize, split.Width / 2));
     }
 
-    protected override void OnShown(EventArgs eventArgs)
+    protected override void OnShown(EventArgs args)
     {
-        base.OnShown(eventArgs);
+        base.OnShown(args);
         ActiveView?.FocusList();
     }
 
     // Again whenever WinForms makes the window anew, which changing some properties does.
-    protected override void OnHandleCreated(EventArgs eventArgs)
+    protected override void OnHandleCreated(EventArgs args)
     {
-        base.OnHandleCreated(eventArgs);
+        base.OnHandleCreated(args);
         TaskbarIdentity.Apply(Handle);
 
         // The title bar in Mica, the material Explorer's tab strip is drawn in, tinted by the
@@ -991,16 +991,16 @@ class MainForm : Form
         CutItems.Refresh();
     }
 
-    protected override void OnHandleDestroyed(EventArgs eventArgs)
+    protected override void OnHandleDestroyed(EventArgs args)
     {
         RemoveClipboardFormatListener(Handle);
         TaskbarIdentity.Clear(Handle);
-        base.OnHandleDestroyed(eventArgs);
+        base.OnHandleDestroyed(args);
     }
 
-    protected override void OnFormClosing(FormClosingEventArgs eventArgs)
+    protected override void OnFormClosing(FormClosingEventArgs args)
     {
-        base.OnFormClosing(eventArgs);
+        base.OnFormClosing(args);
         // Not one disposed without being closed, which can stay listed.
         var others = Application.OpenForms
             .OfType<MainForm>()
@@ -1012,7 +1012,7 @@ class MainForm : Form
         // for real.
         var hiding = HideLastWindowOnClose &&
                      !others.Any(_ => _.Visible) &&
-                     eventArgs.CloseReason is
+                     args.CloseReason is
                          CloseReason.UserClosing or
                          CloseReason.None;
         if (hiding)
@@ -1053,7 +1053,7 @@ class MainForm : Form
 
         if (hiding)
         {
-            eventArgs.Cancel = true;
+            args.Cancel = true;
             Hide();
         }
     }
@@ -1545,9 +1545,9 @@ class MainForm : Form
 
     // Back at the front, where a commit made in a terminal meanwhile went unseen: git changes
     // only .git, not the folder listed.
-    protected override void OnActivated(EventArgs eventArgs)
+    protected override void OnActivated(EventArgs args)
     {
-        base.OnActivated(eventArgs);
+        base.OnActivated(args);
         foreach (var view in Views)
         {
             view.ReadGitStateUnlessFresh();
@@ -1590,9 +1590,9 @@ class MainForm : Form
     bool hidden;
     bool minimized;
 
-    protected override void OnVisibleChanged(EventArgs eventArgs)
+    protected override void OnVisibleChanged(EventArgs args)
     {
-        base.OnVisibleChanged(eventArgs);
+        base.OnVisibleChanged(args);
         hidden = !Visible;
         UpdateShowing();
         ShellWindows.Sync(this);
@@ -1687,9 +1687,9 @@ class MainForm : Form
         }
     }
 
-    protected override void OnResize(EventArgs eventArgs)
+    protected override void OnResize(EventArgs args)
     {
-        base.OnResize(eventArgs);
+        base.OnResize(args);
         var nowMinimized = WindowState == FormWindowState.Minimized;
         if (!nowMinimized)
         {
@@ -1994,7 +1994,7 @@ class MainForm : Form
     void FocusAddress() =>
         breadcrumb.BeginEdit();
 
-    void OnAddressKeyDown(object? sender, KeyEventArgs eventArgs)
+    void OnAddressKeyDown(object? sender, KeyEventArgs args)
     {
         var view = ActiveView;
         if (view == null)
@@ -2002,24 +2002,24 @@ class MainForm : Form
             return;
         }
 
-        if (eventArgs.KeyCode == Keys.Enter)
+        if (args.KeyCode == Keys.Enter)
         {
-            eventArgs.Handled = true;
-            eventArgs.SuppressKeyPress = true;
+            args.Handled = true;
+            args.SuppressKeyPress = true;
             view.GoToTyped(addressBox.Text);
             breadcrumb.Path = view.CurrentPath;
             view.FocusList();
         }
-        else if (eventArgs.KeyCode == Keys.Escape)
+        else if (args.KeyCode == Keys.Escape)
         {
-            eventArgs.Handled = true;
-            eventArgs.SuppressKeyPress = true;
+            args.Handled = true;
+            args.SuppressKeyPress = true;
             breadcrumb.Path = view.CurrentPath;
             view.FocusList();
         }
     }
 
-    void OnFilterTextChanged(object? sender, EventArgs eventArgs)
+    void OnFilterTextChanged(object? sender, EventArgs args)
     {
         if (!updatingFilter &&
             ActiveView is { } view)
@@ -2028,39 +2028,39 @@ class MainForm : Form
         }
     }
 
-    void OnFilterKeyDown(object? sender, KeyEventArgs eventArgs)
+    void OnFilterKeyDown(object? sender, KeyEventArgs args)
     {
-        if (eventArgs.KeyCode == Keys.Escape)
+        if (args.KeyCode == Keys.Escape)
         {
             filterBox.Clear();
         }
-        else if (eventArgs.KeyCode is not (Keys.Enter or Keys.Down))
+        else if (args.KeyCode is not (Keys.Enter or Keys.Down))
         {
             return;
         }
 
-        eventArgs.Handled = true;
-        eventArgs.SuppressKeyPress = true;
+        args.Handled = true;
+        args.SuppressKeyPress = true;
         ActiveView?.FocusList();
     }
 
-    void OnTabsMouseUp(object? sender, MouseEventArgs eventArgs)
+    void OnTabsMouseUp(object? sender, MouseEventArgs args)
     {
-        var page = TabAt(eventArgs.Location);
+        var page = TabAt(args.Location);
         if (page == null)
         {
             return;
         }
 
-        if (eventArgs.Button == MouseButtons.Middle)
+        if (args.Button == MouseButtons.Middle)
         {
             CloseTab(page);
         }
-        else if (eventArgs.Button == MouseButtons.Right)
+        else if (args.Button == MouseButtons.Right)
         {
             var menu = TabMenu(page);
             menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-            menu.Show(tabs, eventArgs.Location);
+            menu.Show(tabs, args.Location);
         }
     }
 

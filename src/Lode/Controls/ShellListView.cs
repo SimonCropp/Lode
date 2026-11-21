@@ -239,9 +239,9 @@ sealed class ShellListView : ListView
         SendMessage(Handle, ListViewGetImageList, ListViewImageListSmall, IntPtr.Zero);
 
     // Moved to a monitor at another scale: the rows' images, and so their height, for it.
-    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    protected override void OnDpiChangedAfterParent(EventArgs args)
     {
-        base.OnDpiChangedAfterParent(eventArgs);
+        base.OnDpiChangedAfterParent(args);
         UseImagesFor(DeviceDpi);
     }
 
@@ -253,7 +253,7 @@ sealed class ShellListView : ListView
         }
     }
 
-    protected override void OnHandleCreated(EventArgs eventArgs)
+    protected override void OnHandleCreated(EventArgs args)
     {
         // Given to the window itself rather than through SmallImageList, which would have the
         // shared list hold on to every list that ever showed it. Before the rows go in, which
@@ -264,7 +264,7 @@ sealed class ShellListView : ListView
         // Each row's cut state, and whether a drop would go into it, are asked for as it is
         // drawn, as the rows are.
         SendMessage(Handle, listViewSetCallbackMask, listViewItemCut | listViewItemDropHighlighted, IntPtr.Zero);
-        base.OnHandleCreated(eventArgs);
+        base.OnHandleCreated(args);
         BackColor = ExplorerStyle.Window;
         SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
 

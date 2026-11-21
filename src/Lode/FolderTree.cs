@@ -151,9 +151,9 @@ sealed class FolderTree : TreeView
         }
     }
 
-    protected override void OnHandleCreated(EventArgs eventArgs)
+    protected override void OnHandleCreated(EventArgs args)
     {
-        base.OnHandleCreated(eventArgs);
+        base.OnHandleCreated(args);
         BackColor = ExplorerStyle.Window;
         SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
         SendMessage(Handle, TreeViewSetImageList, IntPtr.Zero, ShellIcons.SmallImageList);
@@ -412,28 +412,28 @@ sealed class FolderTree : TreeView
 
     // Alt+Shift+Up and Down move the selected pinned folder up or down the list. The keys of the
     // right-click menu's actions do the same to the selected folder.
-    protected override void OnKeyDown(KeyEventArgs eventArgs)
+    protected override void OnKeyDown(KeyEventArgs args)
     {
-        if (eventArgs.KeyData is (Keys.Alt | Keys.Shift | Keys.Up) or (Keys.Alt | Keys.Shift | Keys.Down) &&
+        if (args.KeyData is (Keys.Alt | Keys.Shift | Keys.Up) or (Keys.Alt | Keys.Shift | Keys.Down) &&
             IsPinnedEntry(SelectedNode))
         {
             var node = SelectedNode!;
-            var offset = eventArgs.KeyCode == Keys.Up ? -1 : 1;
+            var offset = args.KeyCode == Keys.Up ? -1 : 1;
             MovePinned((string)node.Tag!, node.Index + offset);
-            eventArgs.Handled = true;
-            eventArgs.SuppressKeyPress = true;
+            args.Handled = true;
+            args.SuppressKeyPress = true;
             return;
         }
 
-        if (KeyCommand(eventArgs.KeyData) is { } command)
+        if (KeyCommand(args.KeyData) is { } command)
         {
             command.Action();
-            eventArgs.Handled = true;
-            eventArgs.SuppressKeyPress = true;
+            args.Handled = true;
+            args.SuppressKeyPress = true;
             return;
         }
 
-        base.OnKeyDown(eventArgs);
+        base.OnKeyDown(args);
     }
 
     /// <summary>
@@ -512,10 +512,10 @@ sealed class FolderTree : TreeView
     // A pinned folder can be dragged up or down the Pinned list to reorder it, as in Explorer.
     const string pinnedFormat = "Lode.PinnedFolder";
 
-    protected override void OnItemDrag(ItemDragEventArgs eventArgs)
+    protected override void OnItemDrag(ItemDragEventArgs args)
     {
-        base.OnItemDrag(eventArgs);
-        if (eventArgs is {Button: MouseButtons.Left, Item: TreeNode node} &&
+        base.OnItemDrag(args);
+        if (args is {Button: MouseButtons.Left, Item: TreeNode node} &&
             IsPinnedEntry(node))
         {
             var data = new DataObject();
@@ -527,14 +527,14 @@ sealed class FolderTree : TreeView
 
     // Where a dragged pinned folder would land: before or after a pinned folder, or first when
     // over the Pinned heading. Null when not over the Pinned list.
-    (string Folder, int Index, TreeNode Node, bool After)? PinnedDropTarget(DragEventArgs eventArgs)
+    (string Folder, int Index, TreeNode Node, bool After)? PinnedDropTarget(DragEventArgs args)
     {
-        if (eventArgs.Data?.GetData(pinnedFormat) is not string folder)
+        if (args.Data?.GetData(pinnedFormat) is not string folder)
         {
             return null;
         }
 
-        var point = PointToClient(new(eventArgs.X, eventArgs.Y));
+        var point = PointToClient(new(args.X, args.Y));
         var node = GetNodeAt(point);
         if (node?.Tag is Section { Name: "Pinned" })
         {
@@ -614,10 +614,10 @@ sealed class FolderTree : TreeView
         return position + 1;
     }
 
-    protected override void OnAfterExpand(TreeViewEventArgs eventArgs)
+    protected override void OnAfterExpand(TreeViewEventArgs args)
     {
-        base.OnAfterExpand(eventArgs);
-        if (eventArgs.Node?.Tag is Section section)
+        base.OnAfterExpand(args);
+        if (args.Node?.Tag is Section section)
         {
             settings.CollapsedSections.Remove(section.Name);
         }
@@ -1215,14 +1215,14 @@ sealed class FolderTree : TreeView
         }
     }
 
-    protected override void OnBeforeExpand(TreeViewCancelEventArgs eventArgs)
+    protected override void OnBeforeExpand(TreeViewCancelEventArgs args)
     {
-        if (eventArgs.Node is { } node && IsFolder(node))
+        if (args.Node is { } node && IsFolder(node))
         {
             if (NeedsLoading(node))
             {
                 // Not until it has been read, which is done off the UI thread. It expands then.
-                eventArgs.Cancel = true;
+                args.Cancel = true;
                 Track(ExpandOnceRead(node));
             }
             else if (!watched.ContainsKey(node))
@@ -1234,19 +1234,19 @@ sealed class FolderTree : TreeView
             }
         }
 
-        base.OnBeforeExpand(eventArgs);
+        base.OnBeforeExpand(args);
     }
 
-    protected override void OnAfterCollapse(TreeViewEventArgs eventArgs)
+    protected override void OnAfterCollapse(TreeViewEventArgs args)
     {
-        base.OnAfterCollapse(eventArgs);
-        if (eventArgs.Node?.Tag is Section section &&
+        base.OnAfterCollapse(args);
+        if (args.Node?.Tag is Section section &&
             !settings.CollapsedSections.Contains(section.Name))
         {
             settings.CollapsedSections.Add(section.Name);
         }
 
-        if (eventArgs.Node is { } node && IsFolder(node))
+        if (args.Node is { } node && IsFolder(node))
         {
             Unwatch(node);
         }
@@ -1288,14 +1288,15 @@ sealed class FolderTree : TreeView
             .Where(_ => _.Tag is Section)
             .SelectMany(_ => _.Nodes.Cast<TreeNode>());
 
-    protected override void OnAfterSelect(TreeViewEventArgs eventArgs)
+    protected override void OnAfterSelect(TreeViewEventArgs args)
     {
-        base.OnAfterSelect(eventArgs);
-        ShowShortcutsSelected(eventArgs.Node);
-        WatchSelected(eventArgs.Node);
+        base.OnAfterSelect(args);
+        ShowShortcutsSelected(args.Node);
+        WatchSelected(args.Node);
 
         // Unknown means the selection was set from code (SelectPath), not by the user.
-        if (eventArgs.Action != TreeViewAction.Unknown && eventArgs.Node is { Tag: string path } node)
+        if (args.Action != TreeViewAction.Unknown &&
+            args.Node is { Tag: string path } node)
         {
             PathSelected?.Invoke(path);
 
@@ -1548,19 +1549,19 @@ sealed class FolderTree : TreeView
         return (current, []);
     }
 
-    protected override void OnNodeMouseClick(TreeNodeMouseClickEventArgs eventArgs)
+    protected override void OnNodeMouseClick(TreeNodeMouseClickEventArgs args)
     {
-        base.OnNodeMouseClick(eventArgs);
-        if (eventArgs.Button != MouseButtons.Right ||
-            eventArgs.Node?.Tag is not string path)
+        base.OnNodeMouseClick(args);
+        if (args.Button != MouseButtons.Right ||
+            args.Node?.Tag is not string path)
         {
             return;
         }
 
         var owner = FindForm()?.Handle ?? Handle;
-        var location = PointToScreen(eventArgs.Location);
-        var quickAccess = eventArgs.Node.Parent?.Tag is Section;
-        var node = eventArgs.Node;
+        var location = PointToScreen(args.Location);
+        var quickAccess = args.Node.Parent?.Tag is Section;
+        var node = args.Node;
         List<QuickMenu.Command?> commands;
         if (Locations.IsThisPC(path))
         {
@@ -1720,25 +1721,25 @@ sealed class FolderTree : TreeView
         node.BeginEdit();
     }
 
-    protected override void OnBeforeLabelEdit(NodeLabelEditEventArgs eventArgs)
+    protected override void OnBeforeLabelEdit(NodeLabelEditEventArgs args)
     {
-        if (eventArgs.Node != renaming)
+        if (args.Node != renaming)
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
         }
 
-        base.OnBeforeLabelEdit(eventArgs);
+        base.OnBeforeLabelEdit(args);
     }
 
     // The folder is renamed on disk, and the label put back: the parent's watcher reads the
     // folder again under its new name.
-    protected override void OnAfterLabelEdit(NodeLabelEditEventArgs eventArgs)
+    protected override void OnAfterLabelEdit(NodeLabelEditEventArgs args)
     {
-        base.OnAfterLabelEdit(eventArgs);
+        base.OnAfterLabelEdit(args);
         renaming = null;
-        eventArgs.CancelEdit = true;
-        if (eventArgs.Node is not { Tag: string path, Parent: { } parent } ||
-            eventArgs.Label?.Trim() is not { Length: > 0 } newName ||
+        args.CancelEdit = true;
+        if (args.Node is not { Tag: string path, Parent: { } parent } ||
+            args.Label?.Trim() is not { Length: > 0 } newName ||
             newName == Path.GetFileName(path))
         {
             return;
@@ -1862,9 +1863,9 @@ sealed class FolderTree : TreeView
         return true;
     }
 
-    string? DropDestination(DragEventArgs eventArgs)
+    string? DropDestination(DragEventArgs args)
     {
-        var point = PointToClient(new(eventArgs.X, eventArgs.Y));
+        var point = PointToClient(new(args.X, args.Y));
         if (GetNodeAt(point)?.Tag is not string path || Locations.IsThisPC(path))
         {
             return null;
@@ -1983,11 +1984,11 @@ sealed class FolderTree : TreeView
             .ToArray();
 
     // Folders dropped in the Pinned list get pinned to Quick access there, as in Explorer.
-    (string[] Folders, int Index, TreeNode? Mark, bool After)? FoldersToPin(DragEventArgs eventArgs)
+    (string[] Folders, int Index, TreeNode? Mark, bool After)? FoldersToPin(DragEventArgs args)
     {
-        var point = PointToClient(new(eventArgs.X, eventArgs.Y));
+        var point = PointToClient(new(args.X, args.Y));
         if (PinTarget(point) is not { } target ||
-            eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] paths)
+            args.Data?.GetData(DataFormats.FileDrop) is not string[] paths)
         {
             return null;
         }
@@ -2031,12 +2032,12 @@ sealed class FolderTree : TreeView
     /// What a drag over the tree would do, shown as it goes: the folder it would go into
     /// highlighted, or where it would be pinned marked.
     /// </summary>
-    internal DragDropEffects DropEffect(DragEventArgs eventArgs)
+    internal DragDropEffects DropEffect(DragEventArgs args)
     {
-        if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
+        if (args.Data?.GetDataPresent(pinnedFormat) == true)
         {
             HighlightDrop(null);
-            if (PinnedDropTarget(eventArgs) is { } target)
+            if (PinnedDropTarget(args) is { } target)
             {
                 if (target.Node.Tag is Section)
                 {
@@ -2054,7 +2055,7 @@ sealed class FolderTree : TreeView
             return DragDropEffects.None;
         }
 
-        if (FoldersToPin(eventArgs) is { } pin)
+        if (FoldersToPin(args) is { } pin)
         {
             HighlightDrop(null);
             if (pin.Mark is { } mark)
@@ -2070,11 +2071,11 @@ sealed class FolderTree : TreeView
         }
 
         ClearInsertMark();
-        var effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        var effect = FileOperations.GetDropEffect(args, DropDestination(args));
         TreeNode? into = null;
         if (effect != DragDropEffects.None)
         {
-            into = GetNodeAt(PointToClient(new(eventArgs.X, eventArgs.Y)));
+            into = GetNodeAt(PointToClient(new(args.X, args.Y)));
         }
 
         HighlightDrop(into);
@@ -2085,37 +2086,37 @@ sealed class FolderTree : TreeView
     // by the drop.
     bool rightDrag;
 
-    protected override void OnDragEnter(DragEventArgs eventArgs)
+    protected override void OnDragEnter(DragEventArgs args)
     {
-        base.OnDragEnter(eventArgs);
-        rightDrag = FileOperations.RightButton(eventArgs);
-        eventArgs.Effect = DropEffect(eventArgs);
+        base.OnDragEnter(args);
+        rightDrag = FileOperations.RightButton(args);
+        args.Effect = DropEffect(args);
     }
 
-    protected override void OnDragLeave(EventArgs eventArgs)
+    protected override void OnDragLeave(EventArgs args)
     {
-        base.OnDragLeave(eventArgs);
+        base.OnDragLeave(args);
         ClearInsertMark();
         HighlightDrop(null);
     }
 
-    protected override void OnDragOver(DragEventArgs eventArgs)
+    protected override void OnDragOver(DragEventArgs args)
     {
-        base.OnDragOver(eventArgs);
-        rightDrag = FileOperations.RightButton(eventArgs);
-        eventArgs.Effect = DropEffect(eventArgs);
+        base.OnDragOver(args);
+        rightDrag = FileOperations.RightButton(args);
+        args.Effect = DropEffect(args);
     }
 
-    protected override void OnDragDrop(DragEventArgs eventArgs)
+    protected override void OnDragDrop(DragEventArgs args)
     {
-        base.OnDragDrop(eventArgs);
+        base.OnDragDrop(args);
         ClearInsertMark();
         HighlightDrop(null);
         var owner = FindForm()?.Handle ?? Handle;
-        if (eventArgs.Data?.GetDataPresent(pinnedFormat) == true)
+        if (args.Data?.GetDataPresent(pinnedFormat) == true)
         {
             // Once the drag is over, so the tree it reorders is no longer the drag's target.
-            if (PinnedDropTarget(eventArgs) is { } target)
+            if (PinnedDropTarget(args) is { } target)
             {
                 BeginInvoke(() => MovePinned(target.Folder, target.Index));
             }
@@ -2123,13 +2124,13 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        if (FoldersToPin(eventArgs) is { } pin)
+        if (FoldersToPin(args) is { } pin)
         {
             PinAt(pin.Folders, pin.Index);
             return;
         }
 
-        FileOperations.Drop(owner, eventArgs, DropDestination(eventArgs), rightDrag);
+        FileOperations.Drop(owner, args, DropDestination(args), rightDrag);
     }
 
     protected override void Dispose(bool disposing)

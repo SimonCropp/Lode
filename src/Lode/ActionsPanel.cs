@@ -122,9 +122,9 @@ sealed class ActionsPanel : Panel
         }
     }
 
-    protected override void OnFontChanged(EventArgs eventArgs)
+    protected override void OnFontChanged(EventArgs args)
     {
-        base.OnFontChanged(eventArgs);
+        base.OnFontChanged(args);
         Fit();
     }
 
@@ -157,9 +157,9 @@ sealed class ActionsPanel : Panel
     }
 
     // Also when the window goes to the tray, or comes back.
-    protected override void OnVisibleChanged(EventArgs eventArgs)
+    protected override void OnVisibleChanged(EventArgs args)
     {
-        base.OnVisibleChanged(eventArgs);
+        base.OnVisibleChanged(args);
         UpdateSpinner();
     }
 
@@ -244,30 +244,30 @@ sealed class ActionsPanel : Panel
     }
 
     // A line between the tree above and the panel.
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        base.OnPaint(eventArgs);
+        base.OnPaint(args);
         using var pen = new Pen(SystemColors.ControlLight);
-        eventArgs.Graphics.DrawLine(pen, 0, 0, Width, 0);
+        args.Graphics.DrawLine(pen, 0, 0, Width, 0);
     }
 
-    void DrawEntry(object? sender, DrawItemEventArgs eventArgs)
+    void DrawEntry(object? sender, DrawItemEventArgs args)
     {
-        eventArgs.DrawBackground();
-        if (eventArgs.Index < 0 || list.Items[eventArgs.Index] is not ActionLog.Entry entry)
+        args.DrawBackground();
+        if (args.Index < 0 || list.Items[args.Index] is not ActionLog.Entry entry)
         {
             return;
         }
 
-        var selected = (eventArgs.State & DrawItemState.Selected) != 0;
-        var bounds = eventArgs.Bounds;
-        var font = eventArgs.Font ?? Font;
+        var selected = (args.State & DrawItemState.Selected) != 0;
+        var bounds = args.Bounds;
+        var font = args.Font ?? Font;
 
         // Green tick, red cross, or the progress ring while it runs.
         var mark = MarkBounds(bounds, font);
         if (entry.State == ActionLog.State.Running)
         {
-            DrawRing(eventArgs.Graphics, mark, selected);
+            DrawRing(args.Graphics, mark, selected);
         }
         else
         {
@@ -285,7 +285,7 @@ sealed class ActionsPanel : Panel
             }
 
             TextRenderer.DrawText(
-                eventArgs.Graphics,
+                args.Graphics,
                 glyph,
                 font,
                 mark,
@@ -302,7 +302,7 @@ sealed class ActionsPanel : Panel
 
         var titleColour = selected ? ExplorerStyle.HighlightText : SystemColors.ControlText;
         TextRenderer.DrawText(
-            eventArgs.Graphics,
+            args.Graphics,
             $"{entry.Title} – {entry.FolderName}",
             font,
             Rectangle.FromLTRB(left, bounds.Top + padding, right, bounds.Top + padding + lineHeight),
@@ -320,7 +320,7 @@ sealed class ActionsPanel : Panel
         }
 
         TextRenderer.DrawText(
-            eventArgs.Graphics,
+            args.Graphics,
             entry.Summary,
             font,
             Rectangle.FromLTRB(left, bounds.Top + padding + lineHeight, right, bounds.Bottom - padding),
@@ -328,14 +328,14 @@ sealed class ActionsPanel : Panel
             flags);
     }
 
-    void OnListMouseUp(object? sender, MouseEventArgs eventArgs)
+    void OnListMouseUp(object? sender, MouseEventArgs args)
     {
-        if (eventArgs.Button != MouseButtons.Right)
+        if (args.Button != MouseButtons.Right)
         {
             return;
         }
 
-        var index = list.IndexFromPoint(eventArgs.Location);
+        var index = list.IndexFromPoint(args.Location);
         if (index < 0 || list.Items[index] is not ActionLog.Entry entry)
         {
             return;
@@ -352,7 +352,7 @@ sealed class ActionsPanel : Panel
         menu.Items.Add("Remove", null, (_, _) => ActionLog.Remove(entry)).Enabled = entry.State != ActionLog.State.Running;
         menu.Items.Add("Clear finished", null, (_, _) => ActionLog.ClearFinished());
         menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-        menu.Show(list, eventArgs.Location);
+        menu.Show(list, args.Location);
     }
 
     // Modeless, so the rest of Lode stays usable while it is open. One window per entry:

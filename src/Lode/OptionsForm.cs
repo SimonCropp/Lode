@@ -402,9 +402,9 @@ class OptionsForm : Form
     readonly PageHost host;
 
     // Brought within the screen it opens on, once it knows which.
-    protected override void OnLoad(EventArgs eventArgs)
+    protected override void OnLoad(EventArgs args)
     {
-        base.OnLoad(eventArgs);
+        base.OnLoad(args);
         FitWithin(Screen.FromControl(this).WorkingArea);
     }
 
@@ -1168,9 +1168,9 @@ class OptionsForm : Form
 
     // Written straight away rather than when the last window closes, so a change made here
     // survives Lode ending some other way.
-    protected override void OnFormClosed(FormClosedEventArgs eventArgs)
+    protected override void OnFormClosed(FormClosedEventArgs args)
     {
-        base.OnFormClosed(eventArgs);
+        base.OnFormClosed(args);
         settings.Save();
     }
 
@@ -1263,9 +1263,9 @@ class OptionsForm : Form
             return new(preferred.Width + SystemInformation.VerticalScrollBarWidth, height);
         }
 
-        protected override void OnHandleCreated(EventArgs eventArgs)
+        protected override void OnHandleCreated(EventArgs args)
         {
-            base.OnHandleCreated(eventArgs);
+            base.OnHandleCreated(args);
             SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
         }
     }

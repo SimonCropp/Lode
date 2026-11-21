@@ -259,9 +259,9 @@ sealed class PageList : Control
         Invalidate();
     }
 
-    protected override void OnLostFocus(EventArgs eventArgs)
+    protected override void OnLostFocus(EventArgs args)
     {
-        base.OnLostFocus(eventArgs);
+        base.OnLostFocus(args);
         Invalidate();
     }
 

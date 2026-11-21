@@ -99,21 +99,21 @@ sealed class CommandPalette : Form
         palette.Show(owner);
     }
 
-    protected override void OnLoad(EventArgs eventArgs)
+    protected override void OnLoad(EventArgs args)
     {
-        base.OnLoad(eventArgs);
+        base.OnLoad(args);
         list.ItemHeight = Math.Max(list.Font.Height + LogicalToDeviceUnits(8), list.ItemHeight);
     }
 
-    protected override void OnShown(EventArgs eventArgs)
+    protected override void OnShown(EventArgs args)
     {
-        base.OnShown(eventArgs);
+        base.OnShown(args);
         searchBox.Focus();
     }
 
-    protected override void OnDeactivate(EventArgs eventArgs)
+    protected override void OnDeactivate(EventArgs args)
     {
-        base.OnDeactivate(eventArgs);
+        base.OnDeactivate(args);
         CloseOnce();
     }
 
@@ -194,7 +194,7 @@ sealed class CommandPalette : Form
         }
     }
 
-    void DrawCommand(object? sender, DrawItemEventArgs eventArgs)
+    void DrawCommand(object? sender, DrawItemEventArgs args)
     {
         if (eventArgs.Index < 0 ||
             eventArgs.Index >= shown.Count)

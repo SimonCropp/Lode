@@ -249,7 +249,7 @@ public static partial class ShellWindows
         view.Disposed += OnViewDisposed;
     }
 
-    static void OnViewDisposed(object? sender, EventArgs eventArgs) =>
+    static void OnViewDisposed(object? sender, EventArgs args) =>
         Revoke((FolderView)sender!);
 
     static void Revoke(FolderView view)

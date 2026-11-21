@@ -1114,11 +1114,11 @@ sealed class FolderView : UserControl
 
     // Typing the start of a name moves to the next item with it, as it does in a list that
     // holds its own rows, which this one can't look through for itself.
-    void OnSearchForVirtualItem(object? sender, SearchForVirtualItemEventArgs eventArgs)
+    void OnSearchForVirtualItem(object? sender, SearchForVirtualItemEventArgs args)
     {
-        if (eventArgs.IsTextSearch)
+        if (args.IsTextSearch)
         {
-            eventArgs.Index = FindRow(eventArgs.Text ?? "", eventArgs.StartIndex);
+            args.Index = FindRow(args.Text ?? "", args.StartIndex);
         }
     }
 
@@ -2508,9 +2508,9 @@ sealed class FolderView : UserControl
     }
 
     // On a monitor at another scale, the same widths, at that scale.
-    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    protected override void OnDpiChangedAfterParent(EventArgs args)
     {
-        base.OnDpiChangedAfterParent(eventArgs);
+        base.OnDpiChangedAfterParent(args);
         RefreshColumnWidths();
     }
 
@@ -3168,8 +3168,8 @@ sealed class FolderView : UserControl
         NewTabRequested?.Invoke(extracted);
     }
 
-    void OnColumnClick(object? sender, ColumnClickEventArgs eventArgs) =>
-        SortBy(shownColumns[eventArgs.Column]);
+    void OnColumnClick(object? sender, ColumnClickEventArgs args) =>
+        SortBy(shownColumns[args.Column]);
 
     /// <summary>
     /// Sorts by a column, as clicking its header does: ascending first, then toggling. The
@@ -3196,15 +3196,15 @@ sealed class FolderView : UserControl
         Populate(true);
     }
 
-    void OnListKeyDown(object? sender, KeyEventArgs eventArgs)
+    void OnListKeyDown(object? sender, KeyEventArgs args)
     {
-        if (!HandleKey(eventArgs.KeyData))
+        if (!HandleKey(args.KeyData))
         {
             return;
         }
 
-        eventArgs.Handled = true;
-        eventArgs.SuppressKeyPress = true;
+        args.Handled = true;
+        args.SuppressKeyPress = true;
     }
 
     /// <summary>
@@ -3534,17 +3534,17 @@ sealed class FolderView : UserControl
         }
     }
 
-    void OnBeforeLabelEdit(object? sender, LabelEditEventArgs eventArgs)
+    void OnBeforeLabelEdit(object? sender, LabelEditEventArgs args)
     {
-        if (eventArgs.Item >= displayed.Count ||
-            displayed[eventArgs.Item].IsPlace ||
-            displayed[eventArgs.Item].InArchive)
+        if (args.Item >= displayed.Count ||
+            displayed[args.Item].IsPlace ||
+            displayed[args.Item].InArchive)
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
             return;
         }
 
-        var entry = displayed[eventArgs.Item];
+        var entry = displayed[args.Item];
 
         editing = true;
         if (!entry.IsDirectory)
@@ -3588,7 +3588,7 @@ sealed class FolderView : UserControl
         return entry.Name[..^extension.Length];
     }
 
-    internal void OnAfterLabelEdit(object? sender, LabelEditEventArgs eventArgs)
+    internal void OnAfterLabelEdit(object? sender, LabelEditEventArgs args)
     {
         editing = false;
         if (foundPending)
@@ -3597,20 +3597,20 @@ sealed class FolderView : UserControl
             BeginInvoke(ShowFound);
         }
 
-        var index = eventArgs.Item;
+        var index = args.Item;
 
         // The folder was read again under the edit, and the row is no longer there.
         if (index >= displayed.Count)
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
             return;
         }
 
         var entry = displayed[index];
-        var newName = eventArgs.Label?.Trim();
+        var newName = args.Label?.Trim();
         if (string.IsNullOrEmpty(newName) || newName == DisplayName(entry))
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
             return;
         }
 
@@ -3622,13 +3622,13 @@ sealed class FolderView : UserControl
 
         if (newName == entry.Name)
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
             return;
         }
 
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
             MessageBox.Show(
                 this,
                 "A file name can't contain any of these characters:  \\ / : * ? \" < > |",
@@ -3640,7 +3640,7 @@ sealed class FolderView : UserControl
 
         if (!FileOperations.Rename(Owner, entry.FullPath, newName))
         {
-            eventArgs.CancelEdit = true;
+            args.CancelEdit = true;
             return;
         }
 
@@ -4144,7 +4144,7 @@ sealed class FolderView : UserControl
         return false;
     }
 
-    void OnItemDrag(object? sender, ItemDragEventArgs eventArgs)
+    void OnItemDrag(object? sender, ItemDragEventArgs args)
     {
         var selection = SelectedEntries();
         if (selection.Any(_ => _.InArchive))
@@ -4189,9 +4189,9 @@ sealed class FolderView : UserControl
         list.DoDragDrop(data, DragDropEffects.Copy);
     }
 
-    string? DropDestination(DragEventArgs eventArgs)
+    string? DropDestination(DragEventArgs args)
     {
-        var point = list.PointToClient(new(eventArgs.X, eventArgs.Y));
+        var point = list.PointToClient(new(args.X, args.Y));
         if (list.GetItemAt(point.X, point.Y)?.Tag is FileEntry { IsDirectory: true, InArchive: false } target)
         {
             return target.FullPath;
@@ -4213,14 +4213,14 @@ sealed class FolderView : UserControl
     /// What a drag over the list would do, with the folder it would go into highlighted, as
     /// Explorer highlights it. Not the folder open, which is the list as a whole.
     /// </summary>
-    internal void OnDragOver(object? sender, DragEventArgs eventArgs)
+    internal void OnDragOver(object? sender, DragEventArgs args)
     {
-        rightDrag = FileOperations.RightButton(eventArgs);
-        eventArgs.Effect = FileOperations.GetDropEffect(eventArgs, DropDestination(eventArgs));
+        rightDrag = FileOperations.RightButton(args);
+        args.Effect = FileOperations.GetDropEffect(args, DropDestination(args));
         var target = -1;
-        if (eventArgs.Effect != DragDropEffects.None)
+        if (args.Effect != DragDropEffects.None)
         {
-            var point = list.PointToClient(new(eventArgs.X, eventArgs.Y));
+            var point = list.PointToClient(new(args.X, args.Y));
             if (list.GetItemAt(point.X, point.Y) is { Tag: FileEntry { IsDirectory: true, InArchive: false } } item)
             {
                 target = item.Index;
@@ -4230,10 +4230,10 @@ sealed class FolderView : UserControl
         list.DropTarget = target;
     }
 
-    void OnDragDrop(object? sender, DragEventArgs eventArgs)
+    void OnDragDrop(object? sender, DragEventArgs args)
     {
         list.DropTarget = -1;
-        FileOperations.Drop(Owner, eventArgs, DropDestination(eventArgs), rightDrag);
+        FileOperations.Drop(Owner, args, DropDestination(args), rightDrag);
     }
 
     void Watch()

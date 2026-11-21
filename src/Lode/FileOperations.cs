@@ -684,8 +684,8 @@ static class FileOperations
     /// Whether a drag is with the right button, which on dropping asks what to do. The button is
     /// up by the drop, so a drop target notes it as the drag goes over.
     /// </summary>
-    public static bool RightButton(DragEventArgs eventArgs) =>
-        (eventArgs.KeyState & rightButtonKeyState) != 0;
+    public static bool RightButton(DragEventArgs args) =>
+        (args.KeyState & rightButtonKeyState) != 0;
 
     /// <summary>
     /// What can be done with what is dragged to <paramref name="destination"/>, of what the

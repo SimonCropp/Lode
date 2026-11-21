@@ -27,20 +27,20 @@ sealed class PaneSplitContainer : SplitContainer
         BackColor = ExplorerStyle.Window;
     }
 
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        base.OnPaint(eventArgs);
+        base.OnPaint(args);
         var bounds = SplitterRectangle;
         using var pen = new Pen(ExplorerStyle.PaneDivider);
         if (Orientation == Orientation.Vertical)
         {
             var x = bounds.Left + bounds.Width / 2;
-            eventArgs.Graphics.DrawLine(pen, x, bounds.Top, x, bounds.Bottom - 1);
+            args.Graphics.DrawLine(pen, x, bounds.Top, x, bounds.Bottom - 1);
             return;
         }
 
         var y = bounds.Top + bounds.Height / 2;
-        eventArgs.Graphics.DrawLine(pen, bounds.Left, y, bounds.Right - 1, y);
+        args.Graphics.DrawLine(pen, bounds.Left, y, bounds.Right - 1, y);
     }
 
     /// <summary>
@@ -83,26 +83,26 @@ sealed class PaneSplitContainer : SplitContainer
         base.WndProc(ref message);
     }
 
-    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    protected override void OnMouseDown(MouseEventArgs args)
     {
-        if (eventArgs.Button != MouseButtons.Left ||
+        if (args.Button != MouseButtons.Left ||
             IsSplitterFixed ||
-            !SplitterRectangle.Contains(eventArgs.Location))
+            !SplitterRectangle.Contains(args.Location))
         {
-            base.OnMouseDown(eventArgs);
+            base.OnMouseDown(args);
             return;
         }
 
         // Not base, which is what takes the focus and starts the hatched bar. WinForms has
         // already captured the mouse, so the moves keep coming wherever it goes.
-        grip = Along(eventArgs.Location) - SplitterDistance;
+        grip = Along(args.Location) - SplitterDistance;
     }
 
-    protected override void OnMouseMove(MouseEventArgs eventArgs)
+    protected override void OnMouseMove(MouseEventArgs args)
     {
         if (grip is not { } offset)
         {
-            base.OnMouseMove(eventArgs);
+            base.OnMouseMove(args);
             return;
         }
 
@@ -110,7 +110,7 @@ sealed class PaneSplitContainer : SplitContainer
         // pane stops shrinking.
         var length = Orientation == Orientation.Vertical ? Width : Height;
         var furthest = Math.Max(Panel1MinSize, length - SplitterWidth - Panel2MinSize);
-        var distance = Math.Clamp(Along(eventArgs.Location) - offset, Panel1MinSize, furthest);
+        var distance = Math.Clamp(Along(args.Location) - offset, Panel1MinSize, furthest);
         if (distance == SplitterDistance)
         {
             return;
@@ -126,17 +126,17 @@ sealed class PaneSplitContainer : SplitContainer
         RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, redrawUpdateNow | redrawAllChildren);
     }
 
-    protected override void OnMouseUp(MouseEventArgs eventArgs)
+    protected override void OnMouseUp(MouseEventArgs args)
     {
         grip = null;
-        base.OnMouseUp(eventArgs);
+        base.OnMouseUp(args);
     }
 
     // The mouse taken by another window part way through (Alt+Tab, say) ends the drag.
-    protected override void OnMouseCaptureChanged(EventArgs eventArgs)
+    protected override void OnMouseCaptureChanged(EventArgs args)
     {
         grip = null;
-        base.OnMouseCaptureChanged(eventArgs);
+        base.OnMouseCaptureChanged(args);
     }
 
     // A point's position along the direction the splitter moves.
