@@ -102,14 +102,14 @@ sealed class FolderWatcher : IDisposable
 
         if (changedAt is { } at)
         {
-            started.Created += (_, eventArgs) => at(eventArgs.FullPath);
-            started.Deleted += (_, eventArgs) => at(eventArgs.FullPath);
-            started.Changed += (_, eventArgs) => at(eventArgs.FullPath);
-            started.Renamed += (_, eventArgs) =>
+            started.Created += (_, args) => at(args.FullPath);
+            started.Deleted += (_, args) => at(args.FullPath);
+            started.Changed += (_, args) => at(args.FullPath);
+            started.Renamed += (_, args) =>
             {
-                renamed?.Invoke(eventArgs.OldFullPath, eventArgs.FullPath);
-                at(eventArgs.OldFullPath);
-                at(eventArgs.FullPath);
+                renamed?.Invoke(args.OldFullPath, args.FullPath);
+                at(args.OldFullPath);
+                at(args.FullPath);
             };
         }
         else
@@ -117,14 +117,14 @@ sealed class FolderWatcher : IDisposable
             started.Created += (_, _) => changed();
             started.Deleted += (_, _) => changed();
             started.Changed += (_, _) => changed();
-            started.Renamed += (_, eventArgs) =>
+            started.Renamed += (_, args) =>
             {
-                renamed?.Invoke(eventArgs.OldFullPath, eventArgs.FullPath);
+                renamed?.Invoke(args.OldFullPath, args.FullPath);
                 changed();
             };
         }
 
-        started.Error += (_, eventArgs) => Failed(started, eventArgs.GetException());
+        started.Error += (_, args) => Failed(started, args.GetException());
         started.EnableRaisingEvents = true;
         return started;
     }

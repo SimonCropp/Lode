@@ -1978,15 +1978,15 @@ class MainForm : Form
             Icon = TaskDialogIcon.Information,
             Buttons = { TaskDialogButton.OK }
         };
-        page.LinkClicked += (_, eventArgs) =>
+        page.LinkClicked += (_, args) =>
         {
-            if (eventArgs.LinkHref == raiseIssue)
+            if (args.LinkHref == raiseIssue)
             {
                 IssueLauncher.Launch();
                 return;
             }
 
-            IssueLauncher.OpenUrl(eventArgs.LinkHref);
+            IssueLauncher.OpenUrl(args.LinkHref);
         };
         TaskDialog.ShowDialog(this, page);
     }

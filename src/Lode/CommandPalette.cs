@@ -55,9 +55,9 @@ sealed class CommandPalette : Form
         // Its scrollbar drawn as the folder's and tree's are: a thin thumb, which widens and
         // shows its arrows under the mouse.
         list.HandleCreated += (_, _) => SetWindowTheme(list.Handle, ExplorerStyle.ControlTheme, null);
-        list.MouseClick += (_, eventArgs) =>
+        list.MouseClick += (_, args) =>
         {
-            var index = list.IndexFromPoint(eventArgs.Location);
+            var index = list.IndexFromPoint(args.Location);
             if (index >= 0)
             {
                 Choose(shown[index]);

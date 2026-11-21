@@ -40,9 +40,9 @@ sealed class WindowContext : ApplicationContext
             ContextMenuStrip = menu,
             Visible = true
         };
-        tray.MouseClick += (_, eventArgs) =>
+        tray.MouseClick += (_, args) =>
         {
-            switch (TrayClick(eventArgs.Button, Control.ModifierKeys))
+            switch (TrayClick(args.Button, Control.ModifierKeys))
             {
                 case TrayAction.NewWindow:
                     OpenWindow([settings.StartLocation()]);

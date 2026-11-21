@@ -108,11 +108,11 @@ static class Program
 
         // An exception nothing caught offers an issue for it, in place of WinForms' own error
         // dialog. One on the UI thread leaves Lode running; one off it ends Lode once answered.
-        Application.ThreadException += (_, eventArgs) =>
-            IssueLauncher.LaunchForException(eventArgs.Exception.Message, eventArgs.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+        Application.ThreadException += (_, args) =>
+            IssueLauncher.LaunchForException(args.Exception.Message, args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            if (eventArgs.ExceptionObject is Exception exception)
+            if (args.ExceptionObject is Exception exception)
             {
                 IssueLauncher.LaunchForException(exception.Message, exception);
             }
@@ -121,10 +121,10 @@ static class Program
         // One a task threw that nothing awaited, such as a tab's load, which reaches neither of
         // the above and was otherwise lost. Told when the task is collected, on the finalizer
         // thread, so asked from another.
-        TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+        TaskScheduler.UnobservedTaskException += (_, args) =>
         {
-            eventArgs.SetObserved();
-            foreach (var exception in eventArgs.Exception.Flatten().InnerExceptions)
+            args.SetObserved();
+            foreach (var exception in args.Exception.Flatten().InnerExceptions)
             {
                 IssueLauncher.LaunchForExceptionLater(exception.Message, exception);
             }

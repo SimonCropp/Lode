@@ -80,27 +80,28 @@ sealed class ActionsPanel : Panel
 
         clear.LinkClicked += (_, _) => ActionLog.ClearFinished();
         list.DrawItem += DrawEntry;
-        list.MouseClick += (_, eventArgs) =>
+        list.MouseClick += (_, args) =>
         {
-            if (eventArgs.Button != MouseButtons.Left)
+            if (args.Button != MouseButtons.Left)
             {
                 return;
             }
 
-            var index = list.IndexFromPoint(eventArgs.Location);
+            var index = list.IndexFromPoint(args.Location);
             if (index >= 0 &&
                 list.Items[index] is ActionLog.Entry { State: not ActionLog.State.Running } entry)
             {
                 ShowDetails(entry);
             }
         };
-        list.KeyDown += (_, eventArgs) =>
+        list.KeyDown += (_, args) =>
         {
-            if (eventArgs.KeyCode == Keys.Enter)
+            if (args.KeyCode == Keys.Enter)
             {
                 ShowDetails(list.SelectedItem as ActionLog.Entry);
             }
-            else if (eventArgs.KeyCode == Keys.Delete && list.SelectedItem is ActionLog.Entry entry)
+            else if (args.KeyCode == Keys.Delete &&
+                     list.SelectedItem is ActionLog.Entry entry)
             {
                 ActionLog.Remove(entry);
             }
@@ -426,9 +427,9 @@ sealed class ActionsPanel : Panel
             };
             Controls.Add(text);
             KeyPreview = true;
-            KeyDown += (_, eventArgs) =>
+            KeyDown += (_, args) =>
             {
-                if (eventArgs.KeyCode == Keys.Escape)
+                if (args.KeyCode == Keys.Escape)
                 {
                     Close();
                 }

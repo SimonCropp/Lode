@@ -344,7 +344,7 @@ sealed class FolderView : UserControl
         // The list holds no rows. It is told how many there are, and asks for each as it needs
         // it, so a folder of any size costs it only the rows on screen.
         list.VirtualMode = true;
-        list.RetrieveVirtualItem += (_, eventArgs) => eventArgs.Item = Row(eventArgs.ItemIndex);
+        list.RetrieveVirtualItem += (_, args) => args.Item = Row(args.ItemIndex);
         list.IsCut = index =>
             index < displayed.Count &&
             CutItems.Contains(displayed[index].FullPath);
