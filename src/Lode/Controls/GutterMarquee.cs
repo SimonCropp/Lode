@@ -31,23 +31,23 @@ sealed class GutterMarquee : IDisposable
     {
         this.host = host;
         this.list = list;
-        host.MouseDown += (_, eventArgs) =>
+        host.MouseDown += (_, args) =>
         {
-            if (eventArgs.Button == MouseButtons.Left)
+            if (args.Button == MouseButtons.Left)
             {
-                Begin(ToList(eventArgs.Location), Control.ModifierKeys.HasFlag(Keys.Control));
+                Begin(ToList(args.Location), Control.ModifierKeys.HasFlag(Keys.Control));
             }
         };
-        host.MouseMove += (_, eventArgs) =>
+        host.MouseMove += (_, args) =>
         {
             if (tracking)
             {
-                Update(ToList(eventArgs.Location));
+                Update(ToList(args.Location));
             }
         };
-        host.MouseUp += (_, eventArgs) =>
+        host.MouseUp += (_, args) =>
         {
-            if (eventArgs.Button == MouseButtons.Left)
+            if (args.Button == MouseButtons.Left)
             {
                 End();
             }

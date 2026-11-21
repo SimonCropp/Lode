@@ -94,17 +94,17 @@ sealed class ClosableTabControl : TabControl
 
     // Fitted before the tabs are first painted, which may be well after: a window off screen
     // isn't painted at all.
-    protected override void OnHandleCreated(EventArgs eventArgs)
+    protected override void OnHandleCreated(EventArgs args)
     {
-        base.OnHandleCreated(eventArgs);
+        base.OnHandleCreated(args);
         QueueFit();
     }
 
-    protected override void OnControlRemoved(ControlEventArgs eventArgs)
+    protected override void OnControlRemoved(ControlEventArgs args)
     {
-        base.OnControlRemoved(eventArgs);
+        base.OnControlRemoved(args);
         if (!moving &&
-            eventArgs.Control is TabPage page)
+            args.Control is TabPage page)
         {
             icons.Remove(page);
         }
@@ -197,9 +197,9 @@ sealed class ClosableTabControl : TabControl
             });
     }
 
-    protected override void OnDpiChangedAfterParent(EventArgs eventArgs)
+    protected override void OnDpiChangedAfterParent(EventArgs args)
     {
-        base.OnDpiChangedAfterParent(eventArgs);
+        base.OnDpiChangedAfterParent(args);
         ApplyPadding();
     }
 
@@ -339,10 +339,10 @@ sealed class ClosableTabControl : TabControl
         }
     }
 
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
         QueueFit();
-        PaintTabs(eventArgs.Graphics);
+        PaintTabs(args.Graphics);
     }
 
     /// <summary>
@@ -530,36 +530,36 @@ sealed class ClosableTabControl : TabControl
         base.WndProc(ref message);
     }
 
-    protected override void OnSelectedIndexChanged(EventArgs eventArgs)
+    protected override void OnSelectedIndexChanged(EventArgs args)
     {
-        base.OnSelectedIndexChanged(eventArgs);
+        base.OnSelectedIndexChanged(args);
         Invalidate();
     }
 
     // The strip the tabs sit in, above the pages.
     Rectangle TabRow => new(0, 0, Width, DisplayRectangle.Top);
 
-    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    protected override void OnMouseDown(MouseEventArgs args)
     {
-        base.OnMouseDown(eventArgs);
-        if (eventArgs.Button == MouseButtons.Left)
+        base.OnMouseDown(args);
+        if (args.Button == MouseButtons.Left)
         {
             pressedTab = null;
-            var index = TabAt(eventArgs.Location);
+            var index = TabAt(args.Location);
             if (index >= 0)
             {
                 pressedTab = TabPages[index];
             }
 
             pressedIndex = index;
-            pressedAt = eventArgs.Location;
+            pressedAt = args.Location;
         }
     }
 
-    protected override void OnMouseUp(MouseEventArgs eventArgs)
+    protected override void OnMouseUp(MouseEventArgs args)
     {
-        base.OnMouseUp(eventArgs);
-        if (eventArgs.Button != MouseButtons.Left)
+        base.OnMouseUp(args);
+        if (args.Button != MouseButtons.Left)
         {
             return;
         }
@@ -570,15 +570,15 @@ sealed class ClosableTabControl : TabControl
         if (wasDragging &&
             page != null &&
             TabPages.Contains(page) &&
-            !TabRow.Contains(eventArgs.Location))
+            !TabRow.Contains(args.Location))
         {
-            TabDraggedOff?.Invoke(page, PointToScreen(eventArgs.Location));
+            TabDraggedOff?.Invoke(page, PointToScreen(args.Location));
         }
     }
 
-    protected override void OnMouseCaptureChanged(EventArgs eventArgs)
+    protected override void OnMouseCaptureChanged(EventArgs args)
     {
-        base.OnMouseCaptureChanged(eventArgs);
+        base.OnMouseCaptureChanged(args);
 
         // Another window took the mouse (Alt+Tab, say): give up on the drag.
         if (dragging && !Capture)
@@ -587,13 +587,13 @@ sealed class ClosableTabControl : TabControl
         }
     }
 
-    protected override void OnKeyDown(KeyEventArgs eventArgs)
+    protected override void OnKeyDown(KeyEventArgs args)
     {
-        base.OnKeyDown(eventArgs);
+        base.OnKeyDown(args);
         if (dragging &&
-            eventArgs.KeyCode == Keys.Escape)
+            args.KeyCode == Keys.Escape)
         {
-            eventArgs.Handled = true;
+            args.Handled = true;
             CancelDrag();
         }
     }
@@ -623,9 +623,9 @@ sealed class ClosableTabControl : TabControl
         }
     }
 
-    protected override void OnMouseMove(MouseEventArgs eventArgs)
+    protected override void OnMouseMove(MouseEventArgs args)
     {
-        base.OnMouseMove(eventArgs);
+        base.OnMouseMove(args);
         // A press lasts until its release (see OnMouseUp), or until the pointer leaves before a
         // drag starts, so the button needs no checking here.
         if (pressedTab != null)
@@ -638,7 +638,7 @@ sealed class ClosableTabControl : TabControl
                     pressedAt.Y - threshold.Height / 2,
                     threshold.Width,
                     threshold.Height);
-                if (still.Contains(eventArgs.Location))
+                if (still.Contains(args.Location))
                 {
                     return;
                 }
@@ -649,10 +649,10 @@ sealed class ClosableTabControl : TabControl
                 SetHovered(-1, -1);
             }
 
-            if (!TabRow.Contains(eventArgs.Location))
+            if (!TabRow.Contains(args.Location))
             {
                 Cursor = Cursors.SizeAll;
-                TabDraggingOff?.Invoke(PointToScreen(eventArgs.Location));
+                TabDraggingOff?.Invoke(PointToScreen(args.Location));
                 return;
             }
 
@@ -660,19 +660,19 @@ sealed class ClosableTabControl : TabControl
             // are all as wide, so it is then under the pointer, and stays put until it moves on.
             Cursor = Cursors.Default;
             TabDraggingOff?.Invoke(null);
-            MoveTab(pressedTab, TabAlong(eventArgs.X));
+            MoveTab(pressedTab, TabAlong(args.X));
             return;
         }
 
-        var tab = TabAt(eventArgs.Location);
+        var tab = TabAt(args.Location);
         var overCross = tab >= 0 &&
-                        CrossBounds(tab).Contains(eventArgs.Location);
+                        CrossBounds(tab).Contains(args.Location);
         SetHovered(tab, overCross ? tab : -1);
     }
 
-    protected override void OnMouseLeave(EventArgs eventArgs)
+    protected override void OnMouseLeave(EventArgs args)
     {
-        base.OnMouseLeave(eventArgs);
+        base.OnMouseLeave(args);
         SetHovered(-1, -1);
         if (!dragging)
         {

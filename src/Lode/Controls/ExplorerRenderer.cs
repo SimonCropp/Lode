@@ -39,9 +39,9 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             RoundCorners(menu);
         }
 
-        menu.ItemAdded += (_, eventArgs) =>
+        menu.ItemAdded += (_, args) =>
         {
-            if (eventArgs.Item is { } item)
+            if (args.Item is { } item)
             {
                 StyleItem(menu, item);
             }
@@ -95,22 +95,22 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         return bounds;
     }
 
-    protected override void OnRenderItemImage(ToolStripItemImageRenderEventArgs eventArgs)
+    protected override void OnRenderItemImage(ToolStripItemImageRenderEventArgs args)
     {
-        if (eventArgs.Item.IsOnDropDown)
+        if (args.Item.IsOnDropDown)
         {
-            base.OnRenderItemImage(new(eventArgs.Graphics, eventArgs.Item, eventArgs.Image, Indented(eventArgs.Item, eventArgs.ImageRectangle)));
+            base.OnRenderItemImage(new(args.Graphics, args.Item, args.Image, Indented(args.Item, args.ImageRectangle)));
             return;
         }
 
-        if (!eventArgs.Item.Enabled &&
-            eventArgs.Image is { } image)
+        if (!args.Item.Enabled &&
+            args.Image is { } image)
         {
-            DrawDisabled(eventArgs.Graphics, image, eventArgs.ImageRectangle);
+            DrawDisabled(args.Graphics, image, args.ImageRectangle);
             return;
         }
 
-        base.OnRenderItemImage(eventArgs);
+        base.OnRenderItemImage(args);
     }
 
     // A command bar icon that does nothing now, in Explorer's light gray. Windows' grayed
@@ -141,30 +141,30 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         graphics.SmoothingMode = SmoothingMode.Default;
     }
 
-    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs eventArgs)
+    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs args)
     {
-        if (eventArgs.ToolStrip is ToolStripDropDown)
+        if (args.ToolStrip is ToolStripDropDown)
         {
             using var brush = new SolidBrush(ExplorerStyle.MenuBackground);
-            eventArgs.Graphics.FillRectangle(brush, eventArgs.AffectedBounds);
+            args.Graphics.FillRectangle(brush, args.AffectedBounds);
             return;
         }
 
         using var window = new SolidBrush(ExplorerStyle.Window);
-        eventArgs.Graphics.FillRectangle(window, eventArgs.AffectedBounds);
+        args.Graphics.FillRectangle(window, args.AffectedBounds);
     }
 
     // In place of the raised edge Windows draws round a toolbar, and the frame round a menu,
     // whose border Windows 11 draws round its rounded corners. With high contrast on, the
     // frame, which shows where the menu ends.
-    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs eventArgs)
+    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs args)
     {
-        var strip = eventArgs.ToolStrip;
+        var strip = args.ToolStrip;
         if (strip is ToolStripDropDown)
         {
             if (SystemInformation.HighContrast)
             {
-                base.OnRenderToolStripBorder(eventArgs);
+                base.OnRenderToolStripBorder(args);
             }
 
             return;
@@ -175,21 +175,21 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         // Along the top of the status bar, between it and the panes, which are as white as it is.
         if (strip is StatusStrip)
         {
-            eventArgs.Graphics.DrawLine(pen, 0, 0, strip.Width, 0);
+            args.Graphics.DrawLine(pen, 0, 0, strip.Width, 0);
             return;
         }
 
         // Above and below the command bar: between it and the address row, and it and the panes.
-        eventArgs.Graphics.DrawLine(pen, 0, 0, strip.Width, 0);
-        eventArgs.Graphics.DrawLine(pen, 0, strip.Height - 1, strip.Width, strip.Height - 1);
+        args.Graphics.DrawLine(pen, 0, 0, strip.Width, 0);
+        args.Graphics.DrawLine(pen, 0, strip.Height - 1, strip.Width, strip.Height - 1);
     }
 
-    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs eventArgs)
+    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs args)
     {
-        var item = eventArgs.Item;
+        var item = args.Item;
         if (!item.IsOnDropDown)
         {
-            base.OnRenderMenuItemBackground(eventArgs);
+            base.OnRenderMenuItemBackground(args);
             return;
         }
 
@@ -204,7 +204,7 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
 
         var inset = Scale(item, highlightInset);
         Shade(
-            eventArgs.Graphics,
+            args.Graphics,
             Rectangle.FromLTRB(inset, 0, item.Width - inset, item.Height),
             ExplorerStyle.Hover(ExplorerStyle.MenuBackground),
             Scale(item, cornerRadius));
@@ -213,15 +213,18 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
     // The menu's own colours whether or not the entry is under the mouse: Windows' toolbar
     // drawing would have the text of the entry under the mouse in the colour for text on a
     // selection, which the light shade is not.
-    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs eventArgs)
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs args)
     {
-        if (eventArgs.Item is { IsOnDropDown: true } item)
+        if (args.Item is { IsOnDropDown: true } item)
         {
             var color = SystemColors.MenuText;
             // A shortcut is drawn as a second piece of text, at the right, where it stays: gray,
             // as Explorer shows them.
-            var shortcut = item is ToolStripMenuItem { ShortcutKeyDisplayString.Length: > 0 } menuItem &&
-                           eventArgs.Text == menuItem.ShortcutKeyDisplayString;
+            var shortcut = item is ToolStripMenuItem
+                           {
+                               ShortcutKeyDisplayString.Length: > 0
+                           } menuItem &&
+                           args.Text == menuItem.ShortcutKeyDisplayString;
             if (!item.Enabled)
             {
                 color = SystemColors.GrayText;
@@ -233,47 +236,47 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
 
             if (!shortcut)
             {
-                eventArgs.TextRectangle = Indented(item, eventArgs.TextRectangle);
+                args.TextRectangle = Indented(item, args.TextRectangle);
             }
 
-            eventArgs.TextRectangle = CentredOnRow(item, eventArgs.TextRectangle);
-            eventArgs.TextColor = color;
+            args.TextRectangle = CentredOnRow(item, args.TextRectangle);
+            args.TextColor = color;
         }
-        else if (!eventArgs.Item.Enabled)
+        else if (!args.Item.Enabled)
         {
             // New's name while there is nothing to make, as light as Explorer has it. Drawn
             // here, as Windows' toolbar drawing has its own gray for disabled text.
-            TextRenderer.DrawText(eventArgs.Graphics, eventArgs.Text, eventArgs.TextFont, eventArgs.TextRectangle, ExplorerStyle.DisabledText, eventArgs.TextFormat);
+            TextRenderer.DrawText(args.Graphics, args.Text, args.TextFont, args.TextRectangle, ExplorerStyle.DisabledText, args.TextFormat);
             return;
         }
 
-        base.OnRenderItemText(eventArgs);
+        base.OnRenderItemText(args);
     }
 
-    protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs eventArgs)
+    protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs args)
     {
-        var item = eventArgs.Item;
+        var item = args.Item;
         if (!item.IsOnDropDown)
         {
             // Down the middle, as tall as the buttons beside it, in place of Windows' etched
             // line, which is much darker than Explorer's.
             using var barPen = new Pen(ExplorerStyle.BarSeparator);
             var x = item.Width / 2;
-            eventArgs.Graphics.DrawLine(barPen, x, 0, x, item.Height);
+            args.Graphics.DrawLine(barPen, x, 0, x, item.Height);
             return;
         }
 
         using var pen = new Pen(ExplorerStyle.MenuSeparator);
         var y = item.Height / 2;
-        eventArgs.Graphics.DrawLine(pen, 0, y, item.Width, y);
+        args.Graphics.DrawLine(pen, 0, y, item.Width, y);
     }
 
     // A submenu's chevron, as Explorer has, in place of a small triangle.
-    protected override void OnRenderArrow(ToolStripArrowRenderEventArgs eventArgs)
+    protected override void OnRenderArrow(ToolStripArrowRenderEventArgs args)
     {
-        if (eventArgs.Item is not { IsOnDropDown: true } item)
+        if (args.Item is not { IsOnDropDown: true } item)
         {
-            base.OnRenderArrow(eventArgs);
+            base.OnRenderArrow(args);
             return;
         }
 
@@ -283,25 +286,25 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             color = SystemColors.GrayText;
         }
 
-        DrawGlyph(eventArgs.Graphics, Icons.ChevronRight, eventArgs.ArrowRectangle, Scale(item, arrowSize), color);
+        DrawGlyph(args.Graphics, Icons.ChevronRight, args.ArrowRectangle, Scale(item, arrowSize), color);
     }
 
     // A tick in place of the icon, as Explorer has. An entry with an icon of its own keeps it,
     // shaded behind, as Windows marks a ticked entry with a picture.
-    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs eventArgs)
+    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs args)
     {
-        var item = eventArgs.Item;
+        var item = args.Item;
         if (!item.IsOnDropDown)
         {
-            base.OnRenderItemCheck(eventArgs);
+            base.OnRenderItemCheck(args);
             return;
         }
 
-        var bounds = Indented(item, eventArgs.ImageRectangle);
+        var bounds = Indented(item, args.ImageRectangle);
         if (item.Image != null)
         {
             var margin = Scale(item, 3);
-            Shade(eventArgs.Graphics, Rectangle.Inflate(bounds, margin, margin), ExplorerStyle.Hover(ExplorerStyle.MenuBackground), Scale(item, cornerRadius));
+            Shade(args.Graphics, Rectangle.Inflate(bounds, margin, margin), ExplorerStyle.Hover(ExplorerStyle.MenuBackground), Scale(item, cornerRadius));
             return;
         }
 
@@ -311,7 +314,7 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             color = SystemColors.GrayText;
         }
 
-        DrawGlyph(eventArgs.Graphics, Icons.CheckMark, bounds, Scale(item, checkSize), color);
+        DrawGlyph(args.Graphics, Icons.CheckMark, bounds, Scale(item, checkSize), color);
     }
 
     static void DrawGlyph(Graphics graphics, char glyph, Rectangle bounds, int size, Color color) =>
@@ -322,26 +325,26 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             size,
             size);
 
-    protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs eventArgs)
+    protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs args)
     {
-        if (eventArgs.Item.IsOnDropDown)
+        if (args.Item.IsOnDropDown)
         {
-            base.OnRenderButtonBackground(eventArgs);
+            base.OnRenderButtonBackground(args);
             return;
         }
 
-        ShadeButton(eventArgs.Graphics, eventArgs.Item);
+        ShadeButton(args.Graphics, args.Item);
     }
 
-    protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs eventArgs)
+    protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs args)
     {
-        if (eventArgs.Item.IsOnDropDown)
+        if (args.Item.IsOnDropDown)
         {
-            base.OnRenderDropDownButtonBackground(eventArgs);
+            base.OnRenderDropDownButtonBackground(args);
             return;
         }
 
-        ShadeButton(eventArgs.Graphics, eventArgs.Item);
+        ShadeButton(args.Graphics, args.Item);
     }
 
     // Nothing at rest; under the mouse a shade darker than the bar, and pressed, or open, a

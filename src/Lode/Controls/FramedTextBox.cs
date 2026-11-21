@@ -27,22 +27,22 @@ sealed class FramedTextBox : Control
         Height = TextFrame.Height(Font);
     }
 
-    protected override void OnFontChanged(EventArgs eventArgs)
+    protected override void OnFontChanged(EventArgs args)
     {
-        base.OnFontChanged(eventArgs);
+        base.OnFontChanged(args);
         Height = TextFrame.Height(Font);
         PlaceBox();
     }
 
-    protected override void OnResize(EventArgs eventArgs)
+    protected override void OnResize(EventArgs args)
     {
-        base.OnResize(eventArgs);
+        base.OnResize(args);
         PlaceBox();
     }
 
-    protected override void OnLayout(LayoutEventArgs eventArgs)
+    protected override void OnLayout(LayoutEventArgs args)
     {
-        base.OnLayout(eventArgs);
+        base.OnLayout(args);
         PlaceBox();
     }
 
@@ -108,19 +108,19 @@ sealed class FramedTextBox : Control
             Box.PreferredHeight);
     }
 
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        TextFrame.Draw(eventArgs.Graphics, this, Box.Focused);
+        TextFrame.Draw(args.Graphics, this, Box.Focused);
         if (glyph is { } icon)
         {
-            eventArgs.Graphics.DrawImage(Icons.Bitmap(icon, GlyphSize, ExplorerStyle.SecondaryText), GlyphBounds);
+            args.Graphics.DrawImage(Icons.Bitmap(icon, GlyphSize, ExplorerStyle.SecondaryText), GlyphBounds);
         }
     }
 
     // A click in the margin around the box still puts the caret in it.
-    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    protected override void OnMouseDown(MouseEventArgs args)
     {
-        base.OnMouseDown(eventArgs);
+        base.OnMouseDown(args);
         Box.Focus();
     }
 }

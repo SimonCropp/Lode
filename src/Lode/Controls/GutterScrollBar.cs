@@ -24,9 +24,9 @@ sealed class GutterScrollBar : HScrollBar
         list.HorizontalScrollBarCover = this;
     }
 
-    protected override void OnHandleCreated(EventArgs eventArgs)
+    protected override void OnHandleCreated(EventArgs args)
     {
-        base.OnHandleCreated(eventArgs);
+        base.OnHandleCreated(args);
 
         // Drawn as the list's own is: a thin thumb, which widens and shows its arrows under the
         // mouse.
@@ -62,11 +62,11 @@ sealed class GutterScrollBar : HScrollBar
         Visible = true;
     }
 
-    protected override void OnScroll(ScrollEventArgs eventArgs)
+    protected override void OnScroll(ScrollEventArgs args)
     {
         if (list.HorizontalScrollBar is { } scroll)
         {
-            if (eventArgs.Type is
+            if (args.Type is
                 ScrollEventType.SmallDecrement or
                 ScrollEventType.SmallIncrement or
                 ScrollEventType.LargeDecrement or
@@ -75,22 +75,22 @@ sealed class GutterScrollBar : HScrollBar
             {
                 // The codes are Windows' own, which the list answers as it does for its own
                 // scrollbar.
-                SendMessage(list.Handle, horizontalScrollMessage, (int)eventArgs.Type, IntPtr.Zero);
+                SendMessage(list.Handle, horizontalScrollMessage, (int)args.Type, IntPtr.Zero);
             }
             else
             {
                 // The thumb dragged, or Home or End: the list, in pixels, by as far as it moved.
-                SendMessage(list.Handle, listViewScroll, eventArgs.NewValue - scroll.Position, IntPtr.Zero);
+                SendMessage(list.Handle, listViewScroll, args.NewValue - scroll.Position, IntPtr.Zero);
             }
 
             // Where the list got to.
             if (list.HorizontalScrollBar is { } scrolled)
             {
-                eventArgs.NewValue = scrolled.Position;
+                args.NewValue = scrolled.Position;
             }
         }
 
-        base.OnScroll(eventArgs);
+        base.OnScroll(args);
     }
 
     protected override void Dispose(bool disposing)

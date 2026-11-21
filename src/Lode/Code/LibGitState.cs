@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using LibGit2Sharp;
 
 /// <summary>

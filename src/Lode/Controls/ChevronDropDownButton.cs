@@ -17,13 +17,13 @@ sealed class ChevronDropDownButton : ToolStripDropDownButton
     /// </summary>
     public int ChevronWidth => Scale(14);
 
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        base.OnPaint(eventArgs);
+        base.OnPaint(args);
         var size = Scale(8);
         var color = Enabled ? ForeColor : ExplorerStyle.DisabledText;
         var chevron = Icons.Bitmap(Icons.ChevronDown, size, color);
         var right = Width - Padding.Right + ChevronWidth - Scale(2);
-        eventArgs.Graphics.DrawImage(chevron, right - size, (Height - size) / 2, size, size);
+        args.Graphics.DrawImage(chevron, right - size, (Height - size) / 2, size, size);
     }
 }

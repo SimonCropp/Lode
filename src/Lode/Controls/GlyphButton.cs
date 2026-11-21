@@ -15,42 +15,42 @@ sealed class GlyphButton : Button
     public GlyphButton() =>
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
 
-    protected override void OnMouseEnter(EventArgs eventArgs)
+    protected override void OnMouseEnter(EventArgs args)
     {
-        base.OnMouseEnter(eventArgs);
+        base.OnMouseEnter(args);
         hovered = true;
         Invalidate();
     }
 
-    protected override void OnMouseLeave(EventArgs eventArgs)
+    protected override void OnMouseLeave(EventArgs args)
     {
-        base.OnMouseLeave(eventArgs);
+        base.OnMouseLeave(args);
         hovered = false;
         pressed = false;
         Invalidate();
     }
 
-    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    protected override void OnMouseDown(MouseEventArgs args)
     {
-        base.OnMouseDown(eventArgs);
-        if (eventArgs.Button == MouseButtons.Left)
+        base.OnMouseDown(args);
+        if (args.Button == MouseButtons.Left)
         {
             pressed = true;
             Invalidate();
         }
     }
 
-    protected override void OnMouseUp(MouseEventArgs eventArgs)
+    protected override void OnMouseUp(MouseEventArgs args)
     {
-        base.OnMouseUp(eventArgs);
+        base.OnMouseUp(args);
         pressed = false;
         Invalidate();
     }
 
     // Drawn here in full, not by Button, whose flat look has square corners.
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        var graphics = eventArgs.Graphics;
+        var graphics = args.Graphics;
         var background = Parent?.BackColor ?? SystemColors.Control;
         graphics.Clear(background);
         if (Enabled &&

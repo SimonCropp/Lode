@@ -187,16 +187,16 @@ sealed class Breadcrumb : Control
             Box.PreferredHeight);
     }
 
-    protected override void OnFontChanged(EventArgs eventArgs)
+    protected override void OnFontChanged(EventArgs args)
     {
-        base.OnFontChanged(eventArgs);
+        base.OnFontChanged(args);
         Height = TextFrame.Height(Font);
         Rebuild();
     }
 
-    protected override void OnResize(EventArgs eventArgs)
+    protected override void OnResize(EventArgs args)
     {
-        base.OnResize(eventArgs);
+        base.OnResize(args);
         PlaceBox();
         Arrange();
     }
@@ -281,9 +281,9 @@ sealed class Breadcrumb : Control
     int Total(List<int> widths, int first) =>
         widths.Skip(first).Sum() + ChevronWidth * (widths.Count - first - 1);
 
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        var graphics = eventArgs.Graphics;
+        var graphics = args.Graphics;
         TextFrame.Draw(graphics, this, Editing);
         if (Editing)
         {
@@ -383,10 +383,10 @@ sealed class Breadcrumb : Control
         return -1;
     }
 
-    protected override void OnMouseMove(MouseEventArgs eventArgs)
+    protected override void OnMouseMove(MouseEventArgs args)
     {
-        base.OnMouseMove(eventArgs);
-        var index = IndexAt(eventArgs.Location);
+        base.OnMouseMove(args);
+        var index = IndexAt(args.Location);
         if (index != hovered)
         {
             hovered = index;
@@ -396,35 +396,35 @@ sealed class Breadcrumb : Control
         }
     }
 
-    protected override void OnMouseLeave(EventArgs eventArgs)
+    protected override void OnMouseLeave(EventArgs args)
     {
-        base.OnMouseLeave(eventArgs);
+        base.OnMouseLeave(args);
         hovered = -1;
         pressed = -1;
         Invalidate();
     }
 
-    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    protected override void OnMouseDown(MouseEventArgs args)
     {
-        base.OnMouseDown(eventArgs);
-        if (eventArgs.Button != MouseButtons.Left)
+        base.OnMouseDown(args);
+        if (args.Button != MouseButtons.Left)
         {
             return;
         }
 
-        pressed = IndexAt(eventArgs.Location);
+        pressed = IndexAt(args.Location);
         Invalidate();
     }
 
-    protected override void OnMouseUp(MouseEventArgs eventArgs)
+    protected override void OnMouseUp(MouseEventArgs args)
     {
-        base.OnMouseUp(eventArgs);
-        if (eventArgs.Button != MouseButtons.Left)
+        base.OnMouseUp(args);
+        if (args.Button != MouseButtons.Left)
         {
             return;
         }
 
-        var index = IndexAt(eventArgs.Location);
+        var index = IndexAt(args.Location);
         var wasPressed = pressed;
         pressed = -1;
         Invalidate();

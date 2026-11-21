@@ -111,10 +111,10 @@ sealed class PageList : Control
         return new(width, pages.Count * RowHeight);
     }
 
-    protected override void OnPaint(PaintEventArgs eventArgs)
+    protected override void OnPaint(PaintEventArgs args)
     {
-        base.OnPaint(eventArgs);
-        var graphics = eventArgs.Graphics;
+        base.OnPaint(args);
+        var graphics = args.Graphics;
         for (var index = 0; index < pages.Count; index++)
         {
             DrawRow(graphics, index);
@@ -184,15 +184,15 @@ sealed class PageList : Control
         }
     }
 
-    protected override void OnMouseDown(MouseEventArgs eventArgs)
+    protected override void OnMouseDown(MouseEventArgs args)
     {
-        base.OnMouseDown(eventArgs);
-        if (eventArgs.Button != MouseButtons.Left)
+        base.OnMouseDown(args);
+        if (args.Button != MouseButtons.Left)
         {
             return;
         }
 
-        var index = RowAt(eventArgs.Location);
+        var index = RowAt(args.Location);
         if (index < 0)
         {
             return;
@@ -202,15 +202,15 @@ sealed class PageList : Control
         SelectedIndex = index;
     }
 
-    protected override void OnMouseMove(MouseEventArgs eventArgs)
+    protected override void OnMouseMove(MouseEventArgs args)
     {
-        base.OnMouseMove(eventArgs);
-        SetHovered(RowAt(eventArgs.Location));
+        base.OnMouseMove(args);
+        SetHovered(RowAt(args.Location));
     }
 
-    protected override void OnMouseLeave(EventArgs eventArgs)
+    protected override void OnMouseLeave(EventArgs args)
     {
-        base.OnMouseLeave(eventArgs);
+        base.OnMouseLeave(args);
         SetHovered(-1);
     }
 
@@ -229,10 +229,10 @@ sealed class PageList : Control
         keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End ||
         base.IsInputKey(keyData);
 
-    protected override void OnKeyDown(KeyEventArgs eventArgs)
+    protected override void OnKeyDown(KeyEventArgs args)
     {
-        base.OnKeyDown(eventArgs);
-        switch (eventArgs.KeyData)
+        base.OnKeyDown(args);
+        switch (args.KeyData)
         {
             case Keys.Up:
                 SelectedIndex = selected - 1;
@@ -250,12 +250,12 @@ sealed class PageList : Control
                 return;
         }
 
-        eventArgs.Handled = true;
+        args.Handled = true;
     }
 
-    protected override void OnGotFocus(EventArgs eventArgs)
+    protected override void OnGotFocus(EventArgs args)
     {
-        base.OnGotFocus(eventArgs);
+        base.OnGotFocus(args);
         Invalidate();
     }
 
