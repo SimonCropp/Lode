@@ -230,7 +230,7 @@ sealed class CommandPalette : Form
 
         return commands
             .Where(command => words.All(word => command.Name.Contains(word, StringComparison.CurrentCultureIgnoreCase)))
-            .OrderBy(command => !StartsAWord(command.Name, words[0]))
+            .OrderBy(_ => !StartsAWord(_.Name, words[0]))
             .ToList();
     }
 
