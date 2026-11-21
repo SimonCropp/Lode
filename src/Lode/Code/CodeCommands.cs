@@ -208,19 +208,31 @@ static class CodeCommands
 
     const string originHead = "refs/remotes/origin/";
 
-    // The branch origin's HEAD names, as the output of a result that succeeded: as clone
-    // recorded it, or, in a repository made by init then given an origin, which has none
-    // recorded, as origin says now. Fails, saying why, without an origin, or one with no HEAD.
-    static RepoResult DefaultBranch(string repo, Cancel cancel)
+    /// <summary>
+    /// The branch origin's HEAD names, main say, as clone recorded it, without asking origin.
+    /// Null without an origin, or in a repository made by init then given an origin, which has
+    /// none recorded.
+    /// </summary>
+    internal static string? RecordedDefaultBranch(string repo, Cancel cancel)
     {
         var recorded = Git(repo, cancel, network: false, "symbolic-ref", "--quiet", originHead + "HEAD");
         if (recorded.Succeeded &&
             recorded.Output.StartsWith(originHead, StringComparison.Ordinal))
         {
-            return recorded with
-            {
-                Output = recorded.Output[originHead.Length..]
-            };
+            return recorded.Output[originHead.Length..];
+        }
+
+        return null;
+    }
+
+    // The branch origin's HEAD names, as the output of a result that succeeded: as clone
+    // recorded it, or, in a repository made by init then given an origin, which has none
+    // recorded, as origin says now. Fails, saying why, without an origin, or one with no HEAD.
+    static RepoResult DefaultBranch(string repo, Cancel cancel)
+    {
+        if (RecordedDefaultBranch(repo, cancel) is { } recorded)
+        {
+            return new(repo, true, recorded);
         }
 
         var remote = Git(repo, cancel, network: true, "ls-remote", "--symref", "origin", "HEAD");

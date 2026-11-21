@@ -113,6 +113,111 @@ static class CodeMenu
                 return CodeCommands.GitOutcome(await CodeCommands.SwitchToDefaultBranch(repos, progress, cancel));
             });
 
+    /// <summary>
+    /// Switches the repository to <paramref name="target"/>, picked from the status bar's
+    /// branches. With anything uncommitted, as <paramref name="state"/> has it, asks first, as
+    /// GitHub Desktop does, whether to leave the changes on the branch, stashed till it is come
+    /// back to, or bring them along. Detached, there is no branch to leave them on, so they come.
+    /// </summary>
+    public static void SwitchBranch(Control owner, string repo, GitState? state, GitBranches.Branch target)
+    {
+        var current = state?.Branch;
+        var leave = false;
+        if (current != null &&
+            state is { Changes: > 0 })
+        {
+            if (AskLeaveChanges(owner, current, target.Name) is not { } answer)
+            {
+                return;
+            }
+
+            leave = answer;
+        }
+
+        _ = ActionLog.Run(
+            $"Git switch to {target.Name}",
+            [repo],
+            async (_, cancel) =>
+            {
+                var result = await Task.Run(() => GitBranches.Switch(repo, current, target, leave, cancel), cancel);
+                // Before the entry ends, which has the windows read the states again: the
+                // watch may not have heard of the switch yet, and the state would still be fresh.
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome([result]);
+            });
+    }
+
+    /// <summary>
+    /// Asks whether to leave the changes on the branch checked out or bring them to the one
+    /// switched to: true to leave them, null when cancelled. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, string, string, bool?> AskLeaveChanges = (owner, current, target) =>
+    {
+        var leave = new TaskDialogCommandLinkButton(
+            $"Leave my changes on {current}",
+            $"They are stashed, and put back when you switch to {current} again from the status bar.");
+        var bring = new TaskDialogCommandLinkButton(
+            $"Bring my changes to {target}",
+            "They come along. If git would have to overwrite any of them, nothing is switched.");
+        var page = new TaskDialogPage
+        {
+            Caption = "Switch branch",
+            Heading = $"There are uncommitted changes on {current}",
+            Text = "Where should they go?",
+            Buttons =
+            {
+                leave,
+                bring,
+                TaskDialogButton.Cancel
+            },
+            DefaultButton = leave,
+            AllowCancel = true
+        };
+        var answer = TaskDialog.ShowDialog(owner, page);
+        if (answer == leave)
+        {
+            return true;
+        }
+
+        if (answer == bring)
+        {
+            return false;
+        }
+
+        return null;
+    };
+
+    /// <summary>
+    /// Asks for the name of a new branch, starting from <paramref name="name"/>, then makes it at
+    /// the commit checked out and switches to it. What is uncommitted comes along.
+    /// </summary>
+    public static async void NewBranch(Control owner, string repo, string name)
+    {
+        using var form = new GitTextForm(
+            "New branch",
+            $"Make a branch in {Path.GetFileName(repo)} at the commit checked out, and switch to it. Uncommitted changes come along.",
+            "Name:",
+            name,
+            "Create branch",
+            [],
+            isTagName: true);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var branch = form.Value;
+        _ = ActionLog.Run(
+            $"Git new branch {branch}",
+            [repo],
+            async (_, cancel) =>
+            {
+                var result = await Task.Run(() => GitBranches.Create(repo, branch, cancel), cancel);
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome([result]);
+            });
+    }
+
     // Looking for the repositories reads two levels of folders, so that is off the UI thread, as
     // Pull's is, and Discard's. Then it asks for the commit message.
     static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)

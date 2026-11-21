@@ -180,6 +180,29 @@ public class MenuTests
         await Verify(palette);
     }
 
+    // The status bar's branches, as clicking the branch shows them.
+    [Test]
+    public async Task BranchPickerTest()
+    {
+        BranchPicker.Time = new Clock(new(2026, 11, 21, 12, 0, 0, TimeSpan.Zero));
+        try
+        {
+            using var picker = new BranchPicker
+            {
+                Location = new(-20000, -20000)
+            };
+            picker.Show();
+            await picker.Fill(Task.FromResult(BranchPickerTests.Listing));
+            Application.DoEvents();
+
+            await Verify(picker);
+        }
+        finally
+        {
+            BranchPicker.Time = TimeProvider.System;
+        }
+    }
+
     static async Task<FolderView> Open(string path, Settings settings)
     {
         var view = new FolderView(settings, noPlaces);

@@ -1,0 +1,38 @@
+﻿{
+  finding: [
+    Finding branches…
+  ],
+  all: [
+    DEFAULT BRANCH,
+        main  [15 hours ago],
+    RECENT BRANCHES,
+      ✓ asyncinterfaces-pin-netfx  [5 hours ago],
+        DiffEngine-21.2.0  [stashed changes · 2 days ago],
+        Update-to-TUnit-1.86.6  [3 days ago],
+    OTHER BRANCHES,
+        cleanup  [1 month ago],
+        feature/sign-in-with-the-new-provider  [stashed changes · 6 days ago],
+        origin/feature-on-origin  [3 days ago]
+  ],
+  filtered: [
+    RECENT BRANCHES,
+        Update-to-TUnit-1.86.6  [3 days ago],
+    OTHER BRANCHES,
+        cleanup  [1 month ago],
+        feature/sign-in-with-the-new-provider  [stashed changes · 6 days ago],
+        origin/feature-on-origin  [3 days ago]
+  ],
+  twoWords: [
+    RECENT BRANCHES,
+      ✓ asyncinterfaces-pin-netfx  [5 hours ago]
+  ],
+  noMatch: [
+    No branch matches. Enter makes a new one.
+  ],
+  none: [
+    No branches
+  ],
+  failed: [
+    Couldn't read the branches: fatal: not a git repository
+  ]
+}

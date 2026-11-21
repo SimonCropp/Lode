@@ -220,17 +220,24 @@ sealed class CommandPalette : Form
     /// The commands whose names hold every word of <paramref name="search"/>, ignoring case.
     /// Those with a word starting with the first search word come first; otherwise the order is kept.
     /// </summary>
-    internal static List<Command> Match(IReadOnlyList<Command> commands, string search)
+    internal static List<Command> Match(IReadOnlyList<Command> commands, string search) =>
+        Match(commands, _ => _.Name, search);
+
+    /// <summary>
+    /// The items whose <paramref name="name"/> holds every word of <paramref name="search"/>, as
+    /// commands are matched: the branch drop-up filters its branches so too.
+    /// </summary>
+    internal static List<T> Match<T>(IReadOnlyList<T> items, Func<T, string> name, string search)
     {
         var words = search.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (words.Length == 0)
         {
-            return commands.ToList();
+            return items.ToList();
         }
 
-        return commands
-            .Where(command => words.All(word => command.Name.Contains(word, StringComparison.CurrentCultureIgnoreCase)))
-            .OrderBy(_ => !StartsAWord(_.Name, words[0]))
+        return items
+            .Where(item => words.All(word => name(item).Contains(word, StringComparison.CurrentCultureIgnoreCase)))
+            .OrderBy(_ => !StartsAWord(name(_), words[0]))
             .ToList();
     }
 

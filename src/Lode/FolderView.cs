@@ -186,6 +186,42 @@ sealed class FolderView : UserControl
     }
 
     /// <summary>
+    /// The repository the folder is in, whose branch the status bar shows and switches. Null
+    /// where it shows no state.
+    /// </summary>
+    internal string? GitRepo
+    {
+        get
+        {
+            if (containingRepo != null &&
+                gitStates.ContainsKey(containingRepo))
+            {
+                return containingRepo;
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// What <see cref="GitRepo"/> was last read to be: its branch, and whether anything is
+    /// uncommitted, which switching branch asks about.
+    /// </summary>
+    internal GitState? GitRepoState
+    {
+        get
+        {
+            if (containingRepo != null &&
+                gitStates.TryGetValue(containingRepo, out var state))
+            {
+                return state;
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The search of the subfolders under way. Completes once the list shows all it found.
     /// </summary>
     public Task Searching { get; private set; } = Task.CompletedTask;

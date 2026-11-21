@@ -37,11 +37,13 @@ class MainForm : Form
         TextAlign = ContentAlignment.MiddleLeft
     };
 
-    // Before the free space: the branch and changes of the repository the folder is in.
-    ToolStripStatusLabel gitLabel = new()
+    // Before the free space: the branch and changes of the repository the folder is in. Clicked,
+    // the branches open above it, to switch to, as GitHub Desktop's Current branch has them.
+    ChevronDropDownButton gitButton = new("", Icons.ChevronUp)
     {
         Name = "git",
-        Margin = new(0, 3, 12, 2),
+        Margin = new(0, 1, 12, 0),
+        ToolTipText = "Switch branch (Ctrl+B)",
         Visible = false
     };
 
@@ -829,13 +831,21 @@ class MainForm : Form
         {
             Renderer = new ExplorerRenderer(),
             SizingGrip = false,
+            ShowItemToolTips = true,
             Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
         };
         status.Items.Add(statusLabel);
         status.Items.Add(updateLabel);
-        status.Items.Add(gitLabel);
+        status.Items.Add(gitButton);
         status.Items.Add(siteLabel);
         status.Items.Add(spaceLabel);
+
+        // On the bar now, so the chevron's room is scaled as the bar is.
+        gitButton.Padding = gitButton.Padding with
+        {
+            Right = gitButton.Padding.Right + gitButton.ChevronWidth
+        };
+        gitButton.Click += (_, _) => ShowBranches();
         updateLabel.Click += (_, _) => ShowOptions("Updates");
         siteLabel.Click += (_, _) =>
         {
@@ -1516,8 +1526,8 @@ class MainForm : Form
         UpdateActions(selection);
         statusLabel.Text = view.StatusFor(selection);
         var git = view.GitText;
-        gitLabel.Text = git;
-        gitLabel.Visible = git.Length > 0;
+        gitButton.Text = git;
+        gitButton.Visible = git.Length > 0;
         var site = view.GitSite;
         siteLabel.Tag = site;
         siteLabel.Visible = site != null;
@@ -1534,6 +1544,33 @@ class MainForm : Form
     /// Opens the repository's page on its site, in the browser. Tests swap it.
     /// </summary>
     internal Action<string> OpenSite;
+
+    // When the branches last closed, as Environment.TickCount64. Clicking the branch while they
+    // are open closes them, as the click goes to the window first, and then the click itself
+    // would open them again.
+    long branchesClosedAt = long.MinValue / 2;
+
+    // Ctrl+B, or the branch clicked: the branches of the repository the folder is in, above the
+    // branch, found as they open. Outside a repository, nothing.
+    void ShowBranches()
+    {
+        if (!gitButton.Visible ||
+            gitButton.Owner == null ||
+            ActiveView is not { GitRepo: { } repo } view ||
+            Environment.TickCount64 - branchesClosedAt < 500)
+        {
+            return;
+        }
+
+        var state = view.GitRepoState;
+        var picker = BranchPicker.Show(
+            this,
+            gitButton.Owner.RectangleToScreen(gitButton.Bounds),
+            Task.Run(() => GitBranches.Read(repo, Cancel.None)),
+            branch => CodeMenu.SwitchBranch(this, repo, state, branch),
+            name => CodeMenu.NewBranch(this, repo, name));
+        picker.FormClosed += (_, _) => branchesClosedAt = Environment.TickCount64;
+    }
 
     // A git action that started or finished.
     void ReadGitState()
@@ -2434,6 +2471,9 @@ class MainForm : Form
                 return true;
             case Keys.Control | Keys.H:
                 ToggleHidden();
+                return true;
+            case Keys.Control | Keys.B:
+                ShowBranches();
                 return true;
         }
 
