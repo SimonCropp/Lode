@@ -1990,6 +1990,54 @@ public class FolderViewTests
         }
     }
 
+    // Too many changes at once for the watch to keep track of, twice over, every repository is
+    // stale at once, but the views are told once, when that has settled, not as each comes.
+    [Test]
+    public async Task TooManyChangesAreToldOfOnceSettled()
+    {
+        using var code = Repositories();
+
+        // Not a repository, so nothing git left of it is heard meanwhile.
+        var repo = code.At("Plain");
+        GitCache.Watch(code.Root);
+        var told = new List<string>();
+        void OnStale(IReadOnlyCollection<string> stale)
+        {
+            lock (told)
+            {
+                told.AddRange(stale);
+            }
+        }
+
+        int Told()
+        {
+            lock (told)
+            {
+                return told.Count(_ => _ == repo);
+            }
+        }
+
+        GitCache.Stale += OnStale;
+        try
+        {
+            GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
+            GitCache.AllChanged();
+            GitCache.AllChanged();
+            var toldAtOnce = Told();
+            GitCache.TryGet(repo, out _, out _, out var fresh);
+            await Pump.Until(() => Told() > 0);
+            await Pump.For(TimeSpan.FromSeconds(1));
+
+            await Assert.That(toldAtOnce).IsEqualTo(0);
+            await Assert.That(fresh).IsFalse();
+            await Assert.That(Told()).IsEqualTo(1);
+        }
+        finally
+        {
+            GitCache.Stale -= OnStale;
+        }
+    }
+
     // A repository whose files go on changing while reading it finds nothing new, a build's
     // output say, is held: it counts as fresh, so nothing reads it. A change of git's own in
     // it, a commit say, ends that, and its views are told once that has settled.

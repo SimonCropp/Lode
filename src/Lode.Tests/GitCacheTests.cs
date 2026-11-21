@@ -157,6 +157,28 @@ public class GitCacheTests
         await Assert.That(known.Fresh(now + 1_000)).IsFalse();
     }
 
+    // The watch losing track, of too many changes at once say, the views are told once that has
+    // settled, however long it was held for. Lost track of again and again, as it is while what
+    // makes the changes goes on, they are told three seconds after the first, not for each.
+    [Test]
+    public async Task AnythingMayHaveChangedIsToldOfOnceSettled()
+    {
+        var known = ReadOnce();
+        Churn(known, 30_000, _ => Clean());
+        var now = start + 30_100;
+
+        known.AnyChanged(now);
+        var dueAfterOne = known.Due - now;
+        for (var elapsed = 100; elapsed <= 5_000; elapsed += 100)
+        {
+            known.AnyChanged(now + elapsed);
+        }
+
+        await Assert.That(known.Fresh(now)).IsFalse();
+        await Assert.That(dueAfterOne).IsEqualTo(500);
+        await Assert.That(known.Due - now).IsEqualTo(3_000);
+    }
+
     [Test]
     public async Task WhatGitWritesForItselfIsNoise()
     {

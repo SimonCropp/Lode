@@ -119,6 +119,16 @@ static class GitCache
         }
 
         /// <summary>
+        /// Anything may have changed in it, the watch having lost track: its views are told as
+        /// they are of a change of git's own, once that has settled, and it is held no more.
+        /// </summary>
+        public void AnyChanged(long now)
+        {
+            hold = 0;
+            Changed(now, inGit: true);
+        }
+
+        /// <summary>
         /// What a read of it found, begun when <paramref name="changesBefore"/> changes had been
         /// seen.
         /// </summary>
@@ -466,17 +476,27 @@ static class GitCache
     }
 
     // Too many changes at once to keep track of, or a watch that failed or was let go of and is
-    // back: anything may have changed.
-    static void AllChanged()
+    // back: anything may have changed. Every repository is stale at once, and the views are told
+    // as they are of any change, once it has settled: too many changes come again and again
+    // while whatever is making them goes on, and each telling is a read of all that are shown.
+    internal static void AllChanged()
     {
-        List<string> stale;
         lock (gate)
         {
-            MarkAllStale();
-            stale = known.Keys.ToList();
-        }
+            var now = Environment.TickCount64;
+            var first = long.MaxValue;
+            foreach (var (repo, entry) in known)
+            {
+                entry.AnyChanged(now);
+                changing[repo] = entry;
+                first = Math.Min(first, entry.Due);
+            }
 
-        Raise(stale);
+            if (first < settlingAt)
+            {
+                SettleAt(first, now);
+            }
+        }
     }
 
     // Under the gate.
