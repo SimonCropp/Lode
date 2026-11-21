@@ -502,9 +502,8 @@ static class GitPurge
         summary = char.ToUpperInvariant(summary[0]) + summary[1..];
 
         var details = new StringBuilder();
-        foreach (var folder in found.OrderBy(
-                     _ => _.Error == null &&
-                          _.Entries.All(entry => !failed.ContainsKey(entry.Path))))
+        foreach (var folder in found.OrderBy(_ => _.Error == null &&
+                                                  _.Entries.All(entry => !failed.ContainsKey(entry.Path))))
         {
             if (details.Length > 0)
             {
@@ -548,7 +547,11 @@ static class GitPurge
             }
         }
 
-        return new(failed.Count == 0 && errors == 0, summary, details.ToString().TrimEnd());
+        return new(
+            failed.Count == 0 &&
+            errors == 0,
+            summary,
+            details.ToString().TrimEnd());
     }
 
     static string Items(int count) =>

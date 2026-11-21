@@ -159,7 +159,8 @@ static class TextEditors
             }
 
             var path = ExecutablePath(definition, values);
-            if (path != null && fileExists(path))
+            if (path != null &&
+                fileExists(path))
             {
                 return path;
             }
@@ -224,7 +225,8 @@ static class TextEditors
     /// </summary>
     public static string EditorPath(Settings settings)
     {
-        if (settings.TextEditor is { } chosen && File.Exists(chosen))
+        if (settings.TextEditor is { } chosen &&
+            File.Exists(chosen))
         {
             return chosen;
         }

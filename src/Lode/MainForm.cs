@@ -1111,7 +1111,8 @@ class MainForm : Form
     /// </summary>
     internal bool SelectTabShowing(string path)
     {
-        var file = !Locations.IsRemote(path) && File.Exists(path);
+        var file = !Locations.IsRemote(path) &&
+                   File.Exists(path);
         var folder = path;
         if (file)
         {
@@ -1565,12 +1566,14 @@ class MainForm : Form
             return;
         }
 
-        var windowShowing = !hidden && !minimized;
+        var windowShowing = !hidden &&
+                            !minimized;
         var active = ActiveView;
         var now = Time.GetUtcNow();
         foreach (var view in Views)
         {
-            var showing = windowShowing && view == active;
+            var showing = windowShowing &&
+                          view == active;
 
             // A tab is looked at while it shows, so one that stops showing was last looked at
             // now. One that starts is noted too, though while it shows it is never unused.

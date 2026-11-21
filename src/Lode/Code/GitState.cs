@@ -156,7 +156,7 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             if (entry.StartsWith("# branch.oid ", StringComparison.Ordinal))
             {
                 var oid = entry["# branch.oid ".Length..];
-                if (!oid.SequenceEqual("(initial)"))
+                if (oid is not "(initial)")
                 {
                     commit = oid.ToString();
                 }
@@ -167,7 +167,7 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             if (entry.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
                 var head = entry["# branch.head ".Length..];
-                if (!head.SequenceEqual("(detached)"))
+                if (head is not "(detached)")
                 {
                     branch = head.ToString();
                 }

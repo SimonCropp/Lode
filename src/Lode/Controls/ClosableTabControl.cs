@@ -519,7 +519,8 @@ sealed class ClosableTabControl : TabControl
             var packed = unchecked((int)message.LParam.ToInt64());
             var location = new Point((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));
             var index = TabAt(location);
-            if (index >= 0 && CrossBounds(index).Contains(location))
+            if (index >= 0 &&
+                CrossBounds(index).Contains(location))
             {
                 SetHovered(-1, -1);
                 CloseRequested?.Invoke(TabPages[index]);
@@ -581,7 +582,8 @@ sealed class ClosableTabControl : TabControl
         base.OnMouseCaptureChanged(args);
 
         // Another window took the mouse (Alt+Tab, say): give up on the drag.
-        if (dragging && !Capture)
+        if (dragging &&
+            !Capture)
         {
             CancelDrag();
         }

@@ -209,7 +209,8 @@ sealed record Places(
         try
         {
             var root = Path.GetPathRoot(path);
-            if (root is { Length: > 0 } && !Locations.IsNetwork(root))
+            if (root is { Length: > 0 } &&
+                !Locations.IsNetwork(root))
             {
                 var drive = new DriveInfo(root);
                 return $"{Formatting.Size(drive.AvailableFreeSpace)} free of {Formatting.Size(drive.TotalSize)}";

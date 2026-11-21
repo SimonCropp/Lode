@@ -192,7 +192,8 @@ sealed class FolderView : UserControl
 
     // Whether the filter searches the subfolders too, as it does everywhere but This PC, a
     // machine on the network and a zip.
-    bool IsSearch => filter.Length > 0 && !IsReadOnly;
+    bool IsSearch => filter.Length > 0 &&
+                     !IsReadOnly;
 
     // What to select once the list shows the folder, the first focused.
     IReadOnlyList<string>? pendingSelection;
@@ -812,7 +813,8 @@ sealed class FolderView : UserControl
 
         looking = null;
         if (found == Found.Folder ||
-            (found == Found.File && !revealFile && Zip.IsZip(normalized)))
+            (found == Found.File &&
+             !revealFile && Zip.IsZip(normalized)))
         {
             Open(normalized, position, select: select);
             return;
@@ -884,7 +886,8 @@ sealed class FolderView : UserControl
 
         // A zip, the view inside it.
         if (found == Found.Folder ||
-            (found == Found.File && !revealIfFile && Zip.IsZip(path)))
+            (found == Found.File &&
+             !revealIfFile && Zip.IsZip(path)))
         {
             ReadFolder(preserveState);
             return;
@@ -1910,7 +1913,8 @@ sealed class FolderView : UserControl
         {
             foreach (var (name, hidden) in Shares.List(path))
             {
-                if (hidden && !showHidden)
+                if (hidden &&
+                    !showHidden)
                 {
                     continue;
                 }
@@ -2173,7 +2177,8 @@ sealed class FolderView : UserControl
 
         var subfolders = new FileSystemEnumerable<string>(root, (ref entry) => entry.ToFullPath(), options)
         {
-            ShouldIncludePredicate = (ref entry) => entry.IsDirectory && CanSearch(ref entry, hiddenSystem)
+            ShouldIncludePredicate = (ref entry) => entry.IsDirectory &&
+                                                    CanSearch(ref entry, hiddenSystem)
         };
         foreach (var subfolder in subfolders)
         {
@@ -2363,7 +2368,8 @@ sealed class FolderView : UserControl
             ShowRows(visible);
             Restore(selected, focused);
 
-            if (topIndex > 0 && visible.Count > 0)
+            if (topIndex > 0 &&
+                visible.Count > 0)
             {
                 list.TopItem = list.Items[Math.Min(topIndex, visible.Count - 1)];
             }
@@ -2444,7 +2450,8 @@ sealed class FolderView : UserControl
     // Git is for a folder in a repository, its items' changes, a search's from all through it
     // included, and for one listing repositories, their states. A search of that one finds items
     // from inside the repositories, which have no state of their own.
-    bool HasGitColumn => containingRepo != null || (repos.Count > 0 && !IsSearch);
+    bool HasGitColumn => containingRepo != null ||
+                         (repos.Count > 0 && !IsSearch);
 
     // Brings the list's columns in line with the setting. True when they changed, in which case
     // every row needs building again, since a row holds a cell per column shown.
@@ -2638,7 +2645,8 @@ sealed class FolderView : UserControl
     {
         // A folder not read yet has no rows to rebuild, and may have an item waiting to be
         // selected once it is. Its columns are brought in line when it is read.
-        if (stale && entries.Count == 0)
+        if (stale &&
+            entries.Count == 0)
         {
             return;
         }

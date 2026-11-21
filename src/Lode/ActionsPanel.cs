@@ -142,7 +142,8 @@ sealed class ActionsPanel : Panel
                 list.Items.Add(entry);
             }
 
-            if (selected != null && list.Items.Contains(selected))
+            if (selected != null &&
+                list.Items.Contains(selected))
             {
                 list.SelectedItem = selected;
             }
@@ -165,7 +166,8 @@ sealed class ActionsPanel : Panel
     }
 
     void UpdateSpinner() =>
-        spinner.Enabled = Visible && ActionLog.Entries.Any(_ => _.State == ActionLog.State.Running);
+        spinner.Enabled = Visible &&
+                          ActionLog.Entries.Any(_ => _.State == ActionLog.State.Running);
 
     internal bool Spinning => spinner.Enabled;
 

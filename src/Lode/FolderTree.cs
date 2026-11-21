@@ -8,6 +8,7 @@ sealed class FolderTree : TreeView
     /// The tag of a section heading. Every other node's tag is the folder's path.
     /// </summary>
     public sealed record Section(string Name);
+
     const int unscaledRowHeight = 32;
     const int unscaledIndent = 8;
     const int unscaledIconSize = 16;
@@ -171,7 +172,7 @@ sealed class FolderTree : TreeView
     public bool Rebuild()
     {
         bool selectedMoved;
-        if (pinnedMove is { IsCompleted: true })
+        if (pinnedMove is {IsCompleted: true})
         {
             pinnedMove = null;
         }
@@ -215,7 +216,7 @@ sealed class FolderTree : TreeView
     /// </summary>
     public bool RebuildPlaces()
     {
-        if (pinnedMove is { IsCompleted: true })
+        if (pinnedMove is {IsCompleted: true})
         {
             pinnedMove = null;
         }
@@ -357,10 +358,10 @@ sealed class FolderTree : TreeView
     }
 
     TreeNode? PinnedSection =>
-        Nodes.Cast<TreeNode>().FirstOrDefault(_ => _.Tag is Section { Name: "Pinned" });
+        Nodes.Cast<TreeNode>().FirstOrDefault(_ => _.Tag is Section {Name: "Pinned"});
 
     static bool IsPinnedEntry(TreeNode? node) =>
-        node is { Tag: string, Parent.Tag: Section { Name: "Pinned" } };
+        node is {Tag: string, Parent.Tag: Section {Name: "Pinned"}};
 
     /// <summary>
     /// Moves a pinned folder to <paramref name="index"/> in the Pinned list, as dragging it there
@@ -419,7 +420,7 @@ sealed class FolderTree : TreeView
         {
             var node = SelectedNode!;
             var offset = args.KeyCode == Keys.Up ? -1 : 1;
-            MovePinned((string)node.Tag!, node.Index + offset);
+            MovePinned((string) node.Tag!, node.Index + offset);
             args.Handled = true;
             args.SuppressKeyPress = true;
             return;
@@ -446,7 +447,7 @@ sealed class FolderTree : TreeView
     /// </summary>
     internal QuickMenu.Command? KeyCommand(Keys keyData)
     {
-        if (SelectedNode is not { Tag: string path } node)
+        if (SelectedNode is not {Tag: string path} node)
         {
             return null;
         }
@@ -470,19 +471,20 @@ sealed class FolderTree : TreeView
         else
         {
             // The clipboard is only read for the key that pastes.
-            var canPaste = id == "paste" && FileOperations.ReadClipboard() != null;
+            var canPaste = id == "paste" &&
+                           FileOperations.ReadClipboard() != null;
             commands = NodeCommands(path, canPaste, node);
         }
 
         var command = commands.FirstOrDefault(_ => _?.Id == id);
-        if (command is not { Enabled: true })
+        if (command is not {Enabled: true})
         {
             return null;
         }
 
         if (permanent)
         {
-            return command with { Action = () => DeleteFolder(path, true) };
+            return command with {Action = () => DeleteFolder(path, true)};
         }
 
         // New's first entry is Folder.
@@ -519,7 +521,7 @@ sealed class FolderTree : TreeView
             IsPinnedEntry(node))
         {
             var data = new DataObject();
-            data.SetData(pinnedFormat, (string)node.Tag!);
+            data.SetData(pinnedFormat, (string) node.Tag!);
             DoDragDrop(data, DragDropEffects.Move);
             ClearInsertMark();
         }
@@ -536,7 +538,7 @@ sealed class FolderTree : TreeView
 
         var point = PointToClient(new(args.X, args.Y));
         var node = GetNodeAt(point);
-        if (node?.Tag is Section { Name: "Pinned" })
+        if (node?.Tag is Section {Name: "Pinned"})
         {
             return (folder, 0, node, false);
         }
@@ -633,7 +635,7 @@ sealed class FolderTree : TreeView
             return;
         }
 
-        var current = computerNode.Nodes.Cast<TreeNode>().Select(_ => (string)_.Tag!);
+        var current = computerNode.Nodes.Cast<TreeNode>().Select(_ => (string) _.Tag!);
         var actual = places.DrivePaths();
         if (!current.SequenceEqual(actual, StringComparer.OrdinalIgnoreCase))
         {
@@ -669,7 +671,7 @@ sealed class FolderTree : TreeView
     void UpdateDrives(IReadOnlyList<string> actual)
     {
         var wanted = actual.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var gone in computerNode.Nodes.Cast<TreeNode>().Where(_ => !wanted.Contains((string)_.Tag!)).ToList())
+        foreach (var gone in computerNode.Nodes.Cast<TreeNode>().Where(_ => !wanted.Contains((string) _.Tag!)).ToList())
         {
             UnwatchTree(gone);
             computerNode.Nodes.Remove(gone);
@@ -694,7 +696,7 @@ sealed class FolderTree : TreeView
     void DescribeDrive(TreeNode node)
     {
         var (displayName, _, icon) = ShellIcons.DescribeDrive(
-            (string)node.Tag!,
+            (string) node.Tag!,
             () =>
             {
                 if (!IsDisposed &&
@@ -721,7 +723,7 @@ sealed class FolderTree : TreeView
         // before they are read. The real children load on first expand.
         if (expandable)
         {
-            node.Nodes.Add(new TreeNode { Tag = placeholder });
+            node.Nodes.Add(new TreeNode {Tag = placeholder});
         }
 
         return node;
@@ -811,18 +813,17 @@ sealed class FolderTree : TreeView
     {
         var showHidden = settings.ShowHidden;
         var hiddenSystem = settings.HiddenSystemItems();
-        return Task.Run(
-            () =>
+        return Task.Run(() =>
+        {
+            foreach (var watcher in reviving ?? [])
             {
-                foreach (var watcher in reviving ?? [])
-                {
-                    watcher?.Revive();
-                }
+                watcher?.Revive();
+            }
 
-                return paths
-                    .Select(_ => ReadSubfolders(_, showHidden, hiddenSystem))
-                    .ToList();
-            });
+            return paths
+                .Select(_ => ReadSubfolders(_, showHidden, hiddenSystem))
+                .ToList();
+        });
     }
 
     // Still in the tree, rather than taken out of it while its folder was being read.
@@ -871,7 +872,7 @@ sealed class FolderTree : TreeView
 
         try
         {
-            var read = await ReadAsync([(string)node.Tag!]);
+            var read = await ReadAsync([(string) node.Tag!]);
             if (IsDisposed ||
                 !IsInTree(node))
             {
@@ -904,7 +905,7 @@ sealed class FolderTree : TreeView
     async Task SyncAsync(List<TreeNode> nodes)
     {
         var read = await ReadAsync(
-            nodes.Select(_ => (string)_.Tag!).ToList(),
+            nodes.Select(_ => (string) _.Tag!).ToList(),
             nodes.Select(_ => watched.GetValueOrDefault(_)).ToList());
         if (IsDisposed)
         {
@@ -940,14 +941,16 @@ sealed class FolderTree : TreeView
         {
             foreach (var child in node.Nodes.Cast<TreeNode>().ToList())
             {
-                if (child.Tag is string path && paths.Contains(path))
+                if (child.Tag is string path &&
+                    paths.Contains(path))
                 {
                     continue;
                 }
 
                 // Settle the selection on the folder rather than leave the control to pick some
                 // other node. Set from code, so it doesn't navigate.
-                if (SelectedNode != null && IsSelfOrDescendant(SelectedNode, child))
+                if (SelectedNode != null &&
+                    IsSelfOrDescendant(SelectedNode, child))
                 {
                     SelectedNode = node;
                 }
@@ -1004,7 +1007,7 @@ sealed class FolderTree : TreeView
         {
             if (node.Nodes.Count == 0)
             {
-                node.Nodes.Add(new TreeNode { Tag = placeholder });
+                node.Nodes.Add(new TreeNode {Tag = placeholder});
             }
 
             return;
@@ -1047,7 +1050,7 @@ sealed class FolderTree : TreeView
         // is there and opens it, which waits on a mapped drive that is offline, or a disk that has
         // to spin up, so is done off the UI thread, and the watcher given to the folder once made.
         watched[node] = null;
-        var path = (string)node.Tag!;
+        var path = (string) node.Tag!;
         Track(StartWatching(node, path));
     }
 
@@ -1095,14 +1098,19 @@ sealed class FolderTree : TreeView
     /// Whether the folder at <paramref name="path"/> is watched, for tests.
     /// </summary>
     internal bool IsWatched(string path) =>
-        watched.Keys.Any(_ => _.Tag is string tag && Locations.Same(tag, path));
+        watched.Keys
+            .Any(_ => _.Tag is string tag &&
+                      Locations.Same(tag, path));
 
     /// <summary>
     /// Whether the folder at <paramref name="path"/> has its watcher, made off the UI thread,
     /// for tests.
     /// </summary>
     internal bool HasWatcher(string path) =>
-        watched.Any(_ => _.Value != null && _.Key.Tag is string tag && Locations.Same(tag, path));
+        watched
+            .Any(_ => _.Value != null &&
+                      _.Key.Tag is string tag &&
+                      Locations.Same(tag, path));
 
     void Unwatch(TreeNode node)
     {
@@ -1217,7 +1225,8 @@ sealed class FolderTree : TreeView
 
     protected override void OnBeforeExpand(TreeViewCancelEventArgs args)
     {
-        if (args.Node is { } node && IsFolder(node))
+        if (args.Node is { } node &&
+            IsFolder(node))
         {
             if (NeedsLoading(node))
             {
@@ -1246,7 +1255,8 @@ sealed class FolderTree : TreeView
             settings.CollapsedSections.Add(section.Name);
         }
 
-        if (args.Node is { } node && IsFolder(node))
+        if (args.Node is { } node &&
+            IsFolder(node))
         {
             Unwatch(node);
         }
@@ -1270,7 +1280,7 @@ sealed class FolderTree : TreeView
                 continue;
             }
 
-            var same = Locations.Same((string)shortcut.Tag!, path);
+            var same = Locations.Same((string) shortcut.Tag!, path);
             var item = new TreeViewItem
             {
                 Mask = TreeViewItemState | TreeViewItemHandle,
@@ -1296,7 +1306,7 @@ sealed class FolderTree : TreeView
 
         // Unknown means the selection was set from code (SelectPath), not by the user.
         if (args.Action != TreeViewAction.Unknown &&
-            args.Node is { Tag: string path } node)
+            args.Node is {Tag: string path} node)
         {
             PathSelected?.Invoke(path);
 
@@ -1333,7 +1343,7 @@ sealed class FolderTree : TreeView
         }
 
         // A selected shortcut still moves to the folder in the tree below, when there is one.
-        if (SelectedNode is { Tag: string selected } current &&
+        if (SelectedNode is {Tag: string selected} current &&
             Locations.Same(selected, path) &&
             !IsShortcut(current))
         {
@@ -1363,7 +1373,7 @@ sealed class FolderTree : TreeView
         selecting = null;
 
         // A pinned entry just picked stays selected, rather than handing on to the folder below.
-        if (SelectedNode is { Tag: string selected } &&
+        if (SelectedNode is {Tag: string selected} &&
             Locations.Same(selected, path))
         {
             return;
@@ -1400,13 +1410,13 @@ sealed class FolderTree : TreeView
         {
             current = computerNode.Nodes
                 .Cast<TreeNode>()
-                .Where(_ => Locations.IsWithin(path, (string)_.Tag!))
-                .MaxBy(_ => ((string)_.Tag!).Length);
+                .Where(_ => Locations.IsWithin(path, (string) _.Tag!))
+                .MaxBy(_ => ((string) _.Tag!).Length);
         }
 
         while (current != null)
         {
-            if (Locations.Same((string)current.Tag!, path))
+            if (Locations.Same((string) current.Tag!, path))
             {
                 return current;
             }
@@ -1418,14 +1428,15 @@ sealed class FolderTree : TreeView
 
             current = current.Nodes
                 .Cast<TreeNode>()
-                .FirstOrDefault(_ => _.Tag is string child && Locations.IsWithin(path, child));
+                .FirstOrDefault(_ => _.Tag is string child &&
+                                     Locations.IsWithin(path, child));
         }
 
         return Nodes
             .Cast<TreeNode>()
-            .Where(_ => _ is { Tag: Section, IsExpanded: true })
+            .Where(_ => _ is {Tag: Section, IsExpanded: true})
             .SelectMany(_ => _.Nodes.Cast<TreeNode>())
-            .FirstOrDefault(_ => Locations.Same((string)_.Tag!, path));
+            .FirstOrDefault(_ => Locations.Same((string) _.Tag!, path));
     }
 
     // Goes down to the folder as far as the tree has been read, reads the folders still in the
@@ -1493,14 +1504,14 @@ sealed class FolderTree : TreeView
         // exactly.
         var current = computerNode.Nodes
             .Cast<TreeNode>()
-            .Where(_ => Locations.IsWithin(path, (string)_.Tag!))
-            .MaxBy(_ => ((string)_.Tag!).Length);
+            .Where(_ => Locations.IsWithin(path, (string) _.Tag!))
+            .MaxBy(_ => ((string) _.Tag!).Length);
         if (current == null)
         {
-            return (Shortcuts().FirstOrDefault(_ => Locations.Same((string)_.Tag!, path)), []);
+            return (Shortcuts().FirstOrDefault(_ => Locations.Same((string) _.Tag!, path)), []);
         }
 
-        var currentPath = (string)current.Tag!;
+        var currentPath = (string) current.Tag!;
         var segments = path[currentPath.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         using (this.SuspendPainting())
         {
@@ -1512,7 +1523,7 @@ sealed class FolderTree : TreeView
                     {
                         // This folder, and each one below it on the way, none of which has a
                         // node yet: the last is the parent of the folder being selected.
-                        var unread = new List<string> { currentPath };
+                        var unread = new List<string> {currentPath};
                         for (var below = index; below < segments.Length - 1; below++)
                         {
                             unread.Add(Path.Join(unread[^1], segments[below]));
@@ -1668,7 +1679,7 @@ sealed class FolderTree : TreeView
             .. ClaudeDesktop.Commands(this, [path]),
             .. CodingAgents.Commands([path]),
             null,
-            LodeActions.Submenu("new", newCommands) with { Enabled = !Locations.IsServer(path) },
+            LodeActions.Submenu("new", newCommands) with {Enabled = !Locations.IsServer(path)},
             LodeActions.Command("cut", () => FileOperations.CopyToClipboard([path], true), !isDrive),
             LodeActions.Command("copy", () => FileOperations.CopyToClipboard([path], false)),
             LodeActions.Command("paste", () => PasteInto(path), canPaste),
@@ -1738,8 +1749,8 @@ sealed class FolderTree : TreeView
         base.OnAfterLabelEdit(args);
         renaming = null;
         args.CancelEdit = true;
-        if (args.Node is not { Tag: string path, Parent: { } parent } ||
-            args.Label?.Trim() is not { Length: > 0 } newName ||
+        if (args.Node is not {Tag: string path, Parent: { } parent} ||
+            args.Label?.Trim() is not {Length: > 0} newName ||
             newName == Path.GetFileName(path))
         {
             return;
@@ -1794,7 +1805,7 @@ sealed class FolderTree : TreeView
     // Not a drive, nor a Pinned or Recent entry, which is Quick access's, not a folder's.
     static bool CanRename(string path, TreeNode? node) =>
         !IsDrive(path) &&
-        node is { Parent.Tag: not Section };
+        node is {Parent.Tag: not Section};
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess, TreeNode node)
     {
@@ -1883,7 +1894,7 @@ sealed class FolderTree : TreeView
     internal (int Index, TreeNode? Mark, bool After)? PinTarget(Point clientLocation)
     {
         var node = GetNodeAt(clientLocation);
-        if (node?.Tag is Section { Name: "Pinned" })
+        if (node?.Tag is Section {Name: "Pinned"})
         {
             return (places.Pinned.Count, null, false);
         }
@@ -1938,7 +1949,7 @@ sealed class FolderTree : TreeView
     public void ShowPinTarget(Point? screenLocation)
     {
         if (screenLocation is { } location &&
-            PinTarget(PointToClient(location)) is { Mark: { } mark } target)
+            PinTarget(PointToClient(location)) is {Mark: { } mark} target)
         {
             ShowInsertMark(mark, target.After);
             return;

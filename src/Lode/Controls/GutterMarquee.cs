@@ -171,7 +171,8 @@ sealed class GutterMarquee : IDisposable
         var selection = list.SelectedIndices;
         for (var index = from; index <= to; index++)
         {
-            var covered = index >= first && index <= last;
+            var covered = index >= first &&
+                          index <= last;
             var selected = toggle ? initial.Contains(index) != covered : covered;
             if (selection.Contains(index) == selected)
             {

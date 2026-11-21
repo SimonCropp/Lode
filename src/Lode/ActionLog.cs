@@ -238,7 +238,13 @@ static class ActionLog
     internal static void AgeOut()
     {
         var now = Time.GetUtcNow();
-        var removed = entries.RemoveAll(_ => _ is { AgesOut: true, Finished: { } finished } && now - finished >= AgeOutAfter);
+        var removed = entries
+            .RemoveAll(_ => _ is
+                            {
+                                AgesOut: true,
+                                Finished: { } finished
+                            } &&
+                            now - finished >= AgeOutAfter);
         if (!entries.Any(_ => _.AgesOut))
         {
             ageing.Stop();

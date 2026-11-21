@@ -534,7 +534,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 if (verb == null || !handleVerb(verb))
                 {
                     Invoke(contextMenu, owner, offset, location, directory);
-                    if (verb != null && quickAccessVerbs.Contains(verb))
+                    if (verb != null &&
+                        quickAccessVerbs.Contains(verb))
                     {
                         quickAccessChanged = true;
                     }
@@ -750,7 +751,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     static HashSet<string> DisplayNames(string folder)
     {
         var changed = Directory.GetLastWriteTimeUtc(folder);
-        if (namesByFolder.TryGetValue(folder, out var cached) && cached.Changed == changed)
+        if (namesByFolder.TryGetValue(folder, out var cached) &&
+            cached.Changed == changed)
         {
             return cached.Names;
         }
@@ -1200,7 +1202,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                     return;
                 }
             }
-            else if (menu2 != null && message.Msg != menuCharMessage)
+            else if (menu2 != null &&
+                     message.Msg != menuCharMessage)
             {
                 if (menu2.HandleMenuMsg((uint)message.Msg, message.WParam, message.LParam) == 0)
                 {

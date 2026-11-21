@@ -423,7 +423,8 @@ sealed class ShellListView : ListView
             return;
         }
 
-        if (message.Msg == WindowMessageContextMenu && message.WParam == Handle)
+        if (message.Msg == WindowMessageContextMenu &&
+            message.WParam == Handle)
         {
             var packed = unchecked((int)message.LParam.ToInt64());
             var fromKeyboard = packed == -1;
@@ -492,7 +493,8 @@ sealed class ShellListView : ListView
         }
 
         // The header passes its own right-clicks up to the list.
-        if (message.Msg == WindowMessageContextMenu && message.WParam == Header)
+        if (message.Msg == WindowMessageContextMenu &&
+            message.WParam == Header)
         {
             var packed = unchecked((int)message.LParam.ToInt64());
             var location = packed == -1
@@ -568,7 +570,8 @@ sealed class ShellListView : ListView
         {
             var rect = new NativeRect();
             SendMessage(header, HeaderGetItemRect, index, ref rect);
-            if (point.X >= rect.Left && point.X < rect.Right)
+            if (point.X >= rect.Left &&
+                point.X < rect.Right)
             {
                 return index;
             }

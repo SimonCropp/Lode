@@ -131,7 +131,8 @@ static class Locations
         }
 
         return Path.EndsInDirectorySeparator(folder) ||
-               (path.Length > folder.Length && path[folder.Length] == Path.DirectorySeparatorChar);
+               (path.Length > folder.Length &&
+                path[folder.Length] == Path.DirectorySeparatorChar);
     }
 
     /// <summary>

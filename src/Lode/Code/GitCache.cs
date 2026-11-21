@@ -787,7 +787,8 @@ static class GitCache
             // In a folder git ignores, or one itself, a build's output say, it is no change to
             // the repository: nothing is stale, and nothing read. The folder it is in looked
             // at and not ignored, none above that is either, so they aren't asked after.
-            var above = !inGit && folders.Count > 0;
+            var above = !inGit &&
+                        folders.Count > 0;
             var folderLooked = false;
             if (above)
             {

@@ -301,7 +301,8 @@ static class CodeCommands
                     true => remote.Output.Contains("non-existent ref", StringComparison.Ordinal),
                     false => remote.Output.Contains("remote ref does not exist", StringComparison.Ordinal)
                 };
-                var remoteDeleted = remote.Succeeded && !notRemote;
+                var remoteDeleted = remote.Succeeded &&
+                                    !notRemote;
                 var succeeded = (local.Succeeded || notLocal) &&
                                 (remoteDeleted || notRemote) &&
                                 (local.Succeeded || remoteDeleted);
@@ -344,7 +345,8 @@ static class CodeCommands
                 var commit = Git(repo, cancel, network: false, "commit", "-am", message);
 
                 // Nothing to commit is fine: there may still be commits to push.
-                if (!commit.Succeeded && !NothingToCommit(repo))
+                if (!commit.Succeeded &&
+                    !NothingToCommit(repo))
                 {
                     return commit;
                 }
@@ -674,7 +676,8 @@ static class CodeCommands
     internal static List<string> Outermost(IReadOnlyList<string> folders) =>
         folders
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(folder => !folders.Any(other => !Locations.Same(other, folder) && Locations.IsWithin(folder, other)))
+            .Where(folder => !folders.Any(other => !Locations.Same(other, folder) &&
+                                                   Locations.IsWithin(folder, other)))
             .ToList();
 
     /// <summary>

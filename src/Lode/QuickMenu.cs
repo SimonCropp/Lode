@@ -215,7 +215,8 @@ static class QuickMenu
                 // Clicking a submenu's own entry only opens it. One with nothing in it has
                 // nothing to open.
                 AddItems(item.DropDownItems, command.Children, choose, iconSize, images);
-                item.Enabled = command.Enabled && command.Children.Count > 0;
+                item.Enabled = command.Enabled &&
+                               command.Children.Count > 0;
             }
 
             items.Add(item);

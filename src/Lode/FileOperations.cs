@@ -188,12 +188,13 @@ static class FileOperations
                     return;
                 }
 
-                if (outcome.Changes is [{ Result: { } renamed }, ..])
+                if (outcome.Changes is [{Result: { } renamed}, ..])
                 {
                     UndoHistory.Instance.RecordRename(path, renamed);
                 }
             });
-        return succeeded && there;
+        return succeeded &&
+               there;
     }
 
     /// <summary>
@@ -697,7 +698,7 @@ static class FileOperations
     internal static Possible? PossibleDrop(DragEventArgs args, string? destination)
     {
         if (destination == null ||
-            args.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources ||
+            args.Data?.GetData(DataFormats.FileDrop) is not string[] {Length: > 0} sources ||
             sources.Any(_ => Locations.Same(_, destination)))
         {
             return null;
@@ -707,7 +708,8 @@ static class FileOperations
         return new(
             sources,
             allowed.HasFlag(DragDropEffects.Copy),
-            allowed.HasFlag(DragDropEffects.Move) && !sources.All(_ => Locations.IsChildOf(_, destination)),
+            allowed.HasFlag(DragDropEffects.Move) &&
+            !sources.All(_ => Locations.IsChildOf(_, destination)),
             allowed.HasFlag(DragDropEffects.Link));
     }
 

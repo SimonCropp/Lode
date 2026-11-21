@@ -355,7 +355,8 @@ static class Zip
     {
         string? highest = null;
         for (var current = path;
-             current != null && !Locations.Same(current, destination);
+             current != null &&
+             !Locations.Same(current, destination);
              current = Path.GetDirectoryName(current))
         {
             if (Path.Exists(current))
@@ -373,7 +374,8 @@ static class Zip
     {
         var top = path;
         for (var parent = Path.GetDirectoryName(top);
-             parent != null && !Locations.Same(parent, destination);
+             parent != null &&
+             !Locations.Same(parent, destination);
              parent = Path.GetDirectoryName(parent))
         {
             top = parent;
@@ -557,7 +559,8 @@ static class Zip
             {
                 var name = segments[index];
                 var items = folders[parent];
-                var ownEntry = isFolder && index == folderCount - 1;
+                var ownEntry = isFolder &&
+                               index == folderCount - 1;
                 if (items.TryGetValue(name, out var existing) &&
                     existing.IsFolder)
                 {
