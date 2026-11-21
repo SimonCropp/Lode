@@ -1,4 +1,4 @@
-using System.IO.Compression;
+
 
 // The Actions panel's log, which compressing and extracting add to, is shared with the window
 // tests, so these take turns with them.
@@ -202,7 +202,7 @@ public class ZipTests
 
         Zip.ExtractTo(zip, fixture.Root, true, null, Cancel.None);
 
-        await Assert.That(File.ReadAllText(Path.Combine(deep, "file.txt"))).IsEqualTo("content");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(deep, "file.txt"))).IsEqualTo("content");
     }
 
     // The first part of a path named *.zip that is a file is the zip; what follows is where in
@@ -269,8 +269,8 @@ public class ZipTests
         {
             await Assert.That(extracted.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["top.txt", "Inner"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
             await Assert.That(extracted.All(_ => _.StartsWith(Zip.TempRoot, StringComparison.OrdinalIgnoreCase))).IsTrue();
-            await Assert.That(File.ReadAllText(extracted[0])).IsEqualTo("top");
-            await Assert.That(File.ReadAllText(Path.Combine(extracted[1], "deep.txt"))).IsEqualTo("deep");
+            await Assert.That(await File.ReadAllTextAsync(extracted[0])).IsEqualTo("top");
+            await Assert.That(await File.ReadAllTextAsync(Path.Combine(extracted[1], "deep.txt"))).IsEqualTo("deep");
             await Assert.That(Directory.Exists(Path.Combine(extracted[1], "Empty"))).IsTrue();
             await Assert.That(again[0]).IsEqualTo(extracted[0]);
         }

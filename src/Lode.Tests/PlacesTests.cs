@@ -120,7 +120,7 @@ public class PlacesTests
     public async Task AZipIsNotAFolderToList()
     {
         using var fixture = Fixture.Create();
-        using (var zip = System.IO.Compression.ZipFile.Open(fixture.At("Archive.zip"), System.IO.Compression.ZipArchiveMode.Create))
+        await using (var zip = await ZipFile.OpenAsync(fixture.At("Archive.zip"), ZipArchiveMode.Create))
         {
             zip.CreateEntry("inside.txt");
         }

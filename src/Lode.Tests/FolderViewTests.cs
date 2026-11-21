@@ -1326,7 +1326,7 @@ public class FolderViewTests
             using var bitmap = new Bitmap(list.Width, list.Height);
             list.DrawToBitmap(bitmap, new(Point.Empty, list.Size));
             using var stream = new MemoryStream();
-            bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+            bitmap.Save(stream, ImageFormat.Png);
             return stream.ToArray();
         }
 
@@ -1446,7 +1446,7 @@ public class FolderViewTests
     static string MakeZip(Fixture fixture, string name, params string[] entries)
     {
         var zip = fixture.At(name);
-        using var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create);
+        using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
         foreach (var entry in entries)
         {
             var created = archive.CreateEntry(entry);
@@ -1605,7 +1605,7 @@ public class FolderViewTests
         var zip = MakeZip(fixture, "Bundle.zip", bundle);
         using var view = await Open(zip);
 
-        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Update))
+        await using (var archive = await ZipFile.OpenAsync(zip, ZipArchiveMode.Update))
         {
             archive.CreateEntry("arrived.aleph");
         }
@@ -1649,7 +1649,7 @@ public class FolderViewTests
     {
         using var fixture = Fixture.Create();
         var zip = fixture.At("Bundle.zip");
-        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+        await using (var archive = await ZipFile.OpenAsync(zip, ZipArchiveMode.Create))
         {
             archive.CreateEntry("inside.txt");
         }

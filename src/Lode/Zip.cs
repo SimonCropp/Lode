@@ -1,7 +1,3 @@
-using System.IO.Compression;
-using System.Security.Cryptography;
-using System.Text;
-
 /// <summary>
 /// Zip archives: making one of what is selected, and taking what one holds out of it, as
 /// Explorer's Compress to ZIP file and Extract All do, each as an entry in the Actions panel,

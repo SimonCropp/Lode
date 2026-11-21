@@ -30,7 +30,7 @@ public class MainFormTests
         Capture((form, fixture) =>
         {
             var zip = fixture.At("Bundle.zip");
-            using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+            using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
             {
                 foreach (var (name, size) in new[] {("Docs/guide.aleph", 900), ("Source/main.aleph", 5_000), ("readme.aleph", 120), ("notes.gamma", 12)})
                 {

@@ -2935,7 +2935,7 @@ sealed class FolderView : UserControl
         int icon;
         if (entry.InArchive)
         {
-            icon = ShellListView.PaddedIcon(ShellIcons.GetTypeIcon(entry.Name, entry.IsDirectory), 0);
+            icon = ShellListView.PaddedIcon(ShellIcons.GetTypeIcon(entry.Name, entry.IsDirectory));
         }
         else
         {

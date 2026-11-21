@@ -164,7 +164,7 @@ static class CodeMenu
             "Tag",
             [],
             isTagName: true);
-        if (form.ShowDialog(owner) != DialogResult.OK)
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
         {
             return;
         }
@@ -205,7 +205,7 @@ static class CodeMenu
             "Delete",
             tags,
             isTagName: true);
-        if (form.ShowDialog(owner) != DialogResult.OK)
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
         {
             return;
         }

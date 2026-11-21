@@ -902,7 +902,7 @@ public class WindowsTests
     {
         using var fixture = Fixture.Create();
         var zip = fixture.At("Bundle.zip");
-        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+        await using (var archive = await ZipFile.OpenAsync(zip, ZipArchiveMode.Create))
         {
             archive.CreateEntry("Inner/deep.aleph");
         }

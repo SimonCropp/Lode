@@ -262,12 +262,13 @@ public class GitCacheTests
                 () =>
                 {
                     started.Set();
-                    release.Wait();
-                    return ((GitState?) null, (RemoteSite?) null);
-                }));
-        started.Wait();
-        var second = Task.Run(() => GitCache.Read(repo, Cancel.None, () => (Clean(), null)));
-        await Task.Delay(100);
+                    release.Wait(Cancel.None);
+                    return (null, null);
+                }),
+            cancel.Token);
+        started.Wait(cancel.Token);
+        var second = Task.Run(() => GitCache.Read(repo, Cancel.None, () => (Clean(), null)), Cancel.None);
+        await Task.Delay(100, cancel.Token);
         await cancel.CancelAsync();
         release.Set();
         await first;

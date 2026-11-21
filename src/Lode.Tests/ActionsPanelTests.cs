@@ -59,7 +59,8 @@ public class ActionsPanelTests
             _ = ActionLog.Run("Git pull", @"C:\Code\Running", () => new TaskCompletionSource<ActionLog.Outcome>().Task);
             clock.Now += TimeSpan.FromSeconds(59);
             await ActionLog.Run("Git pull", @"C:\Code\Since", () => Ended(true));
-            List<string> Names() =>
+
+            static List<string> Names() =>
                 ActionLog.Entries.Select(_ => _.FolderName).ToList();
 
             ActionLog.AgeOut();

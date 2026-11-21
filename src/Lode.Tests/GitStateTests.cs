@@ -173,22 +173,22 @@ public class GitStateTests
     {
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, ".gitignore"), "bin/\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/\n");
         Directory.CreateDirectory(Path.Combine(repo, "src"));
-        File.WriteAllText(Path.Combine(repo, "src", "deep.txt"), "deep");
+        await File.WriteAllTextAsync(Path.Combine(repo, "src", "deep.txt"), "deep");
         CodeCommandsTests.Scratch.Git(repo, "add", ".");
         CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "More");
 
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
-        File.WriteAllText(Path.Combine(repo, "src", "deep.txt"), "changed");
-        File.WriteAllText(Path.Combine(repo, "staged.txt"), "staged");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "src", "deep.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "staged.txt"), "staged");
         CodeCommandsTests.Scratch.Git(repo, "add", "staged.txt");
-        File.WriteAllText(Path.Combine(repo, "loose.txt"), "loose");
+        await File.WriteAllTextAsync(Path.Combine(repo, "loose.txt"), "loose");
         Directory.CreateDirectory(Path.Combine(repo, "New"));
-        File.WriteAllText(Path.Combine(repo, "New", "one.txt"), "one");
-        File.WriteAllText(Path.Combine(repo, "New", "two.txt"), "two");
+        await File.WriteAllTextAsync(Path.Combine(repo, "New", "one.txt"), "one");
+        await File.WriteAllTextAsync(Path.Combine(repo, "New", "two.txt"), "two");
         Directory.CreateDirectory(Path.Combine(repo, "bin"));
-        File.WriteAllText(Path.Combine(repo, "bin", "out.dll"), "built");
+        await File.WriteAllTextAsync(Path.Combine(repo, "bin", "out.dll"), "built");
 
         var state = await Read(repo);
 
@@ -260,10 +260,10 @@ public class GitStateTests
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
         var other = code.Clone("Repo", "Other");
-        File.WriteAllText(Path.Combine(other, "tracked.txt"), "theirs");
+        await File.WriteAllTextAsync(Path.Combine(other, "tracked.txt"), "theirs");
         CodeCommandsTests.Scratch.Git(other, "commit", "-am", "Theirs");
         CodeCommandsTests.Scratch.Git(other, "push");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "mine");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "mine");
         CodeCommandsTests.Scratch.Git(repo, "commit", "-am", "Mine");
         CodeCommandsTests.Scratch.Git(repo, "fetch");
         await Assert.That(() => CodeCommandsTests.Scratch.Git(repo, "merge", "origin/main")).Throws<Exception>();
@@ -292,7 +292,7 @@ public class GitStateTests
         var repo = code.At("New");
         Directory.CreateDirectory(repo);
         CodeCommandsTests.Scratch.Git(repo, "init", "--initial-branch=main");
-        File.WriteAllText(Path.Combine(repo, "first.txt"), "first");
+        await File.WriteAllTextAsync(Path.Combine(repo, "first.txt"), "first");
 
         var state = await Read(repo);
 
@@ -307,7 +307,7 @@ public class GitStateTests
         var repo = code.CreateRepo("Repo");
         var tree = code.At("Tree");
         CodeCommandsTests.Scratch.Git(repo, "worktree", "add", "-b", "feature", tree);
-        File.WriteAllText(Path.Combine(tree, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(tree, "tracked.txt"), "changed");
 
         var state = await Read(tree);
 
@@ -321,7 +321,7 @@ public class GitStateTests
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
         Directory.CreateDirectory(Path.Combine(repo, "Two Words"));
-        File.WriteAllText(Path.Combine(repo, "Two Words", "café.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, "Two Words", "café.txt"), "new");
 
         var state = await Read(repo);
 
@@ -354,7 +354,7 @@ public class GitStateTests
     {
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
 
         await Assert.That(LibGitState.FromFaster(repo, Cancel.None)).IsEqualTo(GitState.FromGit(repo, Cancel.None));
     }
