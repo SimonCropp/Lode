@@ -694,16 +694,16 @@ static class FileOperations
     /// </summary>
     internal record Possible(string[] Sources, bool Copy, bool Move, bool Link);
 
-    internal static Possible? PossibleDrop(DragEventArgs eventArgs, string? destination)
+    internal static Possible? PossibleDrop(DragEventArgs args, string? destination)
     {
         if (destination == null ||
-            eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources ||
+            args.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources ||
             sources.Any(_ => Locations.Same(_, destination)))
         {
             return null;
         }
 
-        var allowed = eventArgs.AllowedEffect;
+        var allowed = args.AllowedEffect;
         return new(
             sources,
             allowed.HasFlag(DragDropEffects.Copy),
@@ -711,12 +711,12 @@ static class FileOperations
             allowed.HasFlag(DragDropEffects.Link));
     }
 
-    public static DragDropEffects GetDropEffect(DragEventArgs eventArgs, string? destination)
+    public static DragDropEffects GetDropEffect(DragEventArgs args, string? destination)
     {
-        var effect = DefaultDropEffect(eventArgs, destination);
+        var effect = DefaultDropEffect(args, destination);
         if (effect != DragDropEffects.None ||
-            !RightButton(eventArgs) ||
-            PossibleDrop(eventArgs, destination) is not { } possible)
+            !RightButton(args) ||
+            PossibleDrop(args, destination) is not { } possible)
         {
             return effect;
         }
@@ -737,10 +737,10 @@ static class FileOperations
     }
 
     // What a drop with the left button does.
-    static DragDropEffects DefaultDropEffect(DragEventArgs eventArgs, string? destination)
+    static DragDropEffects DefaultDropEffect(DragEventArgs args, string? destination)
     {
         if (destination == null ||
-            eventArgs.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources)
+            args.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources)
         {
             return DragDropEffects.None;
         }
@@ -751,8 +751,8 @@ static class FileOperations
         }
 
         // Explorer's rules: Ctrl copies, Shift moves, otherwise move within a drive and copy across drives.
-        var control = (eventArgs.KeyState & controlKeyState) != 0;
-        var shift = (eventArgs.KeyState & shiftKeyState) != 0;
+        var control = (args.KeyState & controlKeyState) != 0;
+        var shift = (args.KeyState & shiftKeyState) != 0;
         var move = !control &&
                    (shift || Locations.SameRoot(sources[0], destination));
         if (move)
@@ -762,13 +762,13 @@ static class FileOperations
                 return DragDropEffects.None;
             }
 
-            if (eventArgs.AllowedEffect.HasFlag(DragDropEffects.Move))
+            if (args.AllowedEffect.HasFlag(DragDropEffects.Move))
             {
                 return DragDropEffects.Move;
             }
         }
 
-        if (eventArgs.AllowedEffect.HasFlag(DragDropEffects.Copy))
+        if (args.AllowedEffect.HasFlag(DragDropEffects.Copy))
         {
             return DragDropEffects.Copy;
         }
@@ -778,15 +778,15 @@ static class FileOperations
 
     /// <param name="rightButton">Whether it was dragged with the right button, as noted while
     /// it was dragged over: if so the drop asks what to do, as Explorer does.</param>
-    public static void Drop(IntPtr owner, DragEventArgs eventArgs, string? destination, bool rightButton = false)
+    public static void Drop(IntPtr owner, DragEventArgs args, string? destination, bool rightButton = false)
     {
         if (rightButton)
         {
             // Done, if at all, once a choice is made, so the source is told nothing was moved
             // for it to delete.
-            eventArgs.Effect = DragDropEffects.None;
-            if (PossibleDrop(eventArgs, destination) is { } possible &&
-                DropMenu(owner, possible, destination!, DefaultDropEffect(eventArgs, destination)) is { } menu)
+            args.Effect = DragDropEffects.None;
+            if (PossibleDrop(args, destination) is { } possible &&
+                DropMenu(owner, possible, destination!, DefaultDropEffect(args, destination)) is { } menu)
             {
                 ShowDropMenu(menu);
             }
@@ -794,25 +794,25 @@ static class FileOperations
             return;
         }
 
-        var effect = GetDropEffect(eventArgs, destination);
+        var effect = GetDropEffect(args, destination);
         if (effect == DragDropEffects.None)
         {
-            eventArgs.Effect = DragDropEffects.None;
+            args.Effect = DragDropEffects.None;
             return;
         }
 
-        var sources = (string[])eventArgs.Data!.GetData(DataFormats.FileDrop)!;
+        var sources = (string[])args.Data!.GetData(DataFormats.FileDrop)!;
         _ = Transfer(owner, sources, destination!, effect == DragDropEffects.Move);
 
         // We move the files ourselves. Reporting Move back would tell the drag source
         // (Explorer, for one) to delete the originals as well.
         if (effect == DragDropEffects.Move)
         {
-            eventArgs.Effect = DragDropEffects.None;
+            args.Effect = DragDropEffects.None;
         }
         else
         {
-            eventArgs.Effect = effect;
+            args.Effect = effect;
         }
     }
 
@@ -823,7 +823,12 @@ static class FileOperations
     /// </summary>
     internal static ExplorerMenu? DropMenu(IntPtr owner, Possible possible, string destination, DragDropEffects effect)
     {
-        if (possible is { Copy: false, Move: false, Link: false })
+        if (possible is
+            {
+                Copy: false,
+                Move: false,
+                Link: false
+            })
         {
             return null;
         }
