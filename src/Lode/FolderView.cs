@@ -1600,9 +1600,16 @@ sealed class FolderView : UserControl
                         token,
                         repo =>
                         {
-                            var changes = GitCache.Changes(repo);
-                            var state = new GitRead(repo, reader(repo, token), RemoteSite.OfRepo(repo), changes);
-                            progress.Report(state);
+                            // Read once between the views showing it, where there are several.
+                            var found = GitCache.Read(repo, token, () => (reader(repo, token), RemoteSite.OfRepo(repo)));
+                            var state = new GitRead(repo, found.State, found.Site, found.Changes);
+
+                            // Let go of, the read may have stopped short, which is nothing to keep.
+                            if (!token.IsCancellationRequested)
+                            {
+                                progress.Report(state);
+                            }
+
                             return state;
                         }),
                     token);

@@ -366,6 +366,101 @@ static class GitCache
         }
     }
 
+    // A read of a repository under way, begun when so many changes had been seen in it, for
+    // whoever asked. Done once it has been read.
+    sealed class Reading(int changes, Cancel cancel)
+    {
+        public int Changes => changes;
+        public Cancel Cancel => cancel;
+        public TaskCompletionSource<(GitState? State, RemoteSite? Site)> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    // The read of each repository under way, the latest begun where there are two.
+    static readonly Dictionary<string, Reading> reading = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads <paramref name="repo"/> with <paramref name="read"/>, or waits for a read of it
+    /// already under way and gives what that finds: two views showing the one repository, the
+    /// code folder in two windows say, are both told of a change in it, and read it once
+    /// between them. Not one begun before the last change seen, which may have missed it, nor
+    /// one whose view let go of it, which may have stopped short: then it is read again. With
+    /// what was found, how many changes had been seen as the read began, for
+    /// <see cref="Store"/>. Nothing found when <paramref name="cancel"/> is cancelled while
+    /// waiting, as a read stopped finds nothing.
+    /// </summary>
+    public static (GitState? State, RemoteSite? Site, int Changes) Read(string repo, Cancel cancel, Func<(GitState? State, RemoteSite? Site)> read)
+    {
+        while (true)
+        {
+            var changes = Changes(repo);
+            Reading? mine = null;
+            Reading? theirs;
+            lock (gate)
+            {
+                if (!reading.TryGetValue(repo, out theirs) ||
+                    theirs.Changes != changes ||
+                    theirs.Cancel.IsCancellationRequested)
+                {
+                    mine = new(changes, cancel);
+                    reading[repo] = mine;
+                }
+            }
+
+            if (mine != null)
+            {
+                return ReadAs(repo, mine, read);
+            }
+
+            try
+            {
+                theirs!.Done.Task.Wait(cancel);
+            }
+            catch (OperationCanceledException)
+            {
+                return (null, null, changes);
+            }
+            catch (AggregateException)
+            {
+                // It failed for whoever was reading. Read again, to fail, or not, for this one.
+                continue;
+            }
+
+            if (theirs.Cancel.IsCancellationRequested)
+            {
+                continue;
+            }
+
+            var found = theirs.Done.Task.Result;
+            return (found.State, found.Site, changes);
+        }
+    }
+
+    static (GitState? State, RemoteSite? Site, int Changes) ReadAs(string repo, Reading mine, Func<(GitState? State, RemoteSite? Site)> read)
+    {
+        try
+        {
+            var found = read();
+            mine.Done.SetResult(found);
+            return (found.State, found.Site, mine.Changes);
+        }
+        catch (Exception exception)
+        {
+            mine.Done.SetException(exception);
+            throw;
+        }
+        finally
+        {
+            lock (gate)
+            {
+                if (reading.TryGetValue(repo, out var latest) &&
+                    latest == mine)
+                {
+                    reading.Remove(repo);
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// What a read of <paramref name="repo"/> found, which is fresh unless something changed in it
     /// while it was read. Null for one that isn't a repository git will take.
@@ -662,6 +757,7 @@ static class GitCache
             known.Clear();
             gitFolders.Clear();
             sharing.Clear();
+            reading.Clear();
             changing.Clear();
             watcher?.Dispose();
             watcher = null;

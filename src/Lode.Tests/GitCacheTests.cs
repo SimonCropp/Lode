@@ -179,6 +179,104 @@ public class GitCacheTests
         await Assert.That(known.Due - now).IsEqualTo(3_000);
     }
 
+    // A folder that isn't there, of this test's own: nothing is heard of it, nor read.
+    static string Unreal() =>
+        $@"C:\LodeTests.NotThere\{Guid.NewGuid():N}";
+
+    // Two views showing the one repository, both told of a change in it, read it once between
+    // them: the second waits for the first's read, and has what that found.
+    [Test]
+    public async Task AReadUnderWayIsShared()
+    {
+        var repo = Unreal();
+        var state = Clean();
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var reads = 0;
+        (GitState? State, RemoteSite? Site) Read()
+        {
+            Interlocked.Increment(ref reads);
+            started.Set();
+            release.Wait();
+            return (state, null);
+        }
+
+        var first = Task.Run(() => GitCache.Read(repo, Cancel.None, Read));
+        started.Wait();
+        var second = Task.Run(() => GitCache.Read(repo, Cancel.None, Read));
+
+        // Long enough for the second to have begun, and so be waiting on the first.
+        await Task.Delay(500);
+        release.Set();
+        var found = await Task.WhenAll(first, second);
+
+        await Assert.That(reads).IsEqualTo(1);
+        await Assert.That(ReferenceEquals(found[0].State, state)).IsTrue();
+        await Assert.That(ReferenceEquals(found[1].State, state)).IsTrue();
+    }
+
+    // A read begun before a change may have missed it, so is not waited for by one asked for
+    // after: that reads for itself, and is done while the first is still at it.
+    [Test]
+    public async Task AReadBegunBeforeAChangeIsNotShared()
+    {
+        var repo = Unreal();
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var first = Task.Run(
+            () => GitCache.Read(
+                repo,
+                Cancel.None,
+                () =>
+                {
+                    started.Set();
+                    release.Wait();
+                    return (Clean(), null);
+                }));
+        started.Wait();
+        GitCache.MarkStale([repo]);
+
+        var second = GitCache.Read(repo, Cancel.None, () => (OneChange(), null));
+        var firstDone = first.IsCompleted;
+        release.Set();
+        var earlier = await first;
+
+        await Assert.That(firstDone).IsFalse();
+        await Assert.That(second.State).IsEqualTo(OneChange());
+        await Assert.That(second.Changes).IsEqualTo(earlier.Changes + 1);
+    }
+
+    // A view that goes elsewhere lets go of its read, which may then have stopped short and
+    // found nothing. Another waiting on it reads for itself rather than take that.
+    [Test]
+    public async Task AReadLetGoOfIsNotShared()
+    {
+        var repo = Unreal();
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var cancel = new CancelSource();
+        var first = Task.Run(
+            () => GitCache.Read(
+                repo,
+                cancel.Token,
+                () =>
+                {
+                    started.Set();
+                    release.Wait();
+                    return ((GitState?) null, (RemoteSite?) null);
+                }));
+        started.Wait();
+        var second = Task.Run(() => GitCache.Read(repo, Cancel.None, () => (Clean(), null)));
+        await Task.Delay(100);
+        await cancel.CancelAsync();
+        release.Set();
+        await first;
+
+        var found = await second;
+
+        await Assert.That(found.State).IsEqualTo(Clean());
+    }
+
     [Test]
     public async Task WhatGitWritesForItselfIsNoise()
     {
