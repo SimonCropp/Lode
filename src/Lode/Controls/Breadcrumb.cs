@@ -160,7 +160,7 @@ sealed class Breadcrumb : Control
 
     protected override void OnLayout(LayoutEventArgs args)
     {
-        base.OnLayout(eventArgs);
+        base.OnLayout(args);
         PlaceBox();
     }
 

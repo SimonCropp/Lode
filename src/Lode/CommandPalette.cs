@@ -212,7 +212,7 @@ sealed class CommandPalette : Form
         TextRenderer.DrawText(args.Graphics, command.Name, list.Font, bounds, color, flags | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         if (command.Shortcut.Length > 0)
         {
-            TextRenderer.DrawText(eventArgs.Graphics, command.Shortcut, list.Font, bounds, dimmed, flags | TextFormatFlags.Right);
+            TextRenderer.DrawText(args.Graphics, command.Shortcut, list.Font, bounds, dimmed, flags | TextFormatFlags.Right);
         }
     }
 
