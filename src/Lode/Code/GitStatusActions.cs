@@ -79,11 +79,13 @@ static class GitStatusActions
 
     static Question BehindQuestion(GitState state, string branch, string upstream)
     {
+        // Pull fetches first, so takes whatever origin has as it runs, not only what the last
+        // fetch counted.
         var commits = GitState.CountOf(state.Behind, "commit");
-        var pullNote = $"Bring the {commits} into {branch}.";
+        var pullNote = $"Fetch, then bring {upstream} into {branch}: the {commits} known now, and any since.";
         if (state.Ahead > 0)
         {
-            pullNote = $"Bring the {commits} into {branch}, merging or rebasing as your git config says.";
+            pullNote = $"Fetch, then bring {upstream} into {branch}, merging or rebasing as your git config says: the {commits} known now, and any since.";
         }
 
         if (state.Changes > 0)

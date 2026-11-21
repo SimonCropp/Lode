@@ -161,8 +161,7 @@ sealed class FolderView : UserControl
         {
             // The selection read as the list holds it, by index into what is displayed, not made
             // into a list: this is asked of at every change of selection, a thousand rows say.
-            if (list.SelectedIndices.Count == 1 &&
-                list.SelectedIndices[0] is var index &&
+            if (list.SelectedIndices is [var index] &&
                 index < displayed.Count &&
                 gitStates.ContainsKey(displayed[index].FullPath))
             {

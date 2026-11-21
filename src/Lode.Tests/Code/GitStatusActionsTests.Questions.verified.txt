@@ -2,17 +2,17 @@
   behind:
 [Git pull] main is 14 commits behind origin/main
 As of the last fetch.
-  -> Pull: Bring the 14 commits into main.
+  -> Pull: Fetch, then bring origin/main into main: the 14 commits known now, and any since.
   -> Fetch: See what origin has now, without changing main.,
   behindWithChanges:
 [Git pull] main is 1 commit behind origin/main
 As of the last fetch.
-  -> Pull: Bring the 1 commit into main. Uncommitted changes stay, unless git would have to overwrite any, when nothing is pulled.
+  -> Pull: Fetch, then bring origin/main into main: the 1 commit known now, and any since. Uncommitted changes stay, unless git would have to overwrite any, when nothing is pulled.
   -> Fetch: See what origin has now, without changing main.,
   divergedBehind:
 [Git pull] main has diverged from origin/main
 2 commits here aren't on origin/main, and 14 commits there aren't here, as of the last fetch.
-  -> Pull: Bring the 14 commits into main, merging or rebasing as your git config says.
+  -> Pull: Fetch, then bring origin/main into main, merging or rebasing as your git config says: the 14 commits known now, and any since.
   -> Pull, then push: Then send the 2 commits here to origin/main.
   -> Fetch: See what origin has now, without changing main.,
   ahead:

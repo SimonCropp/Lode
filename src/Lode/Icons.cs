@@ -55,6 +55,8 @@ static class Icons
     // between two commits, and a branch into it from a third. See DrawBranch.
     public const char Branch = '\u2387';
     public const char Pull = '\uE896';
+    // A cloud with an arrow down out of it: what origin has, learned without taking it.
+    public const char Fetch = '\uEBD3';
     public const char Push = '\uE898';
     public const char Tag = '\uE8EC';
     // Two arrows, one each way.

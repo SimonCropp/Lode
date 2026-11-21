@@ -1,6 +1,6 @@
 /// <summary>
-/// The right-click entries for folders under the code folder: git pull, switch to the default
-/// branch, push, discard and purge across their repositories, and Update NuGets (optionally
+/// The right-click entries for folders under the code folder: git fetch, pull, switch to the
+/// default branch, push, discard and purge across their repositories, and Update NuGets (optionally
 /// then building). With several folders selected, each command takes in all of them at once,
 /// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
@@ -38,6 +38,10 @@ static class CodeMenu
         List<QuickMenu.Command?> commands =
         [
             null,
+            LodeActions.Command("gitFetch", () => Fetch(folders, settings.CodeDirectory)) with
+            {
+                NestedText = "Fetch"
+            },
             LodeActions.Command("gitPull", () => Pull(folders, settings.CodeDirectory)) with
             {
                 NestedText = "Pull"
@@ -87,6 +91,21 @@ static class CodeMenu
         ]);
         return commands;
     }
+
+    // What origin has now, for every repository, without changing any branch: the Git column's
+    // ahead and behind are as of the last fetch. They are read again as it ends, rather than
+    // once the watch has heard of each.
+    static void Fetch(IReadOnlyList<string> folders, string? codeFolder) =>
+        _ = ActionLog.Run(
+            "Git fetch",
+            folders,
+            async (progress, cancel) =>
+            {
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
+                var results = await CodeCommands.Fetch(repos, progress, cancel);
+                GitCache.MarkStale(repos);
+                return CodeCommands.GitOutcome(results);
+            });
 
     // Each runs in the background and shows in the actions panel; Lode stays usable. A folder
     // inside a repository, src say, acts on that repository.

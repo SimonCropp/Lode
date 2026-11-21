@@ -2,6 +2,13 @@
   gitKept: false,
   actions: [
     {
+      id: gitFetch,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
       id: gitPull,
       button: true,
       menu: false,

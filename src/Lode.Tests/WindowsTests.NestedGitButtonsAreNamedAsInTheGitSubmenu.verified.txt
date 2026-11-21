@@ -18,6 +18,7 @@
     See more
   ],
   git: [
+    Fetch,
     Pull,
     Switch to default branch,
     Push…,
