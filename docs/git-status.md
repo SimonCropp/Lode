@@ -14,7 +14,7 @@ The short version: each repository is read once and cached. One watch on the who
 ## Overview
 
 ```mermaid
-flowchart LR
+flowchart TD
     Drive[("Drive of the code folder")] -->|every change| Watch["FolderWatcher<br/>on the drive root"]
     Watch -->|path| Filter["GitCache.ChangedAt<br/>drops what doesn't matter"]
     Filter -->|repository is stale| Timer["Settle timer"]
