@@ -2035,7 +2035,11 @@ sealed class FolderView : UserControl
         {
             return;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (exception is
+                      IOException or
+                      UnauthorizedAccessException or
+                      SecurityException)
         {
             // The folder went, or a subfolder could not be read part way through. What was
             // found before that stays.
@@ -2300,7 +2304,11 @@ sealed class FolderView : UserControl
         // In order already, as what it is taken from is.
         var visible = ApplyFilter();
 
-        if (preserveState && pendingRename == null && pendingSelection == null && !columnsChanged && visible.SequenceEqual(displayed))
+        if (preserveState &&
+            pendingRename == null &&
+            pendingSelection == null &&
+            !columnsChanged &&
+            visible.SequenceEqual(displayed))
         {
             if (rowsStale)
             {

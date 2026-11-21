@@ -147,19 +147,24 @@ static class GitPurge
     {
         const string prefix = "Would remove ";
         var entries = new List<Entry>();
-        foreach (var line in output.Split('\n'))
+
+        // Each line where it is in the output, so the only strings made are the names.
+        var text = output.AsSpan();
+        foreach (var range in text.Split('\n'))
         {
+            var line = text[range];
             if (!line.StartsWith(prefix, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var name = line[prefix.Length..].TrimEnd('\r');
-            if (name.StartsWith("./", StringComparison.Ordinal))
+            var rest = line[prefix.Length..].TrimEnd('\r');
+            if (rest.StartsWith("./", StringComparison.Ordinal))
             {
-                name = name[2..];
+                rest = rest[2..];
             }
 
+            var name = rest.ToString();
             var path = Path.GetFullPath(Path.Combine(folder, name.TrimEnd('/')));
 
             // Never anything but what is in the folder.
@@ -459,7 +464,10 @@ static class GitPurge
     /// </summary>
     internal static ActionLog.Outcome Outcome(IReadOnlyList<Found> found, IReadOnlyList<Failure> failures, bool permanent)
     {
-        var failed = failures.ToDictionary(_ => _.Path, _ => _.Reason, StringComparer.OrdinalIgnoreCase);
+        var failed = failures.ToDictionary(
+            _ => _.Path,
+            _ => _.Reason,
+            StringComparer.OrdinalIgnoreCase);
         var total = found.Sum(_ => _.Entries.Count);
         var errors = found.Count(_ => _.Error != null);
 
@@ -494,7 +502,9 @@ static class GitPurge
         summary = char.ToUpperInvariant(summary[0]) + summary[1..];
 
         var details = new StringBuilder();
-        foreach (var folder in found.OrderBy(_ => _.Error == null && _.Entries.All(entry => !failed.ContainsKey(entry.Path))))
+        foreach (var folder in found.OrderBy(
+                     _ => _.Error == null &&
+                          _.Entries.All(entry => !failed.ContainsKey(entry.Path))))
         {
             if (details.Length > 0)
             {
@@ -513,19 +523,20 @@ static class GitPurge
                 continue;
             }
 
-            var notDeleted = folder.Entries.Count(_ => failed.ContainsKey(_.Path));
-            var state = Items(folder.Entries.Count);
-            if (folder.Entries.Count == 0)
+            var entries = folder.Entries;
+            var notDeleted = entries.Count(_ => failed.ContainsKey(_.Path));
+            var state = Items(entries.Count);
+            if (entries.Count == 0)
             {
                 state = "nothing to purge";
             }
             else if (notDeleted > 0)
             {
-                state = $"{notDeleted} of {Items(folder.Entries.Count)} couldn't be {where}";
+                state = $"{notDeleted} of {Items(entries.Count)} couldn't be {where}";
             }
 
             details.AppendLine($"{name}: {state}");
-            foreach (var entry in folder.Entries.OrderBy(_ => !failed.ContainsKey(_.Path)))
+            foreach (var entry in entries.OrderBy(_ => !failed.ContainsKey(_.Path)))
             {
                 if (failed.TryGetValue(entry.Path, out var reason))
                 {

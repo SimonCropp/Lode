@@ -220,7 +220,10 @@ static class GitCache
 
         lock (gate)
         {
-            return watchers.GetValueOrDefault(folder) is { IsWatching: true };
+            return watchers.GetValueOrDefault(folder) is
+            {
+                IsWatching: true
+            };
         }
     }
 
@@ -231,7 +234,10 @@ static class GitCache
         {
             if (Locations.IsWithin(path, folder))
             {
-                return watcher is { IsWatching: true };
+                return watcher is
+                {
+                    IsWatching: true
+                };
             }
         }
 
@@ -249,7 +255,10 @@ static class GitCache
             if (watchers.TryGetValue(folder, out var existing))
             {
                 // Starting a watch can wait on the drive, and this is a window's thread.
-                if (existing is { IsWatching: false } &&
+                if (existing is
+                    {
+                        IsWatching: false
+                    } &&
                     !reviving)
                 {
                     reviving = true;
@@ -353,7 +362,8 @@ static class GitCache
 
             state = entry.State;
             site = entry.Site;
-            fresh = entry.Fresh(Environment.TickCount64) && Heard(repo);
+            fresh = entry.Fresh(Environment.TickCount64) &&
+                    Heard(repo);
             return true;
         }
     }
@@ -404,7 +414,11 @@ static class GitCache
 
             return (git, CodeCommands.CommonDirectory(git));
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception exception)
+            when (exception is
+                      IOException or
+                      UnauthorizedAccessException or
+                      ArgumentException)
         {
             return null;
         }

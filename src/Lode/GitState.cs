@@ -145,16 +145,20 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         var behind = 0;
         var upstream = false;
         var files = new List<GitFile>();
-        var entries = output.Split('\0');
-        for (var index = 0; index < entries.Length; index++)
+
+        // Each entry where it is in the output, so the only strings made are those kept: a
+        // repository with many changes has as many entries.
+        var text = output.AsSpan();
+        var entries = text.Split('\0');
+        while (entries.MoveNext())
         {
-            var entry = entries[index];
+            var entry = text[entries.Current];
             if (entry.StartsWith("# branch.oid ", StringComparison.Ordinal))
             {
-                commit = entry["# branch.oid ".Length..];
-                if (commit == "(initial)")
+                var oid = entry["# branch.oid ".Length..];
+                if (!oid.SequenceEqual("(initial)"))
                 {
-                    commit = null;
+                    commit = oid.ToString();
                 }
 
                 continue;
@@ -162,10 +166,10 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
 
             if (entry.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
-                branch = entry["# branch.head ".Length..];
-                if (branch == "(detached)")
+                var head = entry["# branch.head ".Length..];
+                if (!head.SequenceEqual("(detached)"))
                 {
-                    branch = null;
+                    branch = head.ToString();
                 }
 
                 continue;
@@ -180,11 +184,13 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             // "+2 -1": ahead, then behind. Missing without an upstream, or one that has gone.
             if (entry.StartsWith("# branch.ab ", StringComparison.Ordinal))
             {
-                var counts = entry["# branch.ab ".Length..].Split(' ');
-                if (counts is [var plus, var minus])
+                var counts = entry["# branch.ab ".Length..];
+                var space = counts.IndexOf(' ');
+                if (space >= 0 &&
+                    counts.LastIndexOf(' ') == space)
                 {
-                    _ = int.TryParse(plus.TrimStart('+'), out ahead);
-                    _ = int.TryParse(minus.TrimStart('-'), out behind);
+                    _ = int.TryParse(counts[..space].TrimStart('+'), out ahead);
+                    _ = int.TryParse(counts[(space + 1)..].TrimStart('-'), out behind);
                 }
 
                 continue;
@@ -201,7 +207,7 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             if (entry.StartsWith("2 ", StringComparison.Ordinal))
             {
                 files.Add(new(PathAfter(entry, 9), ChangeOf(entry[2], entry[3])));
-                index++;
+                entries.MoveNext();
                 continue;
             }
 
@@ -213,7 +219,7 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
 
             if (entry.StartsWith("? ", StringComparison.Ordinal))
             {
-                files.Add(new(entry[2..].TrimEnd('/'), GitChange.Untracked));
+                files.Add(new(entry[2..].TrimEnd('/').ToString(), GitChange.Untracked));
             }
         }
 
@@ -225,15 +231,14 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
 
     // The path, after as many fields before it as there are, each followed by a space. The path
     // may have spaces of its own.
-    static string PathAfter(string entry, int fields)
+    static string PathAfter(CharSpan entry, int fields)
     {
-        var start = 0;
         for (var field = 0; field < fields; field++)
         {
-            start = entry.IndexOf(' ', start) + 1;
+            entry = entry[(entry.IndexOf(' ') + 1)..];
         }
 
-        return entry[start..];
+        return entry.ToString();
     }
 
     // What isn't staged says most of a file, as it is what is on disk.

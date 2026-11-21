@@ -6,16 +6,16 @@
 /// </summary>
 sealed class GitCells
 {
-    public static readonly GitCells None = new(new Dictionary<string, GitState>(), null, null);
+    public static GitCells None = new(new Dictionary<string, GitState>(), null, null);
 
     // The repositories' states, by their paths.
-    readonly Dictionary<string, GitState> repos;
+    Dictionary<string, GitState> repos;
 
     // The repository the folder is in, and, by their paths from its top, what has happened to
     // each path that changed, and how many changes each folder above one holds.
-    readonly string? root;
-    readonly Dictionary<string, GitChange> files = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, int> folders = new(StringComparer.OrdinalIgnoreCase);
+    string? root;
+    Dictionary<string, GitChange> files = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, int> folders = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="repos">The states of the repositories the folder lists, by their paths.</param>
     /// <param name="root">The repository the folder is in, if it is in one.</param>
