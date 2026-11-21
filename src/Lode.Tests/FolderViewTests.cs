@@ -1935,6 +1935,112 @@ public class FolderViewTests
         await Assert.That(freshAfterChangeDuringRead).IsFalse();
     }
 
+    // What git writes for itself changes no state, so is no reason to read: an object, and what
+    // its fsmonitor daemon makes and deletes for every status it answers, which would otherwise
+    // have each read be the reason for the next. Only the repository that has changed is read.
+    [Test]
+    public async Task WhatGitWritesForItselfIsNotRead()
+    {
+        using var code = Repositories();
+        var cookies = code.At("Clean", ".git", "fsmonitor--daemon", "cookies");
+        Directory.CreateDirectory(cookies);
+        var reads = new List<string>();
+        var readGit = FolderView.ReadGit;
+        FolderView.ReadGit = (repo, cancel) =>
+        {
+            lock (reads)
+            {
+                reads.Add(Path.GetFileName(repo));
+            }
+
+            return readGit(repo, cancel);
+        };
+        try
+        {
+            using var view = await Open(code.Root, InCode(code));
+            await GitRead(view);
+
+            // Whatever making the repositories left to be heard has been, and read.
+            await Pump.For(TimeSpan.FromSeconds(1));
+            await GitRead(view);
+            lock (reads)
+            {
+                reads.Clear();
+            }
+
+            var cookie = Path.Combine(cookies, "1-1");
+            await File.WriteAllTextAsync(cookie, "");
+            File.Delete(cookie);
+            await File.WriteAllTextAsync(code.At("Clean", ".git", "objects", "info", "object"), "");
+            await File.WriteAllTextAsync(code.At("Changed", "new.txt"), "new");
+            await Pump.Until(() => GitCells(view).Contains("Changed: main · 2 changes"));
+            await GitRead(view);
+
+            List<string> read;
+            lock (reads)
+            {
+                read = reads.ToList();
+            }
+
+            await Assert.That(read).IsEquivalentTo(["Changed"]);
+        }
+        finally
+        {
+            FolderView.ReadGit = readGit;
+        }
+    }
+
+    // A repository whose files go on changing while reading it finds nothing new, a build's
+    // output say, is held: it counts as fresh, so nothing reads it. A change of git's own in
+    // it, a commit say, ends that, and its views are told once that has settled.
+    [Test]
+    public async Task HeldWhileNothingNewIsFoundUntilGitItselfChanges()
+    {
+        using var code = Repositories();
+
+        // Not a repository, so nothing git left of it is heard meanwhile.
+        var repo = code.At("Plain");
+        var output = Path.Combine(repo, "bin", "output.dll");
+        GitCache.Watch(code.Root);
+        var told = new List<string>();
+        void OnStale(IReadOnlyCollection<string> stale)
+        {
+            lock (told)
+            {
+                told.AddRange(stale);
+            }
+        }
+
+        GitCache.Stale += OnStale;
+        try
+        {
+            GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
+            GitCache.ChangedAt(output);
+            GitCache.TryGet(repo, out _, out _, out var freshOnceChanged);
+            GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
+            GitCache.ChangedAt(output);
+            GitCache.TryGet(repo, out _, out _, out var freshWhileHeld);
+            GitCache.ChangedAt(Path.Combine(repo, ".git", "index"));
+            GitCache.TryGet(repo, out _, out _, out var freshOnceGitChanged);
+            await Pump.Until(
+                () =>
+                {
+                    lock (told)
+                    {
+                        return told.Contains(repo);
+                    }
+                });
+
+            await Assert.That(freshOnceChanged).IsFalse();
+            await Assert.That(freshWhileHeld).IsTrue();
+            await Assert.That(freshOnceGitChanged).IsFalse();
+        }
+        finally
+        {
+            GitCache.Stale -= OnStale;
+        }
+    }
+
     // By what the column says: nothing first, then by branch, then by what there is to commit.
     [Test]
     public async Task SortByGit()

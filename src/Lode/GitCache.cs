@@ -6,20 +6,145 @@
 /// change in a repository, to its files or in .git, makes it stale, and once its changes have
 /// stopped for a moment the views showing it read it again. Where the drive can't be watched,
 /// a share say, nothing is kept fresh, so each is read every time, as before.
+/// What git writes for itself, that no state shows, is no change: see <see cref="IsNoise"/>.
+/// And a repository whose changes go on, a build's output say, while reading it finds nothing
+/// new, is read less and less often until they stop: see <see cref="Known"/>.
 /// </summary>
 static class GitCache
 {
-    sealed class Known
+    /// <summary>
+    /// What is known of one repository, and when it is next to be read. Times are in
+    /// milliseconds, as Environment.TickCount64 counts them, and are given, so what it does as
+    /// time passes can be tested without waiting. GitCache uses each under its gate.
+    /// </summary>
+    internal sealed class Known(int changes = 0)
     {
-        public GitState? State;
-        public RemoteSite? Site;
+        public GitState? State { get; private set; }
+        public RemoteSite? Site { get; private set; }
 
-        // Changes seen in it, and how many had been when what is kept was read: fresh while
-        // they are the same.
-        public int Changes;
-        public int ReadAt = -1;
+        /// <summary>
+        /// How many changes have been seen in it.
+        /// </summary>
+        public int Changes { get; private set; } = changes;
 
-        public bool Fresh => State != null && Changes == ReadAt;
+        // How many had been when what is kept was read: fresh while they are the same.
+        int readAt = -1;
+
+        // When the changes its views are yet to be told of began, and when the last one came.
+        long since;
+        long last;
+
+        // How long it is held for, not read, after a read that found nothing new, and until when
+        // it is. Twice as long each time, as then its changes are ones no state shows, a build's
+        // output say, and each read is of every file in it.
+        long hold;
+        long heldUntil;
+
+        /// <summary>
+        /// Whether its views are yet to be told of changes in it.
+        /// </summary>
+        public bool Changing { get; private set; }
+
+        /// <summary>
+        /// Whether what is kept needs no reading: nothing has changed since it was read, or it
+        /// is held.
+        /// </summary>
+        public bool Fresh(long now) =>
+            State != null &&
+            (Changes == readAt || now < HeldUntil);
+
+        // Held only while its changes go on. Once they have stopped a while it is read, however
+        // much longer it was held for, so what it comes to rest as is soon shown.
+        long HeldUntil =>
+            Math.Min(heldUntil, last + longestSettle);
+
+        /// <summary>
+        /// When its views are to be told of its changes: once they have stopped for a moment, or
+        /// have gone on a while, but not while it is held.
+        /// </summary>
+        public long Due =>
+            Math.Max(
+                Math.Min(last + (long) Settle.TotalMilliseconds, since + longestSettle),
+                HeldUntil);
+
+        /// <summary>
+        /// A change in it. <paramref name="inGit"/> for one in .git, other than
+        /// <see cref="IsNoise"/>: a commit, a stage or a pull, which are what a state is made
+        /// of, so it is held no longer.
+        /// </summary>
+        public void Changed(long now, bool inGit)
+        {
+            Changes++;
+
+            // Stopped a while, its changes begin afresh: these may be nothing like the last.
+            var begun = now - last >= longestSettle;
+            if (begun)
+            {
+                hold = 0;
+            }
+
+            // Held no longer, what changed while it was is read with this, once this settles.
+            var freed = heldUntil != 0 &&
+                        (begun || inGit);
+            if (freed)
+            {
+                heldUntil = 0;
+            }
+
+            if (begun ||
+                freed ||
+                !Changing)
+            {
+                since = now;
+            }
+
+            Changing = true;
+            last = now;
+        }
+
+        /// <summary>
+        /// Its views have been told of its changes.
+        /// </summary>
+        public void Told() =>
+            Changing = false;
+
+        /// <summary>
+        /// To be read whatever has been seen of it: Refresh, or anything may have changed.
+        /// </summary>
+        public void Ask()
+        {
+            Changes++;
+            hold = 0;
+            heldUntil = 0;
+        }
+
+        /// <summary>
+        /// What a read of it found, begun when <paramref name="changesBefore"/> changes had been
+        /// seen.
+        /// </summary>
+        public void Read(GitState state, RemoteSite? site, int changesBefore, long now)
+        {
+            // Only a read of changes not read before says anything of them: not a second view
+            // reading the same, nor the one read told of twice.
+            if (changesBefore != readAt)
+            {
+                if (State == state &&
+                    Site == site)
+                {
+                    hold = Math.Clamp(hold * 2, longestSettle, longestHold);
+                    heldUntil = now + hold;
+                }
+                else
+                {
+                    hold = 0;
+                    heldUntil = 0;
+                }
+            }
+
+            State = state;
+            Site = site;
+            readAt = changesBefore;
+        }
     }
 
     static readonly Lock gate = new();
@@ -29,10 +154,11 @@ static class GitCache
     // Every code folder watched for, as Options may change it, and tests have many.
     static readonly HashSet<string> codeFolders = new(StringComparer.OrdinalIgnoreCase);
 
-    // The repositories changing, until their changes stop for a moment.
-    static readonly HashSet<string> changing = new(StringComparer.OrdinalIgnoreCase);
+    // The repositories changing, until the views are told of each: see Known.Due. The timer is
+    // set for the first of them due, and when that is, which is never while none is.
+    static readonly Dictionary<string, Known> changing = new(StringComparer.OrdinalIgnoreCase);
     static System.Threading.Timer? settling;
-    static long changingSince;
+    static long settlingAt = long.MaxValue;
 
     /// <summary>
     /// How long a repository's changes must stop for before it is read again: a commit, a pull
@@ -40,8 +166,11 @@ static class GitCache
     /// </summary>
     internal static TimeSpan Settle { get; set; } = TimeSpan.FromMilliseconds(500);
 
-    // Nor longer than this, however long the changes go on, a build say.
-    static readonly TimeSpan longestSettle = TimeSpan.FromSeconds(3);
+    // Nor longer than this, however long the changes go on, a build say. In milliseconds.
+    const long longestSettle = 3_000;
+
+    // The longest a repository is held for, its changes going on and nothing new found.
+    const long longestHold = 60_000;
 
     /// <summary>
     /// Raised on a background thread with the repositories that have gone stale, for the views
@@ -119,7 +248,8 @@ static class GitCache
 
     /// <summary>
     /// The state last read of <paramref name="repo"/>, and whether it is still fresh: nothing in
-    /// the repository has changed since, as far as the watch has heard. False when none has been.
+    /// the repository has changed since, as far as the watch has heard, or what has is its
+    /// output still being built. False when none has been.
     /// </summary>
     public static bool TryGet(string repo, out GitState state, out RemoteSite? site, out bool fresh)
     {
@@ -136,7 +266,7 @@ static class GitCache
 
             state = entry.State;
             site = entry.Site;
-            fresh = entry.Fresh && watcher is { IsWatching: true };
+            fresh = entry.Fresh(Environment.TickCount64) && watcher is { IsWatching: true };
             return true;
         }
     }
@@ -176,16 +306,11 @@ static class GitCache
 
             if (!known.TryGetValue(repo, out var entry))
             {
-                entry = new()
-                {
-                    Changes = changesBefore
-                };
+                entry = new(changesBefore);
                 known[repo] = entry;
             }
 
-            entry.State = state;
-            entry.Site = site;
-            entry.ReadAt = changesBefore;
+            entry.Read(state, site, changesBefore, Environment.TickCount64);
         }
     }
 
@@ -200,21 +325,63 @@ static class GitCache
             {
                 if (known.TryGetValue(repo, out var entry))
                 {
-                    entry.Changes++;
+                    entry.Ask();
                 }
             }
         }
     }
 
+    const string gitFolder = @"\.git\";
+
+    /// <summary>
+    /// Whether a change at <paramref name="path"/> is one git makes for itself, which no state
+    /// shows, and so is no reason to read the repository again. Objects, which count only once a
+    /// branch or the index names them, and that is a change of its own. The log of where each
+    /// branch has been. A lock, taken to write the file it is beside. And what git's fsmonitor
+    /// daemon makes and deletes for every status it answers, Lode's own among them: counted,
+    /// each read of such a repository would be the reason for the next.
+    /// </summary>
+    internal static bool IsNoise(CharSpan path) =>
+        InGit(path, out var inside) &&
+        IsNoiseInGit(inside);
+
+    static bool IsNoiseInGit(CharSpan inside) =>
+        Locations.IsWithin(inside, "objects") ||
+        Locations.IsWithin(inside, "logs") ||
+        Locations.IsWithin(inside, "fsmonitor--daemon") ||
+        inside.EndsWith(".lock", StringComparison.OrdinalIgnoreCase);
+
+    // Whether the path is in a .git folder, and where in it. A worktree's and a submodule's own
+    // are in the .git of the repository they are of.
+    static bool InGit(CharSpan path, out CharSpan inside)
+    {
+        var at = path.IndexOf(gitFolder, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            inside = default;
+            return false;
+        }
+
+        inside = path[(at + gitFolder.Length)..];
+        return true;
+    }
+
     // On a background thread, for everything changed on the drive, so as little as it can be for
     // what is outside the code folder. Stale at once, so a view going to it reads it; the views
     // showing it are told once its changes stop.
-    static void ChangedAt(string path)
+    internal static void ChangedAt(string path)
     {
         lock (gate)
         {
             var codeFolder = codeFolders.FirstOrDefault(_ => Locations.IsWithin(path, _));
             if (codeFolder == null)
+            {
+                return;
+            }
+
+            var inGit = InGit(path, out var inside);
+            if (inGit &&
+                IsNoiseInGit(inside))
             {
                 return;
             }
@@ -227,39 +394,60 @@ static class GitCache
                     continue;
                 }
 
-                entry.Changes++;
-                if (changing.Add(current) &&
-                    changing.Count == 1)
+                var now = Environment.TickCount64;
+                entry.Changed(now, inGit);
+                changing[current] = entry;
+
+                // Left as it is set when that is soon enough, as it nearly always is: it then
+                // finds this one not yet due, and waits on.
+                if (entry.Due < settlingAt)
                 {
-                    changingSince = Stopwatch.GetTimestamp();
+                    SettleAt(entry.Due, now);
                 }
 
-                // Read once its changes stop, or have gone on a while.
-                var wait = Settle;
-                var waited = Stopwatch.GetElapsedTime(changingSince);
-                if (waited + wait > longestSettle)
-                {
-                    wait = longestSettle - waited;
-                    if (wait < TimeSpan.Zero)
-                    {
-                        wait = TimeSpan.Zero;
-                    }
-                }
-
-                settling ??= new(_ => Settled());
-                settling.Change(wait, Timeout.InfiniteTimeSpan);
                 return;
             }
         }
     }
 
+    // Under the gate.
+    static void SettleAt(long due, long now)
+    {
+        settlingAt = due;
+        settling ??= new(_ => Settled());
+        settling.Change(Math.Max(due - now, 0), Timeout.Infinite);
+    }
+
+    // The timer's: tells of the repositories due, and waits for the next of the rest.
     static void Settled()
     {
-        List<string> stale;
+        var stale = new List<string>();
         lock (gate)
         {
-            stale = changing.ToList();
-            changing.Clear();
+            var now = Environment.TickCount64;
+            var next = long.MaxValue;
+            foreach (var (repo, entry) in changing)
+            {
+                if (entry.Due > now)
+                {
+                    next = Math.Min(next, entry.Due);
+                    continue;
+                }
+
+                entry.Told();
+                stale.Add(repo);
+            }
+
+            foreach (var repo in stale)
+            {
+                changing.Remove(repo);
+            }
+
+            settlingAt = long.MaxValue;
+            if (next != long.MaxValue)
+            {
+                SettleAt(next, now);
+            }
         }
 
         Raise(stale);
@@ -284,7 +472,7 @@ static class GitCache
     {
         foreach (var entry in known.Values)
         {
-            entry.Changes++;
+            entry.Ask();
         }
     }
 
