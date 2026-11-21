@@ -6,9 +6,9 @@ The short version: each repository is read once and cached. One watch on the cod
 
 | Part | File | What it does |
 | --- | --- | --- |
-| `GitState` | [src/Lode/GitState.cs](../src/Lode/GitState.cs) | What is known of a repository, and the reader that runs `git status` |
-| `LibGitState` | [src/Lode/LibGitState.cs](../src/Lode/LibGitState.cs) | The in-process reader, and which folders git ignores |
-| `GitCache` | [src/Lode/GitCache.cs](../src/Lode/GitCache.cs) | The cache, the watch on the code folder, and when a repository is read again |
+| `GitState` | [src/Lode/Code/GitState.cs](../src/Lode/Code/GitState.cs) | What is known of a repository, and the reader that runs `git status` |
+| `LibGitState` | [src/Lode/Code/LibGitState.cs](../src/Lode/Code/LibGitState.cs) | The in-process reader, and which folders git ignores |
+| `GitCache` | [src/Lode/Code/GitCache.cs](../src/Lode/Code/GitCache.cs) | The cache, the watch on the code folder, and when a repository is read again |
 | `FolderView` | [src/Lode/FolderView.cs](../src/Lode/FolderView.cs) | Decides which repositories it shows, reads them, and draws the result |
 
 ## Overview
