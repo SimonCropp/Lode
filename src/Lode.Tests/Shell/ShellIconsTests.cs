@@ -170,4 +170,25 @@ public class ShellIconsTests
 
     [DllImport("shell32.dll")]
     static extern int SHGetIconOverlayIndex(IntPtr iconPath, int iconIndex);
+
+    // A type nothing is registered for is named after its extension, in lower case rather than
+    // the capitals Windows gives it. One that is registered, or a file with no extension, is as
+    // Windows has it.
+    [Test]
+    public async Task AnUnregisteredTypeKeepsItsExtensionInLowerCase()
+    {
+        await Assert.That(ShellIcons.Unregistered("ALEPH File", ".aleph")).IsEqualTo("aleph File");
+        await Assert.That(ShellIcons.Unregistered("BETA File", ".Beta")).IsEqualTo("beta File");
+        await Assert.That(ShellIcons.Unregistered("Text Document", ".txt")).IsEqualTo("Text Document");
+        await Assert.That(ShellIcons.Unregistered("TXT File", ".csv")).IsEqualTo("TXT File");
+        await Assert.That(ShellIcons.Unregistered("File", "")).IsEqualTo("File");
+    }
+
+    [Test]
+    public async Task TheTypeColumnSaysAnUnregisteredTypeInLowerCase()
+    {
+        var typeName = ShellIcons.GetTypeName(@"C:\nowhere\notes.lodeunregistered", false);
+
+        await Assert.That(typeName).IsEqualTo("lodeunregistered File");
+    }
 }

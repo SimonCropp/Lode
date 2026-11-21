@@ -2941,7 +2941,7 @@ sealed class FolderView : UserControl
                     return "";
                 }
 
-                return entry.Modified.ToString("g");
+                return Formatting.Modified(entry.Modified);
             case typeColumn:
                 return ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory);
             case gitColumn:

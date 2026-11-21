@@ -490,9 +490,30 @@ static class ShellIcons
 
         var info = new ShellFileInfo();
         SHGetFileInfo(string.Concat("file", extension),normalAttribute, ref info, infoSize, typeNameFlag | useFileAttributesFlag);
-        var typeName = string.IsNullOrEmpty(info.TypeName) ? "File" : info.TypeName;
+        var typeName = Unregistered(string.IsNullOrEmpty(info.TypeName) ? "File" : info.TypeName, extension);
         typesByExtension[extension] = typeName;
         return typeName;
+    }
+
+    /// <summary>
+    /// <paramref name="typeName"/>, but for a type nothing is registered for, which Windows names
+    /// after its extension in capitals, "ALEPH File", the extension in lower case, as files are
+    /// mostly named: "aleph File". Windows in another language words it otherwise, and keeps it.
+    /// </summary>
+    internal static string Unregistered(string typeName, CharSpan extension)
+    {
+        if (extension.Length < 2)
+        {
+            return typeName;
+        }
+
+        var name = extension[1..].ToString();
+        if (!string.Equals(typeName, $"{name.ToUpperInvariant()} File", StringComparison.Ordinal))
+        {
+            return typeName;
+        }
+
+        return $"{name.ToLowerInvariant()} File";
     }
 
     public static (string DisplayName, string TypeName, int Icon) Describe(string path)
