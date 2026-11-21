@@ -2087,6 +2087,158 @@ public class FolderViewTests
         await Assert.That(afterItsObjects).IsEqualTo((true, true));
     }
 
+    // A repository that ignores bin and obj, with nothing to commit.
+    static string IgnoringOutput(CodeCommandsTests.Scratch code)
+    {
+        var repo = code.CreateRepo("Ignoring");
+        File.WriteAllText(Path.Combine(repo, ".gitignore"), "bin/\nobj/\n");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Ignore");
+        CodeCommandsTests.Scratch.Git(repo, "push");
+        return repo;
+    }
+
+    // A build's output is in folders git ignores, where no change is one to the repository. The
+    // first change in such a folder has it looked at, and from then on those in it are not
+    // read: only the repository that has changed is.
+    [Test]
+    public async Task ChangesInAFolderGitIgnoresAreNotRead()
+    {
+        using var code = Repositories();
+        var bin = Path.Combine(IgnoringOutput(code), "bin");
+        Directory.CreateDirectory(Path.Combine(bin, "Debug"));
+        var reads = new List<string>();
+        var readGit = FolderView.ReadGit;
+        FolderView.ReadGit = (repo, cancel) =>
+        {
+            lock (reads)
+            {
+                reads.Add(Path.GetFileName(repo));
+            }
+
+            return readGit(repo, cancel);
+        };
+        try
+        {
+            using var view = await Open(code.Root, InCode(code));
+            await GitRead(view);
+            await File.WriteAllTextAsync(Path.Combine(bin, "first.dll"), "");
+            await Pump.Until(() => GitCache.Ignored(bin) == true);
+
+            // Whatever making the repositories left to be heard has been, and read.
+            await Pump.For(TimeSpan.FromSeconds(1));
+            await GitRead(view);
+            lock (reads)
+            {
+                reads.Clear();
+            }
+
+            await File.WriteAllTextAsync(Path.Combine(bin, "second.dll"), "");
+            await File.WriteAllTextAsync(Path.Combine(bin, "Debug", "third.dll"), "");
+            await File.WriteAllTextAsync(code.At("Changed", "new.txt"), "new");
+            await Pump.Until(() => GitCells(view).Contains("Changed: main · 2 changes"));
+            await GitRead(view);
+
+            List<string> read;
+            lock (reads)
+            {
+                read = reads.ToList();
+            }
+
+            await Assert.That(read).IsEquivalentTo(["Changed"]);
+        }
+        finally
+        {
+            FolderView.ReadGit = readGit;
+        }
+    }
+
+    // Which folders git ignores, as libgit2 has it: one ignored, and the one it is in, which
+    // isn't. Nothing below the first ignored is asked of, as all of it is ignored too. One
+    // ignored that holds a file git tracks all the same isn't given as ignored: a change to
+    // that file is a change.
+    [Test]
+    public async Task WhichFoldersGitIgnores()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = IgnoringOutput(code);
+        var kept = Path.Combine(repo, "bin", "kept.txt");
+        Directory.CreateDirectory(Path.Combine(repo, "bin"));
+        await File.WriteAllTextAsync(kept, "kept");
+        CodeCommandsTests.Scratch.Git(repo, "add", "-f", "bin/kept.txt");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Kept");
+        var debug = Path.Combine(repo, "src", "Project", "obj", "Debug");
+        Directory.CreateDirectory(debug);
+
+        var found = LibGitState.Ignored(repo, [debug, Path.Combine(repo, "bin")]);
+
+        var said = found
+            .OrderBy(_ => _.Key, StringComparer.Ordinal)
+            .Select(_ => $"{code.Relative(_.Key)}: {_.Value}")
+            .ToList();
+        await Assert.That(said)
+            .IsEquivalentTo(
+                [
+                    "Ignoring/bin: False",
+                    "Ignoring/src: False",
+                    "Ignoring/src/Project: False",
+                    "Ignoring/src/Project/obj: True"
+                ],
+                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // A change in a folder learned to be ignored leaves the repository fresh. What was learned
+    // is forgotten, to be learned again, when what git ignores may be other than it was: a
+    // .gitignore changed, or the index, as a file added there by force is tracked from then on.
+    [Test]
+    public async Task WhatIsIgnoredIsLearnedAndForgotten()
+    {
+        using var code = Repositories();
+
+        // Not a repository, so nothing git left of it is heard meanwhile.
+        var repo = code.At("Plain");
+        var obj = Path.Combine(repo, "obj");
+        var output = Path.Combine(obj, "Debug", "output.dll");
+        var src = Path.Combine(repo, "src");
+        GitCache.Watch(code.Root);
+        var askIgnored = GitCache.AskIgnored;
+        GitCache.AskIgnored = (_, _) => new(StringComparer.OrdinalIgnoreCase)
+        {
+            [obj] = true,
+            [src] = false
+        };
+        try
+        {
+            ReadNow(repo);
+            GitCache.ChangedAt(output);
+            GitCache.ChangedAt(Path.Combine(src, "Thing.cs"));
+            var freshAtFirst = IsFresh(repo);
+            await Pump.Until(() => GitCache.Ignored(obj) == true);
+            ReadNow(repo);
+            GitCache.ChangedAt(output);
+            GitCache.ChangedAt(obj);
+            var freshOnceLearned = IsFresh(repo);
+
+            // In a folder looked at, and not ignored, as much as in one that hasn't been.
+            await Pump.Until(() => GitCache.Ignored(src) == false);
+            GitCache.ChangedAt(Path.Combine(src, ".gitignore"));
+            var afterGitIgnore = GitCache.Ignored(obj);
+            GitCache.ChangedAt(output);
+            await Pump.Until(() => GitCache.Ignored(obj) == true);
+            GitCache.ChangedAt(Path.Combine(repo, ".git", "index"));
+            var afterIndex = GitCache.Ignored(obj);
+
+            await Assert.That(freshAtFirst).IsFalse();
+            await Assert.That(freshOnceLearned).IsTrue();
+            await Assert.That(afterGitIgnore).IsNull();
+            await Assert.That(afterIndex).IsNull();
+        }
+        finally
+        {
+            GitCache.AskIgnored = askIgnored;
+        }
+    }
+
     // Too many changes at once for the watch to keep track of, twice over, every repository is
     // stale at once, but the views are told once, when that has settled, not as each comes.
     [Test]

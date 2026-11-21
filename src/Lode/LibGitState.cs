@@ -59,6 +59,75 @@ static class LibGitState
         }
     }
 
+    /// <summary>
+    /// Which of <paramref name="folders"/>, in the repository, git ignores, and of the folders
+    /// each is in, down from the repository, as far as the first that it does: everything in
+    /// that one is ignored with it. A folder ignored that holds a file git tracks all the same,
+    /// one added by force say, is not given as ignored, as a change to that file is a change.
+    /// Each by its path. All as not ignored where libgit2 can't read the repository.
+    /// </summary>
+    public static Dictionary<string, bool> Ignored(string repo, IReadOnlyCollection<string> folders)
+    {
+        var found = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var repository = new Repository(repo);
+            foreach (var folder in folders)
+            {
+                var current = repo;
+                foreach (var part in Path.GetRelativePath(repo, folder).Split(Path.DirectorySeparatorChar))
+                {
+                    current = Path.Combine(current, part);
+                    if (!found.TryGetValue(current, out var ignored))
+                    {
+                        ignored = repository.Ignore.IsPathIgnored(Relative(repo, current));
+                        found[current] = ignored;
+                    }
+
+                    if (ignored)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            var roots = found
+                .Where(_ => _.Value)
+                .Select(_ => (Folder: _.Key, Prefix: Relative(repo, _.Key)))
+                .ToList();
+            if (roots.Count == 0)
+            {
+                return found;
+            }
+
+            foreach (var entry in repository.Index)
+            {
+                var path = entry.Path.Replace('\\', '/');
+                foreach (var (folder, prefix) in roots)
+                {
+                    if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found[folder] = false;
+                    }
+                }
+            }
+        }
+        catch (Exception exception) when (exception is LibGit2SharpException or DllNotFoundException or TypeInitializationException or BadImageFormatException or IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            foreach (var folder in folders)
+            {
+                found[folder] = false;
+            }
+        }
+
+        return found;
+    }
+
+    // As git has a folder's path: from the top of the repository, with forward slashes, and
+    // one after it.
+    static string Relative(string repo, string folder) =>
+        Path.GetRelativePath(repo, folder).Replace('\\', '/') + '/';
+
     const FileStatus inWorkdir = FileStatus.ModifiedInWorkdir | FileStatus.TypeChangeInWorkdir | FileStatus.RenamedInWorkdir;
 
     // As GitState.ChangeOf has it from git: what isn't staged first, then what is.

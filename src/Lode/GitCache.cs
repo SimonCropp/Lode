@@ -46,6 +46,14 @@ static class GitCache
         public bool Changing { get; private set; }
 
         /// <summary>
+        /// The folders in it that have been looked at for whether git ignores them, and how
+        /// many times what was learned of them has been forgotten: see <see cref="folders"/>.
+        /// </summary>
+        public List<string> Learned { get; } = [];
+
+        public int Forgotten { get; set; }
+
+        /// <summary>
         /// Whether what is kept needs no reading: nothing has changed since it was read, or it
         /// is held.
         /// </summary>
@@ -375,6 +383,127 @@ static class GitCache
         public TaskCompletionSource<(GitState? State, RemoteSite? Site)> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
+    // The folders looked at for whether git ignores them, with whether it does, and so whether
+    // a change in one is no change to its repository: a build's output, nearly always. Learned
+    // of a folder the first time something changes in it, off this thread, as it is asked of
+    // the repository. Forgotten, for a repository, when what git ignores in it may be other
+    // than it was: see Forget.
+    static readonly Dictionary<string, bool> folders = new(StringComparer.OrdinalIgnoreCase);
+
+    // The folders yet to be looked at, each with its repository, and whether they are being.
+    static readonly Dictionary<string, string> toLearn = new(StringComparer.OrdinalIgnoreCase);
+    static bool learning;
+
+    /// <summary>
+    /// Asks which of a repository's folders git ignores. Tests swap it.
+    /// </summary>
+    internal static Func<string, IReadOnlyCollection<string>, Dictionary<string, bool>> AskIgnored = LibGitState.Ignored;
+
+    /// <summary>
+    /// Whether git ignores <paramref name="folder"/>, so that changes in it are dropped. Null
+    /// until it has been looked at.
+    /// </summary>
+    internal static bool? Ignored(string folder)
+    {
+        lock (gate)
+        {
+            if (folders.TryGetValue(folder, out var ignored))
+            {
+                return ignored;
+            }
+
+            return null;
+        }
+    }
+
+    // What git ignores in the repository may be other than it was: a .gitignore changed, or its
+    // exclude file or config, or its index, as a file added in an ignored folder is one git
+    // tracks from then on. Or it is to be read whatever. Under the gate.
+    static void Forget(Known entry)
+    {
+        foreach (var folder in entry.Learned)
+        {
+            folders.Remove(folder);
+        }
+
+        entry.Learned.Clear();
+        entry.Forgotten++;
+    }
+
+    static bool ChangesWhatIsIgnored(CharSpan insideGit) =>
+        insideGit.Equals("index", StringComparison.OrdinalIgnoreCase) ||
+        insideGit.Equals("config", StringComparison.OrdinalIgnoreCase) ||
+        insideGit.Equals(@"info\exclude", StringComparison.OrdinalIgnoreCase);
+
+    // Under the gate. The folder is looked at once, however many changes come in it meanwhile.
+    static void Learn(string repo, string folder)
+    {
+        if (!toLearn.TryAdd(folder, repo) ||
+            learning)
+        {
+            return;
+        }
+
+        learning = true;
+        Task.Run(Learn);
+    }
+
+    static void Learn()
+    {
+        while (true)
+        {
+            List<IGrouping<string, string>> asked;
+            var forgotten = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            lock (gate)
+            {
+                if (toLearn.Count == 0)
+                {
+                    learning = false;
+                    return;
+                }
+
+                asked = toLearn
+                    .GroupBy(_ => _.Value, _ => _.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                toLearn.Clear();
+                foreach (var group in asked)
+                {
+                    if (known.TryGetValue(group.Key, out var entry))
+                    {
+                        forgotten[group.Key] = entry.Forgotten;
+                    }
+                }
+            }
+
+            foreach (var group in asked)
+            {
+                if (!forgotten.TryGetValue(group.Key, out var before))
+                {
+                    continue;
+                }
+
+                var found = AskIgnored(group.Key, group.ToList());
+                lock (gate)
+                {
+                    // Forgotten meanwhile, what was found is of how it was.
+                    if (!known.TryGetValue(group.Key, out var entry) ||
+                        entry.Forgotten != before)
+                    {
+                        continue;
+                    }
+
+                    foreach (var (folder, ignored) in found)
+                    {
+                        if (folders.TryAdd(folder, ignored))
+                        {
+                            entry.Learned.Add(folder);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // The read of each repository under way, the latest begun where there are two.
     static readonly Dictionary<string, Reading> reading = new(StringComparer.OrdinalIgnoreCase);
 
@@ -497,6 +626,7 @@ static class GitCache
                 if (known.TryGetValue(repo, out var entry))
                 {
                     entry.Ask();
+                    Forget(entry);
                 }
             }
         }
@@ -575,6 +705,33 @@ static class GitCache
             var repos = known.GetAlternateLookup<CharSpan>();
             var gits = gitFolders.GetAlternateLookup<CharSpan>();
             var shared = sharing.GetAlternateLookup<CharSpan>();
+            var looked = folders.GetAlternateLookup<CharSpan>();
+
+            // In a folder git ignores, or one itself, a build's output say, it is no change to
+            // the repository: nothing is stale, and nothing read. The folder it is in looked
+            // at and not ignored, none above that is either, so they aren't asked after.
+            var above = !inGit && folders.Count > 0;
+            var folderLooked = false;
+            if (above)
+            {
+                if (looked.TryGetValue(path, out var itself) &&
+                    itself)
+                {
+                    return;
+                }
+
+                if (looked.TryGetValue(Path.GetDirectoryName(path.AsSpan()), out var folderIgnored))
+                {
+                    if (folderIgnored)
+                    {
+                        return;
+                    }
+
+                    folderLooked = true;
+                    above = false;
+                }
+            }
+
             for (var current = path.AsSpan(); !current.IsEmpty && Locations.IsWithin(current, codeFolder); current = Path.GetDirectoryName(current))
             {
                 if (inGit &&
@@ -584,6 +741,12 @@ static class GitCache
                     if (IsNoiseInGit(Beneath(path, current)))
                     {
                         return;
+                    }
+
+                    if (ChangesWhatIsIgnored(Beneath(path, current)) &&
+                        known.TryGetValue(own.Repo, out var its))
+                    {
+                        Forget(its);
                     }
 
                     Mark(own.Repo, inGit, now);
@@ -608,15 +771,62 @@ static class GitCache
                     }
                 }
 
+                // Further down in a folder git ignores. A repository nested in such a folder is
+                // found first, being further in.
                 if (!repos.TryGetValue(current, out var repo, out var entry))
                 {
+                    if (above &&
+                        looked.TryGetValue(current, out var ignored) &&
+                        ignored)
+                    {
+                        return;
+                    }
+
                     continue;
+                }
+
+                if (inGit)
+                {
+                    if (ChangesWhatIsIgnored(inside))
+                    {
+                        Forget(entry);
+                    }
+                }
+                else
+                {
+                    LearnOf(path, repo, entry, folderLooked);
                 }
 
                 Mark(repo, entry, inGit, now);
                 return;
             }
         }
+    }
+
+    // A change to the repository's files, counted as one. A .gitignore changes what is ignored.
+    // The folder of anything else is looked at, unless it has been, so that if git ignores it
+    // the next change in it isn't counted. Under the gate.
+    static void LearnOf(string path, string repo, Known entry, bool folderLooked)
+    {
+        if (Path.GetFileName(path.AsSpan()).Equals(".gitignore", StringComparison.OrdinalIgnoreCase))
+        {
+            Forget(entry);
+            return;
+        }
+
+        if (folderLooked)
+        {
+            return;
+        }
+
+        var folder = Path.GetDirectoryName(path.AsSpan());
+        if (folder.Length <= repo.Length ||
+            folders.GetAlternateLookup<CharSpan>().ContainsKey(folder))
+        {
+            return;
+        }
+
+        Learn(repo, folder.ToString());
     }
 
     // What of path is beneath folder, which it is in.
@@ -717,6 +927,7 @@ static class GitCache
             foreach (var (repo, entry) in known)
             {
                 entry.AnyChanged(now);
+                Forget(entry);
                 changing[repo] = entry;
                 first = Math.Min(first, entry.Due);
             }
@@ -734,6 +945,7 @@ static class GitCache
         foreach (var entry in known.Values)
         {
             entry.Ask();
+            Forget(entry);
         }
     }
 
@@ -758,6 +970,8 @@ static class GitCache
             gitFolders.Clear();
             sharing.Clear();
             reading.Clear();
+            folders.Clear();
+            toLearn.Clear();
             changing.Clear();
             watcher?.Dispose();
             watcher = null;
