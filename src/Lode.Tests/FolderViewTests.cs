@@ -2486,6 +2486,52 @@ public class FolderViewTests
         await Assert.That(view.GitSite).IsNull();
     }
 
+    // In a folder of repositories, the code folder say, a repository selected on its own is what
+    // the status bar is about: its state and its site. Nothing selected, two, or a folder that is
+    // no repository, it is about the one the folder is in, here none.
+    [Test]
+    public async Task StatusFollowsARepositorySelectedOnItsOwn()
+    {
+        using var code = Repositories();
+        CodeCommandsTests.Scratch.Git(code.At("Changed"), "remote", "set-url", "origin", "git@github.com:octo/repo.git");
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+        var nothingSelected = (view.GitText, view.GitRepo);
+
+        async Task<(string Text, string? Repo, RemoteSite? Site)> Selecting(params string[] names)
+        {
+            view.Reveal([.. names.Select(_ => code.At(_))]);
+            await Pump.Until(() => Selected(view).Order().SequenceEqual(names.Order()));
+            return (view.GitText, view.GitRepo, view.GitSite);
+        }
+
+        var changed = await Selecting("Changed");
+        var clean = await Selecting("Clean");
+        var plain = await Selecting("Plain");
+        var both = await Selecting("Changed", "Clean");
+
+        await Assert.That(nothingSelected).IsEqualTo(("", (string?) null));
+        await Assert.That(changed).IsEqualTo(("main · 1 change", code.At("Changed"), new RemoteSite("GitHub", "https://github.com/octo/repo")));
+        await Assert.That(clean).IsEqualTo(("main", code.At("Clean"), (RemoteSite?) null));
+        await Assert.That(plain).IsEqualTo(("", (string?) null, (RemoteSite?) null));
+        await Assert.That(both).IsEqualTo(("", (string?) null, (RemoteSite?) null));
+    }
+
+    // In a repository, a file selected leaves the status bar about the repository.
+    [Test]
+    public async Task StatusStaysOnTheRepositoryForAFileSelected()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.At("Changed"), InCode(code));
+        await GitRead(view);
+
+        view.Reveal(code.At("Changed", "tracked.txt"));
+        await Pump.Until(() => Selected(view).Count == 1);
+
+        await Assert.That(view.GitText).IsEqualTo("main · 1 change");
+        await Assert.That(view.GitRepo).IsEqualTo(code.At("Changed"));
+    }
+
     // In a repository, each file says what has become of it, and each folder how many changes
     // it holds. One unchanged says nothing.
     [Test]

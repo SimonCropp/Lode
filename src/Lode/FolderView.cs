@@ -150,49 +150,25 @@ sealed class FolderView : UserControl
     internal Task GitReading { get; private set; } = Task.CompletedTask;
 
     /// <summary>
-    /// The state of the repository the folder is in, for the status bar. Nothing outside the
-    /// code folder, or outside a repository, or until it has been read.
-    /// </summary>
-    public string GitText
-    {
-        get
-        {
-            if (containingRepo != null &&
-                gitStates.TryGetValue(containingRepo, out var state))
-            {
-                return state.Describe();
-            }
-
-            return "";
-        }
-    }
-
-    /// <summary>
-    /// The site the origin of the repository the folder is in is on, GitHub say, for the status
-    /// bar to link to. Null where it shows no state, or for an origin on no site Lode knows.
-    /// </summary>
-    public RemoteSite? GitSite
-    {
-        get
-        {
-            if (containingRepo != null &&
-                gitStates.ContainsKey(containingRepo))
-            {
-                return gitSites.GetValueOrDefault(containingRepo);
-            }
-
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The repository the folder is in, whose branch the status bar shows and switches. Null
-    /// where it shows no state.
+    /// The repository the status bar is about, whose branch it shows and switches, and whose
+    /// changes, commits ahead and behind it acts on: one selected on its own, in a folder that
+    /// lists repositories, the code folder say, otherwise the one the folder is in. Only one whose
+    /// state has been read: nothing outside the code folder, or outside a repository.
     /// </summary>
     internal string? GitRepo
     {
         get
         {
+            // The selection read as the list holds it, by index into what is displayed, not made
+            // into a list: this is asked of at every change of selection, a thousand rows say.
+            if (list.SelectedIndices.Count == 1 &&
+                list.SelectedIndices[0] is var index &&
+                index < displayed.Count &&
+                gitStates.ContainsKey(displayed[index].FullPath))
+            {
+                return displayed[index].FullPath;
+            }
+
             if (containingRepo != null &&
                 gitStates.ContainsKey(containingRepo))
             {
@@ -204,17 +180,49 @@ sealed class FolderView : UserControl
     }
 
     /// <summary>
-    /// What <see cref="GitRepo"/> was last read to be: its branch, and whether anything is
-    /// uncommitted, which switching branch asks about.
+    /// What <see cref="GitRepo"/> was last read to be: its branch, what is uncommitted, and the
+    /// commits ahead and behind.
     /// </summary>
     internal GitState? GitRepoState
     {
         get
         {
-            if (containingRepo != null &&
-                gitStates.TryGetValue(containingRepo, out var state))
+            if (GitRepo is { } repo)
             {
-                return state;
+                return gitStates[repo];
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The state of <see cref="GitRepo"/>, as the status bar says it. Nothing where there is none.
+    /// </summary>
+    public string GitText
+    {
+        get
+        {
+            if (GitRepoState is { } state)
+            {
+                return state.Describe();
+            }
+
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// The site the origin of <see cref="GitRepo"/> is on, GitHub say, for the status bar to link
+    /// to. Null where it shows no state, or for an origin on no site Lode knows.
+    /// </summary>
+    public RemoteSite? GitSite
+    {
+        get
+        {
+            if (GitRepo is { } repo)
+            {
+                return gitSites.GetValueOrDefault(repo);
             }
 
             return null;

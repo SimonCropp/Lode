@@ -81,8 +81,8 @@ public class GitStatusActionsTests
         await Assert.That(list).EndsWith("\nand 2 more");
     }
 
-    // A clone and another clone of it, the first pushing, so the second is behind once it knows.
-    static (string Pusher, string Behind) TwoClones(Scratch code)
+    // A clone that another clone pushes past, so it is behind once it knows.
+    static string CloneBehind(Scratch code)
     {
         code.CreateRepo("Repo");
         var pusher = code.Clone("Repo", "Pusher");
@@ -90,7 +90,7 @@ public class GitStatusActionsTests
         File.WriteAllText(Path.Combine(pusher, "tracked.txt"), "pushed");
         Scratch.Git(pusher, "commit", "-am", "Pushed");
         Scratch.Git(pusher, "push");
-        return (pusher, behind);
+        return behind;
     }
 
     // Behind only counts what the last fetch learned: fetching finds the commit pushed meanwhile,
@@ -99,7 +99,7 @@ public class GitStatusActionsTests
     public async Task FetchFindsWhatIsBehind()
     {
         using var code = new Scratch();
-        var (_, behind) = TwoClones(code);
+        var behind = CloneBehind(code);
 
         await Assert.That(GitState.FromGit(behind, Cancel.None)!.Behind).IsEqualTo(0);
         var result = (await CodeCommands.Fetch([behind])).Single();
@@ -133,7 +133,7 @@ public class GitStatusActionsTests
     public async Task PullThenPushWhenDiverged()
     {
         using var code = new Scratch();
-        var (_, behind) = TwoClones(code);
+        var behind = CloneBehind(code);
         Scratch.Git(behind, "config", "pull.rebase", "true");
         await File.WriteAllTextAsync(Path.Combine(behind, "other.txt"), "other");
         Scratch.Git(behind, "add", "other.txt");
@@ -155,7 +155,7 @@ public class GitStatusActionsTests
     public async Task PullThenPushStopsWhenThePullFails()
     {
         using var code = new Scratch();
-        var (_, behind) = TwoClones(code);
+        var behind = CloneBehind(code);
         Scratch.Git(behind, "remote", "set-url", "origin", code.At("missing.git"));
 
         var result = (await CodeCommands.PullThenPush([behind])).Single();

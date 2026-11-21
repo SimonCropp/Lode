@@ -53,8 +53,7 @@ static class GitStatusActions
     static string UpstreamOf(string repo)
     {
         var result = CodeCommands.Git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
-        if (result.Succeeded &&
-            result.Output.Length > 0)
+        if (result is {Succeeded: true, Output.Length: > 0})
         {
             return result.Output;
         }
@@ -185,8 +184,7 @@ static class GitStatusActions
 
     static string Heading(GitState state, string branch, string upstream)
     {
-        if (state.Ahead > 0 &&
-            state.Behind > 0)
+        if (state is {Ahead: > 0, Behind: > 0})
         {
             return $"{branch} has diverged from {upstream}";
         }
@@ -202,8 +200,7 @@ static class GitStatusActions
     // Counts are as of the last fetch: origin may have more since.
     static string Diverged(GitState state, string upstream)
     {
-        if (state.Ahead > 0 &&
-            state.Behind > 0)
+        if (state is {Ahead: > 0, Behind: > 0})
         {
             return $"{GitState.CountOf(state.Ahead, "commit")} here aren't on {upstream}, and {GitState.CountOf(state.Behind, "commit")} there aren't here, as of the last fetch.";
         }

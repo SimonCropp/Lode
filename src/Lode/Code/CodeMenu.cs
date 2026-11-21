@@ -356,8 +356,7 @@ static class CodeMenu
             DefaultButton = cancel,
             AllowCancel = true
         };
-        if (!branch.Remote &&
-            branch.Upstream != null)
+        if (branch is {Remote: false, Upstream: not null})
         {
             page.Verification = new($"Also delete {branch.Upstream}");
         }

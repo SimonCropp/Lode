@@ -13,6 +13,15 @@ class MainForm : Form
     const int maximumTabTextLength = 28;
 
     ToolTip toolTip = new();
+
+    // The status bar's tooltips, shown above what they are for. The bar's own are shown below
+    // the pointer, and at the bottom of the screen Windows moves them up over it, which the bar
+    // takes for the pointer leaving: the tooltip hides, the pointer is over the bar again, and
+    // it shows again, over and over.
+    readonly ToolTip statusTip = new()
+    {
+        ShowAlways = true
+    };
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
     ToolStrip actionsBar = new();
@@ -838,7 +847,6 @@ class MainForm : Form
         {
             Renderer = new ExplorerRenderer(),
             SizingGrip = false,
-            ShowItemToolTips = true,
             Font = Font,
             Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
         };
@@ -876,9 +884,39 @@ class MainForm : Form
                 OpenSite(site.Url);
             }
         };
+        foreach (ToolStripItem item in status.Items)
+        {
+            item.MouseHover += (_, _) => ShowStatusTip(status, item);
+            item.MouseLeave += (_, _) => statusTip.Hide(status);
+            item.MouseDown += (_, _) => statusTip.Hide(status);
+        }
+
         ShowUpdate();
         return status;
     }
+
+    // Its text as of now: the site's changes with the folder.
+    void ShowStatusTip(StatusStrip status, ToolStripItem item)
+    {
+        var text = item.ToolTipText;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        // Windows draws tooltips in the status font, with a margin round the text.
+        var font = SystemFonts.StatusFont ?? Font;
+        var height = TextRenderer.MeasureText(text, font).Height + LogicalToDeviceUnits(12);
+        statusTip.Show(text, status, StatusTipLocation(item.Bounds, height, LogicalToDeviceUnits(4)), statusTip.AutoPopDelay);
+    }
+
+    /// <summary>
+    /// Where a tooltip <paramref name="height"/> high goes for a status bar item at
+    /// <paramref name="item"/>, in the bar's coordinates: over the item's left, wholly above the
+    /// bar with a <paramref name="gap"/>, so never under the pointer, which is on the bar.
+    /// </summary>
+    internal static Point StatusTipLocation(Rectangle item, int height, int gap) =>
+        new(item.Left, -height - gap);
 
     void AddGitPart(StatusStrip status, GitState.PartKind kind, ToolStripItem item)
     {
@@ -914,49 +952,62 @@ class MainForm : Form
         }
     }
 
-    // A part for each of what the state says, the last spaced from what follows.
+    // A part for each of what the state says, the last spaced from what follows. Each is set
+    // once, to what it is to be: hidden and shown again, the bar would be laid out again for
+    // every status update, each change of selection say, closing a tooltip open over it.
     void ShowGitParts(GitState? state)
     {
-        gitButton.Visible = false;
-        foreach (var (dot, item) in gitParts.Values)
+        var parts = state?.Parts() ?? [];
+        var texts = parts.ToDictionary(_ => _.Kind, _ => _.Text);
+        ToolStripItem? last = null;
+        if (parts.Count > 0)
         {
-            dot.Visible = false;
-            item.Visible = false;
+            last = ItemOf(parts[^1].Kind);
         }
 
-        ToolStripItem? last = null;
-        foreach (var part in state?.Parts() ?? [])
+        Show(gitButton, texts.GetValueOrDefault(GitState.PartKind.Branch));
+        foreach (var (kind, (dot, item)) in gitParts)
         {
-            ToolStripItem item = gitButton;
-            if (part.Kind != GitState.PartKind.Branch)
+            var text = texts.GetValueOrDefault(kind);
+            dot.Visible = text != null;
+            Show(item, text);
+        }
+
+        ToolStripItem ItemOf(GitState.PartKind kind)
+        {
+            if (kind == GitState.PartKind.Branch)
             {
-                var (dot, partItem) = gitParts[part.Kind];
-                dot.Visible = true;
-                item = partItem;
+                return gitButton;
             }
 
-            item.Text = part.Text;
-            item.Visible = true;
-            item.Margin = item.Margin with
-            {
-                Right = 0
-            };
-            last = item;
+            return gitParts[kind].Item;
         }
 
-        last?.Margin = last.Margin with
+        void Show(ToolStripItem item, string? text)
         {
-            Right = LogicalToDeviceUnits(12)
-        };
-
-        // The chevron sits closer to the branch's right edge than text does to a part's, so the
-        // dot after it gets the difference.
-        if (last != null &&
-            last != gitButton)
-        {
-            gitButton.Margin = gitButton.Margin with
+            item.Visible = text != null;
+            if (text == null)
             {
-                Right = LogicalToDeviceUnits(4)
+                return;
+            }
+
+            item.Text = text;
+
+            // The chevron sits closer to the branch's right edge than text does to a part's, so
+            // the dot after it gets the difference.
+            var right = 0;
+            if (item == last)
+            {
+                right = LogicalToDeviceUnits(12);
+            }
+            else if (item == gitButton)
+            {
+                right = LogicalToDeviceUnits(4);
+            }
+
+            item.Margin = item.Margin with
+            {
+                Right = right
             };
         }
     }
@@ -2702,6 +2753,7 @@ class MainForm : Form
             updates.Changed -= OnUpdatesChanged;
             ActionLog.Changed -= ReadGitState;
             toolTip.Dispose();
+            statusTip.Dispose();
             trayTimer.Dispose();
             unusedTabsTimer.Dispose();
             drivesTimer.Dispose();
