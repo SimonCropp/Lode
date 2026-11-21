@@ -196,20 +196,20 @@ sealed class CommandPalette : Form
 
     void DrawCommand(object? sender, DrawItemEventArgs args)
     {
-        if (eventArgs.Index < 0 ||
-            eventArgs.Index >= shown.Count)
+        if (args.Index < 0 ||
+            args.Index >= shown.Count)
         {
             return;
         }
 
-        eventArgs.DrawBackground();
-        var command = shown[eventArgs.Index];
-        var selected = eventArgs.State.HasFlag(DrawItemState.Selected);
+        args.DrawBackground();
+        var command = shown[args.Index];
+        var selected = args.State.HasFlag(DrawItemState.Selected);
         var color = selected ? ExplorerStyle.HighlightText : list.ForeColor;
         var dimmed = selected ? ExplorerStyle.HighlightText : SystemColors.GrayText;
-        var bounds = Rectangle.Inflate(eventArgs.Bounds, -LogicalToDeviceUnits(6), 0);
+        var bounds = Rectangle.Inflate(args.Bounds, -LogicalToDeviceUnits(6), 0);
         const TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
-        TextRenderer.DrawText(eventArgs.Graphics, command.Name, list.Font, bounds, color, flags | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(args.Graphics, command.Name, list.Font, bounds, color, flags | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         if (command.Shortcut.Length > 0)
         {
             TextRenderer.DrawText(eventArgs.Graphics, command.Shortcut, list.Font, bounds, dimmed, flags | TextFormatFlags.Right);
