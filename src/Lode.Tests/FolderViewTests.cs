@@ -1990,6 +1990,103 @@ public class FolderViewTests
         }
     }
 
+    // A worktree's index and HEAD are not in it but in the .git of the repository it is of, so
+    // a commit in one changes no file of its own. It is read again all the same, and no longer
+    // says there is a change to commit.
+    [Test]
+    public async Task ACommitInAWorktreeIsRead()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var main = code.CreateRepo("Main");
+        var tree = code.At("Tree");
+        CodeCommandsTests.Scratch.Git(main, "worktree", "add", tree, "-b", "tree");
+        await File.WriteAllTextAsync(Path.Combine(tree, "tracked.txt"), "changed");
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+        var before = GitCells(view);
+
+        CodeCommandsTests.Scratch.Git(tree, "commit", "-am", "Change");
+        await Pump.Until(() => GitCells(view).Contains("Tree: tree"));
+
+        await Assert.That(before).Contains("Tree: tree · 1 change");
+    }
+
+    static bool IsFresh(string repo)
+    {
+        GitCache.TryGet(repo, out _, out _, out var fresh);
+        return fresh;
+    }
+
+    static void ReadNow(params string[] repos)
+    {
+        foreach (var repo in repos)
+        {
+            GitCache.Store(repo, new("main", null, 0, 0, []), null, GitCache.Changes(repo));
+        }
+    }
+
+    // What changes in a worktree's own git folder, its index say, is a change to it and not to
+    // the repository it is of, whose index is no change to the worktree. A branch, which they
+    // share, is a change to both: a worktree's commit moves one, and a fetch those it is
+    // ahead of and behind.
+    [Test]
+    public async Task AWorktreesGitFolderIsItsOwnAndItsBranchesShared()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var main = code.At("Main");
+        var tree = code.At("Tree");
+        var own = Path.Combine(main, ".git", "worktrees", "Tree");
+        Directory.CreateDirectory(own);
+        Directory.CreateDirectory(tree);
+        await File.WriteAllTextAsync(Path.Combine(own, "commondir"), "../..");
+        await File.WriteAllTextAsync(Path.Combine(tree, ".git"), $"gitdir: {own.Replace('\\', '/')}");
+        GitCache.Watch(code.Root);
+
+        ReadNow(main, tree);
+        GitCache.ChangedAt(Path.Combine(own, "index"));
+        var afterItsIndex = (IsFresh(main), IsFresh(tree));
+        ReadNow(main, tree);
+        GitCache.ChangedAt(Path.Combine(main, ".git", "index"));
+        var afterTheOthersIndex = (IsFresh(main), IsFresh(tree));
+        ReadNow(main, tree);
+        GitCache.ChangedAt(Path.Combine(main, ".git", "refs", "heads", "tree"));
+        var afterABranch = (IsFresh(main), IsFresh(tree));
+        ReadNow(main, tree);
+        GitCache.ChangedAt(Path.Combine(own, "logs", "HEAD"));
+        var afterItsLog = (IsFresh(main), IsFresh(tree));
+
+        await Assert.That(afterItsIndex).IsEqualTo((true, false));
+        await Assert.That(afterTheOthersIndex).IsEqualTo((false, true));
+        await Assert.That(afterABranch).IsEqualTo((false, false));
+        await Assert.That(afterItsLog).IsEqualTo((true, true));
+    }
+
+    // A submodule's git folder is in the .git of the repository it is in. A commit there is a
+    // change to the submodule, and to that repository, which has it at a commit. Its objects
+    // are a change to neither.
+    [Test]
+    public async Task ASubmodulesGitFolderIsItsOwn()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var super = code.At("Super");
+        var sub = Path.Combine(super, "sub");
+        var own = Path.Combine(super, ".git", "modules", "sub");
+        Directory.CreateDirectory(own);
+        Directory.CreateDirectory(sub);
+        await File.WriteAllTextAsync(Path.Combine(sub, ".git"), "gitdir: ../.git/modules/sub");
+        GitCache.Watch(code.Root);
+
+        ReadNow(super, sub);
+        GitCache.ChangedAt(Path.Combine(own, "HEAD"));
+        var afterItsHead = (IsFresh(super), IsFresh(sub));
+        ReadNow(super, sub);
+        GitCache.ChangedAt(Path.Combine(own, "objects", "3f", "9a8b"));
+        var afterItsObjects = (IsFresh(super), IsFresh(sub));
+
+        await Assert.That(afterItsHead).IsEqualTo((false, false));
+        await Assert.That(afterItsObjects).IsEqualTo((true, true));
+    }
+
     // Too many changes at once for the watch to keep track of, twice over, every repository is
     // stale at once, but the views are told once, when that has settled, not as each comes.
     [Test]

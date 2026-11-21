@@ -159,6 +159,12 @@ static class GitCache
 
     static readonly Lock gate = new();
     static readonly Dictionary<string, Known> known = new(StringComparer.OrdinalIgnoreCase);
+
+    // The git folder of each worktree and submodule known, which is in the .git of another
+    // repository, with whether it shares that one's branches, as a worktree does. And for each
+    // git folder shared, the worktrees sharing it.
+    static readonly Dictionary<string, (string Repo, bool Shares)> gitFolders = new(StringComparer.OrdinalIgnoreCase);
+    static readonly Dictionary<string, List<string>> sharing = new(StringComparer.OrdinalIgnoreCase);
     static FolderWatcher? watcher;
     static string? watchedRoot;
     // Every code folder watched for, as Options may change it, and tests have many.
@@ -290,13 +296,73 @@ static class GitCache
     {
         lock (gate)
         {
+            if (known.TryGetValue(repo, out var entry))
+            {
+                return entry.Changes;
+            }
+        }
+
+        // Read outside the gate, which every change on the drive waits on.
+        var own = OwnGitFolder(repo);
+        lock (gate)
+        {
             if (!known.TryGetValue(repo, out var entry))
             {
                 entry = new();
                 known[repo] = entry;
+                Follow(repo, own);
             }
 
             return entry.Changes;
+        }
+    }
+
+    // Where the git folder of a worktree or a submodule is, which is not in it but in the .git
+    // of the repository it is of, as its .git file says, and the folder whose branches and
+    // config it shares, when it shares one: a worktree does, a submodule has its own. Null for
+    // a repository with a .git folder of its own, or one whose .git can't be read.
+    static (string Git, string Common)? OwnGitFolder(string repo)
+    {
+        try
+        {
+            if (Directory.Exists(Path.Combine(repo, ".git")) ||
+                CodeCommands.GitDirectory(repo) is not { } git)
+            {
+                return null;
+            }
+
+            return (git, CodeCommands.CommonDirectory(git));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    // Under the gate.
+    static void Follow(string repo, (string Git, string Common)? own)
+    {
+        if (own is not var (git, common))
+        {
+            return;
+        }
+
+        var shares = !Locations.Same(git, common);
+        gitFolders[git] = (repo, shares);
+        if (!shares)
+        {
+            return;
+        }
+
+        if (!sharing.TryGetValue(common, out var repos))
+        {
+            repos = [];
+            sharing[common] = repos;
+        }
+
+        if (!repos.Contains(repo, StringComparer.OrdinalIgnoreCase))
+        {
+            repos.Add(repo);
         }
     }
 
@@ -407,28 +473,96 @@ static class GitCache
                 return;
             }
 
-            // The innermost repository it is in: one nested in another is its own.
+            // The innermost repository it is in: one nested in another is its own. In a .git, it
+            // may be in the git folder of a worktree or a submodule, which is then the one
+            // changed, or be a branch or the config that worktrees share with what they are of.
+            var now = Environment.TickCount64;
             var repos = known.GetAlternateLookup<CharSpan>();
+            var gits = gitFolders.GetAlternateLookup<CharSpan>();
+            var shared = sharing.GetAlternateLookup<CharSpan>();
             for (var current = path.AsSpan(); !current.IsEmpty && Locations.IsWithin(current, codeFolder); current = Path.GetDirectoryName(current))
             {
+                if (inGit &&
+                    gits.TryGetValue(current, out var own))
+                {
+                    // Its own objects and logs are as much noise as any.
+                    if (IsNoiseInGit(Beneath(path, current)))
+                    {
+                        return;
+                    }
+
+                    Mark(own.Repo, inGit, now);
+
+                    // A worktree's index and HEAD are its own alone. A submodule's HEAD is also
+                    // the commit the repository it is in has it at, so that is changed too.
+                    if (own.Shares)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                if (inGit &&
+                    shared.TryGetValue(current, out var worktrees) &&
+                    IsShared(Beneath(path, current)))
+                {
+                    foreach (var worktree in worktrees)
+                    {
+                        Mark(worktree, inGit, now);
+                    }
+                }
+
                 if (!repos.TryGetValue(current, out var repo, out var entry))
                 {
                     continue;
                 }
 
-                var now = Environment.TickCount64;
-                entry.Changed(now, inGit);
-                changing[repo] = entry;
-
-                // Left as it is set when that is soon enough, as it nearly always is: it then
-                // finds this one not yet due, and waits on.
-                if (entry.Due < settlingAt)
-                {
-                    SettleAt(entry.Due, now);
-                }
-
+                Mark(repo, entry, inGit, now);
                 return;
             }
+        }
+    }
+
+    // What of path is beneath folder, which it is in.
+    static CharSpan Beneath(CharSpan path, CharSpan folder)
+    {
+        if (path.Length <= folder.Length)
+        {
+            return default;
+        }
+
+        return path[folder.Length..].TrimStart(Path.DirectorySeparatorChar);
+    }
+
+    // Whether what changed in a git folder is what its worktrees have of it too: the branches,
+    // so what each is ahead of and behind, and the config. Not its index or HEAD, which each
+    // has its own of.
+    static bool IsShared(CharSpan inside) =>
+        Locations.IsWithin(inside, "refs") ||
+        inside.Equals("packed-refs", StringComparison.OrdinalIgnoreCase) ||
+        inside.Equals("config", StringComparison.OrdinalIgnoreCase);
+
+    // Under the gate.
+    static void Mark(string repo, bool inGit, long now)
+    {
+        if (known.TryGetValue(repo, out var entry))
+        {
+            Mark(repo, entry, inGit, now);
+        }
+    }
+
+    // Under the gate.
+    static void Mark(string repo, Known entry, bool inGit, long now)
+    {
+        entry.Changed(now, inGit);
+        changing[repo] = entry;
+
+        // Left as it is set when that is soon enough, as it nearly always is: it then finds
+        // this one not yet due, and waits on.
+        if (entry.Due < settlingAt)
+        {
+            SettleAt(entry.Due, now);
         }
     }
 
@@ -526,6 +660,8 @@ static class GitCache
         lock (gate)
         {
             known.Clear();
+            gitFolders.Clear();
+            sharing.Clear();
             changing.Clear();
             watcher?.Dispose();
             watcher = null;
