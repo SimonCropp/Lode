@@ -74,4 +74,74 @@ public class CodeMenuTests
         await Assert.That(Offered([clone], null)).IsEqualTo("push");
         await Assert.That(Offered([code.Root], clean)).IsEqualTo("switch, push");
     }
+
+    static GitBranches.Branch Branch(string name, bool remote = false) =>
+        new(name, remote, null, false);
+
+    static readonly GitBranches.Listing listing = new(
+        "feature",
+        Branch("main"),
+        [Branch("feature"), Branch("fix")],
+        [Branch("origin/elsewhere", remote: true)]);
+
+    // As GitHub Desktop's: Rename only for a local branch, as one on a remote is renamed there;
+    // no new worktree for the branch checked out here, which git won't check out twice.
+    [Test]
+    public async Task BranchEntries()
+    {
+        using var owner = new Control();
+        string Describe(GitBranches.Branch branch) =>
+            string.Join(
+                ", ",
+                CodeMenu.BranchCommands(owner, @"C:\Code\Repo", listing, branch, _ => { })
+                    .Select(_ =>
+                    {
+                        if (_ == null)
+                        {
+                            return "----";
+                        }
+
+                        if (_.Enabled)
+                        {
+                            return _.Text;
+                        }
+
+                        return $"{_.Text} (disabled)";
+                    }));
+
+        await Assert.That(Describe(listing.Recent[0])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree… (disabled), ----, Delete…");
+        await Assert.That(Describe(listing.Recent[1])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree…, ----, Delete…");
+        await Assert.That(Describe(listing.Other[0])).IsEqualTo("Rename… (disabled), Copy branch name, Checkout in new worktree…, ----, Delete…");
+    }
+
+    // FolderViewTests swap the clipboard too.
+    [Test]
+    [NotInParallel("windows")]
+    public async Task CopyBranchNameCopiesItAsListed()
+    {
+        using var owner = new Control();
+        var copied = new List<string>();
+        var original = FolderView.SetClipboardText;
+        FolderView.SetClipboardText = copied.Add;
+        try
+        {
+            CodeMenu.BranchCommands(owner, @"C:\Code\Repo", listing, listing.Other[0], _ => { })[1]!.Action();
+        }
+        finally
+        {
+            FolderView.SetClipboardText = original;
+        }
+
+        await Assert.That(copied).IsEquivalentTo(["origin/elsewhere"]);
+    }
+
+    // Deleting the branch checked out switches to the default branch first, or, deleting that,
+    // the one switched to most recently, as GitHub Desktop does; with no other, it can't be.
+    [Test]
+    public async Task DeletingTheBranchCheckedOutSwitchesToTheDefault()
+    {
+        await Assert.That(CodeMenu.SwitchOffTo(listing, listing.Recent[0])?.Name).IsEqualTo("main");
+        await Assert.That(CodeMenu.SwitchOffTo(listing with { Current = "main" }, listing.Default!)?.Name).IsEqualTo("feature");
+        await Assert.That(CodeMenu.SwitchOffTo(new("main", Branch("main"), [], []), Branch("main"))).IsNull();
+    }
 }

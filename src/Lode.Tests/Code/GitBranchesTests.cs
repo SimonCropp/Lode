@@ -384,4 +384,182 @@ public class GitBranchesTests
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(Branch(repo)).IsEqualTo("main");
     }
+
+    static string Branches(string repo) =>
+        Scratch.Git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads");
+
+    static string OriginBranches(Scratch code, string name) =>
+        Scratch.Git(code.Origin(name), "for-each-ref", "--format=%(refname:short)", "refs/heads");
+
+    // What the right-click entries need to know of a local branch: the branch it tracks.
+    [Test]
+    public async Task ReadsWhatEachBranchTracks()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "branch", "local-only");
+
+        var listing = GitBranches.Read(repo, Cancel.None);
+
+        await Assert.That(listing.Default?.Upstream).IsEqualTo("origin/main");
+        await Assert.That(listing.Other.Single(_ => _.Name == "local-only").Upstream).IsNull();
+    }
+
+    [Test]
+    public async Task RenamesABranch()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "branch", "feature");
+
+        var result = GitBranches.Rename(repo, "feature", "renamed", Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Branches(repo)).IsEqualTo("main\nrenamed");
+    }
+
+    // Windows' file system ignores case, so git takes Feature for the feature there already
+    // unless forced.
+    [Test]
+    public async Task RenamesOnlyTheCase()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "branch", "feature");
+
+        var result = GitBranches.Rename(repo, "feature", "Feature", Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Branches(repo)).IsEqualTo("Feature\nmain");
+    }
+
+    // Merged or not, as GitHub Desktop deletes, saying the commit it was at, to get it back.
+    [Test]
+    public async Task DeletesAnUnmergedBranch()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        Write(repo, "tracked.txt", "feature's");
+        Scratch.Git(repo, "commit", "-am", "Feature");
+        Scratch.Git(repo, "switch", "main");
+
+        var result = GitBranches.Delete(repo, Local("feature"), alsoOnRemote: false, switchTo: null, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.Output).StartsWith("Deleted branch feature (was ");
+        await Assert.That(Branches(repo)).IsEqualTo("main");
+    }
+
+    // Asked to, the branch it tracks goes from origin too; otherwise origin keeps it.
+    [Test]
+    public async Task DeletesOnTheRemoteWhenAsked()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        foreach (var name in new[] {"kept", "gone"})
+        {
+            Scratch.Git(repo, "switch", "-c", name);
+            Scratch.Git(repo, "push", "-u", "origin", name);
+        }
+
+        Scratch.Git(repo, "switch", "main");
+        var listing = GitBranches.Read(repo, Cancel.None);
+        var kept = listing.Recent.Single(_ => _.Name == "kept");
+        var gone = listing.Recent.Single(_ => _.Name == "gone");
+
+        var keptResult = GitBranches.Delete(repo, kept, alsoOnRemote: false, switchTo: null, Cancel.None);
+        var goneResult = GitBranches.Delete(repo, gone, alsoOnRemote: true, switchTo: null, Cancel.None);
+
+        await Assert.That(keptResult.Succeeded).IsTrue();
+        await Assert.That(goneResult.Succeeded).IsTrue();
+        await Assert.That(Branches(repo)).IsEqualTo("main");
+        await Assert.That(OriginBranches(code, "Repo")).IsEqualTo("kept\nmain");
+    }
+
+    // The branch checked out is switched off first, as git won't delete it.
+    [Test]
+    public async Task DeletingTheBranchCheckedOutSwitchesFirst()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+
+        var result = GitBranches.Delete(repo, Local("feature"), alsoOnRemote: false, switchTo: Local("main"), Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Branch(repo)).IsEqualTo("main");
+        await Assert.That(Branches(repo)).IsEqualTo("main");
+    }
+
+    // Couldn't switch off it, it isn't deleted.
+    [Test]
+    public async Task NotDeletedWhenTheSwitchFails()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+
+        var result = GitBranches.Delete(repo, Local("feature"), alsoOnRemote: false, switchTo: Local("missing"), Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).StartsWith("Couldn't switch off feature, so it wasn't deleted:");
+        await Assert.That(Branches(repo)).IsEqualTo("feature\nmain");
+    }
+
+    // One only on origin goes from origin.
+    [Test]
+    public async Task DeletesARemoteBranchFromTheRemote()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        Scratch.Git(repo, "push", "origin", "feature");
+        Scratch.Git(repo, "switch", "main");
+        Scratch.Git(repo, "branch", "-D", "feature");
+
+        var result = GitBranches.Delete(repo, new("origin/feature", true, null, false), alsoOnRemote: false, switchTo: null, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(OriginBranches(code, "Repo")).IsEqualTo("main");
+        await Assert.That(GitBranches.Read(repo, Cancel.None).Other).IsEmpty();
+    }
+
+    [Test]
+    public async Task ChecksABranchOutInANewWorktree()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "branch", "feature");
+        var folder = GitBranches.WorktreeFolder(repo, Local("feature"));
+
+        var result = GitBranches.AddWorktree(repo, Local("feature"), folder, Cancel.None);
+
+        await Assert.That(code.Relative(folder)).IsEqualTo("Repo-feature");
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Branch(folder)).IsEqualTo("feature");
+        await Assert.That(Branch(repo)).IsEqualTo("main");
+    }
+
+    // One only on origin gets a local branch of its name, tracking it, as switching to it does.
+    // A slash in its name is no folder in the worktree's.
+    [Test]
+    public async Task ChecksARemoteBranchOutInANewWorktree()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature/one");
+        Scratch.Git(repo, "push", "origin", "feature/one");
+        Scratch.Git(repo, "switch", "main");
+        Scratch.Git(repo, "branch", "-D", "feature/one");
+        var remote = new GitBranches.Branch("origin/feature/one", true, null, false);
+        var folder = GitBranches.WorktreeFolder(repo, remote);
+
+        var result = GitBranches.AddWorktree(repo, remote, folder, Cancel.None);
+
+        await Assert.That(code.Relative(folder)).IsEqualTo("Repo-feature-one");
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Branch(folder)).IsEqualTo("feature/one");
+        await Assert.That(Scratch.Git(folder, "rev-parse", "--abbrev-ref", "feature/one@{upstream}")).IsEqualTo("origin/feature/one");
+    }
 }

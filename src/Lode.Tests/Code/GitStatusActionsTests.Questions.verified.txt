@@ -1,0 +1,45 @@
+﻿{
+  behind:
+[Git pull] main is 14 commits behind origin/main
+As of the last fetch.
+  -> Pull: Bring the 14 commits into main.
+  -> Fetch: See what origin has now, without changing main.,
+  behindWithChanges:
+[Git pull] main is 1 commit behind origin/main
+As of the last fetch.
+  -> Pull: Bring the 1 commit into main. Uncommitted changes stay, unless git would have to overwrite any, when nothing is pulled.
+  -> Fetch: See what origin has now, without changing main.,
+  divergedBehind:
+[Git pull] main has diverged from origin/main
+2 commits here aren't on origin/main, and 14 commits there aren't here, as of the last fetch.
+  -> Pull: Bring the 14 commits into main, merging or rebasing as your git config says.
+  -> Pull, then push: Then send the 2 commits here to origin/main.
+  -> Fetch: See what origin has now, without changing main.,
+  ahead:
+[Git push] main is 1 commit ahead of origin/main
+  -> Push: Send the 1 commit to origin/main.,
+  aheadWithChanges:
+[Git push] main is 3 commits ahead of origin/main
+Uncommitted changes aren't pushed: commit them first.
+  -> Push: Send the 3 commits to origin/main.,
+  divergedAhead:
+[Git push] main has diverged from origin/main
+2 commits here aren't on origin/main, and 14 commits there aren't here, as of the last fetch.
+  -> Pull, then push: origin/main would refuse the push while it has commits main hasn't: bring those in first, then send the 2 commits.
+  -> Fetch: See what origin has now, without changing main.,
+  changes:
+[Uncommitted changes] 3 uncommitted changes on main
+  -> Commit and push…: Commit every change to a file git tracks, with a message you give, and push. Files git doesn't track stay as they are.
+  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+  files: Modified: src/0.cs; Modified: src/1.cs; Untracked: new0.txt,
+  untrackedOnly:
+[Uncommitted changes] 2 uncommitted changes on main
+  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+  files: Untracked: new0.txt; Untracked: new1.txt,
+  detached:
+[Uncommitted changes] 1 uncommitted change here
+  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+  files: Modified: src/0.cs,
+  noCommits: (nothing to ask),
+  nothingBehind: (nothing to ask)
+}

@@ -37,15 +37,20 @@ class MainForm : Form
         TextAlign = ContentAlignment.MiddleLeft
     };
 
-    // Before the free space: the branch and changes of the repository the folder is in. Clicked,
-    // the branches open above it, to switch to, as GitHub Desktop's Current branch has them.
+    // Before the free space: the state of the repository the folder is in, a part for each of
+    // what GitState says, each acting on what it says. The branch opens the branches above it,
+    // to switch to, as GitHub Desktop's Current branch has them.
     ChevronDropDownButton gitButton = new("", Icons.ChevronUp)
     {
         Name = "git",
-        Margin = new(0, 1, 12, 0),
+        Margin = new(0, 1, 0, 0),
         ToolTipText = "Switch branch (Ctrl+B)",
         Visible = false
     };
+
+    // After the branch, each after a dot: that there are no commits yet, which there is nothing
+    // to do about, then the changes, to commit or discard, and the commits to push and to pull.
+    readonly Dictionary<GitState.PartKind, (ToolStripStatusLabel Dot, ToolStripItem Item)> gitParts = [];
 
     // After the branch: the site the repository's origin is on, GitHub say, which it opens.
     ToolStripStatusLabel siteLabel = new()
@@ -827,24 +832,41 @@ class MainForm : Form
     {
         // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
         // 11 windows are resized from their edges.
+        // In the window's font, as the folder tree and the list are, rather than the smaller one
+        // a tool strip has otherwise.
         var status = new StatusStrip
         {
             Renderer = new ExplorerRenderer(),
             SizingGrip = false,
             ShowItemToolTips = true,
+            Font = Font,
             Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
         };
         status.Items.Add(statusLabel);
         status.Items.Add(updateLabel);
         status.Items.Add(gitButton);
+        AddGitPart(
+            status,
+            GitState.PartKind.NoCommits,
+            new ToolStripStatusLabel
+            {
+                Margin = new(0, 3, 0, 2)
+            });
+        AddGitPart(status, GitState.PartKind.Changes, GitPartButton("Commit or discard them", GitState.PartKind.Changes));
+        AddGitPart(status, GitState.PartKind.Ahead, GitPartButton("Push them", GitState.PartKind.Ahead));
+        AddGitPart(status, GitState.PartKind.Behind, GitPartButton("Pull them", GitState.PartKind.Behind));
         status.Items.Add(siteLabel);
         status.Items.Add(spaceLabel);
 
-        // On the bar now, so the chevron's room is scaled as the bar is.
+        // On the bar now, so the chevron's room is scaled as the bar is. A branch before the
+        // name, as GitHub Desktop has.
         gitButton.Padding = gitButton.Padding with
         {
             Right = gitButton.Padding.Right + gitButton.ChevronWidth
         };
+        gitButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+        gitButton.TextImageRelation = TextImageRelation.ImageBeforeText;
+        gitButton.Image = Icons.Bitmap(Icons.Branch, LogicalToDeviceUnits(16), SystemColors.ControlText, LogicalToDeviceUnits(4));
         gitButton.Click += (_, _) => ShowBranches();
         updateLabel.Click += (_, _) => ShowOptions("Updates");
         siteLabel.Click += (_, _) =>
@@ -856,6 +878,87 @@ class MainForm : Form
         };
         ShowUpdate();
         return status;
+    }
+
+    void AddGitPart(StatusStrip status, GitState.PartKind kind, ToolStripItem item)
+    {
+        var dot = new ToolStripStatusLabel("·")
+        {
+            Margin = new(0, 3, 0, 2),
+            Visible = false
+        };
+        item.Visible = false;
+        status.Items.Add(dot);
+        status.Items.Add(item);
+        gitParts[kind] = (dot, item);
+    }
+
+    ToolStripButton GitPartButton(string toolTip, GitState.PartKind kind)
+    {
+        var button = new ToolStripButton
+        {
+            Margin = new(0, 1, 0, 0),
+            AutoToolTip = false,
+            ToolTipText = toolTip
+        };
+        button.Click += (_, _) => ActOnGit(kind);
+        return button;
+    }
+
+    // The changes, ahead or behind clicked: asks what to do about them, pull say.
+    void ActOnGit(GitState.PartKind kind)
+    {
+        if (ActiveView is { GitRepo: { } repo, GitRepoState: { } state })
+        {
+            GitStatusActions.Act(this, kind, repo, state, settings.CodeDirectory);
+        }
+    }
+
+    // A part for each of what the state says, the last spaced from what follows.
+    void ShowGitParts(GitState? state)
+    {
+        gitButton.Visible = false;
+        foreach (var (dot, item) in gitParts.Values)
+        {
+            dot.Visible = false;
+            item.Visible = false;
+        }
+
+        ToolStripItem? last = null;
+        foreach (var part in state?.Parts() ?? [])
+        {
+            ToolStripItem item = gitButton;
+            if (part.Kind != GitState.PartKind.Branch)
+            {
+                var (dot, partItem) = gitParts[part.Kind];
+                dot.Visible = true;
+                item = partItem;
+            }
+
+            item.Text = part.Text;
+            item.Visible = true;
+            item.Margin = item.Margin with
+            {
+                Right = 0
+            };
+            last = item;
+        }
+
+        last?.Margin = last.Margin with
+        {
+            Right = LogicalToDeviceUnits(12)
+        };
+
+        // The chevron sits closer to the branch's right edge than text does to a part's, so the
+        // dot after it gets the difference.
+        if (last != null &&
+            last != gitButton)
+        {
+            gitButton.Margin = gitButton.Margin with
+            {
+                Right = LogicalToDeviceUnits(4)
+            };
+        }
     }
 
     /// <summary>
@@ -1525,9 +1628,7 @@ class MainForm : Form
         var selection = view.SelectedEntries();
         UpdateActions(selection);
         statusLabel.Text = view.StatusFor(selection);
-        var git = view.GitText;
-        gitButton.Text = git;
-        gitButton.Visible = git.Length > 0;
+        ShowGitParts(view.GitRepoState);
         var site = view.GitSite;
         siteLabel.Tag = site;
         siteLabel.Visible = site != null;
@@ -1568,7 +1669,8 @@ class MainForm : Form
             gitButton.Owner.RectangleToScreen(gitButton.Bounds),
             Task.Run(() => GitBranches.Read(repo, Cancel.None)),
             branch => CodeMenu.SwitchBranch(this, repo, state, branch),
-            name => CodeMenu.NewBranch(this, repo, name));
+            name => CodeMenu.NewBranch(this, repo, name),
+            (listing, branch) => CodeMenu.BranchCommands(this, repo, listing, branch, folder => AddTab(folder, true)));
         picker.FormClosed += (_, _) => branchesClosedAt = Environment.TickCount64;
     }
 

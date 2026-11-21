@@ -61,6 +61,19 @@ sealed class BranchPicker : Form
     /// </summary>
     public string? NewBranchName { get; private set; }
 
+    /// <summary>
+    /// The right-click entries for a branch, as GitHub Desktop has them: rename, copy its name,
+    /// and so on. None without.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<GitBranches.Listing, GitBranches.Branch, IReadOnlyList<QuickMenu.Command?>>? MenuFor { get; init; }
+
+    /// <summary>
+    /// The right-click entry picked, to run once it has closed, so a dialog it opens has the
+    /// window to itself.
+    /// </summary>
+    public Action? FollowUp { get; private set; }
+
     public BranchPicker(Rectangle opener = default)
     {
         this.opener = opener;
@@ -129,6 +142,13 @@ sealed class BranchPicker : Form
                 Choose(branch);
             }
         };
+        list.MouseUp += (_, args) =>
+        {
+            if (args.Button == MouseButtons.Right)
+            {
+                ShowMenu(list.IndexFromPoint(args.Location), args.Location);
+            }
+        };
 
         var gap = new Panel
         {
@@ -150,13 +170,18 @@ sealed class BranchPicker : Form
         Rectangle opener,
         Task<GitBranches.Listing> branches,
         Action<GitBranches.Branch> switchTo,
-        Action<string> newBranch)
+        Action<string> newBranch,
+        Func<GitBranches.Listing, GitBranches.Branch, IReadOnlyList<QuickMenu.Command?>>? menuFor = null)
     {
-        var picker = new BranchPicker(opener);
+        var picker = new BranchPicker(opener)
+        {
+            MenuFor = menuFor
+        };
         picker.FormClosed += (_, _) =>
         {
             var chosen = picker.Chosen;
             var name = picker.NewBranchName;
+            var followUp = picker.FollowUp;
             owner.BeginInvoke(
                 () =>
                 {
@@ -170,7 +195,10 @@ sealed class BranchPicker : Form
                     if (name != null)
                     {
                         newBranch(name);
+                        return;
                     }
+
+                    followUp?.Invoke();
                 });
         };
         picker.Show(owner);
@@ -286,9 +314,76 @@ sealed class BranchPicker : Form
             case Keys.PageUp:
                 MoveSelection(-VisibleRows);
                 return true;
+            case Keys.Apps:
+            case Keys.Shift | Keys.F10:
+                if (list.SelectedIndex >= 0)
+                {
+                    var row = list.GetItemRectangle(list.SelectedIndex);
+                    ShowMenu(list.SelectedIndex, new(row.Left + LogicalToDeviceUnits(24), row.Bottom));
+                }
+
+                return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The right-click entries for the branch at <paramref name="index"/>, each closing the list
+    /// then running. None for a heading.
+    /// </summary>
+    internal List<QuickMenu.Command?> MenuAt(int index)
+    {
+        if (MenuFor == null ||
+            listing == null ||
+            index < 0 ||
+            shown[index].Branch is not { } branch)
+        {
+            return [];
+        }
+
+        return MenuFor(listing, branch)
+            .Select(Later)
+            .ToList();
+
+        QuickMenu.Command? Later(QuickMenu.Command? command)
+        {
+            if (command == null)
+            {
+                return null;
+            }
+
+            return command with
+            {
+                Action = () =>
+                {
+                    FollowUp = command.Action;
+                    CloseOnce();
+                }
+            };
+        }
+    }
+
+    // Highlights the branch right-clicked, as Explorer does, and shows its entries there. What
+    // is picked runs once the menu has closed, as QuickMenu does.
+    void ShowMenu(int index, Point location)
+    {
+        var commands = MenuAt(index);
+        if (commands.Count == 0)
+        {
+            return;
+        }
+
+        list.SelectedIndex = index;
+        Action? chosen = null;
+        var strip = QuickMenu.Build(commands, null, _ => chosen = _);
+        strip.Closed += (_, _) => strip.BeginInvoke(
+            () =>
+            {
+                strip.Dispose();
+                chosen?.Invoke();
+            });
+        strip.Show(list, location);
     }
 
     int VisibleRows => Math.Max(1, list.ClientSize.Height / list.ItemHeight);

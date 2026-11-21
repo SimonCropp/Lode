@@ -187,4 +187,38 @@ public class BranchPickerTests
         await Assert.That(picker.NewBranchName).IsNull();
         await Assert.That(picker.Visible).IsFalse();
     }
+
+    // A right-click entry closes the list, then runs, so a dialog it opens has the window to
+    // itself. A heading has none.
+    [Test]
+    public async Task RightClickEntriesRunOnceClosed()
+    {
+        var renamed = new List<string>();
+        using var picker = new BranchPicker
+        {
+            Location = new(-20000, -20000),
+            MenuFor = (_, branch) =>
+            [
+                new("Rename…", () => renamed.Add(branch.Name)),
+                null,
+                new("Delete…", () => { })
+            ]
+        };
+        picker.Show();
+        await picker.Fill(Task.FromResult(Listing));
+        var heading = picker.Rows.ToList().FindIndex(_ => _.Heading);
+        var cleanup = picker.Rows.ToList().FindIndex(_ => _.Text == "cleanup");
+
+        await Assert.That(picker.MenuAt(heading)).IsEmpty();
+        var menu = picker.MenuAt(cleanup);
+        await Assert.That(menu.Select(_ => _?.Text)).IsEquivalentTo(["Rename…", null, "Delete…"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+
+        menu[0]!.Action();
+
+        await Assert.That(picker.Visible).IsFalse();
+        await Assert.That(picker.Chosen).IsNull();
+        await Assert.That(renamed).IsEmpty();
+        picker.FollowUp!();
+        await Assert.That(renamed).IsEquivalentTo(["cleanup"]);
+    }
 }

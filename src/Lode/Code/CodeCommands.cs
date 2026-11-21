@@ -169,6 +169,43 @@ static class CodeCommands
         ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "pull"));
 
     /// <summary>
+    /// Learns what origin has now, its branches and their commits, changing nothing checked
+    /// out: how far ahead and behind each branch is follows.
+    /// </summary>
+    public static Task<List<RepoResult>> Fetch(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "fetch"));
+
+    /// <summary>
+    /// Pushes the commits the branch has that the one it tracks hasn't, committing nothing.
+    /// </summary>
+    public static Task<List<RepoResult>> PushCommits(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "push"));
+
+    /// <summary>
+    /// Pulls, then pushes: a branch that has diverged from the one it tracks, which origin would
+    /// refuse a push to until it has origin's commits too. A pull that fails pushes nothing.
+    /// </summary>
+    public static Task<List<RepoResult>> PullThenPush(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(
+            repos,
+            progress,
+            cancel,
+            repo =>
+            {
+                var pull = Git(repo, cancel, network: true, "pull");
+                if (!pull.Succeeded)
+                {
+                    return pull;
+                }
+
+                var push = Git(repo, cancel, network: true, "push");
+                return push with
+                {
+                    Output = $"{pull.Output}\n{push.Output}".Trim()
+                };
+            });
+
+    /// <summary>
     /// Switches to origin's default branch, main say. A repository with anything uncommitted,
     /// staged or not, or a file git doesn't track, fails, listing them, and stays on its branch:
     /// switching would take them onto the default branch, or git would refuse part way.

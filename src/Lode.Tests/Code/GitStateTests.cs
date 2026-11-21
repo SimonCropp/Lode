@@ -140,6 +140,27 @@ public class GitStateTests
         await Assert.That(new GitState("main", null, 0, 0, []).Describe()).IsEqualTo("main · no commits yet");
     }
 
+    // The status bar shows each part on its own, to act on: the same text as Describe, part by
+    // part.
+    [Test]
+    public async Task Parts()
+    {
+        var state = State("main", 3, 2, 1);
+
+        await Assert.That(state.Parts())
+            .IsEquivalentTo(
+                [
+                    new GitState.Part(GitState.PartKind.Branch, "main"),
+                    new GitState.Part(GitState.PartKind.Changes, "3 changes"),
+                    new GitState.Part(GitState.PartKind.Ahead, "2 ahead"),
+                    new GitState.Part(GitState.PartKind.Behind, "1 behind")
+                ],
+                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(new GitState("main", null, 0, 0, []).Parts().Select(_ => _.Kind))
+            .IsEquivalentTo([GitState.PartKind.Branch, GitState.PartKind.NoCommits], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(string.Join(" · ", state.Parts().Select(_ => _.Text))).IsEqualTo(state.Describe());
+    }
+
     static GitState State(string? branch, int changes, int ahead, int behind) =>
         new(branch, commit, ahead, behind, Enumerable.Range(0, changes).Select(_ => new GitFile($"{_}.txt", GitChange.Modified)).ToList());
 

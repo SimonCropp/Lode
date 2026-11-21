@@ -134,18 +134,22 @@ static class CodeMenu
             leave = answer;
         }
 
-        _ = ActionLog.Run(
-            $"Git switch to {target.Name}",
+        _ = RunOnBranch($"Git switch to {target.Name}", repo, cancel => GitBranches.Switch(repo, current, target, leave, cancel));
+    }
+
+    // In the Actions panel, off the UI thread. The repository is marked stale before the entry
+    // ends, which has the windows read the states again: the watch may not have heard of the
+    // change yet, and the state would still be fresh.
+    static Task<ActionLog.Entry> RunOnBranch(string title, string repo, Func<Cancel, CodeCommands.RepoResult> work) =>
+        ActionLog.Run(
+            title,
             [repo],
             async (_, cancel) =>
             {
-                var result = await Task.Run(() => GitBranches.Switch(repo, current, target, leave, cancel), cancel);
-                // Before the entry ends, which has the windows read the states again: the
-                // watch may not have heard of the switch yet, and the state would still be fresh.
+                var result = await Task.Run(() => work(cancel), cancel);
                 GitCache.MarkStale([repo]);
                 return CodeCommands.GitOutcome([result]);
             });
-    }
 
     /// <summary>
     /// Asks whether to leave the changes on the branch checked out or bring them to the one
@@ -207,20 +211,168 @@ static class CodeMenu
         }
 
         var branch = form.Value;
-        _ = ActionLog.Run(
-            $"Git new branch {branch}",
-            [repo],
-            async (_, cancel) =>
-            {
-                var result = await Task.Run(() => GitBranches.Create(repo, branch, cancel), cancel);
-                GitCache.MarkStale([repo]);
-                return CodeCommands.GitOutcome([result]);
-            });
+        _ = RunOnBranch($"Git new branch {branch}", repo, cancel => GitBranches.Create(repo, branch, cancel));
     }
+
+    /// <summary>
+    /// The right-click entries for a branch in the status bar's branches, as GitHub Desktop's:
+    /// Rename… for a local one, Copy branch name, Checkout in new worktree… for any but the one
+    /// checked out here, which git won't check out twice, then Delete…. Once made, the worktree
+    /// is opened with <paramref name="openFolder"/>.
+    /// </summary>
+    public static List<QuickMenu.Command?> BranchCommands(Control owner, string repo, GitBranches.Listing listing, GitBranches.Branch branch, Action<string> openFolder)
+    {
+        var current = !branch.Remote &&
+                      branch.Name == listing.Current;
+        return
+        [
+            new("Rename…", () => RenameBranch(owner, repo, branch), Enabled: !branch.Remote),
+            new("Copy branch name", () => FolderView.SetClipboardText(branch.Name)),
+            new("Checkout in new worktree…", () => AddWorktree(owner, repo, branch, openFolder), Enabled: !current),
+            null,
+            new("Delete…", () => DeleteBranch(owner, repo, listing, branch))
+        ];
+    }
+
+    static async void RenameBranch(Control owner, string repo, GitBranches.Branch branch)
+    {
+        var description = $"Rename {branch.Name} in {Path.GetFileName(repo)}.";
+        if (branch.Upstream != null)
+        {
+            description += $" The branch it tracks, {branch.Upstream}, keeps its name.";
+        }
+
+        using var form = new GitTextForm("Rename branch", description, "Name:", branch.Name, "Rename", [], isTagName: true);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
+            form.Value == branch.Name)
+        {
+            return;
+        }
+
+        var name = form.Value;
+        _ = RunOnBranch($"Git rename {branch.Name} to {name}", repo, cancel => GitBranches.Rename(repo, branch.Name, name, cancel));
+    }
+
+    // Asks where, beside the repository unless told otherwise, then opens the worktree once it
+    // is made: in a tab, as a repository in the code folder, so its branch is in the status bar.
+    static async void AddWorktree(Control owner, string repo, GitBranches.Branch branch, Action<string> openFolder)
+    {
+        using var form = new GitTextForm(
+            "Checkout in new worktree",
+            $"Check {branch.Name} out in a folder of its own, sharing {Path.GetFileName(repo)}'s commits and branches, and open it.",
+            "Folder:",
+            GitBranches.WorktreeFolder(repo, branch),
+            "Create worktree",
+            []);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var folder = Path.GetFullPath(form.Value, Path.GetDirectoryName(repo) ?? repo);
+        var entry = await RunOnBranch($"Git worktree for {branch.Name}", repo, cancel => GitBranches.AddWorktree(repo, branch, folder, cancel));
+        if (entry.State == ActionLog.State.Succeeded &&
+            !owner.IsDisposed)
+        {
+            openFolder(folder);
+        }
+    }
+
+    // Asks first, as it can't be undone. The branch checked out is switched off first, to the
+    // default branch, or else the one switched to most recently, as GitHub Desktop does.
+    static void DeleteBranch(Control owner, string repo, GitBranches.Listing listing, GitBranches.Branch branch)
+    {
+        GitBranches.Branch? switchTo = null;
+        if (!branch.Remote &&
+            branch.Name == listing.Current)
+        {
+            switchTo = SwitchOffTo(listing, branch);
+            if (switchTo == null)
+            {
+                MessageBox.Show(owner, $"{branch.Name} is the only branch, so can't be deleted.", "Delete branch", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+        }
+
+        if (AskDelete(owner, branch, switchTo) is not { } alsoOnRemote)
+        {
+            return;
+        }
+
+        _ = RunOnBranch($"Git delete branch {branch.Name}", repo, cancel => GitBranches.Delete(repo, branch, alsoOnRemote, switchTo, cancel));
+    }
+
+    /// <summary>
+    /// The branch to switch to before deleting <paramref name="branch"/>, the one checked out:
+    /// the default branch, else the one switched to most recently, else any other. Null when
+    /// it is the only one.
+    /// </summary>
+    internal static GitBranches.Branch? SwitchOffTo(GitBranches.Listing listing, GitBranches.Branch branch)
+    {
+        if (listing.Default is { } defaultBranch &&
+            defaultBranch.Name != branch.Name)
+        {
+            return defaultBranch;
+        }
+
+        return listing.Recent
+            .Concat(listing.Other)
+            .FirstOrDefault(_ => _.Name != branch.Name);
+    }
+
+    /// <summary>
+    /// Asks whether to delete <paramref name="branch"/>, switching first to
+    /// <paramref name="switchTo"/> where that isn't null: null when not, otherwise whether to
+    /// delete the branch it tracks on the remote too. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, GitBranches.Branch, GitBranches.Branch?, bool?> AskDelete = (owner, branch, switchTo) =>
+    {
+        var heading = $"Delete branch {branch.Name}?";
+        var text = "This can't be undone. The commit it was at is in the Actions panel's details.";
+        if (branch.Remote)
+        {
+            heading = $"Delete {branch.Name} from {branch.Name[..branch.Name.IndexOf('/')]}?";
+            text = "This can't be undone.";
+        }
+
+        if (switchTo != null)
+        {
+            text = $"It's checked out, so {switchTo.Name} will be, first. {text}";
+        }
+
+        var delete = new TaskDialogButton("Delete");
+        var cancel = TaskDialogButton.Cancel;
+        var page = new TaskDialogPage
+        {
+            Caption = "Delete branch",
+            Heading = heading,
+            Text = text,
+            Icon = TaskDialogIcon.Warning,
+            Buttons =
+            {
+                delete,
+                cancel
+            },
+            DefaultButton = cancel,
+            AllowCancel = true
+        };
+        if (!branch.Remote &&
+            branch.Upstream != null)
+        {
+            page.Verification = new($"Also delete {branch.Upstream}");
+        }
+
+        if (TaskDialog.ShowDialog(owner, page) != delete)
+        {
+            return null;
+        }
+
+        return page.Verification?.Checked == true;
+    };
 
     // Looking for the repositories reads two levels of folders, so that is off the UI thread, as
     // Pull's is, and Discard's. Then it asks for the commit message.
-    static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    internal static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
         var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
         if (repos.Count == 0)
@@ -322,7 +474,7 @@ static class CodeMenu
             async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.DeleteTag(repos, name, progress, cancel)));
     }
 
-    static async void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    internal static async void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
         var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
         if (repos.Count == 0)

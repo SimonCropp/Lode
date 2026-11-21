@@ -54,44 +54,67 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             .ToList();
 
     /// <summary>
-    /// The state as the status bar and the Git column show it: the branch, then what is to commit,
-    /// push and pull, each only when there is any.
+    /// What a part of <see cref="Describe"/> says: the branch, or the commit when detached, that
+    /// there are no commits yet, and what is to commit, push and pull. The status bar acts on
+    /// each when clicked.
     /// </summary>
-    public string Describe()
+    public enum PartKind
     {
-        var parts = new List<string>();
+        Branch,
+        NoCommits,
+        Changes,
+        Ahead,
+        Behind
+    }
+
+    public sealed record Part(PartKind Kind, string Text);
+
+    /// <summary>
+    /// The parts of the state, in the order <see cref="Describe"/> has them, each only when there
+    /// is any.
+    /// </summary>
+    public List<Part> Parts()
+    {
+        var parts = new List<Part>();
         if (Branch == null)
         {
             // Only a commit can be checked out detached.
-            parts.Add($"Detached at {Commit![..7]}");
+            parts.Add(new(PartKind.Branch, $"Detached at {Commit![..7]}"));
         }
         else
         {
-            parts.Add(Branch);
+            parts.Add(new(PartKind.Branch, Branch));
         }
 
         if (Commit == null)
         {
-            parts.Add("no commits yet");
+            parts.Add(new(PartKind.NoCommits, "no commits yet"));
         }
 
         if (Changes > 0)
         {
-            parts.Add(CountOf(Changes, "change"));
+            parts.Add(new(PartKind.Changes, CountOf(Changes, "change")));
         }
 
         if (Ahead > 0)
         {
-            parts.Add($"{Ahead} ahead");
+            parts.Add(new(PartKind.Ahead, $"{Ahead} ahead"));
         }
 
         if (Behind > 0)
         {
-            parts.Add($"{Behind} behind");
+            parts.Add(new(PartKind.Behind, $"{Behind} behind"));
         }
 
-        return string.Join(" · ", parts);
+        return parts;
     }
+
+    /// <summary>
+    /// The state as the status bar and the Git column show it: the branch, then what is to commit,
+    /// push and pull, each only when there is any.
+    /// </summary>
+    public string Describe() =>
+        string.Join(" · ", Parts().Select(_ => _.Text));
 
     internal static string CountOf(int count, string noun)
     {

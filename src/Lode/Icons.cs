@@ -50,6 +50,10 @@ static class Icons
     // A folder with a zip down it, as Explorer's Compress to ZIP file and Extract All have.
     public const char Zip = '\uF012';
     public const char Git = '\uE895';
+    // Not a glyph of either font, which have no git branch: U+2387, the alternative key symbol,
+    // which shell prompts show a branch with, stands for one, drawn as GitHub's is: a trunk
+    // between two commits, and a branch into it from a third. See DrawBranch.
+    public const char Branch = '\u2387';
     public const char Pull = '\uE896';
     public const char Push = '\uE898';
     public const char Tag = '\uE8EC';
@@ -146,6 +150,12 @@ static class Icons
             return bitmap;
         }
 
+        if (glyph == Branch)
+        {
+            DrawBranch(graphics, size, color);
+            return bitmap;
+        }
+
         // ClearType needs an opaque background to blend with; this one is transparent.
         graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         DrawGlyph(graphics, glyph, new(0, 0, size, size), color);
@@ -188,4 +198,30 @@ static class Icons
     }
 
     const float outlineFill = 0.875f;
+
+    // In a square 100 across: a ring for a commit at each end of the trunk, and one up to the
+    // right, the branch curving down from it into the trunk. Filling more of the square than an
+    // outline does, and its lines a little heavier than a pixel at the bar's size, so it weighs
+    // as much as the font's glyphs beside it.
+    static void DrawBranch(Graphics graphics, int size, Color color)
+    {
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var scale = size * 0.95f / 100;
+        var inset = (size - 100 * scale) / 2;
+        graphics.TranslateTransform(inset, inset);
+        graphics.ScaleTransform(scale, scale);
+        using var pen = new Pen(color, 9.5f);
+        // Each ring kept its half a line in from the edge.
+        const float radius = 12;
+        const float trunk = 25;
+        const float top = 18;
+        const float bottom = 82;
+        const float branchX = 75;
+        const float branchY = 32;
+        graphics.DrawEllipse(pen, trunk - radius, top - radius, radius * 2, radius * 2);
+        graphics.DrawEllipse(pen, trunk - radius, bottom - radius, radius * 2, radius * 2);
+        graphics.DrawEllipse(pen, branchX - radius, branchY - radius, radius * 2, radius * 2);
+        graphics.DrawLine(pen, trunk, top + radius, trunk, bottom - radius);
+        graphics.DrawBezier(pen, branchX, branchY + radius, branchX, 60, trunk, 50, trunk, bottom - radius);
+    }
 }

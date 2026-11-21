@@ -9,8 +9,9 @@ static class GitBranches
     /// A branch to switch to: a local one, feature say, or one only on a remote, origin/feature,
     /// that no local branch tracks. <paramref name="Committed"/> is when its last commit was
     /// made. <paramref name="Stashed"/> when changes left on it are stashed, waiting for it.
+    /// <paramref name="Upstream"/> is the remote branch a local one tracks, origin/feature say.
     /// </summary>
-    public sealed record Branch(string Name, bool Remote, DateTimeOffset? Committed, bool Stashed);
+    public sealed record Branch(string Name, bool Remote, DateTimeOffset? Committed, bool Stashed, string? Upstream = null);
 
     /// <summary>
     /// The branches, grouped as GitHub Desktop groups them: origin's default branch, those
@@ -88,7 +89,7 @@ static class GitBranches
         const string localPrefix = "refs/heads/";
         const string remotePrefix = "refs/remotes/";
         string? current = null;
-        var locals = new List<(string Name, DateTimeOffset? Committed)>();
+        var locals = new List<(string Name, DateTimeOffset? Committed, string? Upstream)>();
         var remotes = new List<(string Name, DateTimeOffset? Committed)>();
         var tracked = new HashSet<string>(StringComparer.Ordinal);
         foreach (var line in refs.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -104,17 +105,19 @@ static class GitBranches
             if (refName.StartsWith(localPrefix, StringComparison.Ordinal))
             {
                 var name = refName[localPrefix.Length..];
-                locals.Add((name, committed));
                 if (fields[0] == "*")
                 {
                     current = name;
                 }
 
+                string? upstream = null;
                 if (fields[2].StartsWith(remotePrefix, StringComparison.Ordinal))
                 {
-                    tracked.Add(fields[2][remotePrefix.Length..]);
+                    upstream = fields[2][remotePrefix.Length..];
+                    tracked.Add(upstream);
                 }
 
+                locals.Add((name, committed, upstream));
                 continue;
             }
 
@@ -131,7 +134,7 @@ static class GitBranches
 
         // A remote branch a local one tracks is that branch, so is listed once, as the local one.
         var branches = locals
-            .Select(_ => new Branch(_.Name, false, _.Committed, stashed.Contains(_.Name)))
+            .Select(_ => new Branch(_.Name, false, _.Committed, stashed.Contains(_.Name), _.Upstream))
             .Concat(
                 remotes
                     .Where(_ => !tracked.Contains(_.Name))
@@ -344,7 +347,7 @@ static class GitBranches
     }
 
     // The local branch switching to a branch leaves checked out: origin/feature's is feature.
-    static string LocalName(Branch branch)
+    internal static string LocalName(Branch branch)
     {
         if (!branch.Remote)
         {
@@ -419,6 +422,108 @@ static class GitBranches
     /// </summary>
     public static CodeCommands.RepoResult Create(string repo, string name, Cancel cancel) =>
         CodeCommands.Git(repo, cancel, network: false, "switch", "-c", name);
+
+    /// <summary>
+    /// Renames the local branch <paramref name="name"/> to <paramref name="newName"/>. The branch
+    /// it tracks on origin keeps its name.
+    /// </summary>
+    public static CodeCommands.RepoResult Rename(string repo, string name, string newName, Cancel cancel)
+    {
+        // Only the case changing is the same name to a file system that ignores case, Windows',
+        // so git would say a branch of that name exists already, unless forced.
+        var move = "-m";
+        if (string.Equals(name, newName, StringComparison.OrdinalIgnoreCase))
+        {
+            move = "-M";
+        }
+
+        return CodeCommands.Git(repo, cancel, network: false, "branch", move, name, newName);
+    }
+
+    /// <summary>
+    /// Deletes <paramref name="branch"/>, as GitHub Desktop does: a local one whether merged or
+    /// not, saying the commit it was at, so it can be got back, and, with
+    /// <paramref name="alsoOnRemote"/>, the branch it tracks too; one only on a remote, from the
+    /// remote. The branch checked out is switched off first, to <paramref name="switchTo"/>.
+    /// </summary>
+    public static CodeCommands.RepoResult Delete(string repo, Branch branch, bool alsoOnRemote, Branch? switchTo, Cancel cancel)
+    {
+        if (branch.Remote)
+        {
+            return DeleteOnRemote(repo, branch.Name, cancel);
+        }
+
+        var switched = "";
+        if (switchTo != null)
+        {
+            var result = SwitchTo(repo, switchTo, cancel);
+            if (!result.Succeeded)
+            {
+                return result with
+                {
+                    Output = $"Couldn't switch off {branch.Name}, so it wasn't deleted:\n{result.Output}"
+                };
+            }
+
+            switched = result.Output;
+        }
+
+        var deleted = CodeCommands.Git(repo, cancel, network: false, "branch", "-D", branch.Name);
+        if (!deleted.Succeeded ||
+            !alsoOnRemote ||
+            branch.Upstream == null)
+        {
+            return deleted with
+            {
+                Output = $"{switched}\n{deleted.Output}".Trim()
+            };
+        }
+
+        var remote = DeleteOnRemote(repo, branch.Upstream, cancel);
+        return remote with
+        {
+            Output = $"{switched}\n{deleted.Output}\n{remote.Output}".Trim()
+        };
+    }
+
+    // origin/feature: feature, deleted from origin.
+    static CodeCommands.RepoResult DeleteOnRemote(string repo, string remoteBranch, Cancel cancel)
+    {
+        var slash = remoteBranch.IndexOf('/');
+        return CodeCommands.Git(
+            repo,
+            cancel,
+            network: true,
+            "push",
+            remoteBranch[..slash],
+            "--delete",
+            remoteBranch[(slash + 1)..]);
+    }
+
+    /// <summary>
+    /// Checks <paramref name="branch"/> out in a new worktree at <paramref name="folder"/>: a
+    /// folder of its own, sharing the repository, so the branch can be worked on beside the one
+    /// checked out here. A remote branch gets a local branch of its name, tracking it.
+    /// </summary>
+    public static CodeCommands.RepoResult AddWorktree(string repo, Branch branch, string folder, Cancel cancel)
+    {
+        if (branch.Remote)
+        {
+            return CodeCommands.Git(repo, cancel, network: false, "worktree", "add", "-b", LocalName(branch), "--", folder, branch.Name);
+        }
+
+        return CodeCommands.Git(repo, cancel, network: false, "worktree", "add", "--", folder, branch.Name);
+    }
+
+    /// <summary>
+    /// Where a worktree of <paramref name="branch"/> goes unless told otherwise, as GitHub
+    /// Desktop names it: beside the repository, its name and the branch's, Lode-feature say.
+    /// </summary>
+    internal static string WorktreeFolder(string repo, Branch branch)
+    {
+        var name = $"{Path.GetFileName(repo)}-{LocalName(branch).Replace('/', '-')}";
+        return Path.Combine(Path.GetDirectoryName(repo) ?? repo, name);
+    }
 
     /// <summary>
     /// How long ago <paramref name="when"/> was, as GitHub Desktop says it: "15 hours ago".
