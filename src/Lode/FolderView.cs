@@ -1467,6 +1467,13 @@ sealed class FolderView : UserControl
     // read again, once it shows.
     void OnGitStale(IReadOnlyCollection<string> stale)
     {
+        // Told of every repository changed, in every view: only one that shows one of them, and
+        // can be seen, has its window's thread take it up. One that can't reads once it shows.
+        if (!Shows(stale))
+        {
+            return;
+        }
+
         if (madeOn != null &&
             SynchronizationContext.Current != madeOn)
         {
@@ -1474,12 +1481,37 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!IsDisposed &&
-            stale.Any(_ => repos.Contains(_) || Locations.Same(_, containingRepo)))
-        {
-            ReadGitState();
-        }
+        ReadGitState();
     }
+
+    // On any thread: the repositories are never changed once found, only others found in their
+    // place, and whoever finds them or shows the view then reads what has gone stale.
+    bool Shows(IReadOnlyCollection<string> stale)
+    {
+        if (!ShowsRepos())
+        {
+            return false;
+        }
+
+        var listed = repos;
+        var containing = containingRepo;
+        foreach (var repo in stale)
+        {
+            if (listed.Contains(repo) ||
+                Locations.Same(repo, containing))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Whether the view shows a repository now.
+    bool ShowsRepos() =>
+        showing &&
+        !IsDisposed &&
+        (containingRepo != null || repos.Count > 0);
 
     /// <summary>
     /// Reads again the state of the repository the folder is in, and of those it lists while
