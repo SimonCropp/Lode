@@ -373,7 +373,18 @@ static class GitCache
     {
         lock (gate)
         {
-            var codeFolder = codeFolders.FirstOrDefault(_ => Locations.IsWithin(path, _));
+            // Nothing is made for a change, not a string for each folder above it either: there
+            // is one for everything written anywhere on the drive.
+            string? codeFolder = null;
+            foreach (var folder in codeFolders)
+            {
+                if (Locations.IsWithin(path, folder))
+                {
+                    codeFolder = folder;
+                    break;
+                }
+            }
+
             if (codeFolder == null)
             {
                 return;
@@ -387,16 +398,17 @@ static class GitCache
             }
 
             // The innermost repository it is in: one nested in another is its own.
-            for (var current = path; current != null && Locations.IsWithin(current, codeFolder); current = Path.GetDirectoryName(current))
+            var repos = known.GetAlternateLookup<CharSpan>();
+            for (var current = path.AsSpan(); !current.IsEmpty && Locations.IsWithin(current, codeFolder); current = Path.GetDirectoryName(current))
             {
-                if (!known.TryGetValue(current, out var entry))
+                if (!repos.TryGetValue(current, out var repo, out var entry))
                 {
                     continue;
                 }
 
                 var now = Environment.TickCount64;
                 entry.Changed(now, inGit);
-                changing[current] = entry;
+                changing[repo] = entry;
 
                 // Left as it is set when that is soon enough, as it nearly always is: it then
                 // finds this one not yet due, and waits on.
