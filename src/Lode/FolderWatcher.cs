@@ -16,6 +16,8 @@ sealed class FolderWatcher : IDisposable
     string? name;
     Action changed;
     Action<string, string>? renamed;
+    bool subfolders;
+    Action<string>? changedAt;
     Lock gate = new();
     IDisposable removal;
     FileSystemWatcher? watcher;
@@ -30,13 +32,19 @@ sealed class FolderWatcher : IDisposable
     /// anything in it.</param>
     /// <param name="renamed">Called on a background thread, from where and to where, for
     /// something renamed in the folder, before <paramref name="changed"/> is.</param>
-    public FolderWatcher(string path, NotifyFilters filter, Action changed, string? name = null, Action<string, string>? renamed = null)
+    /// <param name="subfolders">Everything beneath the folder, not just what is in it.</param>
+    /// <param name="changedAt">Called on a background thread with the path of each change, in
+    /// place of <paramref name="changed"/>, which is then only for when anything may have
+    /// changed: too many changes to keep track of, or watching again after a time without.</param>
+    public FolderWatcher(string path, NotifyFilters filter, Action changed, string? name = null, Action<string, string>? renamed = null, bool subfolders = false, Action<string>? changedAt = null)
     {
         this.path = path;
         this.filter = filter;
         this.name = name;
         this.changed = changed;
         this.renamed = renamed;
+        this.subfolders = subfolders;
+        this.changedAt = changedAt;
         watcher = Start();
         removal = SubscribeToDrive();
         lock (everyGate)
@@ -77,21 +85,44 @@ sealed class FolderWatcher : IDisposable
     {
         var started = new FileSystemWatcher(path)
         {
-            NotifyFilter = filter
+            NotifyFilter = filter,
+            IncludeSubdirectories = subfolders
         };
         if (name != null)
         {
             started.Filter = name;
         }
 
-        started.Created += (_, _) => changed();
-        started.Deleted += (_, _) => changed();
-        started.Changed += (_, _) => changed();
-        started.Renamed += (_, eventArgs) =>
+        if (subfolders)
         {
-            renamed?.Invoke(eventArgs.OldFullPath, eventArgs.FullPath);
-            changed();
-        };
+            // All of a drive changes far more than one folder: the most Windows allows, so fewer
+            // are lost.
+            started.InternalBufferSize = 64 * 1024;
+        }
+
+        if (changedAt is { } at)
+        {
+            started.Created += (_, eventArgs) => at(eventArgs.FullPath);
+            started.Deleted += (_, eventArgs) => at(eventArgs.FullPath);
+            started.Changed += (_, eventArgs) => at(eventArgs.FullPath);
+            started.Renamed += (_, eventArgs) =>
+            {
+                renamed?.Invoke(eventArgs.OldFullPath, eventArgs.FullPath);
+                at(eventArgs.OldFullPath);
+                at(eventArgs.FullPath);
+            };
+        }
+        else
+        {
+            started.Created += (_, _) => changed();
+            started.Deleted += (_, _) => changed();
+            started.Changed += (_, _) => changed();
+            started.Renamed += (_, eventArgs) =>
+            {
+                renamed?.Invoke(eventArgs.OldFullPath, eventArgs.FullPath);
+                changed();
+            };
+        }
 
         started.Error += (_, eventArgs) => Failed(started, eventArgs.GetException());
         started.EnableRaisingEvents = true;

@@ -1807,6 +1807,134 @@ public class FolderViewTests
         await Assert.That(view.GitText).IsEqualTo("");
     }
 
+    // Gone back to, the code folder shows what was last read of each repository at once, while
+    // it reads them again, rather than nothing; then what it has read.
+    [Test]
+    public async Task GoneBackToTheLastGitStatesShowAtOnce()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+        view.Navigate(code.At("Plain"));
+        await Pump.Loaded(view);
+        await File.WriteAllTextAsync(code.At("Clean", "tracked.txt"), "changed");
+        var release = new ManualResetEventSlim();
+        var readGit = FolderView.ReadGit;
+        FolderView.ReadGit = (repo, cancel) =>
+        {
+            release.Wait(cancel);
+            return readGit(repo, cancel);
+        };
+        try
+        {
+            view.Navigate(code.Root);
+            await Pump.Loaded(view);
+            var atOnce = GitCells(view);
+            release.Set();
+            await GitRead(view);
+
+            await Assert.That(atOnce)
+                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(GitCells(view))
+                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main · 1 change", "origins: ", "Plain: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        }
+        finally
+        {
+            release.Set();
+            FolderView.ReadGit = readGit;
+            release.Dispose();
+        }
+    }
+
+    // As TortoiseGit has it, a repository is read again only once something in it changes: the
+    // code folder gone back to reads none of them, a change, to a file or by a commit, is read
+    // without going anywhere, and Refresh reads them all whatever.
+    [Test]
+    public async Task RepositoriesAreReadAgainOnlyOnceTheyChange()
+    {
+        using var code = Repositories();
+        var reads = new List<string>();
+        var readGit = FolderView.ReadGit;
+        FolderView.ReadGit = (repo, cancel) =>
+        {
+            lock (reads)
+            {
+                reads.Add(Path.GetFileName(repo));
+            }
+
+            return readGit(repo, cancel);
+        };
+        try
+        {
+            using var view = await Open(code.Root, InCode(code));
+            await GitRead(view);
+            List<string> Reads()
+            {
+                lock (reads)
+                {
+                    var taken = reads.Order().ToList();
+                    reads.Clear();
+                    return taken;
+                }
+            }
+
+            var first = Reads();
+            view.Navigate(code.At("Plain"));
+            await Pump.Loaded(view);
+            view.Navigate(code.Root);
+            await Pump.Loaded(view);
+            await GitRead(view);
+            var goneBack = Reads();
+
+            await File.WriteAllTextAsync(code.At("Clean", "tracked.txt"), "changed");
+            await Pump.Until(() => GitCells(view).Contains("Clean: main · 1 change"));
+            await GitRead(view);
+            var changed = Reads();
+
+            CodeCommandsTests.Scratch.Git(code.At("Changed"), "commit", "-am", "Change");
+            await Pump.Until(() => GitCells(view).Contains("Changed: main · 1 ahead"));
+            await GitRead(view);
+            var committed = Reads();
+
+            view.ReloadRows();
+            await Pump.Loaded(view);
+            await GitRead(view);
+            var refreshed = Reads();
+
+            await Assert.That(first).IsEquivalentTo(["Changed", "Clean"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(goneBack).IsEmpty();
+            await Assert.That(changed).IsEquivalentTo(["Clean"]);
+            await Assert.That(committed).IsEquivalentTo(["Changed"]);
+            await Assert.That(refreshed).IsEquivalentTo(["Changed", "Clean"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        }
+        finally
+        {
+            FolderView.ReadGit = readGit;
+        }
+    }
+
+    // What a read found is fresh unless something changed in the repository while it was read:
+    // that change is then still to be read.
+    [Test]
+    public async Task AChangeWhileReadingIsStillToBeRead()
+    {
+        using var code = Repositories();
+        var repo = code.At("Clean");
+        GitCache.Watch(code.Root);
+        var state = new GitState("main", null, 0, 0, []);
+
+        var before = GitCache.Changes(repo);
+        GitCache.Store(repo, state, null, before);
+        GitCache.TryGet(repo, out _, out _, out var freshAfterRead);
+        var during = GitCache.Changes(repo);
+        GitCache.MarkStale([repo]);
+        GitCache.Store(repo, state, null, during);
+        GitCache.TryGet(repo, out _, out _, out var freshAfterChangeDuringRead);
+
+        await Assert.That(freshAfterRead).IsTrue();
+        await Assert.That(freshAfterChangeDuringRead).IsFalse();
+    }
+
     // By what the column says: nothing first, then by branch, then by what there is to commit.
     [Test]
     public async Task SortByGit()

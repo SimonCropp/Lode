@@ -126,6 +126,7 @@ sealed class FolderView : UserControl
 
     // The sites the repositories' origins are on, read with their states.
     readonly Dictionary<string, RemoteSite> gitSites = new(StringComparer.OrdinalIgnoreCase);
+
     GitCells gitCells = GitCells.None;
 
     // The reading of the states under way, one at a time: asked for again meanwhile, it reads
@@ -348,6 +349,9 @@ sealed class FolderView : UserControl
             index < displayed.Count &&
             CutItems.Contains(displayed[index].FullPath);
         CutItems.Changed += OnCutChanged;
+        // After Control's constructor, which puts Windows Forms' in place on a new thread.
+        madeOn = SynchronizationContext.Current;
+        GitCache.Stale += OnGitStale;
         list.SearchForVirtualItem += OnSearchForVirtualItem;
         list.ColumnFitRequested += SizeColumnToFit;
         list.ColumnResized += KeepWidth;
@@ -1270,6 +1274,15 @@ sealed class FolderView : UserControl
     public void ReloadRows()
     {
         rowsStale = true;
+
+        // Refresh reads the repositories again too, whatever the watch has heard.
+        var shown = repos.ToList();
+        if (containingRepo != null)
+        {
+            shown.Add(containingRepo);
+        }
+
+        GitCache.MarkStale(shown);
         Reload();
     }
 
@@ -1436,13 +1449,36 @@ sealed class FolderView : UserControl
     /// </summary>
     public void ReadGitStateUnlessFresh()
     {
-        if (gitReadAt != 0 &&
+        // Watched, only what has changed is read, which is nothing if nothing has.
+        if (!GitCache.Watching &&
+            gitReadAt != 0 &&
             Stopwatch.GetElapsedTime(gitReadAt) < gitFresh)
         {
             return;
         }
 
         ReadGitState();
+    }
+
+    // The thread the view was made on, its window's, for what is heard on others to go back to.
+    readonly SynchronizationContext? madeOn;
+
+    // Repositories changed, somewhere, heard on a background thread: those this view shows are
+    // read again, once it shows.
+    void OnGitStale(IReadOnlyCollection<string> stale)
+    {
+        if (madeOn != null &&
+            SynchronizationContext.Current != madeOn)
+        {
+            madeOn.Post(_ => OnGitStale(stale), null);
+            return;
+        }
+
+        if (!IsDisposed &&
+            stale.Any(_ => repos.Contains(_) || Locations.Same(_, containingRepo)))
+        {
+            ReadGitState();
+        }
     }
 
     /// <summary>
@@ -1479,6 +1515,19 @@ sealed class FolderView : UserControl
             return;
         }
 
+        if (settings.CodeDirectory is { } code)
+        {
+            GitCache.Watch(code);
+        }
+
+        // What was last read of each shows at once, and only those that have changed since, or
+        // were never read, are read, as TortoiseGit does.
+        var toRead = ShowCached(wanted);
+        if (toRead.Count == 0)
+        {
+            return;
+        }
+
         if (gitCancel != null)
         {
             gitPending = true;
@@ -1487,7 +1536,51 @@ sealed class FolderView : UserControl
 
         var cancel = new CancelSource();
         gitCancel = cancel;
-        GitReading = ReadGitStateAsync(wanted, gitVersion, cancel);
+        GitReading = ReadGitStateAsync(toRead, gitVersion, cancel);
+    }
+
+    // Shows what was last read of each repository wanted, in any view, giving those to read: the
+    // ones never read, and those changed since.
+    List<string> ShowCached(List<string> wanted)
+    {
+        var toRead = new List<string>();
+        var any = false;
+        foreach (var repo in wanted)
+        {
+            if (GitCache.TryGet(repo, out var state, out var site, out var fresh))
+            {
+                if (!gitStates.TryGetValue(repo, out var shown) ||
+                    shown != state ||
+                    gitSites.GetValueOrDefault(repo) != site)
+                {
+                    gitStates[repo] = state;
+                    if (site == null)
+                    {
+                        gitSites.Remove(repo);
+                    }
+                    else
+                    {
+                        gitSites[repo] = site;
+                    }
+
+                    any = true;
+                }
+
+                if (fresh)
+                {
+                    continue;
+                }
+            }
+
+            toRead.Add(repo);
+        }
+
+        if (any)
+        {
+            GitStatesChanged();
+        }
+
+        return toRead;
     }
 
     // Shown as each is read, then all of them once they are, so none is missed when it is done.
@@ -1507,7 +1600,8 @@ sealed class FolderView : UserControl
                         token,
                         repo =>
                         {
-                            var state = new GitRead(repo, reader(repo, token), RemoteSite.OfRepo(repo));
+                            var changes = GitCache.Changes(repo);
+                            var state = new GitRead(repo, reader(repo, token), RemoteSite.OfRepo(repo), changes);
                             progress.Report(state);
                             return state;
                         }),
@@ -1548,10 +1642,13 @@ sealed class FolderView : UserControl
         }
     }
 
-    sealed record GitRead(string Repo, GitState? State, RemoteSite? Site);
+    // Changes is how many changes had been seen in the repository as it was read.
+    sealed record GitRead(string Repo, GitState? State, RemoteSite? Site, int Changes);
 
     void GitStateRead(int version, GitRead read)
     {
+        GitCache.Store(read.Repo, read.State, read.Site, read.Changes);
+
         if (version != gitVersion ||
             IsDisposed)
         {
@@ -4440,6 +4537,7 @@ sealed class FolderView : UserControl
         {
             ShellFileOperation.Moved -= OnMoved;
             CutItems.Changed -= OnCutChanged;
+            GitCache.Stale -= OnGitStale;
             search?.Cancel();
             gitCancel?.Cancel();
             changes.Dispose();
