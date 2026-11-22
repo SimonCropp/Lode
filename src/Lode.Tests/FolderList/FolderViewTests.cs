@@ -73,6 +73,37 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // A folder of very many items is sorted by another column off the UI thread, the rows
+    // changing once it is: the same order as one sorted where it is, and the other way from
+    // there only turned round.
+    [Test]
+    public async Task ALargeFolderIsSortedOffTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        using var here = await Open(fixture.Root);
+        here.SortBy(sizeColumn);
+        var sortedHere = Names(here);
+        here.SortBy(sizeColumn);
+        var turnedHere = Names(here);
+        using var view = await Open(fixture.Root);
+        var from = FolderView.SortOffThreadFrom;
+        FolderView.SortOffThreadFrom = 0;
+        try
+        {
+            view.SortBy(sizeColumn);
+            var atOnce = Names(view);
+            await Pump.Until(() => Names(view).SequenceEqual(sortedHere));
+            view.SortBy(sizeColumn);
+
+            await Assert.That(atOnce).IsNotEquivalentTo(sortedHere, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(Names(view)).IsEquivalentTo(turnedHere, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        }
+        finally
+        {
+            FolderView.SortOffThreadFrom = from;
+        }
+    }
+
     [Test]
     public async Task SortByType()
     {

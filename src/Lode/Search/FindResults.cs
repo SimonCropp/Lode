@@ -75,6 +75,10 @@ sealed class FindResults(FindQuery query)
 
     public int RowCount => headingRows + fileRows + SummaryLines().Count;
 
+    // How many matches the files hold between them, counted as they come and go: the summary
+    // says it, and is asked for with every row drawn.
+    int matches;
+
     public void Add(FileResult result)
     {
         var rows = new List<int>(result.Lines.Count + 2);
@@ -91,6 +95,7 @@ sealed class FindResults(FindQuery query)
 
         starts.Add(headingRows + fileRows);
         files.Add(new(result, [.. rows]));
+        matches += result.MatchCount;
 
         // Its own row, its lines and gaps, and a blank after.
         fileRows += rows.Count + 2;
@@ -101,6 +106,7 @@ sealed class FindResults(FindQuery query)
     /// </summary>
     public void Remove(int file)
     {
+        matches -= files[file].Result.MatchCount;
         files.RemoveAt(file);
         starts.Clear();
         fileRows = 0;
@@ -167,7 +173,9 @@ sealed class FindResults(FindQuery query)
             step = -1;
         }
 
-        for (var index = from; index >= 0 && index < RowCount; index += step)
+        // Counted the once: the count makes the summary, which is not for every row passed.
+        var count = RowCount;
+        for (var index = from; index >= 0 && index < count; index += step)
         {
             var row = RowAt(index);
             if (row.Kind == RowKind.Line &&
@@ -224,7 +232,6 @@ sealed class FindResults(FindQuery query)
             return lines;
         }
 
-        var matches = files.Sum(_ => _.Result.MatchCount);
         if (Done)
         {
             lines.Add($"{Plural(matches, "match", "matches")} across {Plural(files.Count, "file")}");
@@ -342,7 +349,8 @@ sealed class FindResults(FindQuery query)
     public string ToText()
     {
         var builder = new StringBuilder();
-        for (var index = 0; index < RowCount; index++)
+        var count = RowCount;
+        for (var index = 0; index < count; index++)
         {
             builder.Append(TextOf(RowAt(index)).TrimEnd()).Append('\n');
         }

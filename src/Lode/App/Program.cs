@@ -7,9 +7,35 @@ static class Program
     public static void UseDefaultFont() =>
         Application.SetDefaultFont(new("Segoe UI", 10.5f));
 
+    // Whether the launch was only folders and files to open, and the copy running took them.
+    // Anything else, a link, which may ask, or a switch, which reports, is for a launch with
+    // its windows set up, as is one that finds no copy running, or can't reach it.
+    static bool HandedOff(CommandLine commandLine)
+    {
+        if (commandLine.Kind != CommandKind.Open ||
+            commandLine.Links.Count > 0 ||
+            commandLine.ForExplorer.Count > 0)
+        {
+            return false;
+        }
+
+        using var instance = new SingleInstance();
+        return !instance.IsFirst &&
+               instance.TryHandOff(commandLine.FullPaths());
+    }
+
     [STAThread]
     static int Main(string[] arguments)
     {
+        // A launch that only hands its folders to the copy running does it before anything of
+        // Windows Forms is set up, which it has no use for. With Lode in Explorer's place, that
+        // is every folder another app opens, each a wait on fonts and styles nothing shows.
+        var commandLine = CommandLine.Parse(arguments);
+        if (HandedOff(commandLine))
+        {
+            return 0;
+        }
+
         // What ApplicationConfiguration.Initialize does, from properties that need UseWindowsForms,
         // which a dotnet tool cannot have. See Lode.csproj.
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
@@ -21,7 +47,6 @@ static class Program
         // appears whole, rather than as a blank frame its controls fill in one at a time.
         Application.SetDefaultFormRevealMode(FormRevealMode.Deferred);
 
-        var commandLine = CommandLine.Parse(arguments);
         switch (commandLine.Kind)
         {
             case CommandKind.ReplaceExplorer:

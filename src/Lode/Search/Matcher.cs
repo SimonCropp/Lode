@@ -134,10 +134,11 @@ sealed class Matcher
                 pattern = $@"\b(?:{pattern})\b";
             }
 
+            // Compiled, as it is made once a search and run over every file searched, whole.
             // AnyNewLine, as most files here end their lines as Windows does: without it $ is
             // only before a line feed, so after the carriage return, where nothing typed ends,
             // and . takes the carriage return, which Replace would then take from the line.
-            var options = RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.AnyNewLine;
+            var options = RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.AnyNewLine | RegexOptions.Compiled;
             if (!query.CaseSensitive)
             {
                 options |= RegexOptions.IgnoreCase;

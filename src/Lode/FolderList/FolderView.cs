@@ -3816,6 +3816,59 @@ sealed class FolderView : UserControl
             settings.SetSort(CurrentPath, columnDefinitions[column].Key, sortAscending);
         }
 
+        if (entries.Count + found.Count >= SortOffThreadFrom &&
+            entriesSort != (sortColumn, !sortAscending))
+        {
+            _ = SortThenPopulate();
+            return;
+        }
+
+        Populate(true);
+    }
+
+    // From this many items a sort by another column is done off the UI thread: of a hundred
+    // thousand it is over a million comparisons, each a call into Windows, and by Type two
+    // lookups besides, with the window not answering for all of it. Fewer are sorted before
+    // anyone could tell, and the other way by the same column is only turned round.
+    internal static int SortOffThreadFrom { get; set; } = 20_000;
+
+    // Sorts copies of the entries and of what was found, by what the list is now to be sorted
+    // by, and gives the list its rows once they are. Should anything of them have changed
+    // meanwhile, the folder read again, another column clicked, the rows are given as they
+    // then are, sorted here as before.
+    async Task SortThenPopulate()
+    {
+        var column = sortColumn;
+        var ascending = sortAscending;
+        var cells = gitCells;
+        var beforeEntries = entries;
+        var beforeFound = found;
+        var beforeEdits = entryEdits;
+        List<FileEntry> sortedEntries = [.. entries];
+        List<FileEntry> sortedFound = [.. found];
+        await Task.Run(() =>
+        {
+            var compare = Order(column, ascending, cells);
+            sortedEntries.Sort(compare);
+            sortedFound.Sort(compare);
+        });
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(entries, beforeEntries) &&
+            ReferenceEquals(found, beforeFound) &&
+            ReferenceEquals(gitCells, cells) &&
+            entryEdits == beforeEdits &&
+            (sortColumn, sortAscending) == (column, ascending))
+        {
+            entries = sortedEntries;
+            entriesSort = (column, ascending);
+            found = sortedFound;
+            foundSort = (column, ascending);
+        }
+
         Populate(true);
     }
 
@@ -4316,11 +4369,27 @@ sealed class FolderView : UserControl
         var foundPosition = found.IndexOf(entry);
         if (foundPosition >= 0)
         {
-            // Sorted again when next shown: by its new name it may belong elsewhere. A new list,
-            // not the one a merge may be reading.
+            // By its new name it may belong elsewhere. A new list, not the one a merge may be
+            // reading.
             found = [.. found];
-            found[foundPosition] = renamed;
-            foundSort = (-1, true);
+            if (foundSort == (sortColumn, sortAscending))
+            {
+                // Put where it belongs now, rather than everything found sorted again for the
+                // one of them.
+                found.RemoveAt(foundPosition);
+                var at = found.BinarySearch(renamed, Comparer<FileEntry>.Create(Order(sortColumn, sortAscending, gitCells)));
+                if (at < 0)
+                {
+                    at = ~at;
+                }
+
+                found.Insert(at, renamed);
+            }
+            else
+            {
+                // Sorted when next shown, as it was to be anyway.
+                found[foundPosition] = renamed;
+            }
         }
 
         changes.Raise();

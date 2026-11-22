@@ -492,13 +492,30 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     // access does not have pinned.
     static void Pin(string path)
     {
-        if (Places.QuickAccessFolders().Pinned.Any(_ => Locations.Same(_, path)))
+        // Read once for folders pinned one straight after another, several dropped together
+        // say: reading Quick access asks the shell for all of it, and looks for each folder on
+        // disk, with the window waiting.
+        var now = Environment.TickCount64;
+        if (pinnedRead is not { } read ||
+            now - read.At > 2000)
+        {
+            read = (now, [.. Places.QuickAccessFolders().Pinned]);
+            pinnedRead = read;
+        }
+
+        if (read.Pinned.Any(_ => Locations.Same(_, path)))
         {
             return;
         }
 
-        TogglePinned(path);
+        if (TogglePinned(path))
+        {
+            read.Pinned.Add(path);
+        }
     }
+
+    // What Quick access had pinned when it was last read to pin a folder, and when that was.
+    static (long At, List<string> Pinned)? pinnedRead;
 
     // What the shell's Pin to Quick access entries run, for folders, drives and files alike.
     static Guid pinToQuickAccessCommand = new("b455f46e-e4af-4035-b0a4-cf18d2f6f28e");
