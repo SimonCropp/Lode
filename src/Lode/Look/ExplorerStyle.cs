@@ -179,9 +179,49 @@ static class ExplorerStyle
     public static Color Pressed(Color background) =>
         Blend(background, SystemColors.ControlText, 0.04f);
 
+    /// <summary>
+    /// Behind a menu's entry, or a button, under the mouse, or pressed: a shade of
+    /// <paramref name="background"/>, or, with high contrast on, the system's highlight, as a
+    /// shade would be lost on a high contrast background, black say. Text on it is in
+    /// <see cref="HighlightedText"/>.
+    /// </summary>
+    public static Color Highlighted(Color background, bool pressed = false)
+    {
+        if (HighContrast())
+        {
+            return SystemColors.Highlight;
+        }
+
+        if (pressed)
+        {
+            return Pressed(background);
+        }
+
+        return Hover(background);
+    }
+
+    /// <summary>
+    /// Text on <see cref="Highlighted"/>: <paramref name="color"/>, or, with high contrast on,
+    /// the system's colour for text on its highlight.
+    /// </summary>
+    public static Color HighlightedText(Color color)
+    {
+        if (HighContrast())
+        {
+            return SystemColors.HighlightText;
+        }
+
+        return color;
+    }
+
+    /// <summary>
+    /// Whether high contrast is on. Tests turn it on.
+    /// </summary>
+    internal static Func<bool> HighContrast { get; set; } = () => SystemInformation.HighContrast;
+
     static Color Pick(Color light, Color dark, Color system)
     {
-        if (SystemInformation.HighContrast)
+        if (HighContrast())
         {
             return system;
         }

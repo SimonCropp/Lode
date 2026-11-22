@@ -206,7 +206,7 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         Shade(
             args.Graphics,
             Rectangle.FromLTRB(inset, 0, item.Width - inset, item.Height),
-            ExplorerStyle.Hover(ExplorerStyle.MenuBackground),
+            ExplorerStyle.Highlighted(ExplorerStyle.MenuBackground),
             Scale(item, cornerRadius));
     }
 
@@ -234,6 +234,12 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
                 color = ExplorerStyle.SecondaryText;
             }
 
+            if (item.Enabled &&
+                IsHighlighted(item))
+            {
+                color = ExplorerStyle.HighlightedText(color);
+            }
+
             if (!shortcut)
             {
                 args.TextRectangle = Indented(item, args.TextRectangle);
@@ -249,9 +255,19 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             TextRenderer.DrawText(args.Graphics, args.Text, args.TextFont, args.TextRectangle, ExplorerStyle.DisabledText, args.TextFormat);
             return;
         }
+        else if (IsHighlighted(args.Item))
+        {
+            args.TextColor = ExplorerStyle.HighlightedText(args.TextColor);
+        }
 
         base.OnRenderItemText(args);
     }
+
+    // Drawn on Highlighted: under the mouse, pressed, or a button ticked.
+    static bool IsHighlighted(ToolStripItem item) =>
+        item.Selected ||
+        item.Pressed ||
+        item is ToolStripButton { Checked: true };
 
     protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs args)
     {
@@ -285,6 +301,10 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         {
             color = SystemColors.GrayText;
         }
+        else if (IsHighlighted(item))
+        {
+            color = ExplorerStyle.HighlightedText(color);
+        }
 
         DrawGlyph(args.Graphics, Icons.ChevronRight, args.ArrowRectangle, Scale(item, arrowSize), color);
     }
@@ -312,6 +332,10 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         if (!item.Enabled)
         {
             color = SystemColors.GrayText;
+        }
+        else if (IsHighlighted(item))
+        {
+            color = ExplorerStyle.HighlightedText(color);
         }
 
         DrawGlyph(args.Graphics, Icons.CheckMark, bounds, Scale(item, checkSize), color);
@@ -355,11 +379,11 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
         if (item.Pressed ||
             item is ToolStripButton { Checked: true })
         {
-            shade = ExplorerStyle.Pressed(ExplorerStyle.Window);
+            shade = ExplorerStyle.Highlighted(ExplorerStyle.Window, pressed: true);
         }
         else if (item.Selected)
         {
-            shade = ExplorerStyle.Hover(ExplorerStyle.Window);
+            shade = ExplorerStyle.Highlighted(ExplorerStyle.Window);
         }
         else
         {

@@ -53,14 +53,11 @@ sealed class GlyphButton : Button
         var graphics = args.Graphics;
         var background = Parent?.BackColor ?? SystemColors.Control;
         graphics.Clear(background);
-        if (Enabled &&
-            (hovered || pressed))
+        var highlighted = Enabled &&
+                          (hovered || pressed);
+        if (highlighted)
         {
-            var shade = ExplorerStyle.Hover(background);
-            if (pressed)
-            {
-                shade = ExplorerStyle.Pressed(background);
-            }
+            var shade = ExplorerStyle.Highlighted(background, pressed);
 
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using var brush = new SolidBrush(shade);
@@ -78,6 +75,10 @@ sealed class GlyphButton : Button
         if (!Enabled)
         {
             color = ExplorerStyle.DisabledText;
+        }
+        else if (highlighted)
+        {
+            color = ExplorerStyle.HighlightedText(color);
         }
 
         // An icon of the glyph, smoothed in gray, as the command bar's are. Drawn as text, it was
