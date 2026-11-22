@@ -12,11 +12,12 @@ Alternative to Windows Explorer with a focus on developers.
 
  * [A right-click menu that opens at once](#right-click-menu), touching no shell extension, with the full Windows menu a click away.
  * [Git on the folder](#code-folder): fetch, pull, push, tag, discard and purge every repository under it, from the right-click menu, the actions bar or the command palette.
- * [The state of each repository and file](#git-state) in a Git column and the status bar, kept as TortoiseGit keeps it.
+ * [The state of each repository and file](#git-state) in a Git column and the status bar.
  * [Coding agents](#coding-agent) and [Claude](#open-in-claude) started in the folder.
- * [Find in Files](#find-in-files), as Sublime Text's, with replace, leaving out what git ignores.
+ * [Find in Files](#find-in-files), with replace, leaving out what git ignores.
  * [A search box](#search-box) that searches every folder beneath, as quick however much it finds.
- * [Tabs](#tabs), dragged between windows, and a [command palette](#command-palette).
+ * [Tabs](#tabs), dragged between windows.
+ * Has a [command palette](#command-palette).
  * [Undo and redo](#undo) of renames, moves, copies and deletes, across every window.
  * [Stands in for File Explorer](#replacing-file-explorer), so Win+E and folders other apps open land in Lode, and [opens repository links](#repository-links) from GitHub Desktop and Visual Studio.
  * [Installs as a dotnet tool](#install), and says when there is a newer version, which one click installs.
@@ -189,7 +190,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    * **Tag** tags the commit and pushes the tag; **Delete tag** deletes one, from origin too.
    * **Purge** deletes everything git doesn't track, ignored files included (`git clean -xdf`), to the Recycle Bin, unless Options says permanently. It asks once it knows how many items, and how big.
    * Each runs in the **Actions** panel under the tree, with progress. Click a line for what it reported; right-click to cancel or remove it. A line that went well leaves after a minute; one that failed stays.
-   * <a id="git-state"></a>**Git state**: a **Git** column says of each repository its branch, changes, and commits ahead and behind (`main · 3 changes · 2 ahead`), and in a repository what has become of each file. The status bar says it of the repository, links to its page on GitHub, Azure DevOps, GitLab or Bitbucket, and acts on it when clicked: behind offers Pull, ahead Push, changes Commit and push, or Discard. As TortoiseGit does, each repository is read once and again only when something in it changes, so going back to a folder reads nothing. F5 reads them all again. How it works: [docs/git-status.md](docs/git-status.md).
+   * <a id="git-state"></a>**Git state**: a **Git** column says of each repository its branch, changes, and commits ahead and behind (`main · 3 changes · 2 ahead`), and in a repository what has become of each file. The status bar says it of the repository, links to its page on GitHub, Azure DevOps, GitLab or Bitbucket, and acts on it when clicked: behind offers Pull, ahead Push, changes Commit and push, or Discard. Each repository is read once and again only when something in it changes, so going back to a folder reads nothing. F5 reads them all again. How it works: [docs/git-status.md](docs/git-status.md).
    * **Switch branch**: click the branch in the status bar, or press Ctrl+B, for the repository's branches, as GitHub Desktop lists them. Type to filter; Enter switches. Uncommitted changes can be left on the branch, stashed, or brought along. It also makes, renames and deletes branches, copies a branch's name, and checks one out in a new worktree.
    * **Rider keeps asking** to exclude each project from Defender, as it can't see the code folder is excluded. Turn its notification off for all projects, from **More** on it.
 
@@ -209,11 +210,11 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![Filtered](src/Lode.Tests/Window/MainFormTests.Filtered.verified.png)
 
- * <a id="find-in-files"></a>**Find in Files** (Ctrl+Shift+F) searches what files hold, as Sublime Text's does, reading every file, so nothing needs indexing. In its strip along the bottom:
+ * <a id="find-in-files"></a>**Find in Files** (Ctrl+Shift+F) searches what files hold, reading every file, so nothing needs indexing. In its strip along the bottom:
    * **Find**: text, or a regular expression (**.\***), case (**Aa**) and whole word (**ab**) as wanted.
    * **Where**: folders and files, `<open folders>`, and patterns: `*.cs` to include, `-*.min.js` or `-node_modules\` to exclude.
    * In a repository only what git doesn't ignore is searched, unless **Git-ignored** is on. `.git` never is, nor binary files.
-   * **Find Results** opens in a tab, as Sublime's: each file's matching lines, with context. Enter opens the file in the editor at the line; F4 and Shift+F4 go through the matches.
+   * **Find Results** opens in a tab: each file's matching lines, with context. Enter opens the file in the editor at the line; F4 and Shift+F4 go through the matches.
    * **Replace** replaces in every file found, asking first, keeping each file's encoding and line endings, and can be undone.
 
    ![Find Results](src/Lode.Tests/Window/MainFormTests.FindResults.verified.png)
