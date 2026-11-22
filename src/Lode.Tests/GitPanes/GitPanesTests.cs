@@ -52,7 +52,7 @@ public class GitPanesTests
 
         form.GitPanes.SetPinned(GitPane.History, true);
         await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History pinned, strip Changes (6)");
-        await Assert.That(settings.PinnedPanesOf(fixture.At("Docs"))).IsEqualTo(new PinnedPanes(fixture.At("Docs"), false, true));
+        await Assert.That(settings.PinnedPanesOf(fixture.At("Docs"))).IsEqualTo(new(fixture.At("Docs"), false, true));
 
         form.ActiveView!.Navigate(fixture.At("Source"));
         await PaneStubs.Settled(form);
@@ -140,6 +140,183 @@ public class GitPanesTests
         first.GitPanes.SetPinned(GitPane.Changes, true);
 
         await Assert.That(second.GitPanes.Describe()).IsEqualTo("Docs: Changes pinned, History hidden, strip History");
+    }
+
+    // Chosen from the strip's right-click menu in one window, the tabs are labelled that way in
+    // every window, and kept: the strip as wide as its labels need.
+    [Test]
+    public async Task StripLabelsInEveryWindow()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var first = await Show(fixture.At("Docs"), settings);
+        using var second = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(first);
+        await PaneStubs.Settled(second);
+        var strip = second.GitPanes.Strip;
+        var vertical = strip.Width;
+        var ticked = first.GitPanes.Strip.MenuCommands().Single(_ => _!.Checked)!;
+        await Assert.That(ticked.Text).IsEqualTo("Vertical names");
+
+        first.GitPanes.Strip.MenuCommands().Single(_ => _!.Text == "Horizontal names")!.Action();
+
+        await Assert.That(settings.StripLabels).IsEqualTo(StripLabels.Horizontal);
+        await Assert.That(strip.Labels).IsEqualTo(StripLabels.Horizontal);
+        await Assert.That(strip.Width).IsGreaterThan(vertical);
+        await Assert.That(strip.Width).IsEqualTo(strip.FitWidth());
+
+        first.GitPanes.Strip.MenuCommands().Single(_ => _!.Text == "Icons only")!.Action();
+
+        await Assert.That(strip.Labels).IsEqualTo(StripLabels.IconsOnly);
+        await Assert.That(strip.Width).IsEqualTo(strip.LogicalToDeviceUnits(28));
+        var tabs = strip.Tabs();
+        await Assert.That(tabs.Count).IsEqualTo(2);
+        await Assert.That(tabs.All(_ => _.Bounds.Height == strip.LogicalToDeviceUnits(32))).IsTrue();
+
+        // What a screen reader is told is the same however the tabs are labelled.
+        await Assert.That(second.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History hidden, strip Changes (6) and History");
+    }
+
+    // The badge on Changes' icon: none for no changes, up to 99, then 99+.
+    [Test]
+    public async Task BadgeText()
+    {
+        await Assert.That(EdgeStrip.BadgeText(0)).IsNull();
+        await Assert.That(EdgeStrip.BadgeText(7)).IsEqualTo("7");
+        await Assert.That(EdgeStrip.BadgeText(99)).IsEqualTo("99");
+        await Assert.That(EdgeStrip.BadgeText(1234)).IsEqualTo("99+");
+    }
+
+    // Over a file's status icon, what it stands for; elsewhere on the row, the file and what happened
+    // to it; off the rows, nothing.
+    [Test]
+    public async Task ChangeTips()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var list = form.GitPanes.ChangesPane.List;
+        var shown = PaneStubs.Files;
+
+        Point Status(int index)
+        {
+            var row = list.GetItemRect(index);
+            row.Width = list.Columns[0].Width;
+            var status = ChangeRows.StatusBounds(list, row);
+            return new(status.Left + status.Width / 2, status.Top + status.Height / 2);
+        }
+
+        await Assert.That(ChangeRows.TipAt(list, Status(0), shown)).IsEqualTo("Modified");
+        await Assert.That(ChangeRows.TipAt(list, Status(1), shown)).IsEqualTo("Deleted");
+        await Assert.That(ChangeRows.TipAt(list, Status(2), shown)).IsEqualTo("Renamed from report2.beta");
+        await Assert.That(ChangeRows.TipAt(list, Status(4), shown)).IsEqualTo("Untracked: new to git");
+
+        var name = list.GetItemRect(0);
+        await Assert.That(ChangeRows.TipAt(list, new(name.Left + list.LogicalToDeviceUnits(60), name.Top + name.Height / 2), shown)).IsEqualTo("Docs/guide.aleph, modified");
+        await Assert.That(ChangeRows.TipAt(list, new(4, list.ClientSize.Height - 2), shown)).IsNull();
+    }
+
+    // The picked commit's heading draws the line between it and the commits itself, with a
+    // commit picked or not, so they never run together, wherever the splitter is.
+    [Test]
+    public async Task CommitHeadingLine()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+
+        await Assert.That(TopLine(pane.Heading)).IsEqualTo(ExplorerStyle.Divider.ToArgb());
+
+        pane.CommitList.SelectedIndices.Add(2);
+        await PaneStubs.Settled(form);
+        await Assert.That(TopLine(pane.Heading)).IsEqualTo(ExplorerStyle.Divider.ToArgb());
+    }
+
+    // A click on the commit picked picks none, putting its files away, and it stays that way once
+    // the double-click time has passed, when the list picks the row clicked again unless stopped;
+    // another click picks it again, and a click on another commit picks that, as it always did.
+    [Test]
+    public async Task ClickPickedCommitDeselects()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        list.SelectedIndices.Add(1);
+        await PaneStubs.Settled(form);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
+
+        Click(list, 1);
+        await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(0);
+        PumpFor(TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200));
+        await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(0);
+
+        Click(list, 1);
+        await PaneStubs.Settled(form);
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([1]);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
+
+        Click(list, 3);
+        await PaneStubs.Settled(form);
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([3]);
+    }
+
+    // A click as Windows sends one: the button up waiting in the queue, for the list, which
+    // doesn't come back from the press until the button is up, to find.
+    static void Click(RowList list, int index)
+    {
+        var row = list.GetItemRect(index);
+        var point = (IntPtr) ((row.Top + row.Height / 2) << 16 | (row.Left + list.LogicalToDeviceUnits(40)));
+        PostMessage(list.Handle, 0x0202, IntPtr.Zero, point);
+        NativeMethods.SendMessage(list.Handle, 0x0201, 1, point);
+        Application.DoEvents();
+    }
+
+    // The window's messages handled, timers' included, for as long as given.
+    static void PumpFor(TimeSpan time)
+    {
+        var started = Stopwatch.GetTimestamp();
+        while (Stopwatch.GetElapsedTime(started) < time)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+    }
+
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+    static int TopLine(Control control)
+    {
+        using var bitmap = new Bitmap(control.Width, control.Height);
+        control.DrawToBitmap(bitmap, new(Point.Empty, control.Size));
+        return bitmap.GetPixel(control.Width / 2, 0).ToArgb();
     }
 
     // Two of the fixture's folders are repositories, in a code folder of the fixture.

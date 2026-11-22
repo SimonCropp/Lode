@@ -12,6 +12,16 @@ public class GitPanesCaptureTests
     public Task Strip() =>
         Capture(changes: false, history: false);
 
+    // The names across, under the icons, Changes' count in a badge on its icon.
+    [Test]
+    public Task StripHorizontal() =>
+        Capture(changes: false, history: false, labels: StripLabels.Horizontal);
+
+    // The icons alone, Changes' count in a badge on its icon.
+    [Test]
+    public Task StripIconsOnly() =>
+        Capture(changes: false, history: false, labels: StripLabels.IconsOnly);
+
     [Test]
     public Task ChangesPinned() =>
         Capture(changes: true, history: false);
@@ -48,12 +58,13 @@ public class GitPanesCaptureTests
             history: false,
             form => form.GitPanes.Float(GitPane.History, focus: false));
 
-    static async Task Capture(bool changes, bool history, Action<MainForm>? arrange = null)
+    static async Task Capture(bool changes, bool history, Action<MainForm>? arrange = null, StripLabels labels = StripLabels.Vertical)
     {
         using var stubs = new PaneStubs();
         using var fixture = Fixture.CreateAtFixedPath();
         var settings = PaneStubs.InRepository(fixture);
         settings.SetPinnedPanes(fixture.Root, changes, history);
+        settings.StripLabels = labels;
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
         using var form = new QuietForm([fixture.Root], settings, places);
         form.ShowInTaskbar = false;

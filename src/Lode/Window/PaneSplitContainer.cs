@@ -1,4 +1,14 @@
 /// <summary>
+/// The line down a <see cref="PaneSplitContainer"/>'s splitter.
+/// </summary>
+enum SplitterLine
+{
+    Faint,
+    Plain,
+    None
+}
+
+/// <summary>
 /// A split container whose splitter works like File Explorer's: dragging it resizes the panes as
 /// the mouse moves, and pressing it leaves the focus where it was, so a click that does not drag
 /// changes nothing. SplitContainer's own splitter takes the focus when pressed and is dragged as
@@ -27,13 +37,38 @@ sealed class PaneSplitContainer : SplitContainer
         // (see OnPaint), as Explorer has between its panes. In the window's gray, it joined
         // the gray track of the tree's scrollbar into a wide gray bar.
         BackColor = ExplorerStyle.Window;
+
+        // The splitter painted again wherever it goes. SplitContainer leaves it to Windows to
+        // paint what moving the panes uncovers, which it didn't always: dragged, or the container
+        // resized, the line could be missing, and nothing between what was above and below it.
+        SplitterMoved += (_, _) => Invalidate(SplitterRectangle);
+        Resize += (_, _) => Invalidate(SplitterRectangle);
     }
+
+    /// <summary>
+    /// The line down the splitter: barely there, as between the tree and the list; plain, in the
+    /// colour of the line under the command bar, as between the list and the Changes and History
+    /// panes beside it, and between those two; or none, where a pane draws its own.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal SplitterLine Line { get; set; }
 
     protected override void OnPaint(PaintEventArgs args)
     {
         base.OnPaint(args);
+        if (Line == SplitterLine.None)
+        {
+            return;
+        }
+
         var bounds = SplitterRectangle;
-        using var pen = new Pen(ExplorerStyle.PaneDivider);
+        var colour = ExplorerStyle.PaneDivider;
+        if (Line == SplitterLine.Plain)
+        {
+            colour = ExplorerStyle.Divider;
+        }
+
+        using var pen = new Pen(colour);
         if (Orientation == Orientation.Vertical)
         {
             var x = bounds.Left + bounds.Width / 2;

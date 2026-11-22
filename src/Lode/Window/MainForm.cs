@@ -204,7 +204,8 @@ class MainForm : Form
         gitPanes.ShowInFolderRequested += ShowInFolder;
         gitPanes.OpenSiteRequested += url => OpenSite(url);
         gitPanes.PinnedChanged += ApplyPinnedInAllWindows;
-        findPanel.FindRequested += () => Find();
+        gitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
+        findPanel.FindRequested += Find;
         findPanel.ReplaceRequested += () => _ = Replace();
         findPanel.StopRequested += () => resultsView?.Stop();
         findPanel.Searching = () => resultsView?.IsSearching == true;
@@ -2037,6 +2038,15 @@ class MainForm : Form
         foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
         {
             window.gitPanes.ApplyPinned(repo);
+        }
+    }
+
+    // The strip's tabs labelled another way in one window, in every window.
+    static void ApplyStripLabelsInAllWindows()
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            window.gitPanes.ApplyStripLabels();
         }
     }
 

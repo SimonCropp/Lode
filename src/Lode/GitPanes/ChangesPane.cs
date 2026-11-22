@@ -9,10 +9,10 @@
 sealed class ChangesPane : UserControl
 {
     // Pixels at 100% scale.
-    const int inset = 12;
-    const int tickGap = 8;
+    const int inset = DesktopStyle.Inset;
+    const int tickGap = 7;
 
-    PaneHeader header = new("Changes");
+    PaneHeader header = new("Changes", Icons.Changes);
     FramedTextBox filterFrame = new();
     Panel filterRow;
     TickRow tickRow;
@@ -22,6 +22,7 @@ sealed class ChangesPane : UserControl
     FramedArea descriptionFrame = new();
     AccentButton commitButton = new();
     ToolTip tip = new();
+    RowTip rowTip;
     Settings settings;
 
     string? repo;
@@ -93,17 +94,19 @@ sealed class ChangesPane : UserControl
         tickRow = new(this);
 
         filterFrame.Dock = DockStyle.Top;
+        filterFrame.Desktop = true;
         filterFrame.Glyph = Icons.Search;
         filterFrame.Box.PlaceholderText = "Filter";
         filterFrame.Box.AccessibleName = "Filter changed files";
         filterFrame.Box.TextChanged += (_, _) => ShowRows();
-        // The boxes white on the window's gray, as the address bar's and Find in Files' are.
+        // The filter and the tick for every file in one grey block above the files, as
+        // Desktop's header over its list is.
         filterRow = new()
         {
             Dock = DockStyle.Top,
-            Padding = new(inset, 8, inset, 8),
-            Height = filterFrame.Height + 16,
-            BackColor = ExplorerStyle.AddressRow
+            Padding = new(inset, 7, inset, 2),
+            Height = filterFrame.Height + 9,
+            BackColor = DesktopStyle.AltBackground
         };
         filterRow.Controls.Add(filterFrame);
 
@@ -113,31 +116,33 @@ sealed class ChangesPane : UserControl
         list.MouseUp += OnListMouseUp;
         list.KeyDown += OnListKeyDown;
         list.ItemActivate += (_, _) => OpenDiff(list.FocusedItem?.Index ?? -1);
-        list.ItemMouseHover += (_, args) => tip.SetToolTip(list, DescribeRow(args.Item?.Index ?? -1));
+        rowTip = new(list, _ => ChangeRows.TipAt(list, _, shown));
         list.ShowItemToolTips = false;
         list.GotFocus += (_, _) => list.Invalidate();
         list.LostFocus += (_, _) => list.Invalidate();
 
         summaryFrame.Dock = DockStyle.Top;
+        summaryFrame.Desktop = true;
         summaryFrame.Box.PlaceholderText = "Summary (required)";
         summaryFrame.Box.AccessibleName = "Summary";
         summaryFrame.Box.TextChanged += (_, _) => OnTyped();
         descriptionFrame.Dock = DockStyle.Top;
+        descriptionFrame.Desktop = true;
         descriptionFrame.Height = 84;
         descriptionFrame.Box.PlaceholderText = "Description";
         descriptionFrame.Box.AccessibleName = "Description";
         descriptionFrame.Box.TextChanged += (_, _) => OnTyped();
         commitButton.Dock = DockStyle.Top;
-        commitButton.Height = 32;
+        commitButton.Height = 28;
         commitButton.Click += (_, _) => Commit();
         tip.SetToolTip(commitButton, "Commit the ticked files (Ctrl+Enter)");
 
         commitArea.Dock = DockStyle.Bottom;
         commitArea.Padding = new(inset, 10, inset, inset);
-        commitArea.BackColor = ExplorerStyle.AddressRow;
+        commitArea.BackColor = DesktopStyle.AltBackground;
         commitArea.Paint += (_, args) =>
         {
-            using var pen = new Pen(ExplorerStyle.Divider);
+            using var pen = new Pen(DesktopStyle.Border);
             args.Graphics.DrawLine(pen, 0, 0, commitArea.Width, 0);
         };
 
@@ -165,7 +170,7 @@ sealed class ChangesPane : UserControl
         };
 
     static int RowHeight(Font font) =>
-        font.Height + 10;
+        DesktopStyle.RowHeight(font);
 
     protected override void OnLayout(LayoutEventArgs args)
     {
@@ -398,6 +403,7 @@ sealed class ChangesPane : UserControl
         list.EndUpdate();
         list.Invalidate();
         tickRow.Invalidate();
+        header.Count = changes.Files.Count;
         ShowCommitButton();
     }
 
@@ -494,7 +500,14 @@ sealed class ChangesPane : UserControl
         }
         else
         {
+            // As Desktop says it: "Commit 2 files to main", or "Commit to main" with none ticked.
             commitButton.Text = "Commit to ";
+            var ticked = changes.Files.Count(IsTicked);
+            if (ticked > 0)
+            {
+                commitButton.Text = $"Commit {GitState.CountOf(ticked, "file")} to ";
+            }
+
             commitButton.Bold = branch;
         }
 
@@ -814,17 +827,6 @@ sealed class ChangesPane : UserControl
         return base.ProcessCmdKey(ref message, keyData);
     }
 
-    string DescribeRow(int row)
-    {
-        if (row < 0 ||
-            row >= shown.Count)
-        {
-            return "";
-        }
-
-        return ChangeRows.Describe(shown[row]);
-    }
-
     void DrawRow(Graphics graphics, Rectangle bounds, int index)
     {
         if (index >= shown.Count)
@@ -833,17 +835,18 @@ sealed class ChangesPane : UserControl
         }
 
         var change = shown[index];
-        var (background, text, secondary) = list.Colours(list.SelectedIndices.Contains(index));
+        var (background, text, secondary, onBlue) = list.Colours(index);
         using (var fill = new SolidBrush(background))
         {
             graphics.FillRectangle(fill, bounds);
         }
 
+        RowList.DrawRowLine(graphics, bounds);
         var tickSize = LogicalToDeviceUnits(Ticks.Size);
         var box = new Rectangle(bounds.Left + LogicalToDeviceUnits(inset), bounds.Top + (bounds.Height - tickSize) / 2, tickSize, tickSize);
         Ticks.Draw(graphics, this, box, IsTicked(change), !changes.Merging);
         var room = Rectangle.FromLTRB(box.Right + LogicalToDeviceUnits(tickGap), bounds.Top, bounds.Right, bounds.Bottom);
-        ChangeRows.Draw(graphics, this, list.Font, room, change, text, secondary);
+        ChangeRows.Draw(graphics, this, list.Font, room, change, text, secondary, onBlue);
     }
 
     // Slid out, a line down the left edge, which the padding leaves room for.
@@ -869,6 +872,7 @@ sealed class ChangesPane : UserControl
         {
             KeepDraft();
             tip.Dispose();
+            rowTip.Dispose();
         }
 
         base.Dispose(disposing);
@@ -884,8 +888,9 @@ sealed class ChangesPane : UserControl
             this.pane = pane;
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
             Dock = DockStyle.Top;
-            Height = 30;
-            BackColor = ExplorerStyle.Window;
+            Height = 29;
+            BackColor = DesktopStyle.AltBackground;
+            ForeColor = DesktopStyle.Text;
             AccessibleRole = AccessibleRole.CheckButton;
             Cursor = Cursors.Default;
         }
@@ -930,7 +935,7 @@ sealed class ChangesPane : UserControl
                 textBounds,
                 ForeColor,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-            using var pen = new Pen(ExplorerStyle.Divider);
+            using var pen = new Pen(DesktopStyle.Border);
             graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
         }
     }

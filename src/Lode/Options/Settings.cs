@@ -198,6 +198,11 @@ sealed class Settings
     // How much of the column Changes takes when both panes are pinned, from 0 to 1. 0 for half.
     public double PaneSplit { get; set; }
 
+    // How the tabs down the window's right edge are labelled: each pane's icon with its name
+    // written down the strip, its name across under the icon, or the icon alone. Chosen from the
+    // strip's right-click menu. See EdgeStrip.
+    public StripLabels StripLabels { get; set; }
+
     // The Azure DevOps organizations added in Clone, to list the repositories of beside those of
     // the organizations the code folder has clones from.
     public List<string> AzureDevOpsOrganizations { get; set; } = [];

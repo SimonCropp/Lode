@@ -73,6 +73,11 @@ sealed class GitPanes : IDisposable
     /// </summary>
     public event Action<string>? PinnedChanged;
 
+    /// <summary>
+    /// How the strip's tabs are labelled was changed, for every window to follow.
+    /// </summary>
+    public event Action? StripLabelsChanged;
+
     public EdgeStrip Strip { get; } = new()
     {
         Visible = false
@@ -116,10 +121,17 @@ sealed class GitPanes : IDisposable
         Strip.TabEntered += OnTabEntered;
         Strip.TabLeft += OnTabLeft;
         Strip.TabClicked += pane => Float(pane, focus: true);
+        Strip.Labels = settings.StripLabels;
+        Strip.LabelsChosen += SetStripLabels;
         hoverTimer.Tick += (_, _) => OnHovered();
         retractTimer.Tick += (_, _) => CheckRetract();
         slideTimer.Tick += (_, _) => Slide();
 
+        // Plain lines between the list and the panes, and between the panes, rather than the
+        // faint one between the tree and the list: the panes are white as the list is, and
+        // Changes' commit area ran into History's heading.
+        paneSplit.Line = SplitterLine.Plain;
+        columnSplit.Line = SplitterLine.Plain;
         paneSplit.Dock = DockStyle.Fill;
         paneSplit.FixedPanel = FixedPanel.Panel2;
         paneSplit.Panel2Collapsed = true;
@@ -389,6 +401,28 @@ sealed class GitPanes : IDisposable
         historyPinned = historyNow;
         Arrange();
     }
+
+    /// <summary>
+    /// Labels the strip's tabs as chosen from its right-click menu, in every window.
+    /// </summary>
+    internal void SetStripLabels(StripLabels labels)
+    {
+        if (settings.StripLabels == labels)
+        {
+            return;
+        }
+
+        settings.StripLabels = labels;
+        settings.Save();
+        ApplyStripLabels();
+        StripLabelsChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Takes up how the strip's tabs are labelled, changed in this window or another.
+    /// </summary>
+    public void ApplyStripLabels() =>
+        Strip.Labels = settings.StripLabels;
 
     /// <summary>
     /// Puts each pane where it belongs: in the column when pinned, hidden over the list when not,

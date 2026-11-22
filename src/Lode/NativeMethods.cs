@@ -205,6 +205,10 @@ static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool KillTimer(IntPtr window, nuint id);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AddClipboardFormatListener(IntPtr window);
 
     [LibraryImport("user32.dll")]

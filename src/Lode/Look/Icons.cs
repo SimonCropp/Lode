@@ -102,6 +102,8 @@ static class Icons
     public const char History = '\uE81C';
     // A cloud, for cloning a repository from a site.
     public const char Clone = '\uE753';
+    // An arrow to the right, as Forward has: between a renamed file's old name and its new one.
+    public const char ArrowRight = '\uE72A';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";
