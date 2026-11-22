@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 /// <summary>
 /// Find in Files' Replace: in each file found, every match of what was looked for, as the file
 /// is now rather than as it was found, replaced. With a regular expression, the replacement

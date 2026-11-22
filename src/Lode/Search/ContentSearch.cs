@@ -1,6 +1,3 @@
-using System.Text.RegularExpressions;
-
-
 /// <summary>
 /// Find in Files' search, as Sublime's and ripgrep's go about it: no index, every file read and
 /// looked through as it is, a file to each processor at once. The walk (<see cref="SearchWalk"/>)

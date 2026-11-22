@@ -1,7 +1,3 @@
-using System.Buffers;
-using System.Numerics;
-using System.Text.Unicode;
-
 /// <summary>
 /// A file's text, as Find in Files reads it: in the encoding its byte order mark says, UTF-8 or
 /// UTF-16, or else UTF-8 when it is valid UTF-8, and Latin-1 when it isn't, which maps every
@@ -314,10 +310,10 @@ sealed class TextFile
             _ => 0
         };
 
-    static readonly UTF8Encoding utf8 = new(false);
-    static readonly UTF8Encoding utf8WithMark = new(true);
-    static readonly UnicodeEncoding utf16 = new(false, true);
-    static readonly UnicodeEncoding utf16BigEndian = new(true, true);
+    static UTF8Encoding utf8 = new(false);
+    static UTF8Encoding utf8WithMark = new(true);
+    static UnicodeEncoding utf16 = new(false, true);
+    static UnicodeEncoding utf16BigEndian = new(true, true);
 
     static System.Text.Encoding EncodingOf(Encoding kind) =>
         kind switch

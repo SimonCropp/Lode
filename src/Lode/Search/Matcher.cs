@@ -1,6 +1,3 @@
-using System.Buffers;
-using System.Text.RegularExpressions;
-
 /// <summary>
 /// Finds what Find in Files looks for in a file's text: plain text, in any case unless asked
 /// otherwise, looked for with what the processor can do many characters of at once, or a .NET

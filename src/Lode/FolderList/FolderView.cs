@@ -1318,7 +1318,7 @@ sealed class FolderView : UserControl
                     pattern.Append('.');
                     break;
                 default:
-                    pattern.Append(System.Text.RegularExpressions.Regex.Escape(character.ToString()));
+                    pattern.Append(Regex.Escape(character.ToString()));
                     break;
             }
         }

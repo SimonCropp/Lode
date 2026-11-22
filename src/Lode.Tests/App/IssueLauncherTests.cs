@@ -1,5 +1,3 @@
-using System.Net;
-
 /// <summary>
 /// The issue URL Lode opens after an error. Its title is built from a message that can carry a
 /// file path, so it holds whatever characters the path does.

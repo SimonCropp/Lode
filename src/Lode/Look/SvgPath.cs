@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 
 /// <summary>
 /// Reads an SVG path's data, its d attribute, into a GraphicsPath: moves, lines, cubic curves and
