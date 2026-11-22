@@ -958,9 +958,9 @@ public class FolderTreeTests
         clock.Now += TimeSpan.FromMilliseconds(100);
         tree.FollowDrag(new(10, 2));
 
-        await Assert.That(once).IsNotEqualTo(start);
+        await Assert.That(once)!.IsNotEqualTo(start);
         await Assert.That(tooSoon).IsEqualTo(once);
-        await Assert.That(twice).IsNotEqualTo(once);
+        await Assert.That(twice)!.IsNotEqualTo(once);
         await Assert.That(tree.TopNode).IsEqualTo(once);
     }
 
@@ -1014,7 +1014,7 @@ public class FolderTreeTests
     {
         using var fixture = Fixture.Create();
         var listShares = FolderTree.ListShares;
-        FolderTree.ListShares = server => [("Docs", false), ("Backup$", true), ("Archive", false)];
+        FolderTree.ListShares = _ => [("Docs", false), ("Backup$", true), ("Archive", false)];
         try
         {
             using var tree = Create(fixture, new() { ShowHidden = false });

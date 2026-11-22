@@ -35,7 +35,7 @@ public class ExplorerStyleTests
         var highContrast = ExplorerStyle.HighContrast;
         try
         {
-            (int Fill, int Text) Drawn()
+            static (int Fill, int Text) Drawn()
             {
                 using var bar = new ToolStrip
                 {
