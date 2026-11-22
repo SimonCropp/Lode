@@ -106,7 +106,7 @@ public class GitCacheTests
         known.Changed(now, inGit: true);
 
         await Assert.That(known.Fresh(now)).IsFalse();
-        await Assert.That(known.Due - now).IsEqualTo(500);
+        await Assert.That(known.Due - now).IsEqualTo(1_000);
     }
 
     // Held until 48 seconds, its changes stopping at 30, it is read at 33: what a build left
@@ -136,7 +136,7 @@ public class GitCacheTests
         known.Changed(now, inGit: false);
 
         await Assert.That(known.Fresh(now)).IsFalse();
-        await Assert.That(known.Due - now).IsEqualTo(500);
+        await Assert.That(known.Due - now).IsEqualTo(1_000);
     }
 
     // Two views showing the one repository each read it. The second finds what the first did,
@@ -175,7 +175,7 @@ public class GitCacheTests
         }
 
         await Assert.That(known.Fresh(now)).IsFalse();
-        await Assert.That(dueAfterOne).IsEqualTo(500);
+        await Assert.That(dueAfterOne).IsEqualTo(1_000);
         await Assert.That(known.Due - now).IsEqualTo(3_000);
     }
 

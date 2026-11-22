@@ -191,9 +191,10 @@ static class GitCache
 
     /// <summary>
     /// How long a repository's changes must stop for before it is read again: a commit, a pull
-    /// or a build changes many files, one after another.
+    /// or a build changes many files, one after another, and an editor or an agent saves one
+    /// file after another, a moment apart.
     /// </summary>
-    internal static TimeSpan Settle { get; set; } = TimeSpan.FromMilliseconds(500);
+    internal static TimeSpan Settle { get; set; } = TimeSpan.FromSeconds(1);
 
     // Nor longer than this, however long the changes go on, a build say. In milliseconds.
     const long longestSettle = 3_000;

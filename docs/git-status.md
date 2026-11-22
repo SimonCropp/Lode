@@ -172,7 +172,7 @@ This works only where the main repository is in the code folder as well.
 
 A stale repository is not read on the spot. A commit, a pull or a build changes many files one after another, and reading means looking at every file. `GitCache` waits for the changes to settle, then raises `Stale` for the views.
 
-- **Settle**: 500 ms after the last change.
+- **Settle**: 1 second after the last change, so files saved one after another, by an editor or an agent say, are read once rather than once each.
 - **Longest settle**: no later than 3 seconds after the first change, however long they go on.
 
 One timer serves every repository: it is set for whichever is due first.
@@ -188,7 +188,7 @@ stateDiagram-v2
     [*] --> Fresh: first read
     Fresh --> Stale: a change
     Stale --> Stale: more changes
-    Stale --> Reading: quiet for 500 ms, or 3 s since the first
+    Stale --> Reading: quiet for 1 s, or 3 s since the first
     Reading --> Fresh: found something new
     Reading --> Held: found nothing new
     Held --> Reading: hold ran out, or changes stopped for 3 s
@@ -244,7 +244,7 @@ In both cases the second view reads for itself.
 
 The watcher's buffer can overflow when too many changes come at once, and a watch can fail and come back. Either way anything may have changed, so `AllChanged` makes every known repository in that code folder stale, ends every hold, and forgets what was learned of ignored folders.
 
-The views are still told through the settle timer: 500 ms after the last overflow, and no later than 3 seconds after the first. Overflows come again and again while whatever is causing them goes on, and reading every repository shown for each one would add to the load.
+The views are still told through the settle timer: 1 second after the last overflow, and no later than 3 seconds after the first. Overflows come again and again while whatever is causing them goes on, and reading every repository shown for each one would add to the load.
 
 ## Cost of a change
 
