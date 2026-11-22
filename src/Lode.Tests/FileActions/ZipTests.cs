@@ -137,9 +137,9 @@ public class ZipTests
         using var fixture = Fixture.Create();
         Directory.CreateDirectory(fixture.At("Target"));
         var asUtf8 = fixture.At("utf8.zip");
-        using (var archive = ZipFile.Open(asUtf8, ZipArchiveMode.Create, Encoding.Latin1))
+        using (var archive = await ZipFile.OpenAsync(asUtf8, ZipArchiveMode.Create, Encoding.Latin1))
         {
-            archive.CreateEntry(Encoding.Latin1.GetString(Encoding.UTF8.GetBytes("naïve.txt")));
+            archive.CreateEntry(Encoding.Latin1.GetString("naïve.txt"u8.ToArray()));
         }
 
         Zip.Extract(asUtf8, fixture.At("Target"), null, Cancel.None);
@@ -148,7 +148,7 @@ public class ZipTests
         if (unsaid != null)
         {
             var inCodePage = fixture.At("codepage.zip");
-            using (var archive = ZipFile.Open(inCodePage, ZipArchiveMode.Create, unsaid))
+            using (var archive = await ZipFile.OpenAsync(inCodePage, ZipArchiveMode.Create, unsaid))
             {
                 archive.CreateEntry("café.txt");
             }

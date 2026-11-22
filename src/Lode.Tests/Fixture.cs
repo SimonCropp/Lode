@@ -7,7 +7,7 @@ sealed class Fixture : IDisposable
 {
     static readonly DateTime baseline = new(2025, 3, 14, 9, 26, 0);
 
-    readonly string container;
+    string container;
 
     public string Root { get; }
 

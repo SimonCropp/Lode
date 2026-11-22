@@ -58,7 +58,12 @@ public class LocationsTests
 
         await Assert.That(Locations.Normalize(@"D:\Code\%TEMP%")).IsEqualTo(@"D:\Code\%TEMP%");
         await Assert.That(Locations.NormalizeTyped("%TEMP%")).IsEqualTo(temp);
-        await Assert.That(Locations.NormalizeTyped(@"""%TEMP%\Lode""")).IsEqualTo($@"{temp}\Lode");
+        await Assert.That(
+                Locations.NormalizeTyped(
+                    """
+                    "%TEMP%\Lode"
+                    """))
+            .IsEqualTo($@"{temp}\Lode");
     }
 
     // Nor is a name that is not a path in the folder: it is as it would be without one.

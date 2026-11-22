@@ -138,7 +138,7 @@ public class ClosableTabControlTests
     sealed class PaintOnDelete : NativeWindow, IDisposable
     {
         const int deleteItem = 0x1308;
-        readonly ClosableTabControl tabs;
+        ClosableTabControl tabs;
 
         public PaintOnDelete(ClosableTabControl tabs)
         {

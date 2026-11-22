@@ -150,7 +150,7 @@ public class CodeCommandsTests
         var repo = code.CreateRepo("Repo");
         using var cancel = new CancelSource(TimeSpan.FromMilliseconds(500));
 
-        var result = await Task.Run(() => CodeCommands.GitToItsEnd(repo, cancel.Token, "-c", "alias.slow=!sleep 2", "slow"));
+        var result = await Task.Run(() => CodeCommands.GitToItsEnd(repo, cancel.Token, "-c", "alias.slow=!sleep 2", "slow"), cancel.Token);
         var next = CodeCommands.GitToItsEnd(repo, cancel.Token, "status");
 
         await Assert.That(result.Succeeded).IsTrue();

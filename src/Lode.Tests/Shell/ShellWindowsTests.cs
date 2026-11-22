@@ -217,8 +217,8 @@ public class ShellWindowsTests
             public object? Registered { get; set; }
         }
 
-        readonly SortedDictionary<int, Entry> entries = [];
-        readonly Dictionary<int, string> windowNames = [];
+        SortedDictionary<int, Entry> entries = [];
+        Dictionary<int, string> windowNames = [];
         int lastCookie;
         int pending;
 

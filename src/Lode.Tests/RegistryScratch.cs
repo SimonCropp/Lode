@@ -7,7 +7,7 @@ sealed class RegistryScratch : IDisposable
     // A key of its own directly under Software, rather than under one shared parent: tests run
     // side by side, and tidying away a shared parent that looked empty could delete it while
     // another test was creating its key inside, leaving that test reading nothing.
-    readonly string path = $@"Software\Lode.Tests.{Guid.NewGuid():N}";
+    string path = $@"Software\Lode.Tests.{Guid.NewGuid():N}";
 
     public string ClassesPath => $@"{path}\Classes";
 
