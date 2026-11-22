@@ -582,36 +582,7 @@ static class CodeCommands
 
         try
         {
-            // Git writes file names as UTF-8, whatever the console's code page.
-            var startInfo = new ProcessStartInfo("git")
-            {
-                WorkingDirectory = repo,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
-            };
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            // Nobody can answer a prompt in a hidden window; fail instead of waiting forever.
-            // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
-            // agent holding it, or a host whose key is not known yet.
-            startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-
-            // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
-            // File names still come as UTF-8.
-            startInfo.Environment["LC_ALL"] = "C";
-            if (network &&
-                NoSshCommandSet(repo, startInfo))
-            {
-                startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
-            }
-
+            var startInfo = StartInfo(repo, network, arguments);
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
             // Cancel.None, not the token: cancelled, git is stopped, which ends its output, and
@@ -643,6 +614,131 @@ static class CodeCommands
     }
 
     const string cancelled = "Cancelled";
+
+    // How every git is started: in a hidden window, its output read as UTF-8, as git writes file
+    // names whatever the console's code page.
+    static ProcessStartInfo StartInfo(string repo, bool network, IEnumerable<string> arguments)
+    {
+        var startInfo = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = repo,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        // Nobody can answer a prompt in a hidden window; fail instead of waiting forever.
+        // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
+        // agent holding it, or a host whose key is not known yet.
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+        // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
+        // File names still come as UTF-8.
+        startInfo.Environment["LC_ALL"] = "C";
+        if (network &&
+            NoSshCommandSet(repo, startInfo))
+        {
+            startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
+        }
+
+        return startInfo;
+    }
+
+    /// <summary>
+    /// What git wrote to its output, kept apart from what it wrote to its error stream, for a
+    /// command whose output is parsed: a warning there would read as more of the output.
+    /// </summary>
+    internal sealed record GitRead(bool Succeeded, string Output, string Error);
+
+    /// <summary>
+    /// Runs git reading its output alone, as <see cref="GitRead"/> has it. <paramref name="input"/>,
+    /// when given, is written to git, as git credential fill reads what it is asked for.
+    /// </summary>
+    internal static GitRead GitOutput(string repo, Cancel cancel, string[] arguments, string? input = null)
+    {
+        if (cancel.IsCancellationRequested)
+        {
+            return new(false, "", cancelled);
+        }
+
+        try
+        {
+            var startInfo = StartInfo(repo, network: false, arguments);
+            if (input != null)
+            {
+                startInfo.RedirectStandardInput = true;
+                startInfo.StandardInputEncoding = new UTF8Encoding(false);
+            }
+
+            using var process = Process.Start(startInfo)!;
+            using var stopping = cancel.Register(() => Stop(process));
+            var error = process.StandardError.ReadToEndAsync(Cancel.None);
+            if (input != null)
+            {
+                process.StandardInput.Write(input);
+                process.StandardInput.Close();
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            if (cancel.IsCancellationRequested)
+            {
+                return new(false, output, cancelled);
+            }
+
+            return new(process.ExitCode == 0, output, error.Result.Trim());
+        }
+        catch (Exception exception)
+        {
+            return new(false, "", exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs git writing what it outputs, byte for byte, to <paramref name="path"/>: a file as a
+    /// commit had it, which may not be text. False when git failed, or was cancelled.
+    /// </summary>
+    internal static bool GitToFile(string repo, string path, Cancel cancel, params string[] arguments)
+    {
+        if (cancel.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        try
+        {
+            var startInfo = StartInfo(repo, network: false, arguments);
+            using var process = Process.Start(startInfo)!;
+            using var stopping = cancel.Register(() => Stop(process));
+            var error = process.StandardError.ReadToEndAsync(Cancel.None);
+            using (var file = File.Create(path))
+            {
+                process.StandardOutput.BaseStream.CopyTo(file);
+            }
+
+            process.WaitForExit();
+            _ = error.Result;
+            return process.ExitCode == 0 &&
+                   !cancel.IsCancellationRequested;
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    Win32Exception or
+                    InvalidOperationException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// What git wrote, as a terminal would show it, giving <paramref name="progress"/> each line

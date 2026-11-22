@@ -6,6 +6,7 @@
   New tab (Ctrl+T),
   New window (Ctrl+N),
   Find in files (Ctrl+Shift+F),
+  Clone a repository… (Ctrl+Shift+O),
   Duplicate tab,
   Close tab (Ctrl+W),
   Close other tabs,

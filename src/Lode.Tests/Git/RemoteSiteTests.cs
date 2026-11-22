@@ -29,6 +29,16 @@ public class RemoteSiteTests
         await Assert.That(Site("https://org.visualstudio.com/DefaultCollection/Project/_git/repo")).IsEqualTo("Azure DevOps https://org.visualstudio.com/DefaultCollection/Project/_git/repo");
     }
 
+    // A commit's page, where each site has them.
+    [Test]
+    public async Task CommitUrl()
+    {
+        await Assert.That(RemoteSite.For("https://github.com/octo/repo.git")!.CommitUrl("abc")).IsEqualTo("https://github.com/octo/repo/commit/abc");
+        await Assert.That(RemoteSite.For("https://gitlab.com/group/repo.git")!.CommitUrl("abc")).IsEqualTo("https://gitlab.com/group/repo/-/commit/abc");
+        await Assert.That(RemoteSite.For("git@bitbucket.org:team/repo.git")!.CommitUrl("abc")).IsEqualTo("https://bitbucket.org/team/repo/commits/abc");
+        await Assert.That(RemoteSite.For("https://dev.azure.com/org/Project/_git/repo")!.CommitUrl("abc")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo/commit/abc");
+    }
+
     // Origins on no site Lode knows, or none at all, a folder say, have no page.
     [Test]
     public async Task NoSite()

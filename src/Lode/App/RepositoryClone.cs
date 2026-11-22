@@ -238,10 +238,17 @@ static class RepositoryClone
     /// by a fork of another owner say, one in a folder named for the owner, which is still near
     /// enough the top for the link to find. With that taken too, the name with a number.
     /// </summary>
-    internal static string Destination(string codeFolder, RepositoryLink link)
+    internal static string Destination(string codeFolder, RepositoryLink link) =>
+        Destination(codeFolder, link.Name);
+
+    /// <summary>
+    /// Where a clone of the repository named <paramref name="fullName"/>, owner/name as its site
+    /// shows it, goes, as for a link.
+    /// </summary>
+    internal static string Destination(string codeFolder, string fullName)
     {
-        var slash = link.Name.LastIndexOf('/');
-        var name = FolderName(link.Name[(slash + 1)..]);
+        var slash = fullName.LastIndexOf('/');
+        var name = FolderName(fullName[(slash + 1)..]);
         var top = Path.Combine(codeFolder, name);
         if (!Path.Exists(top))
         {
@@ -250,7 +257,7 @@ static class RepositoryClone
 
         if (slash > 0)
         {
-            var owner = Path.Combine(codeFolder, FolderName(link.Name[..slash]));
+            var owner = Path.Combine(codeFolder, FolderName(fullName[..slash]));
             var underOwner = Path.Combine(owner, name);
 
             // Not in another repository, where the link would not look.

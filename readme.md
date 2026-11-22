@@ -13,6 +13,8 @@ Alternative to Windows Explorer with a focus on developers.
  * [A right-click menu that opens at once](#right-click-menu), touching no shell extension, with the full Windows menu a click away.
  * [Git on the folder](#code-folder): fetch, pull, push, tag, discard and purge every repository under it, from the right-click menu, the actions bar or the command palette.
  * [The state of each repository and file](#git-state) in a Git column and the status bar.
+ * [Changes and History panes](#changes-and-history) on the right edge, as GitHub Desktop's tabs: pick the files to commit, and see the commits and what each changed.
+ * [Clone](#clone) a repository from GitHub, Azure DevOps or a url, signed in as git signs in.
  * [Coding agents](#coding-agent) and [Claude](#open-in-claude) started in the folder.
  * [Find in Files](#find-in-files), with replace, leaving out what git ignores.
  * [A search box](#search-box) that searches every folder beneath, as quick however much it finds.
@@ -199,6 +201,22 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    * Each runs in the **Actions** panel under the tree, with progress. Click a line for what it reported; right-click to cancel or remove it. A line that went well leaves after a minute; one that failed stays, as does a deleted branch's, which says the commit the branch was at.
    * <a id="git-state"></a>**Git state**: a **Git** column says of each repository its branch, changes, and commits ahead and behind (`main · 3 changes · 2 ahead`), and in a repository what has become of each file. The status bar says it of the repository, links to its page on GitHub, Azure DevOps, GitLab or Bitbucket, and acts on it when clicked: behind offers Pull, ahead Push, changes Commit and push, or Discard. Each repository is read once and again only when something in it changes, so going back to a folder reads nothing. F5 reads them all again. How it works: [docs/git-status.md](docs/git-status.md).
    * **Switch branch**: click the branch in the status bar, or press Ctrl+B, for the repository's branches, as GitHub Desktop lists them. Type to filter; Enter switches. Uncommitted changes can be left on the branch, stashed, or brought along. It also makes, renames and deletes branches, copies a branch's name, and checks one out in a new worktree.
+   * <a id="changes-and-history"></a>**Changes and History**: inside a repository, a strip down the window's right edge has a tab for each. Hover a tab and its pane slides out over the list; it slides back once the pointer leaves it and the focus isn't in it. Click a tab, or press Ctrl+Shift+G (Changes) or Ctrl+Shift+H (History), to open it with the focus in it. The pin at a pane's top keeps it beside the list; with both pinned they share the column, Changes above History. Which are pinned is kept for each repository.
+     * **Changes** lists what is uncommitted, each file on its own, ticked to go in the commit. Type a summary, and a description if you like, and **Commit to** the branch (Ctrl+Enter): only the ticked files go in, and what else is staged stays staged. Part way through a merge, everything is committed. Double-click a file for its changes in the text editor, when it is VS Code or one made from it, or in git's diff tool when one is set. Right-click to discard the changes, the files as they were going to the Recycle Bin first, open it, show it in its folder, copy its path, or have git ignore it. Ticks and what is typed are kept for each repository while Lode runs.
+     * **History** lists the branch's commits, newest first: subject, author with their GitHub avatar, how long ago, tags, and an arrow for those not pushed. Pick one for the files it changed, a merge's against its first parent; double-click a file for its changes. Right-click a commit to copy its SHA or message, or view it on GitHub, Azure DevOps, GitLab or Bitbucket. Avatars are only asked for of a repository whose origin is on GitHub, and kept for a week in `%LocalAppData%\Lode\Avatars`.
+
+     Changes and History both pinned:
+
+     ![Changes and History pinned](src/Lode.Tests/GitPanes/GitPanesCaptureTests.BothPinned.verified.png)
+
+     History slid out over Changes, pinned:
+
+     ![History slid out](src/Lode.Tests/GitPanes/GitPanesCaptureTests.HistorySlidOutOverChanges.verified.png)
+
+   * <a id="clone"></a>**Clone** (Ctrl+Shift+O, or **Clone a repository…** in the ⋯ menu), as GitHub Desktop's: **GitHub** and **Azure DevOps** list the repositories you can clone, those already in the code folder left out, and a filter narrows them; **URL** takes any url, or a GitHub repository's `owner/name`. It signs in with the credential git uses for the site, from Git Credential Manager or `gh auth login`, so Lode keeps no token; Git Credential Manager may ask you to sign in the first time. Azure DevOps lists the organizations the code folder has clones from, any you add, and the others your account belongs to. The clone goes in a folder named for the repository in the code folder, which you can change, runs in the Actions panel, and opens in a tab.
+
+     ![Clone](src/Lode.Tests/Clone/CloneDialogTests.GitHub.verified.png)
+
    * **Rider keeps asking** to exclude each project from Defender, as it can't see the code folder is excluded. Turn its notification off for all projects, from **More** on it.
 
    The **Code** page of **Options**:
@@ -228,7 +246,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * **The list refreshes itself** when the folder changes on disk. Lode lets go of a drive while Windows removes it, so it never blocks **Safely remove**.
  * **A shell extension that stops answering** is cut off after 3 seconds, and skipped for the session.
- * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options. The tabs are saved as they change, those of the window used last, so they come back after a crash too. A Debug build keeps its own, and runs beside the installed Lode.
+ * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options, which of Changes and History are pinned for each repository, and the Azure DevOps organizations added in Clone. The tabs are saved as they change, those of the window used last, so they come back after a crash too. A Debug build keeps its own, and runs beside the installed Lode.
 
 
 ## Keyboard
@@ -241,6 +259,8 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+Shift+T                      | Reopen closed tab             |
 | Ctrl+Shift+P                      | Command palette               |
 | Ctrl+B                            | Switch branch                 |
+| Ctrl+Shift+G, Ctrl+Shift+H        | Changes, History              |
+| Ctrl+Shift+O                      | Clone a repository            |
 | Ctrl+Tab, Ctrl+Shift+Tab          | Next tab, previous tab        |
 | Ctrl+1 to Ctrl+8, Ctrl+9          | That tab, the last tab        |
 | Ctrl+L, Alt+D, F4                 | Address bar                   |

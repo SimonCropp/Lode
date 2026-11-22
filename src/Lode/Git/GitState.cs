@@ -265,7 +265,7 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     }
 
     // What isn't staged says most of a file, as it is what is on disk.
-    static GitChange ChangeOf(char staged, char unstaged)
+    internal static GitChange ChangeOf(char staged, char unstaged)
     {
         if (unstaged == 'D')
         {

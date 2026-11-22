@@ -97,6 +97,11 @@ static class Icons
     // A menu entry's submenu, and a tick beside one that is on.
     public const char ChevronRight = '\uE76C';
     public const char CheckMark = '\uE73E';
+    // A pencil, for what is uncommitted, and a clock turning back, for the commits.
+    public const char Changes = '\uE70F';
+    public const char History = '\uE81C';
+    // A cloud, for cloning a repository from a site.
+    public const char Clone = '\uE753';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

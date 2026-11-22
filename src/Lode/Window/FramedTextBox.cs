@@ -108,9 +108,22 @@ sealed class FramedTextBox : Control
             Box.PreferredHeight);
     }
 
+    /// <summary>
+    /// Whether a faint border shows without the focus too: for a box on a white background, where
+    /// the box's own white would not show where it is.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Outlined { get; set; }
+
     protected override void OnPaint(PaintEventArgs args)
     {
         TextFrame.Draw(args.Graphics, this, Box.Focused);
+        if (Outlined &&
+            !Box.Focused)
+        {
+            TextFrame.Outline(args.Graphics, this);
+        }
+
         if (glyph is { } icon)
         {
             args.Graphics.DrawImage(Icons.Bitmap(icon, GlyphSize, ExplorerStyle.SecondaryText), GlyphBounds);
@@ -196,6 +209,25 @@ static class TextFrame
             graphics.ResetClip();
         }
 
+        graphics.SmoothingMode = SmoothingMode.Default;
+    }
+
+    /// <summary>
+    /// The faint border the box has with the focus, without the accent line along the bottom.
+    /// </summary>
+    public static void Outline(Graphics graphics, Control control)
+    {
+        if (SystemInformation.HighContrast ||
+            !Application.RenderWithVisualStyles)
+        {
+            return;
+        }
+
+        var bounds = control.ClientRectangle;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), control.LogicalToDeviceUnits(4));
+        using var pen = new Pen(ExplorerStyle.TabBorder);
+        graphics.DrawPath(pen, outline);
         graphics.SmoothingMode = SmoothingMode.Default;
     }
 

@@ -184,6 +184,13 @@ sealed class FolderView : UserControl
     internal Task GitReading { get; private set; } = Task.CompletedTask;
 
     /// <summary>
+    /// The repository the folder is in, up to the code folder, as of the folder last read: the
+    /// Changes and History panes are about it. Unlike the repository the Git column reads, kept
+    /// while the next folder is read, so going between folders of one repository leaves it be.
+    /// </summary>
+    internal string? Repo { get; private set; }
+
+    /// <summary>
     /// The repository the status bar is about, whose branch it shows and switches, and whose
     /// changes, commits ahead and behind it acts on: one selected on its own, in a folder that
     /// lists repositories, the code folder say, otherwise the one the folder is in. Only one whose
@@ -1827,6 +1834,7 @@ sealed class FolderView : UserControl
         error = failure;
         repos = foundRepos;
         containingRepo = containing;
+        Repo = containing;
 
         // Sorted by Git when last open: the column shows only now the repositories are known.
         if (!preserveState &&
