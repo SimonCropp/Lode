@@ -97,6 +97,7 @@ sealed class FindPanel : Panel
         toolTip.SetToolTip(hidden, "Search hidden files and folders");
         toolTip.SetToolTip(ignored, "Search what git ignores too, such as bin and node_modules");
         toolTip.SetToolTip(whereButton, "Add a folder or a filter");
+        whereButton.AccessibleName = "Add a folder or a filter";
 
         Box(findFrame, "findText", "Find", "What to find");
         Box(whereFrame, "whereText", "Where", "Folders, then *.cs to include and -*.min.js to exclude");
@@ -108,6 +109,8 @@ sealed class FindPanel : Panel
         var close = new GlyphButton
         {
             Name = "closeFind",
+            AccessibleName = "Close",
+            AccessibleDescription = "Close (Esc)",
             Text = "",
             Size = new(30, 26),
             Margin = new(1),

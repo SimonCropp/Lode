@@ -318,11 +318,22 @@ class MainForm : Form
         return bar;
     }
 
+    // Its text is a glyph of the icon font, which a screen reader can't say, so it is named by
+    // its tooltip, less the keys, which describe it.
     Button CreateButton(string glyph, string tip, Action action)
     {
+        var name = tip;
+        var keys = tip.IndexOf(" (", StringComparison.Ordinal);
+        if (keys > 0)
+        {
+            name = tip[..keys];
+        }
+
         var button = new GlyphButton
         {
             Text = glyph,
+            AccessibleName = name,
+            AccessibleDescription = tip,
             Size = new(36, 30),
             Margin = new(1),
             TabStop = false

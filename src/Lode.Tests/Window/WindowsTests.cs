@@ -1102,6 +1102,33 @@ public class WindowsTests
         await Verify(Describe(form));
     }
 
+    // The buttons that show only an icon, a glyph a screen reader can't say, are named, by what
+    // their tooltips say, the keys for them left to their descriptions.
+    [Test]
+    public async Task IconButtonsAreNamed()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        static IEnumerable<Control> All(Control control) =>
+            control.Controls.Cast<Control>().SelectMany(_ => All(_).Prepend(_));
+
+        var buttons = All(form)
+            .OfType<GlyphButton>()
+            .Select(_ => $"{_.AccessibleName} | {_.AccessibleDescription}")
+            .ToList();
+
+        await Assert.That(buttons).IsEquivalentTo(
+        [
+            "Back | Back (Alt+Left)",
+            "Forward | Forward (Alt+Right)",
+            "Up | Up (Alt+Up)",
+            "Refresh | Refresh (F5)",
+            "New tab | New tab (Ctrl+T)",
+            "Menu | Menu",
+            "Close | Close (Esc)"
+        ]);
+    }
+
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
         Show(fixture, new(), paths);
 
