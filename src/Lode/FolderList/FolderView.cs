@@ -2820,8 +2820,8 @@ sealed class FolderView : UserControl
     internal int ColumnWidth(int shown) =>
         list.Columns[shown].Width;
 
-    // A drive's cells, one for every column, and its icon, as the shell describes it. A drive
-    // mapped to a share is described off the UI thread, and its row made again once it has been.
+    // A drive's cells, one for every column, and its icon, as the shell describes it. A drive is
+    // described off the UI thread, and its row made again once it has been.
     (string[] Cells, int Icon) DescribeDrive(FileEntry entry)
     {
         var (displayName, typeName, icon) = ShellIcons.DescribeDrive(entry.FullPath, DriveDescribed);

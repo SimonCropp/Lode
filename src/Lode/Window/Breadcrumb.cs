@@ -77,8 +77,7 @@ sealed class Breadcrumb : Control
     /// What a drive shows as: its label with its letter, "Windows (C:)", as Windows names it
     /// and Explorer shows it, or its letter alone when Windows has no name for it. Tests pin it,
     /// so captures don't depend on what the drives of the machine running them are called. A
-    /// drive mapped to a share is named off the UI thread, and the second argument is called
-    /// once it has been.
+    /// drive is named off the UI thread, and the second argument is called once it has been.
     /// </summary>
     internal static Func<string, Action, string> DriveName { get; set; } = (drive, described) =>
     {

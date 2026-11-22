@@ -319,6 +319,53 @@ public class FolderTreeTests
         await Assert.That(tree.IsWatched(drive)).IsTrue();
     }
 
+    // The shell reads a drive to describe it, which for one just plugged in, a disk spinning up
+    // say, can be slow: it is described off the UI thread, named by its letter with a drive's
+    // icon until it has been. Described again, on F5 or as drives come and go, it shows as it
+    // was last described meanwhile.
+    [Test]
+    public async Task ADriveIsNamedByItsLetterUntilItHasBeenDescribed()
+    {
+        using var fixture = Fixture.Create();
+        var drive = Path.GetDirectoryName(fixture.Root)!;
+        var describing = new TaskCompletionSource<(string DisplayName, string TypeName, int Icon)>();
+        var describe = ShellIcons.DescribeOffUiThread;
+
+        // Only this test's drive waits: those of tests running alongside are described as ever.
+        ShellIcons.DescribeOffUiThread = _ =>
+        {
+            if (Locations.Same(_, drive))
+            {
+                return describing.Task;
+            }
+
+            return describe(_);
+        };
+        try
+        {
+            using var tree = new FolderTree(new() { ShowHidden = false }, new([], [], ShowComputer: true, _ => "", [drive]));
+            _ = tree.Handle;
+            var node = tree.Nodes.Cast<TreeNode>().Last().Nodes[0];
+            var meanwhile = (node.Text, node.ImageIndex);
+            describing.SetResult(("Backup", "Local Disk", ShellIcons.FolderIcon));
+            await Pump.Until(() => node.Text == "Backup");
+
+            describing = new();
+            ShellIcons.ForgetDrives();
+            tree.RefreshDrives();
+            var describedAgain = node.Text;
+            describing.SetResult(("Archive", "Local Disk", ShellIcons.FolderIcon));
+            await Pump.Until(() => node.Text == "Archive");
+
+            await Assert.That(meanwhile).IsEqualTo((drive, ShellIcons.DriveIcon));
+            await Assert.That(describedAgain).IsEqualTo("Backup");
+        }
+        finally
+        {
+            ShellIcons.DescribeOffUiThread = describe;
+        }
+    }
+
     // Selecting a folder whose drive is slow to answer, a mapped drive offline say, or a disk
     // that has to spin up, doesn't keep the window waiting while its watcher starts: that is made
     // off the UI thread, and given to the folder once it has been.

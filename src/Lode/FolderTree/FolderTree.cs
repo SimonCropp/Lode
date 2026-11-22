@@ -691,8 +691,8 @@ sealed class FolderTree : TreeView
         }
     }
 
-    // A drive mapped to a share is named by its letter until the shell has described it, off
-    // the UI thread, and then again once it has, if it is still in the tree.
+    // A drive is named by its letter, or as it was last described, until the shell has described
+    // it, off the UI thread, and then again once it has, if it is still in the tree.
     void DescribeDrive(TreeNode node)
     {
         var (displayName, _, icon) = ShellIcons.DescribeDrive(

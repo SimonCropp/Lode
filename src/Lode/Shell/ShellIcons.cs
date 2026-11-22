@@ -62,6 +62,11 @@ static class ShellIcons
     /// </summary>
     public static int NetworkIcon { get; }
 
+    /// <summary>
+    /// Windows' own icon for a drive, for one not yet described, which asks nothing of any drive.
+    /// </summary>
+    public static int DriveIcon { get; }
+
     static ShellIcons()
     {
         var info = new ShellFileInfo();
@@ -75,6 +80,9 @@ static class ShellIcons
         FolderTypeName = info.TypeName;
         ComputerIcon = GetSpecialFolderIcon(computerFolder);
         NetworkIcon = GetSpecialFolderIcon(networkFolder);
+        DriveIcon = TaskbarIdentity.StockIcon(TaskbarIdentity.StockDrive) is { } drive
+            ? GetResourceIcon(drive.File, drive.Index)
+            : FolderIcon;
         QuickAccessIcon = GetShellFolderIcon("shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}");
         RecentIcon = GetShellFolderIcon("shell:::{22877a6d-37a1-461a-91b0-dbda5aaebc99}");
     }
@@ -578,37 +586,33 @@ static class ShellIcons
     public static void ForgetPlaceIcons() =>
         placeIcons.Clear();
 
-    // Drives mapped to a share, as the shell describes them, or is still describing them. The
-    // shell asks the share for the drive's name, which waits on the network, long when the share
-    // is offline, so they are described off the UI thread.
-    static readonly ConcurrentDictionary<string, Task<(string DisplayName, string TypeName, int Icon)>> networkDrives =
+    // Drives as the shell describes them, or is still describing them. The shell reads the drive
+    // for its name and icon: one mapped to a share asks the share, which waits on the network,
+    // long when the share is offline, and one just plugged in, a disk spinning up or a card
+    // reader, can be slow to answer too. So each is described off the UI thread.
+    static readonly ConcurrentDictionary<string, Task<(string DisplayName, string TypeName, int Icon)>> drives =
         new(StringComparer.OrdinalIgnoreCase);
 
     // How each was last described, to show while it is being described again.
-    static readonly ConcurrentDictionary<string, (string DisplayName, string TypeName, int Icon)> describedNetworkDrives =
+    static readonly ConcurrentDictionary<string, (string DisplayName, string TypeName, int Icon)> describedDrives =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// As <see cref="Describe"/>, for a drive. A drive mapped to a share is described off the UI
-    /// thread: until it has been, it is named by its letter with Network's icon, or as it was last
-    /// described, and <paramref name="described"/> is called, on the calling thread, once it has.
+    /// Describes a drive, as <see cref="Describe"/> does, off the UI thread. Tests swap it, to
+    /// describe drives at once, or only once they say.
+    /// </summary>
+    internal static Func<string, Task<(string DisplayName, string TypeName, int Icon)>> DescribeOffUiThread { get; set; } =
+        static drive => Task.Run(() => Describe(drive));
+
+    /// <summary>
+    /// As <see cref="Describe"/>, for a drive, which is described off the UI thread: until it
+    /// has been, it is as it was last described, or named by its letter with a drive's icon, or
+    /// Network's for one mapped to a share, and <paramref name="described"/> is called, on the
+    /// calling thread, once it has.
     /// </summary>
     public static (string DisplayName, string TypeName, int Icon) DescribeDrive(string drive, Action? described)
     {
-        if (!Locations.IsRemote(drive))
-        {
-            return Describe(drive);
-        }
-
-        var describing = networkDrives.GetOrAdd(
-            drive,
-            static _ => Task.Run(
-                () =>
-                {
-                    var description = Describe(_);
-                    describedNetworkDrives[_] = description;
-                    return description;
-                }));
+        var describing = drives.GetOrAdd(drive, static _ => Remember(_, DescribeOffUiThread(_)));
         if (describing.IsCompletedSuccessfully)
         {
             return describing.Result;
@@ -619,12 +623,25 @@ static class ShellIcons
             Tell(describing, described);
         }
 
-        if (describedNetworkDrives.TryGetValue(drive, out var last))
+        if (describedDrives.TryGetValue(drive, out var last))
         {
             return last;
         }
 
-        return (drive.TrimEnd(Path.DirectorySeparatorChar), "", NetworkIcon);
+        var letter = drive.TrimEnd(Path.DirectorySeparatorChar);
+        if (Locations.IsRemote(drive))
+        {
+            return (letter, "", NetworkIcon);
+        }
+
+        return (letter, "", DriveIcon);
+
+        static async Task<(string DisplayName, string TypeName, int Icon)> Remember(string drive, Task<(string DisplayName, string TypeName, int Icon)> describing)
+        {
+            var description = await describing.ConfigureAwait(false);
+            describedDrives[drive] = description;
+            return description;
+        }
 
         // Back on the thread that asked, as awaiting there returns to it.
         static async void Tell(Task describing, Action described)
@@ -644,9 +661,10 @@ static class ShellIcons
     }
 
     /// <summary>
-    /// Describes drives mapped to shares again when next asked, for Refresh and when drives come
-    /// and go: a drive can be mapped to another share, or the share renamed.
+    /// Describes drives again when next asked, for Refresh and when drives come and go: another
+    /// disk can be plugged in under a letter, a drive renamed, or mapped to another share. Each
+    /// is shown as it was last described until it has been.
     /// </summary>
-    public static void ForgetNetworkDrives() =>
-        networkDrives.Clear();
+    public static void ForgetDrives() =>
+        drives.Clear();
 }

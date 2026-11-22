@@ -24,8 +24,10 @@ static partial class TaskbarIdentity
     static readonly PropertyStore.PropertyKey relaunchNameKey = new(appUserModel, 4);
     static readonly PropertyStore.PropertyKey idKey = new(appUserModel, 5);
 
-    // SHSTOCKICONID: Windows' own icons for a folder, a machine on the network and a share.
+    // SHSTOCKICONID: Windows' own icons for a folder, a drive, a machine on the network and a
+    // share.
     public const uint StockFolder = 3;
+    public const uint StockDrive = 8;
     public const uint StockServer = 15;
     public const uint StockServerShare = 51;
     const uint stockIconLocation = 0;

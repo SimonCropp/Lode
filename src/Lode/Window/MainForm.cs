@@ -1905,7 +1905,7 @@ class MainForm : Form
         ShellIcons.ForgetFileIcons();
         ShellIcons.ForgetPlaceIcons();
         OpenWith.Forget();
-        ShellIcons.ForgetNetworkDrives();
+        ShellIcons.ForgetDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();
         ActiveView?.ReloadRows();
@@ -2686,10 +2686,12 @@ class MainForm : Form
         Interval = 300
     };
 
-    // The drives in the tree, and in the tabs showing This PC, read again: only those that came
-    // or went change, as on F5.
+    // The drives in the tree, and in the tabs showing This PC, read and described again, as on
+    // F5: another disk can be under a letter now. Only those that came or went are added or
+    // taken away.
     void DrivesChanged()
     {
+        ShellIcons.ForgetDrives();
         tree.RefreshDrives();
         foreach (var view in Views)
         {

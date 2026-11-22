@@ -35,6 +35,11 @@ public static class ModuleInitializer
         // Every machine's drives are called something else; the address bar's are all the same.
         Breadcrumb.DriveName = (drive, _) => $"Local Disk ({drive.TrimEnd('\\')})";
 
+        // Drives are described as they are asked about, rather than off the UI thread, so the
+        // tree and This PC show them described by the time they are captured. How one shows until
+        // it has been is tested on its own.
+        ShellIcons.DescribeOffUiThread = drive => Task.FromResult(ShellIcons.Describe(drive));
+
         // Every machine's accent is its own. Captures use Windows' highlight blue, which they
         // were drawn in before Lode took the accent.
         ExplorerStyle.UserAccent = () => Color.FromArgb(0x00, 0x78, 0xD7);
