@@ -21,16 +21,16 @@ sealed class FindResults(FindQuery query)
     /// <param name="File">Which file the row is of, for a file, line or gap row; otherwise -1.</param>
     /// <param name="Line">Which of the file's lines, for a line row; otherwise -1.</param>
     /// <param name="Summary">Which line of the summary, for a summary row.</param>
-    public readonly record struct Row(RowKind Kind, int File = -1, int Line = -1, int Summary = -1);
+    public record struct Row(RowKind Kind, int File = -1, int Line = -1, int Summary = -1);
 
     // A file found, and its rows after its own: for each, the line it shows, or -1 for a gap.
     sealed record Found(FileResult Result, int[] Rows);
 
-    readonly List<Found> files = [];
+    List<Found> files = [];
 
     // The row each file's own row is, in order, so finding which file a row is of is a binary
     // search rather than counting.
-    readonly List<int> starts = [];
+    List<int> starts = [];
     int fileRows;
 
     public FindQuery Query { get; } = query;

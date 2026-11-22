@@ -1,5 +1,3 @@
-using System.Globalization;
-
 /// <summary>
 /// The list the taskbar shows when Lode's button is right-clicked, as Explorer's shows: the
 /// folders pinned to Quick access under Pinned, then those Quick access adds because they are

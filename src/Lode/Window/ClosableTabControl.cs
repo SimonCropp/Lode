@@ -22,8 +22,8 @@ sealed class ClosableTabControl : TabControl
 
     // Each tab's icon, from the system image list, drawn before its name as Explorer's tabs
     // have their folder's. Each icon is drawn to a bitmap once.
-    readonly Dictionary<TabPage, int> icons = [];
-    readonly Dictionary<int, Bitmap> iconImages = [];
+    Dictionary<TabPage, int> icons = [];
+    Dictionary<int, Bitmap> iconImages = [];
 
     int hoveredTab = -1;
     int hoveredCross = -1;

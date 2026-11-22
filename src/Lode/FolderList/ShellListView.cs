@@ -24,17 +24,17 @@ sealed class ShellListView : ListView
     /// </summary>
     static class PaddedIcons
     {
-        static readonly Lock gate = new();
-        static readonly List<(int Icon, int Overlay)> icons = [];
-        static readonly Dictionary<(int Icon, int Overlay), int> indexes = [];
-        static readonly Dictionary<int, Set> sets = [];
-        static readonly int systemDpi = (int)GetDpiForSystem();
+        static Lock gate = new();
+        static List<(int Icon, int Overlay)> icons = [];
+        static Dictionary<(int Icon, int Overlay), int> indexes = [];
+        static Dictionary<int, Set> sets = [];
+        static int systemDpi = (int)GetDpiForSystem();
 
         sealed class Set
         {
-            readonly ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
-            readonly Point offset;
-            readonly int iconSize;
+            ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
+            Point offset;
+            int iconSize;
 
             public Set(int dpi)
             {
@@ -601,7 +601,7 @@ sealed class ShellListView : ListView
         const char latinEnd = (char)0x180;
 
         // Each character's width, -1 for one not yet asked of the list.
-        readonly int[] widths = Enumerable.Repeat(-1, latinEnd).ToArray();
+        int[] widths = Enumerable.Repeat(-1, latinEnd).ToArray();
 
         public int Width(string text)
         {

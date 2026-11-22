@@ -6,9 +6,9 @@ sealed class CommandPalette : Form
 {
     public record Command(string Name, Action Action, string Shortcut = "");
 
-    readonly IReadOnlyList<Command> commands;
-    readonly TextBox searchBox = new();
-    readonly ListBox list = new();
+    IReadOnlyList<Command> commands;
+    TextBox searchBox = new();
+    ListBox list = new();
     List<Command> shown = [];
     bool closing;
 

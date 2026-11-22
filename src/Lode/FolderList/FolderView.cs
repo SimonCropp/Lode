@@ -44,14 +44,14 @@ sealed class FolderView : UserControl
     /// </summary>
     public event Action<FolderView>? ColumnWidthsChanged;
 
-    readonly Settings settings;
-    readonly Places places;
-    readonly ShellListView list = new();
+    Settings settings;
+    Places places;
+    ShellListView list = new();
 
     // Watcher events arrive on thread-pool threads and can come in bursts. This turns them into
     // at most one reload per interval, on the UI thread.
-    readonly ChangeSignal changes;
-    readonly List<string> history = [];
+    ChangeSignal changes;
+    List<string> history = [];
     int historyIndex = -1;
 
     FolderWatcher? watcher;
@@ -60,13 +60,13 @@ sealed class FolderView : UserControl
     // renamed or moved. The folder's own watch only sees what is in it, and goes on watching one
     // moved, as one sent to the Recycle Bin is, where it now is.
     FolderWatcher? parentWatcher;
-    readonly ChangeSignal parentChanges;
+    ChangeSignal parentChanges;
 
     // What the watch on the parent saw renamed, from where to where, still to be followed.
-    readonly ConcurrentQueue<(string From, string To)> renames = new();
+    ConcurrentQueue<(string From, string To)> renames = new();
 
     // Reaches the UI thread from the thread of a move or rename Lode did, to follow it.
-    readonly SynchronizationContext context = new WindowsFormsSynchronizationContext();
+    SynchronizationContext context = new WindowsFormsSynchronizationContext();
     bool loading;
     int loadVersion;
 
@@ -147,10 +147,10 @@ sealed class FolderView : UserControl
 
     // What each of those repositories was last read to be, by its path, and what the Git column
     // says of each item from that.
-    readonly Dictionary<string, GitState> gitStates = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, GitState> gitStates = new(StringComparer.OrdinalIgnoreCase);
 
     // The sites the repositories' origins are on, read with their states.
-    readonly Dictionary<string, RemoteSite> gitSites = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, RemoteSite> gitSites = new(StringComparer.OrdinalIgnoreCase);
 
     GitCells gitCells = GitCells.None;
 
@@ -265,7 +265,7 @@ sealed class FolderView : UserControl
 
     // What to select once the list shows the folder, the first focused.
     IReadOnlyList<string>? pendingSelection;
-    readonly GutterMarquee marquee;
+    GutterMarquee marquee;
 
     /// <summary>
     /// Pins a folder to Quick access, or unpins it. Replaced in tests, which must not change the
@@ -285,7 +285,7 @@ sealed class FolderView : UserControl
     internal GutterMarquee Marquee => marquee;
 
     // The list's horizontal scrollbar, run across the margin too.
-    readonly GutterScrollBar scrollBar;
+    GutterScrollBar scrollBar;
 
     /// <summary>
     /// The horizontal scrollbar. For tests.
@@ -302,13 +302,13 @@ sealed class FolderView : UserControl
     // holds none of its own: it asks for a row whenever it draws it, measures it or reports on
     // it, a cell at a time, so the ones it asks for are kept. It only wants a screenful or so at
     // once, so however big the folder, few are ever made.
-    readonly Dictionary<int, ListViewItem> rows = [];
+    Dictionary<int, ListViewItem> rows = [];
     const int maximumRows = 512;
 
     // Stands in for a row that is asked for but not needed: one that has gone, or one of those
     // being selected again, which the list asks for only to say that it changed. A cell for every
     // column there could be, so whichever it is asked for is there.
-    readonly ListViewItem blankRow = new(["", "", "", "", "", ""]);
+    ListViewItem blankRow = new(["", "", "", "", "", ""]);
     bool restoring;
 
     // The rows are to be made again even if the folder turns out not to have changed.
@@ -1173,8 +1173,8 @@ sealed class FolderView : UserControl
     // This PC nor a zip: that, and a link to search inside the files instead. Drawn here rather
     // than by the list, whose own links in that text look like the rest of it, and can't be
     // reached from the keyboard.
-    readonly TableLayoutPanel nothingFound;
-    readonly Font italic;
+    TableLayoutPanel nothingFound;
+    Font italic;
     bool nothingFoundShown;
 
     TableLayoutPanel BuildNothingFound()
@@ -1767,7 +1767,7 @@ sealed class FolderView : UserControl
     }
 
     // The thread the view was made on, its window's, for what is heard on others to go back to.
-    readonly SynchronizationContext? madeOn;
+    SynchronizationContext? madeOn;
 
     // Repositories changed, somewhere, heard on a background thread: those this view shows are
     // read again, once it shows.

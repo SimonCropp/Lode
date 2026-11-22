@@ -7,27 +7,27 @@
 /// </summary>
 sealed class FindPanel : Panel
 {
-    readonly Settings settings;
-    readonly ToolTip toolTip = new();
+    Settings settings;
+    ToolTip toolTip = new();
 
-    readonly FramedTextBox findFrame = new();
-    readonly FramedTextBox whereFrame = new();
-    readonly FramedTextBox replaceFrame = new();
+    FramedTextBox findFrame = new();
+    FramedTextBox whereFrame = new();
+    FramedTextBox replaceFrame = new();
 
-    readonly FindToggle regex = Toggle(".*", "regex");
-    readonly FindToggle caseSensitive = Toggle("Aa", "caseSensitive");
-    readonly FindToggle wholeWord = Toggle("ab", "wholeWord");
-    readonly FindToggle preserveCase = Toggle("AB", "preserveCase");
-    readonly FindToggle context = Toggle("Context", "context");
-    readonly FindToggle hidden = Toggle("Hidden", "hidden");
-    readonly FindToggle ignored = Toggle("Git-ignored", "ignored");
+    FindToggle regex = Toggle(".*", "regex");
+    FindToggle caseSensitive = Toggle("Aa", "caseSensitive");
+    FindToggle wholeWord = Toggle("ab", "wholeWord");
+    FindToggle preserveCase = Toggle("AB", "preserveCase");
+    FindToggle context = Toggle("Context", "context");
+    FindToggle hidden = Toggle("Hidden", "hidden");
+    FindToggle ignored = Toggle("Git-ignored", "ignored");
 
-    readonly Button findButton = TextButton("Find", "find");
-    readonly Button replaceButton = TextButton("Replace", "replace");
-    readonly Button whereButton = TextButton("…", "whereMenu");
+    Button findButton = TextButton("Find", "find");
+    Button replaceButton = TextButton("Replace", "replace");
+    Button whereButton = TextButton("…", "whereMenu");
 
     // Where each box is in its history, while Up and Down go through it: -1 for what was typed.
-    readonly Dictionary<TextBox, (int Index, string Typed)> going = [];
+    Dictionary<TextBox, (int Index, string Typed)> going = [];
     bool recalling;
 
     public TextBox FindBox => findFrame.Box;

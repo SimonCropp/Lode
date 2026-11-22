@@ -50,7 +50,7 @@ sealed class RepositoryLinks(
 
     // What Windows has for links with a scheme: AssocFriendlyAppName or AssocCommand. Tests swap
     // it, as they must not depend on the apps the machine has.
-    readonly Func<string, int, string?> association = association ?? Association;
+    Func<string, int, string?> association = association ?? Association;
 
     public static RepositoryLinks ForCurrentUser() =>
         new(@"Software\Classes", ExplorerReplacement.PreferredCommand());

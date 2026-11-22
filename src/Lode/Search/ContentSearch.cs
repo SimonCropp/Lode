@@ -205,8 +205,8 @@ sealed class ContentSearch
     // before it is done, and leaving the lines out of what comes once enough are kept.
     sealed class InOrder(ConcurrentQueue<FileResult> results, Counts counts)
     {
-        readonly Lock gate = new();
-        readonly Dictionary<int, FileResult?> early = [];
+        Lock gate = new();
+        Dictionary<int, FileResult?> early = [];
         int next;
         int lines;
 

@@ -7,22 +7,25 @@ class OptionsForm : Form
     // The widest a page's text runs before it wraps.
     const int textWidth = 440;
 
-    readonly ExplorerReplacement explorerReplacement;
-    readonly Label explorerStatus = new()
+    ExplorerReplacement explorerReplacement;
+
+    Label explorerStatus = new()
     {
         Name = "explorerStatus",
         AutoSize = true,
         MaximumSize = new(textWidth, 0),
         Margin = new(3, 0, 3, 6)
     };
-    readonly Button replaceButton = new()
+
+    Button replaceButton = new()
     {
         Name = "replaceExplorer",
         Text = "Replace File Explorer",
         AutoSize = true,
         Padding = new(6, 0, 6, 0)
     };
-    readonly Button restoreButton = new()
+
+    Button restoreButton = new()
     {
         Name = "restoreExplorer",
         Text = "Restore File Explorer",
@@ -30,7 +33,7 @@ class OptionsForm : Form
         Padding = new(6, 0, 6, 0)
     };
 
-    readonly CheckBox showHidden = new()
+    CheckBox showHidden = new()
     {
         Name = "showHidden",
         Text = "Show hidden items (Ctrl+H)",
@@ -38,7 +41,7 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 9)
     };
 
-    readonly CheckBox showSystem = new()
+    CheckBox showSystem = new()
     {
         Name = "showSystem",
         Text = "Show system files",
@@ -46,7 +49,7 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 0)
     };
 
-    readonly CheckBox expandToOpenFolder = new()
+    CheckBox expandToOpenFolder = new()
     {
         Name = "expandToOpenFolder",
         Text = "Expand the folder tree to the open folder",
@@ -54,7 +57,7 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 0)
     };
 
-    readonly CheckBox showRecent = new()
+    CheckBox showRecent = new()
     {
         Name = "showRecent",
         Text = "Show recent folders in the folder tree",
@@ -62,33 +65,36 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 0)
     };
 
-    readonly TextBox defaultDirectory = new()
+    TextBox defaultDirectory = new()
     {
         Name = "defaultDirectory",
         ReadOnly = true,
         PlaceholderText = "Your user folder",
         Width = 300
     };
-    readonly Button browseDefaultDirectory = new()
+
+    Button browseDefaultDirectory = new()
     {
         Name = "browseDefaultDirectory",
         Text = "Browse...",
         AutoSize = true
     };
-    readonly Button resetDefaultDirectory = new()
+
+    Button resetDefaultDirectory = new()
     {
         Name = "resetDefaultDirectory",
         Text = "Reset",
         AutoSize = true
     };
 
-    readonly CheckBox closeUnusedTabs = new()
+    CheckBox closeUnusedTabs = new()
     {
         Name = "closeUnusedTabs",
         Text = "Close tabs not looked at for",
         AutoSize = true
     };
-    readonly NumericUpDown unusedTabHours = new()
+
+    NumericUpDown unusedTabHours = new()
     {
         Name = "unusedTabHours",
         AccessibleName = "Hours a tab is not looked at before it closes",
@@ -96,26 +102,29 @@ class OptionsForm : Form
         Maximum = 999,
         Width = 60
     };
-    readonly Label unusedTabHoursUnit = new()
+
+    Label unusedTabHoursUnit = new()
     {
         Text = "hours",
         AutoSize = true
     };
 
-    readonly TextBox codeDirectory = new()
+    TextBox codeDirectory = new()
     {
         Name = "codeDirectory",
         ReadOnly = true,
         PlaceholderText = "None",
         Width = 300
     };
-    readonly Button browseCodeDirectory = new()
+
+    Button browseCodeDirectory = new()
     {
         Name = "browseCodeDirectory",
         Text = "Browse...",
         AutoSize = true
     };
-    readonly Button clearCodeDirectory = new()
+
+    Button clearCodeDirectory = new()
     {
         Name = "clearCodeDirectory",
         Text = "Clear",
@@ -133,7 +142,7 @@ class OptionsForm : Form
     /// </summary>
     internal Func<string, bool> ConfirmCodeDirectory;
 
-    readonly CheckBox searchIgnored = new()
+    CheckBox searchIgnored = new()
     {
         Name = "searchIgnored",
         Text = "Search what git ignores too",
@@ -141,7 +150,7 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 3)
     };
 
-    readonly CheckBox purgePermanently = new()
+    CheckBox purgePermanently = new()
     {
         Name = "purgePermanently",
         Text = "Delete them permanently instead, which is faster",
@@ -150,7 +159,7 @@ class OptionsForm : Form
     };
 
     // Shows the shield Windows puts on buttons that ask for administrator permission.
-    readonly Button excludeFromDefender = new()
+    Button excludeFromDefender = new()
     {
         Name = "excludeFromDefender",
         Text = "Exclude from Defender…",
@@ -174,7 +183,7 @@ class OptionsForm : Form
     /// </summary>
     internal Action<string, DefenderExclusion.Outcome> ReportDefenderExclusion;
 
-    readonly NumericUpDown contextLines = new()
+    NumericUpDown contextLines = new()
     {
         Name = "contextLines",
         AccessibleName = "Lines shown either side of each match",
@@ -183,13 +192,13 @@ class OptionsForm : Form
         Width = 60
     };
 
-    readonly Label contextLinesUnit = new()
+    Label contextLinesUnit = new()
     {
         Text = "lines either side of each match",
         AutoSize = true
     };
 
-    readonly Label windowsSearchStatus = new()
+    Label windowsSearchStatus = new()
     {
         Name = "windowsSearchStatus",
         AutoSize = true,
@@ -198,7 +207,7 @@ class OptionsForm : Form
     };
 
     // With the shield, as each asks for administrator permission.
-    readonly Button turnOffWindowsSearch = new()
+    Button turnOffWindowsSearch = new()
     {
         Name = "turnOffWindowsSearch",
         Text = "Turn off…",
@@ -207,7 +216,7 @@ class OptionsForm : Form
         Padding = new(6, 0, 6, 0)
     };
 
-    readonly Button turnOnWindowsSearch = new()
+    Button turnOnWindowsSearch = new()
     {
         Name = "turnOnWindowsSearch",
         Text = "Turn on…",
@@ -218,7 +227,7 @@ class OptionsForm : Form
 
     // How the Windows Search service is: read again after each change, and whenever the page
     // shows, as it may have been changed outside Lode meanwhile.
-    readonly Func<WindowsSearchService.State> readWindowsSearch;
+    Func<WindowsSearchService.State> readWindowsSearch;
 
     /// <summary>
     /// Asks whether to turn Windows Search off, or on, saying what that does. Replaced in tests.
@@ -243,27 +252,30 @@ class OptionsForm : Form
     /// </summary>
     internal Action<bool, Elevated.Outcome> ReportWindowsSearch;
 
-    readonly RepositoryLinks repositoryLinks;
+    RepositoryLinks repositoryLinks;
 
     // For each kind of link, what opens it now, and the buttons that take it over and revert it.
-    readonly List<(RepositoryLinks.Handler Handler, Label Status, Button Take, Button Revert)> linkRows = [];
+    List<(RepositoryLinks.Handler Handler, Label Status, Button Take, Button Revert)> linkRows = [];
 
-    readonly Updates updates;
-    readonly Label updateStatus = new()
+    Updates updates;
+
+    Label updateStatus = new()
     {
         Name = "updateStatus",
         AutoSize = true,
         MaximumSize = new(textWidth, 0),
         Margin = new(3, 0, 3, 6)
     };
-    readonly Button applyUpdate = new()
+
+    Button applyUpdate = new()
     {
         Name = "applyUpdate",
         Text = "Update and restart",
         AutoSize = true,
         Padding = new(6, 0, 6, 0)
     };
-    readonly Button checkForUpdates = new()
+
+    Button checkForUpdates = new()
     {
         Name = "checkForUpdates",
         Text = "Check now",
@@ -282,8 +294,8 @@ class OptionsForm : Form
     /// </summary>
     public bool UpdateStarted { get; private set; }
 
-    readonly Settings settings;
-    readonly IReadOnlyList<TextEditors.Editor> editors;
+    Settings settings;
+    IReadOnlyList<TextEditors.Editor> editors;
 
     // An entry in the text editor list. A null path is "Browse…".
     sealed record EditorItem(string Text, string? Path)
@@ -292,7 +304,7 @@ class OptionsForm : Form
     }
 
     // In the order of Theme's values.
-    readonly ComboBox theme = new()
+    ComboBox theme = new()
     {
         Name = "theme",
         DropDownStyle = ComboBoxStyle.DropDownList,
@@ -305,7 +317,7 @@ class OptionsForm : Form
         }
     };
 
-    readonly ComboBox textEditor = new()
+    ComboBox textEditor = new()
     {
         Name = "textEditor",
         DropDownStyle = ComboBoxStyle.DropDownList,
@@ -314,7 +326,7 @@ class OptionsForm : Form
 
     int textEditorIndex;
 
-    readonly PageList pageList = new()
+    PageList pageList = new()
     {
         Name = "pages",
         AutoSize = true,
@@ -323,11 +335,11 @@ class OptionsForm : Form
     };
 
     // In the list's order, only the one picked there shown.
-    readonly List<Control> pages = [];
+    List<Control> pages = [];
 
     // A page's name over it, and the headings of its sections.
-    readonly Font headingFont;
-    readonly Font sectionFont;
+    Font headingFont;
+    Font sectionFont;
 
     /// <summary>
     /// A setting that changes how windows look was changed, with what of them it changes.
@@ -511,7 +523,7 @@ class OptionsForm : Form
         UpdateWindowsSearchState();
     }
 
-    readonly PageHost host;
+    PageHost host;
 
     // Brought within the screen it opens on, once it knows which.
     protected override void OnLoad(EventArgs args)
@@ -1173,8 +1185,8 @@ class OptionsForm : Form
         // took most of the half second Options took to open.
         table.SuspendLayout();
         // Empty, and sized to it, so they leave the icon and name columns as narrow as their rows.
-        table.Controls.Add(new Label { AutoSize = true }, 0, 0);
-        table.Controls.Add(new Label { AutoSize = true }, 1, 0);
+        table.Controls.Add(new Label {AutoSize = true}, 0, 0);
+        table.Controls.Add(new Label {AutoSize = true}, 1, 0);
         // Over names, so to their left, as they are.
         var parentHeading = ColumnHeading("Parent");
         parentHeading.Anchor = AnchorStyles.Left;
@@ -1331,7 +1343,7 @@ class OptionsForm : Form
                    "where it was.\n\n" +
                    "Before doing any of that, clear the code folder here in Options, or exit Lode.",
             Icon = TaskDialogIcon.Information,
-            Buttons = { use, TaskDialogButton.Cancel },
+            Buttons = {use, TaskDialogButton.Cancel},
             DefaultButton = use
         };
         return TaskDialog.ShowDialog(this, page) == use;
@@ -1397,7 +1409,7 @@ class OptionsForm : Form
                    "Exclusions already under it become redundant, so they are removed. Windows " +
                    "will ask for administrator permission.",
             Icon = TaskDialogIcon.ShieldBlueBar,
-            Buttons = { exclude, TaskDialogButton.Cancel },
+            Buttons = {exclude, TaskDialogButton.Cancel},
             DefaultButton = exclude
         };
         return TaskDialog.ShowDialog(this, page) == exclude;
@@ -1578,7 +1590,7 @@ class OptionsForm : Form
     {
         const int maximumHeight = 360;
 
-        readonly Control content;
+        Control content;
 
         public ScrollingHost(Control content)
         {

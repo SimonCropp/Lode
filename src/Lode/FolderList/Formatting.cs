@@ -1,5 +1,3 @@
-using System.Globalization;
-
 static class Formatting
 {
     static readonly string[] units = ["bytes", "KB", "MB", "GB", "TB", "PB"];

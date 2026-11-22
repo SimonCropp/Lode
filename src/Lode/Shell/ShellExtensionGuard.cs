@@ -15,16 +15,16 @@ sealed class ShellExtensionGuard : IDisposable
     const int classNotAvailable = unchecked((int)0x80040111);
 
     // COM takes one filter for the whole process. It only acts on a thread with a guard.
-    static readonly ActivationFilter? filter = ActivationFilter.Register();
-    static readonly ConcurrentDictionary<Guid, byte> refused = new();
+    static ActivationFilter? filter = ActivationFilter.Register();
+    static ConcurrentDictionary<Guid, byte> refused = new();
 
     [ThreadStatic]
     static ShellExtensionGuard? current;
 
-    readonly ShellExtensionGuard? previous;
-    readonly uint threadId = GetCurrentThreadId();
-    readonly Lock gate = new();
-    readonly System.Threading.Timer timer;
+    ShellExtensionGuard? previous;
+    uint threadId = GetCurrentThreadId();
+    Lock gate = new();
+    System.Threading.Timer timer;
     Guid? lastActivation;
 
     // When the guard was made, or something was last started under it.

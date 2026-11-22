@@ -10,9 +10,9 @@ sealed class GutterMarquee : IDisposable
 {
     const int listViewScroll = 0x1014;
 
-    readonly Control host;
-    readonly ListView list;
-    readonly Timer scrollTimer = new()
+    Control host;
+    ListView list;
+    Timer scrollTimer = new()
     {
         Interval = 50
     };

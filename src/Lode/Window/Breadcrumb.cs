@@ -10,8 +10,8 @@ sealed class Breadcrumb : Control
     const string chevron = "\uE76C";
     const string ellipsis = "…";
 
-    readonly Font chevronFont = new("Segoe MDL2 Assets", 7f);
-    readonly ToolTip toolTip = new();
+    Font chevronFont = new("Segoe MDL2 Assets", 7f);
+    ToolTip toolTip = new();
     string path = Locations.ThisPC;
     List<(string Path, string Name)> segments = [];
 

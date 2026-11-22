@@ -8,20 +8,20 @@ sealed class Matcher
 {
     // How long a regular expression may take over one file before it is let go of, as one that
     // backtracks without end would never finish.
-    static readonly TimeSpan regexTimeout = TimeSpan.FromSeconds(2);
+    static TimeSpan regexTimeout = TimeSpan.FromSeconds(2);
 
-    readonly string find;
-    readonly bool wholeWord;
-    readonly SearchValues<string>? anyCase;
+    string find;
+    bool wholeWord;
+    SearchValues<string>? anyCase;
 
     // Plain text that is all ASCII, as bytes, for looking through a file's bytes before it is
     // decoded: and its first letter in either case.
-    readonly byte[]? asciiFind;
-    readonly SearchValues<byte>? asciiFirst;
+    byte[]? asciiFind;
+    SearchValues<byte>? asciiFirst;
 
     // Whether it has an i or an s, which, in any case, ı and ſ match: in .NET's ordinal any-case
     // comparison, those are the only characters beyond ASCII whose capitals are in it.
-    readonly bool hasIOrS;
+    bool hasIOrS;
 
     /// <summary>
     /// The regular expression, for a regex query: Replace uses it, for $1 and the like.

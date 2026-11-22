@@ -15,8 +15,8 @@ sealed class FindResultsView : UserControl
         Interval = 100
     };
 
-    readonly Font codeFont;
-    readonly Dictionary<int, Bitmap> icons = [];
+    Font codeFont;
+    Dictionary<int, Bitmap> icons = [];
     FindResults results = new(new("", ""));
 
     // The search running, and what it hands its results over in.
