@@ -141,6 +141,23 @@ public class CodeCommandsTests
         await Assert.That(result.Output).EndsWith("Cancelled");
     }
 
+    // A git that changes the repository is not stopped part way, which would leave the index
+    // locked: cancelled meanwhile, it finishes, and it is the next one that isn't started.
+    [Test]
+    public async Task AGitChangingTheRepositoryIsLeftToFinish()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        using var cancel = new CancelSource(TimeSpan.FromMilliseconds(500));
+
+        var result = await Task.Run(() => CodeCommands.GitToItsEnd(repo, cancel.Token, "-c", "alias.slow=!sleep 2", "slow"));
+        var next = CodeCommands.GitToItsEnd(repo, cancel.Token, "status");
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(next.Succeeded).IsFalse();
+        await Assert.That(next.Output).IsEqualTo("Cancelled");
+    }
+
     // Cancelled, a command goes on to no more repositories.
     [Test]
     public async Task CancelledGoesToNoMoreRepos()
@@ -292,6 +309,48 @@ public class CodeCommandsTests
 
         await Assert.That(results.Single().Succeeded).IsTrue();
         await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
+    }
+
+    // A merge that left a file in conflict: commit -a would commit it as it is, the markers in
+    // it, and Push send that. Nothing is committed.
+    [Test]
+    public async Task PushLeavesARepositoryWithFilesInConflict()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var other = code.Clone("Repo", "Other");
+        await File.WriteAllTextAsync(Path.Combine(other, "tracked.txt"), "theirs");
+        Scratch.Git(other, "commit", "-am", "Theirs");
+        Scratch.Git(other, "push");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "ours");
+        Scratch.Git(repo, "commit", "-am", "Ours");
+        Scratch.Git(repo, "fetch");
+        var merge = CodeCommands.Git(repo, "merge", "origin/main");
+
+        var results = await CodeCommands.Push([repo], "Tidy up");
+
+        await Assert.That(merge.Succeeded).IsFalse();
+        await Assert.That(results.Single().Succeeded).IsFalse();
+        await Assert.That(results.Single().Output).Contains("still in conflict");
+        await Assert.That(Scratch.Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Ours");
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Theirs");
+    }
+
+    // On a commit, not a branch, as part way through a rebase: the commit would be one no
+    // branch has, and there is nowhere to push it.
+    [Test]
+    public async Task PushLeavesARepositoryWithNoBranchCheckedOut()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "--detach");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+
+        var results = await CodeCommands.Push([repo], "Tidy up");
+
+        await Assert.That(results.Single().Succeeded).IsFalse();
+        await Assert.That(results.Single().Output).Contains("No branch is checked out");
+        await Assert.That(Scratch.Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Initial");
     }
 
     [Test]

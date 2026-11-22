@@ -183,12 +183,17 @@ sealed class TextFile
 
             return Decode(bytes.AsSpan(0, read), out skip, buffers);
         }
+        // NotSupportedException for a file named as a device is, nul say, which a redirect to it
+        // in a shell that isn't Windows' leaves in a folder: Windows opens the device for that
+        // name, and a device has no length. Thrown on, it ended the search's thread, and
+        // everything found after it was never shown.
         catch (Exception exception)
             when (
                 exception is
                     IOException or
                     UnauthorizedAccessException or
-                    SecurityException)
+                    SecurityException or
+                    NotSupportedException)
         {
             skip = Skip.Unreadable;
             return null;

@@ -32,6 +32,24 @@ public class ReplaceInFilesTests
             });
     }
 
+    // Lines ended as Windows ends them: $ is still each line's end, and . stops before it, so
+    // what replaces a line's end leaves the line ended as it was.
+    [Test]
+    public async Task ARegexLeavesEachLineEndedAsItWas()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var comments = scratch.At("comments.cs");
+        var ends = scratch.At("ends.cs");
+        await File.WriteAllTextAsync(comments, "one(); // first\r\ntwo(); // second\r\n");
+        await File.WriteAllTextAsync(ends, "one()\r\ntwo()\r\n");
+
+        Replace([comments], new(" //.*", "", Regex: true), "");
+        Replace([ends], new(@"\)$", "", Regex: true), ");");
+
+        await Assert.That(await File.ReadAllTextAsync(comments)).IsEqualTo("one();\r\ntwo();\r\n");
+        await Assert.That(await File.ReadAllTextAsync(ends)).IsEqualTo("one();\r\ntwo();\r\n");
+    }
+
     [Test]
     public async Task UndoThenRedo()
     {

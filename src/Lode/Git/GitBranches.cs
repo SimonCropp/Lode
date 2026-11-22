@@ -35,6 +35,9 @@ static class GitBranches
     // can't be in a branch's name, so no branch's name ends another's marker.
     const string stashMarker = "Lode:";
 
+    // How a stash is marked once putting it back has clashed: no longer one to put back.
+    const string clashedMarker = "Lode clashed:";
+
     /// <summary>
     /// The repository's branches, as git has them now, without going to origin: the list is
     /// shown as it opens.
@@ -279,24 +282,32 @@ static class GitBranches
         // Stash says it saved nothing, and succeeds, when there was nothing to save after all:
         // then there is nothing to put back either, and popping would take some other stash.
         var before = StashTip(repo);
-        var stash = CodeCommands.Git(
+        var stash = CodeCommands.GitToItsEnd(
             repo,
             cancel,
-            network: false,
             "stash",
             "push",
             "--include-untracked",
             "-m",
             stashMarker + current);
+        var stashed = StashTip(repo) != before;
         if (!stash.Succeeded)
         {
-            return stash with
+            var failed = stash with
             {
                 Output = $"Couldn't stash the changes, so not switched:\n{stash.Output}"
             };
+
+            // Git keeps the stash before it clears what it stashed from the folder, and has
+            // kept it though the clearing then failed, on a file another program has open say.
+            if (stashed)
+            {
+                return PutBack(repo, failed);
+            }
+
+            return failed;
         }
 
-        var stashed = StashTip(repo) != before;
         var switched = SwitchTo(repo, target, cancel);
         if (switched.Succeeded)
         {
@@ -308,19 +319,25 @@ static class GitBranches
             return switched;
         }
 
-        // Even cancelled: the changes would otherwise be left hidden in a stash.
+        return PutBack(repo, switched);
+    }
+
+    // Puts back what was stashed for a switch that then wasn't made, saying so, or that it is
+    // still stashed. Even cancelled: the changes would otherwise be left hidden in a stash.
+    static CodeCommands.RepoResult PutBack(string repo, CodeCommands.RepoResult failed)
+    {
         var restored = CodeCommands.Git(repo, Cancel.None, network: false, "stash", "pop");
         if (restored.Succeeded)
         {
-            return switched with
+            return failed with
             {
-                Output = $"{switched.Output}\nThe changes were put back."
+                Output = $"{failed.Output}\nThe changes were put back."
             };
         }
 
-        return switched with
+        return failed with
         {
-            Output = $"{switched.Output}\nThe changes couldn't be put back, so are still stashed:\n{restored.Output}"
+            Output = $"{failed.Output}\nThe changes couldn't be put back, so are still stashed:\n{restored.Output}"
         };
     }
 
@@ -340,10 +357,10 @@ static class GitBranches
     {
         if (target.Remote)
         {
-            return CodeCommands.Git(repo, cancel, network: false, "switch", "--track", target.Name);
+            return CodeCommands.GitToItsEnd(repo, cancel, "switch", "--track", target.Name);
         }
 
-        return CodeCommands.Git(repo, cancel, network: false, "switch", target.Name);
+        return CodeCommands.GitToItsEnd(repo, cancel, "switch", target.Name);
     }
 
     // The local branch switching to a branch leaves checked out: origin/feature's is feature.
@@ -401,7 +418,7 @@ static class GitBranches
             };
         }
 
-        var popped = CodeCommands.Git(repo, cancel, network: false, "stash", "pop", stash);
+        var popped = CodeCommands.GitToItsEnd(repo, cancel, "stash", "pop", stash);
         if (popped.Succeeded)
         {
             return switched with
@@ -410,10 +427,46 @@ static class GitBranches
             };
         }
 
+        var kept = KeepAside(repo, stash, branch);
         return popped with
         {
-            Output = $"{switched.Output}\nSwitched to {branch}, but the changes left on it couldn't all be put back, so they are still stashed, in {stash}:\n{popped.Output}"
+            Output = $"{switched.Output}\nSwitched to {branch}, but the changes left on it couldn't all be put back, so they are still stashed, in {kept}:\n{popped.Output}"
         };
+    }
+
+    // A stash that clashed with what the branch has now is put back as far as git could, the
+    // clashes marked in the files, and git keeps it. Still marked as the branch's, it would be
+    // put back again on the next coming back here, once the clashes were settled and committed,
+    // to clash all over again, and every time after. So it is kept under a name nothing puts
+    // back: the same stash, stored again. One git refused outright, the folder as it was, keeps
+    // its mark, to be put back another time. Gives where it is kept, as git names it.
+    static string KeepAside(string repo, string stash, string branch)
+    {
+        var status = CodeCommands.Git(repo, "status", "--porcelain");
+        if (status is not
+            {
+                Succeeded: true,
+                Output.Length: > 0
+            })
+        {
+            return stash;
+        }
+
+        var commit = CodeCommands.Git(repo, "rev-parse", "--verify", "--quiet", stash);
+        if (!commit.Succeeded ||
+            !CodeCommands.Git(repo, "stash", "drop", stash).Succeeded)
+        {
+            return stash;
+        }
+
+        var stored = CodeCommands.Git(repo, "stash", "store", "-m", $"On {branch}: {clashedMarker}{branch}", commit.Output);
+        if (stored.Succeeded)
+        {
+            return "stash@{0}";
+        }
+
+        // No longer among the stashes, but still in the repository, by its commit.
+        return $"the commit {commit.Output}";
     }
 
     /// <summary>
@@ -421,7 +474,7 @@ static class GitBranches
     /// it. What is uncommitted comes along: it is the same commit.
     /// </summary>
     public static CodeCommands.RepoResult Create(string repo, string name, Cancel cancel) =>
-        CodeCommands.Git(repo, cancel, network: false, "switch", "-c", name);
+        CodeCommands.GitToItsEnd(repo, cancel, "switch", "-c", name);
 
     /// <summary>
     /// Renames the local branch <paramref name="name"/> to <paramref name="newName"/>. The branch
@@ -437,7 +490,7 @@ static class GitBranches
             move = "-M";
         }
 
-        return CodeCommands.Git(repo, cancel, network: false, "branch", move, name, newName);
+        return CodeCommands.GitToItsEnd(repo, cancel, "branch", move, name, newName);
     }
 
     /// <summary>
@@ -468,7 +521,7 @@ static class GitBranches
             switched = result.Output;
         }
 
-        var deleted = CodeCommands.Git(repo, cancel, network: false, "branch", "-D", branch.Name);
+        var deleted = CodeCommands.GitToItsEnd(repo, cancel, "branch", "-D", branch.Name);
         if (!deleted.Succeeded ||
             !alsoOnRemote ||
             branch.Upstream == null)
@@ -509,10 +562,10 @@ static class GitBranches
     {
         if (branch.Remote)
         {
-            return CodeCommands.Git(repo, cancel, network: false, "worktree", "add", "-b", LocalName(branch), "--", folder, branch.Name);
+            return CodeCommands.GitToItsEnd(repo, cancel, "worktree", "add", "-b", LocalName(branch), "--", folder, branch.Name);
         }
 
-        return CodeCommands.Git(repo, cancel, network: false, "worktree", "add", "--", folder, branch.Name);
+        return CodeCommands.GitToItsEnd(repo, cancel, "worktree", "add", "--", folder, branch.Name);
     }
 
     /// <summary>

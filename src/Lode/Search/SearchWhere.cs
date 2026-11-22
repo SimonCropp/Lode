@@ -37,10 +37,56 @@ sealed class SearchWhere
         {
             if (IsPath)
             {
-                return FileSystemName.MatchesSimpleExpression(Text, relative);
+                return MatchesPath(Text, relative);
             }
 
             return FileSystemName.MatchesSimpleExpression(Text, name);
+        }
+
+        // Not MatchesSimpleExpression, to which a backslash is no separator: it says the
+        // character after it is meant as itself, so src\*.cs matched nothing, and bin\Debug
+        // only a name with no slash in it. Here * is any run of characters, slashes among them,
+        // ? any one, and anything else itself, in either case.
+        static bool MatchesPath(CharSpan pattern, CharSpan path)
+        {
+            var at = 0;
+            var position = 0;
+
+            // The last * come to, and how much of the path it has been tried against.
+            var star = -1;
+            var taken = 0;
+            while (position < path.Length)
+            {
+                if (at < pattern.Length &&
+                    pattern[at] == '*')
+                {
+                    star = at;
+                    taken = position;
+                    at++;
+                    continue;
+                }
+
+                if (at < pattern.Length &&
+                    (pattern[at] == '?' ||
+                     char.ToUpperInvariant(pattern[at]) == char.ToUpperInvariant(path[position])))
+                {
+                    at++;
+                    position++;
+                    continue;
+                }
+
+                if (star < 0)
+                {
+                    return false;
+                }
+
+                // The * takes one more character, and what follows it is tried from there.
+                taken++;
+                position = taken;
+                at = star + 1;
+            }
+
+            return pattern[at..].TrimStart('*').IsEmpty;
         }
 
         public override string ToString()

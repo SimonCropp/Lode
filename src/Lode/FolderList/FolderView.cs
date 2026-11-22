@@ -2430,7 +2430,19 @@ sealed class FolderView : UserControl
         }
 
         unmerged.Add(batch);
-        merging ??= MergeFound(pace, mergeGeneration, cancel);
+        if (merging != null)
+        {
+            return;
+        }
+
+        // A merge of little may be done by the time it returns, and has then said so itself,
+        // before this could keep it. Kept after that, it would never be let go of: nothing sent
+        // later would be merged, and the search, waiting for a merge already over, never end.
+        var merge = MergeFound(pace, mergeGeneration, cancel);
+        if (!merge.IsCompleted)
+        {
+            merging = merge;
+        }
     }
 
     /// <summary>
@@ -4141,7 +4153,9 @@ sealed class FolderView : UserControl
         if (foundPending)
         {
             // Once the list is done with the edit, and with the name changed below, if it is.
-            BeginInvoke(ShowFound);
+            // Not the method itself: with a parameter left out it is no Action, and would be
+            // called as a delegate given no arguments, which throws.
+            BeginInvoke(() => ShowFound());
         }
 
         var index = args.Item;

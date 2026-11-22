@@ -127,19 +127,20 @@ static class Zip
         var before = items.Count;
         var options = new EnumerationOptions
         {
-            AttributesToSkip = FileAttributes.ReparsePoint,
+            AttributesToSkip = FileAttributes.None,
             IgnoreInaccessible = false
         };
-        foreach (var directory in Directory.EnumerateDirectories(folder, "*", options).Order(StringComparer.OrdinalIgnoreCase))
+        var holds = new DirectoryInfo(folder);
+        foreach (var directory in holds.EnumerateDirectories("*", options).Where(IsNotLink).OrderBy(_ => _.FullName, StringComparer.OrdinalIgnoreCase))
         {
-            AddFolder(directory, $"{name}/{Path.GetFileName(directory)}", items, zip);
+            AddFolder(directory.FullName, $"{name}/{directory.Name}", items, zip);
         }
 
-        foreach (var file in Directory.EnumerateFiles(folder, "*", options).Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var file in holds.EnumerateFiles("*", options).Where(IsNotLink).OrderBy(_ => _.FullName, StringComparer.OrdinalIgnoreCase))
         {
-            if (!Locations.Same(file, zip))
+            if (!Locations.Same(file.FullName, zip))
             {
-                items.Add((file, $"{name}/{Path.GetFileName(file)}", false));
+                items.Add((file.FullName, $"{name}/{file.Name}", false));
             }
         }
 
@@ -148,6 +149,13 @@ static class Zip
             items.Add((folder, name, true));
         }
     }
+
+    // Not a junction or a symbolic link, which lead elsewhere, round in a circle perhaps, and
+    // are left out. The file system marks more than those the way it marks them: a folder kept
+    // in cloud storage, OneDrive's say, which, left out by the mark, took all it holds with it.
+    static bool IsNotLink(FileSystemInfo item) =>
+        (item.Attributes & FileAttributes.ReparsePoint) == 0 ||
+        item.LinkTarget == null;
 
     /// <summary>
     /// What extracting a zip did: what it made at the top of where it went, what it made there or

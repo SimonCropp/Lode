@@ -245,7 +245,7 @@ static class CodeCommands
 
                 // Where there is no local branch of that name yet, git makes one tracking
                 // origin's.
-                return Git(repo, cancel, network: false, "switch", branch.Output);
+                return GitToItsEnd(repo, cancel, "switch", branch.Output);
             });
 
     const string originHead = "refs/remotes/origin/";
@@ -319,7 +319,7 @@ static class CodeCommands
             cancel,
             repo =>
             {
-                var tag = Git(repo, cancel, network: false, "tag", name);
+                var tag = GitToItsEnd(repo, cancel, "tag", name);
                 if (!tag.Succeeded)
                 {
                     return tag;
@@ -343,7 +343,7 @@ static class CodeCommands
             cancel,
             repo =>
             {
-                var local = Git(repo, cancel, network: false, "tag", "-d", name);
+                var local = GitToItsEnd(repo, cancel, "tag", "-d", name);
                 var remote = Git(repo, cancel, network: true, "push", "origin", "--delete", $"refs/tags/{name}");
 
                 // Git speaks English here, as Git asks it to, so what it says can be read. Origin
@@ -395,7 +395,12 @@ static class CodeCommands
             cancel,
             repo =>
             {
-                var commit = Git(repo, cancel, network: false, "commit", "-am", message);
+                if (WhyNotCommit(repo) is { } why)
+                {
+                    return new(repo, false, why);
+                }
+
+                var commit = GitToItsEnd(repo, cancel, "commit", "-am", message);
 
                 // Nothing to commit is fine: there may still be commits to push.
                 if (!commit.Succeeded &&
@@ -410,6 +415,33 @@ static class CodeCommands
                     Output = $"{commit.Output}\n{push.Output}".Trim()
                 };
             });
+
+    // Why commit -a is not to be run in a repository, or null where it can be. With files still
+    // in conflict, from a pull say, it would commit them as they are, the markers in them, as
+    // the merge settled, and Push would send that. With no branch checked out, as part way
+    // through a rebase, or on a tag, it would make a commit no branch has, which Push has
+    // nowhere to send, and the next switch leaves behind.
+    static string? WhyNotCommit(string repo)
+    {
+        var unmerged = Git(repo, "ls-files", "--unmerged");
+        if (unmerged is
+            {
+                Succeeded: true,
+                Output.Length: > 0
+            })
+        {
+            return "Files in it are still in conflict, from a merge or a rebase not finished, so nothing was committed or pushed.";
+        }
+
+        // One not a repository at all is for the commit to say.
+        if (!Git(repo, "symbolic-ref", "--quiet", "HEAD").Succeeded &&
+            Git(repo, "rev-parse", "--verify", "--quiet", "HEAD").Succeeded)
+        {
+            return "No branch is checked out in it, so nothing was committed or pushed.";
+        }
+
+        return null;
+    }
 
     // Whether commit -a had nothing to commit: no tracked file changed, staged or not. Asked of
     // git, rather than read from what the commit said, which it words one way for a clean
@@ -439,12 +471,14 @@ static class CodeCommands
             {
                 // Rather than restore, which puts back only what is not staged, leaving staged
                 // changes for the next Push to commit.
-                var reset = Git(repo, cancel, network: false, "reset", "--hard");
+                var reset = GitToItsEnd(repo, cancel, "reset", "--hard");
                 if (!reset.Succeeded)
                 {
                     return reset;
                 }
 
+                // Stopped where it is when cancelled, unlike the reset: it locks nothing, and
+                // what it has yet to delete is what cancelling is for.
                 var clean = Git(repo, cancel, network: false, "clean", "-f", "-d");
                 return clean with
                 {
@@ -510,10 +544,28 @@ static class CodeCommands
     internal static RepoResult Git(string repo, params string[] arguments) =>
         Git(repo, Cancel.None, network: false, arguments);
 
-    /// <param name="cancel">Stops git, and whatever it started, ssh say, where it is.</param>
+    /// <param name="cancel">Stops git, and whatever it started, ssh say, where it is: for one
+    /// that changes the repository, <see cref="GitToItsEnd"/>.</param>
     /// <param name="network">Whether git may go to a remote, over ssh perhaps.</param>
     internal static RepoResult Git(string repo, Cancel cancel, bool network, params string[] arguments) =>
         Git(repo, cancel, network, null, arguments);
+
+    /// <summary>
+    /// Git changing the repository where it is, a commit, a switch or a reset say: not started
+    /// once cancelled, but, once started, left to finish. Stopped part way it leaves the index
+    /// locked, so that no git works there until the lock is deleted by hand, and the files half
+    /// changed. What it gives is what git did, cancelled meanwhile or not: it is the step after
+    /// that isn't started.
+    /// </summary>
+    internal static RepoResult GitToItsEnd(string repo, Cancel cancel, params string[] arguments)
+    {
+        if (cancel.IsCancellationRequested)
+        {
+            return new(repo, false, cancelled);
+        }
+
+        return Git(repo, Cancel.None, network: false, arguments);
+    }
 
     /// <param name="progress">Each line git writes as it goes, clone's "Receiving objects:  45%"
     /// with --progress say, as it writes it.</param>

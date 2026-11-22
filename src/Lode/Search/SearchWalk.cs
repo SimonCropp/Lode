@@ -143,6 +143,15 @@ static class SearchWalk
             return scope;
         }
 
+        // Roots one within another, the open folders with a tab on a folder and another on one
+        // in it say, come to the same files twice. Each file is given the once, where it is
+        // first come to: found twice, Replace would replace in it twice.
+        HashSet<string>? given = null;
+        if (Overlap(where.Roots))
+        {
+            given = new(StringComparer.OrdinalIgnoreCase);
+        }
+
         foreach (var root in where.Roots)
         {
             cancel.ThrowIfCancellationRequested();
@@ -150,7 +159,12 @@ static class SearchWalk
             // A file given by name is searched, whatever would leave it out.
             if (System.IO.File.Exists(root))
             {
-                yield return new(root, SizeOf(root));
+                if (given == null ||
+                    given.Add(root))
+                {
+                    yield return new(root, SizeOf(root));
+                }
+
                 continue;
             }
 
@@ -178,7 +192,8 @@ static class SearchWalk
                 {
                     var relative = Relative(from, file.Path);
                     if (where.IncludesFile(relative, file.Name) &&
-                        (scope == null || scope.HasFile(file.Path)))
+                        (scope == null || scope.HasFile(file.Path)) &&
+                        (given == null || given.Add(file.Path)))
                     {
                         yield return new(file.Path, file.Size);
                     }
@@ -208,6 +223,24 @@ static class SearchWalk
                 }
             }
         }
+    }
+
+    // Whether any of the roots is within another of them.
+    static bool Overlap(IReadOnlyList<string> roots)
+    {
+        for (var index = 0; index < roots.Count; index++)
+        {
+            for (var other = 0; other < roots.Count; other++)
+            {
+                if (other != index &&
+                    Locations.IsWithin(roots[index], roots[other]))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     // Lists repositories several at once, each on a thread of its own, as each waits on git:

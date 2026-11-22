@@ -300,10 +300,19 @@ static class RepositoryClone
     /// yet, giving <paramref name="progress"/> each line of git's progress. Then switches to
     /// <paramref name="branch"/> where origin has it: a pull request's from a fork it doesn't,
     /// so the clone stays on the default branch. A clone that fails, or is cancelled, leaves
-    /// nothing behind.
+    /// nothing behind. With something at <paramref name="destination"/> by now, it fails, and
+    /// leaves that as it is.
     /// </summary>
     internal static CodeCommands.RepoResult Clone(string remote, string destination, string? branch, Action<string>? progress, Cancel cancel)
     {
+        // Put there since the clone was offered, by another clone of the same link say. Git
+        // would refuse it too, and what is taken back below when git fails would then be a
+        // folder this clone never made.
+        if (Path.Exists(destination))
+        {
+            return new(destination, false, $"{destination} is already there.");
+        }
+
         var parent = Path.GetDirectoryName(destination)!;
         var madeParent = !Directory.Exists(parent);
         try
@@ -338,7 +347,7 @@ static class RepositoryClone
         // Where origin has no branch of the name, git refuses, and the clone is as it was.
         if (branch != null)
         {
-            CodeCommands.Git(destination, cancel, network: false, "switch", branch);
+            CodeCommands.GitToItsEnd(destination, cancel, "switch", branch);
         }
 
         return clone;

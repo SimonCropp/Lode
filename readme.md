@@ -139,7 +139,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    ![Command palette](src/Lode.Tests/Menus/MenuTests.CommandPalette.verified.png)
 
  * **The tray**: closing the last window hides it there. Click the tray icon, or launch Lode, to bring it back; Shift+click for a new window. **Exit** quits, asking first while anything is running.
- * **One copy per account**: launching Lode again hands its folders to the running copy, in a new tab, or the tab already showing the folder.
+ * **One copy per account**: launching Lode again hands its folders to the running copy, in a new tab, or the tab already showing the folder. Lode run as administrator is a copy of its own, beside the one that isn't.
  * **Jump list**: right-click Lode on the taskbar for the folders pinned to Quick access, and those used often.
  * **Folder tree**: **Pinned** (Quick access, as in Explorer), **Recent**, This PC with the drives, and **Network**, with the machines of folders pinned or gone to, each listing what it shares. Drives come and go as they are plugged in or mapped. The tree follows the tab to the open folder, unless **Expand the folder tree to the open folder** is off on the **View** page. To pin a folder, drag it or its tab into **Pinned**, or right-click it; drag a pin, or press Alt+Shift+Up and Down, to reorder. Folders in the tree have the list's right-click menu and keys. **This PC**'s menu is Explorer's: Manage, Map network drive and the rest.
 
@@ -185,7 +185,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
  * <a id="open-in-claude"></a>**Open in Claude** starts a Claude Code session in the folder, in the [Claude desktop app](https://claude.com/download), when it is installed.
  * <a id="coding-agent"></a>**Coding agent** starts an installed coding agent in a Windows Terminal tab in the folder: [Claude Code](https://code.claude.com), [GitHub Copilot CLI](https://github.com/github/copilot-cli), [Codex CLI](https://github.com/openai/codex) or [Gemini CLI](https://github.com/google-gemini/gemini-cli).
  * <a id="code-folder"></a>**Code folder**: choose the folder your git repositories are in, on the **Code** page of Options. Lode watches it while it runs, so Windows won't let a folder it is in be renamed or moved: **Clear** it first, or exit Lode. **Exclude from Defender…** stops Defender scanning it, which speeds up builds and git. Folders in it get a **Git** submenu and **Update NuGets** (and with a build), on the repository the folder is in, or every repository up to two levels down, six at a time:
-   * **Fetch**, **Pull**, **Push**, **Discard**, as git does them. Push commits the changes to tracked files first, asking for the message. Push, Discard and Purge ask first. Push isn't offered with nothing to push.
+   * **Fetch**, **Pull**, **Push**, **Discard**, as git does them. Push commits the changes to tracked files first, asking for the message, but not where files are still in conflict, or no branch is checked out: that repository is left, and says why. Push, Discard and Purge ask first. Push isn't offered with nothing to push.
    * **Switch to default branch**, origin's, unless anything is uncommitted. Not offered when already on it.
    * **Tag** tags the commit and pushes the tag; **Delete tag** deletes one, from origin too.
    * **Purge** deletes everything git doesn't track, ignored files included (`git clean -xdf`), to the Recycle Bin, unless Options says permanently. It asks once it knows how many items, and how big.

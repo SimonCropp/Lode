@@ -64,6 +64,34 @@ public class ZipTests
         await Assert.That(Entries(zip)).IsEquivalentTo(["Docs/guide.aleph (900 bytes)"]);
     }
 
+    // A junction leads elsewhere, here back up to the folder being compressed, so is left out,
+    // while the folder beside it goes in with what it holds. What cloud storage marks as a
+    // junction is marked, though it is no link, can't be made here.
+    [Test]
+    public async Task CompressLeavesOutLinks()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Docs", "Inner"));
+        await File.WriteAllTextAsync(fixture.At("Docs", "Inner", "deep.aleph"), "deep");
+        var link = fixture.At("Docs", "Loop");
+        using (var junction = Process.Start(
+                   new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{fixture.At("Docs")}\"")
+                   {
+                       CreateNoWindow = true,
+                       UseShellExecute = false
+                   })!)
+        {
+            await junction.WaitForExitAsync();
+        }
+
+        var zip = fixture.At("Docs.zip");
+
+        Zip.Compress(zip, [fixture.At("Docs")], null, Cancel.None);
+
+        await Assert.That(Directory.Exists(Path.Combine(link, "Inner"))).IsTrue();
+        await Assert.That(Entries(zip)).IsEquivalentTo(["Docs/Inner/deep.aleph (4 bytes)", "Docs/guide.aleph (900 bytes)"]);
+    }
+
     // Stopped, or failed, nothing is left of the zip.
     [Test]
     public async Task CancelledCompressLeavesNoZip()

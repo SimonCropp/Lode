@@ -316,7 +316,9 @@ public class GitBranchesTests
     }
 
     // The branch moved on since, in a way that clashes with the changes left on it: switched all
-    // the same, it says so, and the changes are still stashed.
+    // the same, it says so, and the changes are still stashed, though no longer as the branch's
+    // to put back. With the clash settled and committed, coming back again leaves them there,
+    // rather than putting them back to clash again.
     [Test]
     public async Task ChangesThatClashStayStashed()
     {
@@ -331,9 +333,41 @@ public class GitBranchesTests
         Scratch.Git(repo, "switch", "main");
 
         var result = GitBranches.Switch(repo, "main", Local("feature"), leave: false, Cancel.None);
+        var stashes = Stashes(repo);
+        Write(repo, "tracked.txt", "settled");
+        Scratch.Git(repo, "commit", "-am", "Settled");
+        Scratch.Git(repo, "switch", "main");
+        var again = GitBranches.Switch(repo, "main", Local("feature"), leave: false, Cancel.None);
 
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(result.Output).Contains("couldn't all be put back, so they are still stashed, in stash@{0}");
+        await Assert.That(stashes).IsEqualTo("On feature: Lode clashed:feature");
+        await Assert.That(again.Succeeded).IsTrue();
+        await Assert.That(Branch(repo)).IsEqualTo("feature");
+        await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("settled");
+        await Assert.That(Stashes(repo)).IsEqualTo("On feature: Lode clashed:feature");
+    }
+
+    // Git keeps the stash before it clears what it stashed from the folder. With a file there
+    // that another program has open, the clearing fails, and so does the stash, though the
+    // changes are in it by then: that is said, rather than only that they couldn't be stashed.
+    [Test]
+    public async Task AStashGitKeptButCouldNotFinishIsSaid()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        Write(repo, "tracked.txt", "changed");
+        Write(repo, "open.txt", "open");
+        CodeCommands.RepoResult result;
+        await using (new FileStream(Path.Combine(repo, "open.txt"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            result = GitBranches.Switch(repo, "feature", Local("main"), leave: true, Cancel.None);
+        }
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("Couldn't stash the changes, so not switched");
+        await Assert.That(result.Output).Contains("so are still stashed");
         await Assert.That(Branch(repo)).IsEqualTo("feature");
         await Assert.That(Stashes(repo)).IsEqualTo("On feature: Lode:feature");
     }

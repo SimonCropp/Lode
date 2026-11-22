@@ -109,6 +109,25 @@ public class RepositoryCloneTests
         await Assert.That(Directory.Exists(code.At("Code"))).IsTrue();
     }
 
+    // Cloned by another dialog for the same link since this one was offered, say: the clone
+    // fails, and what is there, the work in it too, is not what it takes back.
+    [Test]
+    public async Task ACloneOntoWhatIsThereAlreadyLeavesIt()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Lode");
+        var destination = code.At("Code", "Lode");
+        Directory.CreateDirectory(destination);
+        var work = Path.Combine(destination, "work.txt");
+        await File.WriteAllTextAsync(work, "not committed");
+
+        var result = RepositoryClone.Clone(code.Origin("Lode"), destination, null, null, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(RepositoryClone.Reason(result.Output)).EndsWith("is already there.");
+        await Assert.That(File.Exists(work)).IsTrue();
+    }
+
     // Stopped part way, git takes back nothing itself: what it cloned so far is deleted, the
     // read-only objects too.
     [Test]

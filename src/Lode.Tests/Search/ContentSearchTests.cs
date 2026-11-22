@@ -29,6 +29,52 @@ public class ContentSearchTests
             });
     }
 
+    // A file named as a device is, which a redirect to nul leaves behind in a shell that isn't
+    // Windows': Windows opens the device for it, which can't be read as a file. It is counted
+    // as one that couldn't be read, and the files after it are still found.
+    [Test]
+    public async Task AFileNamedAsADeviceIsLeftOut()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, "a.txt", "alpha");
+        Write(scratch.Root, "z.txt", "alpha");
+        var device = $@"\\?\{scratch.At("nul")}";
+        await File.WriteAllTextAsync(device, "alpha");
+        try
+        {
+            var results = await Find(new("alpha", ""), scratch.Root);
+
+            await Assert.That(Paths(results, scratch.Root)).IsEquivalentTo(["a.txt", "z.txt"]);
+            await Assert.That(results.Counts.Unreadable).IsEqualTo(1);
+        }
+        finally
+        {
+            // By the same name, or the scratch folder couldn't be deleted.
+            File.Delete(device);
+        }
+    }
+
+    // In a file that ends its lines as Windows does, $ is each line's end, and . stops there.
+    [Test]
+    public async Task ARegexTakesEachLineToEndHoweverItIsEnded()
+    {
+        const string text = "foo\r\nbar foo\r\nfoo\nfoo";
+
+        static List<string> Found(string pattern)
+        {
+            var matcher = Matcher.Create(new(pattern, "", Regex: true), out _)!;
+            var matches = new List<(int Start, int Length)>();
+            matcher.Find(text, matches);
+            return matches
+                .Select(_ => $"{_.Start}:{text.Substring(_.Start, _.Length)}")
+                .ToList();
+        }
+
+        await Assert.That(Found("foo$")).IsEquivalentTo(["0:foo", "9:foo", "14:foo", "18:foo"]);
+        await Assert.That(Found("^foo.*")).IsEquivalentTo(["0:foo", "14:foo", "18:foo"]);
+        await Assert.That(Found("r.*")).IsEquivalentTo(["7:r foo"]);
+    }
+
     // Lines either side of each match, ".." where lines are left out between them, and a match
     // over two lines putting both in.
     [Test]
@@ -337,6 +383,45 @@ public class ContentSearchTests
                 notMinified = Paths(notMinified, scratch.Root),
                 notObj = Paths(notObj, scratch.Root)
             });
+    }
+
+    // A pattern with a slash in it is matched against the path from the folder searched, either
+    // slash, its * going across them.
+    [Test]
+    public async Task PatternsWithASlashMatchThePath()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, @"src\App.cs", "alpha");
+        Write(scratch.Root, @"src\obj\Gen.cs", "alpha");
+        Write(scratch.Root, @"tests\App.cs", "alpha");
+        Write(scratch.Root, @"tests\obj\Gen.cs", "alpha");
+
+        var inSource = await Find(new("alpha", @"src\*.cs"), scratch.Root);
+        var named = await Find(new("alpha", "SRC/App.?s"), scratch.Root);
+        var notSourceObj = await Find(new("alpha", @"-src\obj\"), scratch.Root);
+        var notAnyGen = await Find(new("alpha", @"-*\obj\Gen.cs"), scratch.Root);
+
+        await Assert.That(Paths(inSource, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"src\obj\Gen.cs"]);
+        await Assert.That(Paths(named, scratch.Root)).IsEquivalentTo([@"src\App.cs"]);
+        await Assert.That(Paths(notSourceObj, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"tests\App.cs", @"tests\obj\Gen.cs"]);
+        await Assert.That(Paths(notAnyGen, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"tests\App.cs"]);
+    }
+
+    // Folders one within another, as the open folders can be, and a file named that is in one
+    // of them: each file is found the once, or Replace would replace in it twice.
+    [Test]
+    public async Task AFileUnderTwoOfTheFoldersIsFoundOnce()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, "Top.cs", "alpha");
+        Write(scratch.Root, @"src\App.cs", "alpha");
+        Write(scratch.Root, @"src\obj\Gen.cs", "alpha");
+
+        var outerFirst = await Find(new("alpha", $@"{scratch.Root}, src, src\obj\Gen.cs"), scratch.Root);
+        var innerFirst = await Find(new("alpha", $@"src\obj\Gen.cs, src, {scratch.Root}"), scratch.Root);
+
+        await Assert.That(Paths(outerFirst, scratch.Root)).IsEquivalentTo(["Top.cs", @"src\App.cs", @"src\obj\Gen.cs"]);
+        await Assert.That(Paths(innerFirst, scratch.Root)).IsEquivalentTo([@"src\obj\Gen.cs", @"src\App.cs", "Top.cs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
     [Test]

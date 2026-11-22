@@ -1,8 +1,8 @@
 /// <summary>
 /// Finds what Find in Files looks for in a file's text: plain text, in any case unless asked
 /// otherwise, looked for with what the processor can do many characters of at once, or a .NET
-/// regular expression, with ^ and $ at each line's start and end. Whole word wants neither a
-/// letter, a digit nor an underscore either side.
+/// regular expression, with ^ and $ at each line's start and end, however the file ends its
+/// lines. Whole word wants neither a letter, a digit nor an underscore either side.
 /// </summary>
 sealed class Matcher
 {
@@ -134,7 +134,10 @@ sealed class Matcher
                 pattern = $@"\b(?:{pattern})\b";
             }
 
-            var options = RegexOptions.Multiline | RegexOptions.CultureInvariant;
+            // AnyNewLine, as most files here end their lines as Windows does: without it $ is
+            // only before a line feed, so after the carriage return, where nothing typed ends,
+            // and . takes the carriage return, which Replace would then take from the line.
+            var options = RegexOptions.Multiline | RegexOptions.CultureInvariant | RegexOptions.AnyNewLine;
             if (!query.CaseSensitive)
             {
                 options |= RegexOptions.IgnoreCase;

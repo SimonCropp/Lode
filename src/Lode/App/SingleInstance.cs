@@ -1,7 +1,8 @@
 /// <summary>
-/// One running Lode per user session. Lode stays in the tray rather than exiting, so a
-/// later launch (a folder opened from Explorer, Win+E, the command line) hands its folders to
-/// the copy already running and quits, instead of leaving another copy behind.
+/// One running Lode per user session, and one more for launches as administrator. Lode stays in
+/// the tray rather than exiting, so a later launch (a folder opened from Explorer, Win+E, the
+/// command line) hands its folders to the copy already running and quits, instead of leaving
+/// another copy behind.
 /// </summary>
 sealed class SingleInstance : IDisposable
 {
@@ -44,10 +45,21 @@ sealed class SingleInstance : IDisposable
         pipeName = name;
     }
 
+    // A copy run as administrator is a copy of its own as well, beside the one that isn't:
+    // Windows lets neither hand its folders to the other, the pipe being only for the same user
+    // at the same elevation. Named as the other is, each launch as administrator found the
+    // other's mutex, couldn't reach its pipe, and stayed: one more copy every time, none of
+    // them able to listen for the next.
     static string Name()
     {
+        var elevation = "";
+        if (Environment.IsPrivilegedProcess)
+        {
+            elevation = "-Administrator";
+        }
+
         using var process = Process.GetCurrentProcess();
-        return $"Lode-{Environment.UserDomainName}-{Environment.UserName}-{process.SessionId}{buildSuffix}";
+        return $"Lode-{Environment.UserDomainName}-{Environment.UserName}-{process.SessionId}{elevation}{buildSuffix}";
     }
 
     /// <summary>
