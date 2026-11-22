@@ -1827,10 +1827,10 @@ class MainForm : Form
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 
-    // Hours are what Options counts in, so once a minute is close enough.
+    // Hours are what Options counts in, so every five minutes is close enough.
     readonly Timer unusedTabsTimer = new()
     {
-        Interval = 60_000
+        Interval = 300_000
     };
 
     /// <summary>
