@@ -223,6 +223,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
  * **A shell extension that stops answering** is cut off after 3 seconds, and skipped for the session.
  * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options. A Debug build keeps its own, and runs beside the installed Lode.
 
+
 ## Keyboard
 
 | Keys                              | Action                        |
