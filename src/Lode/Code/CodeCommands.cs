@@ -460,7 +460,6 @@ static class CodeCommands
         Task.Run(
             () => InParallel(
                 repos,
-                cancel,
                 action,
                 done =>
                 {
@@ -468,7 +467,8 @@ static class CodeCommands
                     {
                         progress?.Report($"{done} of {repos.Count} done");
                     }
-                }),
+                },
+                cancel),
             cancel);
 
     /// <summary>
@@ -481,7 +481,7 @@ static class CodeCommands
     /// gave in the order the items are, and <paramref name="done"/> how many are done as each
     /// is. Cancelled, it starts no more, and gives only those it started.
     /// </summary>
-    internal static List<T> InParallel<T>(IReadOnlyList<string> items, Cancel cancel, Func<string, T> action, Action<int>? done = null)
+    internal static List<T> InParallel<T>(IReadOnlyList<string> items, Func<string, T> action, Action<int>? done = null, Cancel cancel = default)
         where T : class
     {
         var results = new T?[items.Count];

@@ -9,7 +9,7 @@ sealed class CommandPalette : Form
     IReadOnlyList<Command> commands;
     TextBox searchBox = new();
     ListBox list = new();
-    List<Command> shown = [];
+    IReadOnlyList<Command> shown = [];
     bool closing;
 
     /// <summary>
@@ -220,19 +220,20 @@ sealed class CommandPalette : Form
     /// The commands whose names hold every word of <paramref name="search"/>, ignoring case.
     /// Those with a word starting with the first search word come first; otherwise the order is kept.
     /// </summary>
-    internal static List<Command> Match(IReadOnlyList<Command> commands, string search) =>
+    internal static IReadOnlyList<Command> Match(IReadOnlyList<Command> commands, string search) =>
         Match(commands, _ => _.Name, search);
 
     /// <summary>
     /// The items whose <paramref name="name"/> holds every word of <paramref name="search"/>, as
-    /// commands are matched: the branch drop-up filters its branches so too.
+    /// commands are matched: the branch drop-up filters its branches so too. With nothing to
+    /// search for, the items themselves.
     /// </summary>
-    internal static List<T> Match<T>(IReadOnlyList<T> items, Func<T, string> name, string search)
+    internal static IReadOnlyList<T> Match<T>(IReadOnlyList<T> items, Func<T, string> name, string search)
     {
         var words = search.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (words.Length == 0)
         {
-            return items.ToList();
+            return items;
         }
 
         return items

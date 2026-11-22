@@ -484,7 +484,6 @@ public class CodeCommandsTests
 
         var results = CodeCommands.InParallel(
             items,
-            Cancel.None,
             item =>
             {
                 var now = Interlocked.Increment(ref running);

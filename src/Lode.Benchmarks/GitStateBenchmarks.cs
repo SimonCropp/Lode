@@ -60,7 +60,7 @@ public class GitStateBenchmarks
 
     [Benchmark]
     public int All() =>
-        CodeCommands.InParallel(repos, Cancel.None, _ => read(_, Cancel.None) ?? unreadable).Count;
+        CodeCommands.InParallel(repos, _ => read(_, Cancel.None) ?? unreadable).Count;
 
     static readonly string root = Path.Combine(Path.GetTempPath(), "LodeBenchmarks", "GitState");
 

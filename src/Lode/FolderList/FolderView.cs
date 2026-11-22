@@ -1941,7 +1941,6 @@ sealed class FolderView : UserControl
                 read = await Task.Run(
                     () => CodeCommands.InParallel(
                         wanted,
-                        token,
                         repo =>
                         {
                             // Read once between the views showing it, where there are several.
@@ -1955,7 +1954,8 @@ sealed class FolderView : UserControl
                             }
 
                             return state;
-                        }),
+                        },
+                        cancel: token),
                     token);
             }
             catch (OperationCanceledException)

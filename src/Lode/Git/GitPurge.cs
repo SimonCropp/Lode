@@ -211,7 +211,6 @@ static class GitPurge
         // Several folders looked in at once, as git runs in each on its own.
         var found = await Task.Run(() => CodeCommands.InParallel(
             folders,
-            Cancel.None,
             Find,
             done =>
             {

@@ -21,7 +21,7 @@ static class RecycleBin
             var type = Type.GetTypeFromProgID("Shell.Application");
             if (type == null)
             {
-                return [.. wanted];
+                return wanted;
             }
 
             dynamic shell = Activator.CreateInstance(type)!;

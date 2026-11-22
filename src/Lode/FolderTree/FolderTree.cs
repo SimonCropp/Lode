@@ -2081,7 +2081,7 @@ sealed class FolderTree : TreeView
 
         var bounds = node!.Bounds;
         var third = bounds.Height / 3;
-        var index = places.Pinned.ToList().FindIndex(_ => Locations.Same(_, node.Tag as string));
+        var index = IndexOf(places.Pinned, node.Tag as string);
         if (index < 0)
         {
             return null;
@@ -2098,6 +2098,20 @@ sealed class FolderTree : TreeView
         }
 
         return null;
+
+        // Run on each move of a drag, so the list is searched where it is, not copied first.
+        static int IndexOf(IReadOnlyList<string> pinned, string? path)
+        {
+            for (var position = 0; position < pinned.Count; position++)
+            {
+                if (Locations.Same(pinned[position], path))
+                {
+                    return position;
+                }
+            }
+
+            return -1;
+        }
     }
 
     /// <summary>
