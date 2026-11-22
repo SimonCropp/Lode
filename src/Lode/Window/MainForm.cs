@@ -2184,7 +2184,6 @@ class MainForm : Form
             }
         }
 
-        Avatars.Release();
         GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
     }
 

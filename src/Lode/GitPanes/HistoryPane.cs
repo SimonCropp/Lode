@@ -1,19 +1,21 @@
 /// <summary>
 /// The History pane, as GitHub Desktop's History tab lists commits: the branch's commits, newest
-/// first, each with its subject, its author's avatar and name, how long ago, its tags, and an
-/// arrow for one not pushed yet. Beneath, the files the commit picked changed, each shown changed
-/// on a double-click. A page of commits at a time, the next as the list nears its end.
+/// first, each with its subject, its author, how long ago, its tags, and an arrow for one not
+/// pushed yet. Beneath, the files the commit picked changed, each shown changed on a
+/// double-click. A page of commits at a time, the next as the list nears its end.
 /// </summary>
 sealed class HistoryPane : UserControl
 {
     // Pixels at 100% scale.
     const int inset = DesktopStyle.Inset;
-    const int avatarSize = 16;
+
+    const string notPushed = "Not pushed yet";
 
     PaneHeader header = new("History", Icons.History);
     PaneSplitContainer split = new();
     RowList commits;
     RowList files;
+    RowTip commitTip;
     RowTip fileTip;
     CommitHeading heading;
     Settings settings;
@@ -111,6 +113,7 @@ sealed class HistoryPane : UserControl
         commits.MouseUp += OnCommitsMouseUp;
         commits.GotFocus += (_, _) => commits.Invalidate();
         commits.LostFocus += (_, _) => commits.Invalidate();
+        commitTip = new(commits, CommitTipAt);
 
         files = new(DesktopStyle.RowHeight(Font))
         {
@@ -425,6 +428,9 @@ sealed class HistoryPane : UserControl
         files.SelectedIndices.Clear();
         files.SetRows(changed.Count);
         files.Invalidate();
+
+        // How many files it changed, which said none until they were read.
+        heading.Invalidate();
     }
 
     void OpenDiff(int row)
@@ -535,9 +541,8 @@ sealed class HistoryPane : UserControl
         return base.ProcessCmdKey(ref message, keyData);
     }
 
-    // As Desktop draws a commit: its summary semibold, and under it the author's avatar, their
-    // name and how long ago, smaller. At the right, its tags in grey pills, no more than half
-    // the row, and an arrow in a pill for one not pushed.
+    // As Desktop draws a commit: its summary semibold, and under it the author and how long ago,
+    // smaller. At the right, its tags and its arrow for one not pushed: see Indicators.
     void DrawCommit(Graphics graphics, Rectangle bounds, int index)
     {
         if (index >= loaded.Count)
@@ -555,54 +560,95 @@ sealed class HistoryPane : UserControl
         RowList.DrawRowLine(graphics, bounds);
         const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis;
         var left = bounds.Left + LogicalToDeviceUnits(inset);
-        var right = bounds.Right - LogicalToDeviceUnits(15);
-        var avatar = LogicalToDeviceUnits(avatarSize);
         var lineGap = LogicalToDeviceUnits(3);
-        var secondHeight = Math.Max(avatar, small.Height);
-        var top = bounds.Top + (bounds.Height - bold.Height - lineGap - secondHeight) / 2;
+        var top = bounds.Top + (bounds.Height - bold.Height - lineGap - small.Height) / 2;
 
         var (pill, pillText) = PillColours(onBlue, commits.SelectedIndices.Contains(index));
-        var pillHeight = Math.Max(LogicalToDeviceUnits(16), Font.Height + LogicalToDeviceUnits(1));
-        var pillTop = bounds.Top + (bounds.Height - pillHeight) / 2;
-        var indicatorRight = right;
-        var half = left + (right - left) / 2;
-        foreach (var tag in commit.Tags.Reverse())
+        var textRight = bounds.Right - LogicalToDeviceUnits(15);
+        foreach (var indicator in Indicators(commit, bounds))
         {
-            var width = TextRenderer.MeasureText(graphics, tag, Font, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + LogicalToDeviceUnits(10);
-            var badge = new Rectangle(indicatorRight - width, pillTop, width, pillHeight);
-            if (badge.Left < half)
+            if (indicator.Tag is { } tag)
             {
-                break;
+                DesktopStyle.DrawPill(graphics, indicator.Bounds, LogicalToDeviceUnits(DesktopStyle.Radius), pill, tag, Font, pillText);
+            }
+            else
+            {
+                var badge = indicator.Bounds;
+                var arrowSize = LogicalToDeviceUnits(12);
+                DesktopStyle.DrawPill(graphics, badge, LogicalToDeviceUnits(8), pill, "", Font, pillText);
+                graphics.DrawImage(Icons.Bitmap(Icons.PromotedFiles, arrowSize, pillText), badge.Left + (badge.Width - arrowSize) / 2, badge.Top + (badge.Height - arrowSize) / 2, arrowSize, arrowSize);
             }
 
-            DesktopStyle.DrawPill(graphics, badge, LogicalToDeviceUnits(DesktopStyle.Radius), pill, tag, Font, pillText);
-            indicatorRight = badge.Left - LogicalToDeviceUnits(5);
-        }
-
-        if (unpushed.Contains(commit.Sha))
-        {
-            var arrowSize = LogicalToDeviceUnits(12);
-            var badge = new Rectangle(indicatorRight - arrowSize - LogicalToDeviceUnits(10), pillTop, arrowSize + LogicalToDeviceUnits(10), pillHeight);
-            DesktopStyle.DrawPill(graphics, badge, LogicalToDeviceUnits(8), pill, "", Font, pillText);
-            graphics.DrawImage(Icons.Bitmap(Icons.PromotedFiles, arrowSize, pillText), badge.Left + (badge.Width - arrowSize) / 2, badge.Top + (badge.Height - arrowSize) / 2, arrowSize, arrowSize);
-            indicatorRight = badge.Left - LogicalToDeviceUnits(5);
-        }
-
-        // Desktop's 10 pixels between the text and the pills, the 5 after the last pill with them.
-        var textRight = right;
-        if (indicatorRight != right)
-        {
-            textRight = indicatorRight - LogicalToDeviceUnits(5);
+            // Desktop's 10 pixels between the text and the pills.
+            textRight = indicator.Bounds.Left - LogicalToDeviceUnits(10);
         }
 
         TextRenderer.DrawText(graphics, commit.Subject, bold, Rectangle.FromLTRB(left, top, textRight, top + bold.Height), text, flags);
 
         var secondTop = top + bold.Height + lineGap;
-        var avatarBounds = new Rectangle(left, secondTop + (secondHeight - avatar) / 2, avatar, avatar);
-        Avatars.Draw(graphics, avatarBounds, commit.Author, commit.Email, site?.Name == "GitHub");
         var byline = $"{commit.Author} • {GitBranches.Ago(commit.When, Time.GetUtcNow())}";
-        var bylineBounds = Rectangle.FromLTRB(left + LogicalToDeviceUnits(20), secondTop, textRight, secondTop + secondHeight);
-        TextRenderer.DrawText(graphics, byline, small, bylineBounds, secondary, flags | TextFormatFlags.VerticalCenter);
+        TextRenderer.DrawText(graphics, byline, small, Rectangle.FromLTRB(left, secondTop, textRight, secondTop + small.Height), secondary, flags);
+    }
+
+    /// <summary>
+    /// What is at the right of a commit's row drawn in <paramref name="bounds"/>, from the right:
+    /// its tags in grey pills, as many as fit in half the row, then an arrow in a pill for one not
+    /// pushed. Each with the tag it shows, null for the arrow, and its tooltip.
+    /// </summary>
+    List<(Rectangle Bounds, string? Tag, string Tip)> Indicators(GitCommit commit, Rectangle bounds)
+    {
+        var indicators = new List<(Rectangle, string?, string)>();
+        var left = bounds.Left + LogicalToDeviceUnits(inset);
+        var right = bounds.Right - LogicalToDeviceUnits(15);
+        var half = left + (right - left) / 2;
+        var pillHeight = Math.Max(LogicalToDeviceUnits(16), Font.Height + LogicalToDeviceUnits(1));
+        var pillTop = bounds.Top + (bounds.Height - pillHeight) / 2;
+        var gap = LogicalToDeviceUnits(5);
+        foreach (var tag in commit.Tags.Reverse())
+        {
+            var width = TextRenderer.MeasureText(tag, Font, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + LogicalToDeviceUnits(10);
+            var badge = new Rectangle(right - width, pillTop, width, pillHeight);
+            if (badge.Left < half)
+            {
+                break;
+            }
+
+            indicators.Add((badge, tag, $"Tag {tag}"));
+            right = badge.Left - gap;
+        }
+
+        if (unpushed.Contains(commit.Sha))
+        {
+            var width = LogicalToDeviceUnits(12) + LogicalToDeviceUnits(10);
+            indicators.Add((new(right - width, pillTop, width, pillHeight), null, notPushed));
+        }
+
+        return indicators;
+    }
+
+    /// <summary>
+    /// The tooltip at a point of the list of commits: what a tag or the arrow under it is. Null
+    /// elsewhere.
+    /// </summary>
+    internal string? CommitTipAt(Point point)
+    {
+        if (commits.HitTest(point).Item is not { } item ||
+            item.Index >= loaded.Count)
+        {
+            return null;
+        }
+
+        var row = commits.GetItemRect(item.Index);
+        row.Width = commits.Columns[0].Width;
+        foreach (var indicator in Indicators(loaded[item.Index], row))
+        {
+            if (indicator.Bounds.Contains(point))
+            {
+                return indicator.Tip;
+            }
+        }
+
+        return null;
     }
 
     // A tag's pill: white on the blue of the row picked in the list with the focus, darker on the
@@ -640,17 +686,6 @@ sealed class HistoryPane : UserControl
         ChangeRows.Draw(graphics, this, files.Font, room, changed[index], text, secondary, onBlue);
     }
 
-    /// <summary>
-    /// Draws the avatars that arrived since the list was last drawn.
-    /// </summary>
-    public void AvatarsArrived()
-    {
-        if (showing)
-        {
-            commits.Invalidate();
-        }
-    }
-
     // Slid out, a line down the left edge, which the padding leaves room for.
     protected override void OnPaint(PaintEventArgs args)
     {
@@ -675,6 +710,7 @@ sealed class HistoryPane : UserControl
             bold.Dispose();
             small.Dispose();
             title.Dispose();
+            commitTip.Dispose();
             fileTip.Dispose();
         }
 
@@ -682,8 +718,7 @@ sealed class HistoryPane : UserControl
     }
 
     // Above the files, as Desktop shows a commit picked: its summary, larger and semibold, then
-    // the author's avatar and name, its sha and when, smaller, and a grey bar saying how many
-    // files it changed. A line along its top, between it and the commits: with the commits cut
+    // its author, its sha and when, smaller, and a grey bar saying how many files it changed. A line along its top, between it and the commits: with the commits cut
     // off part way through a row, above that row's own line, nothing else stands between them.
     sealed class CommitHeading : Control
     {
@@ -697,7 +732,7 @@ sealed class HistoryPane : UserControl
             this.pane = pane;
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
             Dock = DockStyle.Top;
-            Height = 10 + pane.title.Height + 5 + Math.Max(avatarSize, pane.small.Height) + 10 + barHeight;
+            Height = 10 + pane.title.Height + 5 + pane.small.Height + 10 + barHeight;
             BackColor = DesktopStyle.Background;
         }
 
@@ -721,12 +756,9 @@ sealed class HistoryPane : UserControl
             var top = LogicalToDeviceUnits(10);
             TextRenderer.DrawText(graphics, commit.Subject, pane.title, Rectangle.FromLTRB(left, top, Width - left, top + pane.title.Height), DesktopStyle.Text, flags);
 
-            var avatar = LogicalToDeviceUnits(avatarSize);
             var metaTop = top + pane.title.Height + LogicalToDeviceUnits(5);
-            var metaHeight = Math.Max(avatar, pane.small.Height);
-            Avatars.Draw(graphics, new(left, metaTop + (metaHeight - avatar) / 2, avatar, avatar), commit.Author, commit.Email, pane.site?.Name == "GitHub");
             var meta = $"{commit.Author} • {commit.ShortSha} • {commit.When.ToLocalTime():g}";
-            TextRenderer.DrawText(graphics, meta, pane.small, Rectangle.FromLTRB(left + avatar + LogicalToDeviceUnits(5), metaTop, Width - left, metaTop + metaHeight), DesktopStyle.SecondaryText, flags | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(graphics, meta, pane.small, Rectangle.FromLTRB(left, metaTop, Width - left, metaTop + pane.small.Height), DesktopStyle.SecondaryText, flags);
 
             var bar = Rectangle.FromLTRB(0, Height - LogicalToDeviceUnits(barHeight), Width, Height);
             using (var fill = new SolidBrush(DesktopStyle.AltBackground))

@@ -1,7 +1,7 @@
 /// <summary>
 /// Answers for git while the Changes and History panes are tested in a window: a repository with
-/// a few changed files and a short history, read at once, with no origin, so no avatars are
-/// fetched, and panes that slide out without sliding. Puts back what was there when disposed.
+/// a few changed files and a short history, read at once, with no origin, and panes that slide
+/// out without sliding. Puts back what was there when disposed.
 /// </summary>
 sealed class PaneStubs : IDisposable
 {
@@ -27,12 +27,12 @@ sealed class PaneStubs : IDisposable
 
     public static List<GitCommit> History { get; } =
     [
-        Commit("e5f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9", "Rename several items at once", "Ada Lovelace", "ada@example.com", TimeSpan.FromHours(2)),
-        Commit("d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3", "Sort large folders off the UI thread", "Ada Lovelace", "ada@example.com", TimeSpan.FromHours(7), "0.25.0"),
-        Commit("c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2", "Wait less on git, the disk and the clipboard", "Grace Hopper", "grace@example.com", TimeSpan.FromHours(9)),
-        Commit("b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1", "Fix the smaller bugs the review found", "Alan Turing", "alan@example.com", TimeSpan.FromDays(1)),
-        Commit("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", "Update readme.md", "Grace Hopper", "grace@example.com", TimeSpan.FromDays(3), "0.24.0", "stable"),
-        Commit("f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9", "Initial commit", "Alan Turing", "alan@example.com", TimeSpan.FromDays(40))
+        Commit("e5f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9", "Rename several items at once", "Ada Lovelace", TimeSpan.FromHours(2)),
+        Commit("d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3", "Sort large folders off the UI thread", "Ada Lovelace", TimeSpan.FromHours(7), "0.25.0"),
+        Commit("c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2", "Wait less on git, the disk and the clipboard", "Grace Hopper", TimeSpan.FromHours(9)),
+        Commit("b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1", "Fix the smaller bugs the review found", "Alan Turing", TimeSpan.FromDays(1)),
+        Commit("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", "Update readme.md", "Grace Hopper", TimeSpan.FromDays(3), "0.24.0", "stable"),
+        Commit("f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9", "Initial commit", "Alan Turing", TimeSpan.FromDays(40))
     ];
 
     public static List<Change> CommitFiles { get; } =
@@ -43,8 +43,8 @@ sealed class PaneStubs : IDisposable
         new("src/Lode.Tests/Window/MainFormTests.cs", null, GitChange.Modified)
     ];
 
-    static GitCommit Commit(string sha, string subject, string author, string email, TimeSpan ago, params string[] tags) =>
-        new(sha, ["0000000000000000000000000000000000000000"], author, email, Now - ago, tags, subject);
+    static GitCommit Commit(string sha, string subject, string author, TimeSpan ago, params string[] tags) =>
+        new(sha, ["0000000000000000000000000000000000000000"], author, Now - ago, tags, subject);
 
     public PaneStubs()
     {

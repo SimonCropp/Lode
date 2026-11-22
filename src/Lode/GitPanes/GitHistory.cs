@@ -6,7 +6,6 @@ sealed record GitCommit(
     string Sha,
     IReadOnlyList<string> Parents,
     string Author,
-    string Email,
     DateTimeOffset When,
     IReadOnlyList<string> Tags,
     string Subject)
@@ -43,7 +42,7 @@ static class GitHistory
                 "-z",
                 "--no-show-signature",
                 "--encoding=UTF-8",
-                "--format=%H%x1f%P%x1f%aN%x1f%aE%x1f%at%x1f%D%x1f%s",
+                "--format=%H%x1f%P%x1f%aN%x1f%at%x1f%D%x1f%s",
                 $"--max-count={count}",
                 $"--skip={skip}",
                 "HEAD",
@@ -74,23 +73,22 @@ static class GitHistory
         foreach (var record in output.Split('\0'))
         {
             var fields = record.TrimStart('\n').Split('\u001f');
-            if (fields.Length < 7 ||
+            if (fields.Length < 6 ||
                 fields[0].Length == 0)
             {
                 continue;
             }
 
-            _ = long.TryParse(fields[4], out var seconds);
+            _ = long.TryParse(fields[3], out var seconds);
             commits.Add(
                 new(
                     fields[0],
                     fields[1].Split(' ', StringSplitOptions.RemoveEmptyEntries),
                     fields[2],
-                    fields[3],
                     DateTimeOffset.FromUnixTimeSeconds(seconds),
-                    TagsIn(fields[5]),
+                    TagsIn(fields[4]),
                     // A subject with a unit separator of its own is whole again.
-                    string.Join('\u001f', fields[6..])));
+                    string.Join('\u001f', fields[5..])));
         }
 
         return commits;

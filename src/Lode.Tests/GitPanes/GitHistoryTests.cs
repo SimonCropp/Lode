@@ -10,9 +10,9 @@ public class GitHistoryTests
     {
         var output = string.Join(
             '\0',
-            "aaa\u001fbbb ccc\u001fAda Lovelace\u001fada@example.com\u001f1743508800\u001fHEAD -> main, tag: v2.0, tag: stable, origin/main\u001fMerge branch 'side'",
-            "\nbbb\u001fddd\u001fGrace Hopper\u001fgrace@example.com\u001f1743422400\u001f\u001fFix it",
-            "\nddd\u001f\u001fAlan Turing\u001falan@example.com\u001f1743336000\u001ftag: v1.0\u001fInitial");
+            "aaa\u001fbbb ccc\u001fAda Lovelace\u001f1743508800\u001fHEAD -> main, tag: v2.0, tag: stable, origin/main\u001fMerge branch 'side'",
+            "\nbbb\u001fddd\u001fGrace Hopper\u001f1743422400\u001f\u001fFix it",
+            "\nddd\u001f\u001fAlan Turing\u001f1743336000\u001ftag: v1.0\u001fInitial");
 
         var commits = GitHistory.Parse(output);
 

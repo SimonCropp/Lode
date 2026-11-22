@@ -143,7 +143,6 @@ sealed class GitPanes : IDisposable
         paneSplit.Panel2.Controls.Add(columnSplit);
 
         GitCache.Stale += OnStale;
-        Avatars.Arrived += history.AvatarsArrived;
     }
 
     /// <summary>
@@ -844,7 +843,6 @@ sealed class GitPanes : IDisposable
     {
         disposed = true;
         GitCache.Stale -= OnStale;
-        Avatars.Arrived -= history.AvatarsArrived;
         hoverTimer.Dispose();
         retractTimer.Dispose();
         slideTimer.Dispose();

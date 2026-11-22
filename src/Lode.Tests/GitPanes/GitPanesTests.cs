@@ -226,6 +226,39 @@ public class GitPanesTests
         await Assert.That(ChangeRows.TipAt(list, new(4, list.ClientSize.Height - 2), shown)).IsNull();
     }
 
+    // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,
+    // nothing.
+    [Test]
+    public async Task CommitTips()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+
+        // Each row's indicators are at its right, the last of them furthest left.
+        Point Right(int index, int fromRight)
+        {
+            var row = list.GetItemRect(index);
+            row.Width = list.Columns[0].Width;
+            return new(row.Right - list.LogicalToDeviceUnits(fromRight), row.Top + row.Height / 2);
+        }
+
+        await Assert.That(pane.CommitTipAt(Right(0, 26))).IsEqualTo("Not pushed yet");
+        await Assert.That(pane.CommitTipAt(Right(1, 30))).IsEqualTo("Tag 0.25.0");
+        await Assert.That(pane.CommitTipAt(Right(4, 30))).IsEqualTo("Tag stable");
+        var subject = list.GetItemRect(0);
+        await Assert.That(pane.CommitTipAt(new(subject.Left + list.LogicalToDeviceUnits(40), subject.Top + subject.Height / 2))).IsNull();
+        await Assert.That(pane.CommitTipAt(Right(2, 30))).IsNull();
+    }
+
     // The picked commit's heading draws the line between it and the commits itself, with a
     // commit picked or not, so they never run together, wherever the splitter is.
     [Test]
