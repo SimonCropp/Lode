@@ -399,6 +399,49 @@ public class OptionsFormTests
             });
     }
 
+    // The setting changes as each key is typed, one pattern a line, blank lines left out, but
+    // the windows read their folders again only once, as Options closes.
+    [Test]
+    public async Task TypingPromotedFilesChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
+        var box = (TextBox) form.Controls.Find("promotedFiles", true)[0];
+
+        box.Text = "*.slnx";
+        box.Text = "*.slnx\r\n\r\n  Directory.*.props  ";
+        var changesWhileTyping = changes.Count;
+        form.Close();
+
+        await Assert.That(changesWhileTyping).IsEqualTo(0);
+        await Verify(
+            new
+            {
+                patterns = settings.PromotedFiles,
+                changes
+            });
+    }
+
+    // Opened again, the box has the patterns, and closing without a change reads nothing again.
+    [Test]
+    public async Task PromotedFilesShowWhatIsSet()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings {PromotedFiles = ["*.slnx", "Directory.*.props"]};
+        using var form = Show(scratch.Replacement(), settings);
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
+
+        var text = form.Controls.Find("promotedFiles", true)[0].Text;
+        form.Close();
+
+        await Assert.That(text).IsEqualTo($"*.slnx{Environment.NewLine}Directory.*.props");
+        await Assert.That(changes).IsEmpty();
+    }
+
     // Saved as the dialog closes, not only when the last window does.
     [Test]
     public async Task ClosingSavesTheSettings()
@@ -473,6 +516,10 @@ public class OptionsFormTests
     [Test]
     public Task CodePage() =>
         VerifyPage("Code", new() {CodeDirectory = @"C:\Code"});
+
+    [Test]
+    public Task PromotedFilesPage() =>
+        VerifyPage("Promoted files", new() {PromotedFiles = ["*.slnx", "Directory.*.props"]});
 
     [Test]
     public Task SearchPage() =>

@@ -1,0 +1,16 @@
+﻿[
+  '*.slnx' Lode.slnx: True,
+  '*.slnx' Lode.sln: False,
+  '*.slnx' LODE.SLNX: True,
+  'Directory.*' Directory.Build.props: True,
+  'Directory.*' Directory: False,
+  'Directory.*.props' Directory.Packages.props: True,
+  'Directory.*.props' Directory.props: False,
+  'Directory.*.props' Directory.Build.targets: False,
+  'Directory.Build.props' directory.build.props: True,
+  'Directory.Build.props' Directory.Build.props.user: False,
+  '  *.slnx  ' Lode.slnx: True,
+  '*' anything: True,
+  '*Build*' Directory.Build.props: False,
+  '' Lode.slnx: False
+]

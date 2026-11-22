@@ -187,6 +187,11 @@ sealed class Settings
     // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
     public bool PurgePermanently { get; set; }
 
+    // The files a folder down from a repository's root that are listed at the root too, as
+    // shortcuts, one pattern each: a whole name, or one with a * for how it starts and ends,
+    // *.slnx say. None unless added in Options. See PromotedFiles.
+    public List<string> PromotedFiles { get; set; } = [];
+
     // Find in Files' toggles, as last set in its strip: what it looks for is a regular
     // expression, in the case typed, as a whole word; Replace keeps each match's case; lines
     // either side of each match are shown, FindContextLines of them; hidden files are searched

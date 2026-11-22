@@ -1,0 +1,9 @@
+﻿{
+  path: Projects,
+  status: 1 item found,
+  filter: main,
+  rows: [
+    file    main.aleph  5,000 bytes  in Source
+  ],
+  selected: []
+}

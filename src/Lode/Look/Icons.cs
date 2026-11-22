@@ -86,6 +86,8 @@ static class Icons
     public const char Actions = '\uE945';
     public const char Code = '\uE943';
     public const char FileExplorer = '\uEC50';
+    // An arrow up, for the files a folder down listed at a repository's root too.
+    public const char PromotedFiles = '\uE74A';
     // A chain link, for the links sites hand to desktop apps.
     public const char Links = '\uE71B';
     // Arrows round in a circle, as Windows Update has.

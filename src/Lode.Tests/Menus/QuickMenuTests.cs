@@ -51,6 +51,26 @@ public class QuickMenuTests
         await Verify(Describe(view.ItemCommands([Entry(view, "notes.aleph")])));
     }
 
+    // A file promoted to a repository's root is a shortcut to it there: it opens and copies as
+    // the file, but isn't cut, renamed or deleted from there, nor has a shortcut or zip made
+    // beside it, out of sight. Nor is it, with another item.
+    [Test]
+    public async Task PromotedFileMenu()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At(".git"));
+        File.SetAttributes(fixture.At(".git"), FileAttributes.Directory | FileAttributes.Hidden);
+        using var view = await Open(fixture.Root, new() {ShowHidden = false, PromotedFiles = ["main.aleph"]});
+        var promoted = view.Entries.Single(_ => _.Promoted);
+
+        await Verify(
+            new
+            {
+                alone = Describe(view.ItemCommands([promoted])),
+                withAnother = Describe(view.ItemCommands([promoted, Entry(view, "notes.aleph")]))
+            });
+    }
+
     // Text files offer Edit, after Open.
     [Test]
     public async Task TextFileMenu()

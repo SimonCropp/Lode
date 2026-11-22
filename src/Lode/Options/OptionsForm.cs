@@ -158,6 +158,23 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 3)
     };
 
+    // One pattern a line. See PromotedFiles.
+    TextBox promotedFiles = new()
+    {
+        Name = "promotedFiles",
+        Multiline = true,
+        AcceptsReturn = true,
+        ScrollBars = ScrollBars.Vertical,
+        PlaceholderText = "*.slnx",
+        Width = 300,
+        Height = 150
+    };
+
+    // The patterns windows were last told of. Typing changes the setting at once, but the
+    // windows read their folders again only once the box is left, or Options closes, rather than
+    // for every key.
+    List<string> promotedApplied;
+
     // Shows the shield Windows puts on buttons that ask for administrator permission.
     Button excludeFromDefender = new()
     {
@@ -433,6 +450,12 @@ class OptionsForm : Form
         };
         purgePermanently.Checked = settings.PurgePermanently;
         purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
+        promotedFiles.Text = string.Join(Environment.NewLine, settings.PromotedFiles);
+        promotedApplied = [.. settings.PromotedFiles];
+        promotedFiles.TextChanged += (_, _) => settings.PromotedFiles = PatternLines(promotedFiles.Text);
+        promotedFiles.Leave += (_, _) => ApplyPromotedFiles();
+        // Its scroll bar dark in the dark theme, as the rest of Lode's are.
+        promotedFiles.HandleCreated += (_, _) => SetWindowTheme(promotedFiles.Handle, ExplorerStyle.ControlTheme, null);
         theme.SelectedIndex = (int) settings.Theme;
         theme.SelectedIndexChanged += (_, _) =>
         {
@@ -485,6 +508,7 @@ class OptionsForm : Form
         AddPage("Actions", Icons.Actions, BuildActionsPage());
         AddPage("Search", Icons.Search, BuildSearchPage());
         AddPage("Code", Icons.Code, BuildCodePage());
+        AddPage("Promoted files", Icons.PromotedFiles, BuildPromotedFilesPage());
         AddPage("File Explorer", Icons.FileExplorer, BuildExplorerPage());
         AddPage("Links", Icons.Links, BuildLinksPage());
         AddPage("Updates", Icons.Updates, BuildUpdatesPage());
@@ -782,6 +806,39 @@ class OptionsForm : Form
             "permission.",
             excludeFromDefender)
     ];
+
+    Control[] BuildPromotedFilesPage() =>
+    [
+        Description(
+            "At a git repository's root, Lode also lists the files these name in the folders " +
+            @"just below it, as shortcuts with the arrow, so src\Lode.slnx opens from the root " +
+            "without going into src. Rename, Cut and Delete aren't offered on them there.",
+            new(3, 0, 3, 9)),
+        Description(
+            "One a line: a whole name, or one with a *, before which is how the name starts, and " +
+            "after which how it ends, as in *.slnx or Directory.*.props. Case doesn't matter.",
+            new(3, 0, 3, 9)),
+        promotedFiles
+    ];
+
+    // The patterns typed, one a line, without the blank lines.
+    static List<string> PatternLines(string text) =>
+        text
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+    // Tells the windows of patterns changed since they were last told, to read their folders
+    // again.
+    void ApplyPromotedFiles()
+    {
+        if (settings.PromotedFiles.SequenceEqual(promotedApplied))
+        {
+            return;
+        }
+
+        promotedApplied = [.. settings.PromotedFiles];
+        SettingsChanged?.Invoke(SettingsChange.Listing);
+    }
 
     Control[] BuildSearchPage()
     {
@@ -1533,6 +1590,7 @@ class OptionsForm : Form
     protected override void OnFormClosed(FormClosedEventArgs args)
     {
         base.OnFormClosed(args);
+        ApplyPromotedFiles();
         settings.Save();
     }
 

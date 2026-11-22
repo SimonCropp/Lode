@@ -1,5 +1,8 @@
 /// <param name="InArchive">In a zip, which Lode shows but doesn't change: opened, copied or
 /// dragged out by extracting it first, never renamed, cut or deleted.</param>
+/// <param name="Promoted">A file a folder down from a repository's root, listed at the root too
+/// as a shortcut to it, because Options names it. See PromotedFiles. Opened, copied and dragged
+/// as the file it is, but never renamed, cut or deleted from the root.</param>
 record FileEntry(
     string Name,
     string FullPath,
@@ -10,7 +13,8 @@ record FileEntry(
     bool IsDrive = false,
     long FreeSpace = 0,
     bool IsShare = false,
-    bool InArchive = false)
+    bool InArchive = false,
+    bool Promoted = false)
 {
     // An entry made from another with a new path, by with, is in that path's folder.
     public string FullPath

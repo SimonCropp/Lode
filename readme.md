@@ -149,6 +149,12 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![Column header menu](src/Lode.Tests/Menus/MenuTests.ColumnMenu.verified.png)
 
+ * <a id="promoted-files"></a>**Promoted files**: at a git repository's root, the files just below it that you name, `src\Lode.slnx` or `src\Directory.Build.props` say, are listed there too, as shortcuts with the arrow, so they open without going into `src`. Name them on the **Promoted files** page of Options, one a line: a whole name, or one with a `*`, before which is how the name starts and after which how it ends (`*.slnx`, `Directory.*.props`). They open, edit, copy and drag as the file itself, but Rename, Cut and Delete aren't offered on them at the root. Only the folders just below the root are looked in, and nothing is written to the repository.
+
+   The **Promoted files** page of **Options**:
+
+   ![The Promoted files page of Options](src/Lode.Tests/Options/OptionsFormTests.PromotedFilesPage.verified.png)
+
  * <a id="right-click-menu"></a>**A right-click menu that opens at once**: Open, Terminal, Terminal (admin), Cut, Copy, Rename, Delete, Create shortcut, Copy as path, Properties and so on. **Open with** lists the apps Windows recommends. **New** on empty space makes a folder, or a file of a type Windows offers. **Show more options**, or Shift+right-click, opens the classic Windows menu, with installed shell extensions; its Delete, Create shortcut and New are done by Lode, so Ctrl+Z undoes them.
 
    The right-click menu on a folder:
@@ -165,6 +171,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    * **Actions**: the bar's buttons and the menus' entries.
    * **Search**: whether the search box searches what git ignores, Find in Files' context lines, and turning Windows Search off, or on again, which Lode doesn't use.
    * **Code**: the code folder, how Git purge deletes, excluding the code folder from Defender.
+   * **Promoted files**: [the files just below a repository's root listed there too](#promoted-files).
    * **File Explorer**: replace it, or restore it.
    * **Links**: [Repository links](#repository-links).
 

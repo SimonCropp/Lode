@@ -1,0 +1,36 @@
+﻿{
+  alone: [
+    Open,
+    Open with,
+      Choose another app,
+    ----,
+    Cut (disabled),
+    Copy,
+    Rename (disabled),
+    Delete (disabled),
+    ----,
+    Create shortcut (disabled),
+    Compress to ZIP file (disabled),
+    Copy as path,
+    Properties,
+    ----,
+    Show more options
+  ],
+  withAnother: [
+    Open,
+    Open with,
+      None (disabled),
+    ----,
+    Cut (disabled),
+    Copy,
+    Rename (disabled),
+    Delete (disabled),
+    ----,
+    Create shortcut (disabled),
+    Compress to ZIP file (disabled),
+    Copy as path,
+    Properties,
+    ----,
+    Show more options
+  ]
+}

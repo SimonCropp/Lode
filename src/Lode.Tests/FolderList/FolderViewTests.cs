@@ -52,6 +52,119 @@ public class FolderViewTests
             .IsEqualTo(ShellListView.PaddedIcon(ShellIcons.GetIcon(target, false)));
     }
 
+    // At a repository's root, the files a folder down that Options names are listed too, as
+    // shortcuts to them: not those further down, nor any in a hidden folder while hidden items
+    // aren't shown.
+    [Test]
+    public async Task PromotesFilesFromTheFoldersBelowARepositoryRoot()
+    {
+        using var fixture = CreateRepository();
+        await File.WriteAllBytesAsync(fixture.At("Cache", "cached.aleph"), new byte[5]);
+        using var view = await Open(fixture.Root, Promoting("*.aleph"));
+
+        await Verify(Describe(view, fixture));
+    }
+
+    [Test]
+    public async Task NothingIsPromotedOutsideARepository()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root, Promoting("*.aleph"));
+
+        await Assert.That(view.Entries.Any(_ => _.Promoted)).IsFalse();
+    }
+
+    // Never what git keeps for itself, even with hidden items shown.
+    [Test]
+    public async Task NothingIsPromotedFromGit()
+    {
+        using var fixture = CreateRepository();
+        await File.WriteAllBytesAsync(fixture.At(".git", "config.aleph"), new byte[5]);
+        using var view = await Open(fixture.Root, Promoting("*.aleph", showHidden: true));
+
+        await Assert.That(Names(view)).Contains("guide.aleph");
+        await Assert.That(Names(view)).DoesNotContain("config.aleph");
+    }
+
+    [Test]
+    public async Task APromotedFileShowsTheArrow()
+    {
+        using var fixture = CreateRepository();
+        using var view = await Open(fixture.Root, Promoting("main.aleph"));
+
+        var row = view.FindRow("main", 0);
+
+        await Assert.That(view.RowIcon(row))
+            .IsEqualTo(ShellListView.PaddedIcon(ShellIcons.GetIcon(fixture.At("Source", "main.aleph"), false), ShellIcons.ShortcutOverlay));
+    }
+
+    // Written to where it is, a folder down, which the watch of the root alone wouldn't hear of.
+    [Test]
+    public async Task APromotedFileChangedOnDiskIsPickedUp()
+    {
+        using var fixture = CreateRepository();
+        using var view = await Open(fixture.Root, Promoting("main.aleph"));
+
+        await File.WriteAllBytesAsync(fixture.At("Source", "main.aleph"), new byte[7_000]);
+
+        await Pump.Until(() => view.Entries.Any(_ => _ is {Name: "main.aleph", Size: 7_000}));
+    }
+
+    // The search of the subfolders finds it where it is, with its folder, so the row promoted
+    // to the root makes way for that one.
+    [Test]
+    public async Task ASearchListsAPromotedFileOnce()
+    {
+        using var fixture = CreateRepository();
+        using var view = await Open(fixture.Root, Promoting("main.aleph"));
+
+        view.Filter = "main";
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
+    // It is a shortcut to the file: deleting or renaming it from the root does nothing, nor
+    // does renaming another item selected with it.
+    [Test]
+    public async Task APromotedFileIsNotDeletedOrRenamed()
+    {
+        using var fixture = CreateRepository();
+        using var view = await Open(fixture.Root, Promoting("main.aleph"));
+        var names = Names(view);
+        var promoted = names.IndexOf("main.aleph");
+        var other = names.IndexOf("notes.aleph");
+        view.List.SelectedIndices.Add(promoted);
+
+        view.Delete(false);
+        var renamingIt = new LabelEditEventArgs(promoted);
+        view.OnBeforeLabelEdit(null, renamingIt);
+        view.List.SelectedIndices.Add(other);
+        var renamingAnother = new LabelEditEventArgs(other);
+        view.OnBeforeLabelEdit(null, renamingAnother);
+
+        await Assert.That(File.Exists(fixture.At("Source", "main.aleph"))).IsTrue();
+        await Assert.That(renamingIt.CancelEdit).IsTrue();
+        await Assert.That(renamingAnother.CancelEdit).IsTrue();
+    }
+
+    // The fixture with a .git folder at its root, hidden as git for Windows makes it.
+    static Fixture CreateRepository([CallerFilePath] string file = "", [CallerMemberName] string member = "")
+    {
+        var fixture = Fixture.Create(file, member);
+        var git = fixture.At(".git");
+        Directory.CreateDirectory(git);
+        File.SetAttributes(git, FileAttributes.Directory | FileAttributes.Hidden);
+        return fixture;
+    }
+
+    static Settings Promoting(string pattern, bool showHidden = false) =>
+        new()
+        {
+            ShowHidden = showHidden,
+            PromotedFiles = [pattern]
+        };
+
     [Test]
     public async Task ListsFoldersFirstInNaturalOrder()
     {
@@ -3066,6 +3179,7 @@ public class FolderViewTests
     {
         var kind = entry.IsDirectory ? "folder" : "file  ";
         var hidden = entry.IsHidden ? "  (hidden)" : "";
+        var promoted = entry.Promoted ? "  (promoted)" : "";
         var size = entry.IsDirectory ? "" : $"  {entry.Size:N0} bytes";
         var parent = Path.GetDirectoryName(entry.FullPath)!;
         var where = "";
@@ -3074,6 +3188,6 @@ public class FolderViewTests
             where = $"  in {Path.GetRelativePath(folder, parent)}";
         }
 
-        return $"{kind}  {entry.Name}{size}{hidden}{where}";
+        return $"{kind}  {entry.Name}{size}{hidden}{promoted}{where}";
     }
 }

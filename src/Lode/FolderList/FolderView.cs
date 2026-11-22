@@ -62,6 +62,15 @@ sealed class FolderView : UserControl
     FolderWatcher? parentWatcher;
     ChangeSignal parentChanges;
 
+    // Watches all through a repository's root that has files promoted to it, for changes to
+    // those, which the folder's own watch, of only what is in it, misses. See WatchPromoted.
+    FolderWatcher? promotedWatcher;
+    string? promotedRoot;
+
+    // The patterns the watch goes by, read on its thread: the latest read's, so the watch needn't
+    // start again when they change.
+    volatile PromotedFiles? promotedPatterns;
+
     // What the watch on the parent saw renamed, from where to where, still to be followed.
     ConcurrentQueue<(string From, string To)> renames = new();
 
@@ -1752,12 +1761,23 @@ sealed class FolderView : UserControl
 
         // Not changed once made, so sorting by it there is safe.
         var cells = gitCells;
+
+        // Neither a zip, nor This PC or a machine's shares, has a repository's root to promote
+        // files to.
+        PromotedFiles? promoted = null;
+        if (!IsReadOnly &&
+            settings.PromotedFiles.Count > 0 &&
+            PromotedFiles.Parse(settings.PromotedFiles) is {IsEmpty: false} patterns)
+        {
+            promoted = patterns;
+        }
+
         loading = true;
 
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
         // space is read there as well, as asking a drive mapped to a share waits on the network.
-        // So are which folders are repositories.
-        var (loaded, late, free, failure, nearest, foundRepos, containing) = await Task.Run(() =>
+        // So are which folders are repositories, and the files promoted to a repository's root.
+        var (loaded, late, free, failure, nearest, foundRepos, containing, promotes) = await Task.Run(() =>
         {
             var space = FreeSpaceOf(path, freeSpace);
             // A watch that failed, the folder deleted and made again say, watches again
@@ -1767,15 +1787,23 @@ sealed class FolderView : UserControl
             try
             {
                 var found = Enumerate(path, showHidden, hiddenSystem, out var late);
+                PromotedFiles? promotes = null;
+                if (promoted != null &&
+                    CodeCommands.IsRepo(path))
+                {
+                    promotes = promoted;
+                    found.AddRange(promoted.Find(found, showHidden, hiddenSystem));
+                }
+
                 found.Sort((first, second) => Compare(first, second, column, ascending, cells));
                 var (foundRepos, containing) = FindRepos(found, path, codeFolder);
-                return (found, late, space, null, null, foundRepos, containing);
+                return (found, late, space, null, null, foundRepos, containing, promotes);
             }
             catch (Exception exception)
             {
                 // Not there to read. Gone, the view goes up to the nearest folder that is.
                 var nearest = MeansGone(exception) ? NearestFolder(path) : null;
-                return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?) exception.Message, nearest, new HashSet<string>(), (string?) null);
+                return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?) exception.Message, nearest, new HashSet<string>(), (string?) null, (PromotedFiles?) null);
             }
         });
 
@@ -1790,6 +1818,8 @@ sealed class FolderView : UserControl
             Open(nearest, null);
             return;
         }
+
+        WatchPromoted(path, promotes);
 
         FreeSpaceText = free;
         entries = loaded;
@@ -2577,7 +2607,7 @@ sealed class FolderView : UserControl
                 var beforeEntries = entries;
                 var beforeEdits = entryEdits;
                 var beforeFilter = filter;
-                var own = entries.Where(_ => Matches(beforeFilter, _.Name)).ToList();
+                var own = OwnMatches(beforeFilter);
                 var ownSorted = entriesSort == (column, ascending);
                 var merged = await Task.Run(
                     () => MergeBatches(before, beforeSort == (column, ascending), batches, own, ownSorted, column, ascending, cells),
@@ -3627,7 +3657,8 @@ sealed class FolderView : UserControl
             Cell(entry, sizeColumn)
         ];
         // A shortcut's icon is what it points at, with the shell's arrow over it, as Explorer has it.
-        // In a zip there is no file to read for one, so each has its type's.
+        // A file promoted to a repository's root is as good as a shortcut to it, so has the arrow
+        // too. In a zip there is no file to read for one, so each has its type's.
         int icon;
         if (entry.InArchive)
         {
@@ -3635,9 +3666,15 @@ sealed class FolderView : UserControl
         }
         else
         {
+            var overlay = ShellIcons.ShortcutOverlay;
+            if (!entry.Promoted)
+            {
+                overlay = ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory);
+            }
+
             icon = ShellListView.PaddedIcon(
                 ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified, FileIconKnown),
-                ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory));
+                overlay);
         }
 
         var item = new ListViewItem(ShownCells(cells), icon) {Tag = entry};
@@ -3707,7 +3744,7 @@ sealed class FolderView : UserControl
             return [.. entries];
         }
 
-        var matches = entries.Where(_ => Matches(filter, _.Name)).ToList();
+        var matches = OwnMatches(filter);
         if (found.Count == 0)
         {
             return matches;
@@ -3715,6 +3752,15 @@ sealed class FolderView : UserControl
 
         return Merge(matches, found, Order(sortColumn, sortAscending, gitCells));
     }
+
+    // The folder's own items the filter matches. Not those promoted to a repository's root: the
+    // search of the subfolders finds them where they are, and shows them with their folder, so
+    // they would otherwise show twice.
+    List<FileEntry> OwnMatches(string filter) =>
+        entries
+            .Where(_ => !_.Promoted &&
+                        Matches(filter, _.Name))
+            .ToList();
 
     internal static Comparison<FileEntry> Order(int column, bool ascending, GitCells? cells = null) =>
         (first, second) => Compare(first, second, column, ascending, cells);
@@ -4039,6 +4085,13 @@ sealed class FolderView : UserControl
             return;
         }
 
+        // Nor is a file promoted to a repository's root cut from there, only copied.
+        if (cut &&
+            selection.Any(_ => _.Promoted))
+        {
+            return;
+        }
+
         FileOperations.CopyToClipboard(SelectedPaths(), cut);
     }
 
@@ -4126,6 +4179,13 @@ sealed class FolderView : UserControl
 
     public void Delete(bool permanent)
     {
+        // A file promoted to a repository's root is a shortcut to it there, which is not how to
+        // delete it, as the right-click menu says by not offering to.
+        if (SelectedEntries().Any(_ => _.Promoted))
+        {
+            return;
+        }
+
         var paths = SelectedPaths();
         if (paths.Length == 0)
         {
@@ -4305,8 +4365,10 @@ sealed class FolderView : UserControl
     internal void OnBeforeLabelEdit(object? sender, LabelEditEventArgs args)
     {
         if (args.Item >= displayed.Count ||
-            displayed[args.Item].IsPlace ||
-            displayed[args.Item].InArchive)
+            displayed[args.Item] is {IsPlace: true} or {InArchive: true} ||
+            // Renaming one renames every item selected, which a file promoted to a repository's
+            // root is not to be renamed with.
+            SelectedEntries().Any(_ => _.Promoted))
         {
             args.CancelEdit = true;
             return;
@@ -4500,8 +4562,7 @@ sealed class FolderView : UserControl
             typedOn.FullPath,
             .. selection
                 .Where(_ => _ != typedOn &&
-                            !_.IsPlace &&
-                            !_.InArchive)
+                            _ is {IsPlace: false, InArchive: false})
                 .Select(_ => _.FullPath)
         ];
         var renamed = FileOperations.RenameSeveral(Owner, paths, newName);
@@ -4549,7 +4610,9 @@ sealed class FolderView : UserControl
                 using var menu = new ShellContextMenu();
                 ShowItemMenu(menu, selection, location);
             },
-            settings.ShowsInMenu(LodeActions.More) && !InArchive);
+            settings.ShowsInMenu(LodeActions.More) &&
+            !InArchive &&
+            !selection.Any(_ => _.Promoted));
 
     /// <summary>
     /// The fixed right-click menu for selected items. A null entry is a separator.
@@ -4563,11 +4626,13 @@ sealed class FolderView : UserControl
 
         // Worked out in one pass: the actions bar asks for these each time the selection changes.
         var anyPlace = false;
+        var anyPromoted = false;
         var allFolders = true;
         var allFiles = true;
         foreach (var entry in selection)
         {
             anyPlace |= entry.IsPlace;
+            anyPromoted |= entry.Promoted;
             if (entry.IsDirectory)
             {
                 allFiles = false;
@@ -4622,16 +4687,20 @@ sealed class FolderView : UserControl
             }
         }
 
+        // A file promoted to a repository's root is a shortcut to it there, so is not cut,
+        // renamed or deleted from there. Nor is a shortcut made to it, or a zip of it, which
+        // would go beside the file, out of sight of the root.
+        var changeable = !anyPlace && !anyPromoted;
         commands.AddRange(
         [
             null,
-            LodeActions.Command("cut", () => Copy(true), !anyPlace),
+            LodeActions.Command("cut", () => Copy(true), changeable),
             LodeActions.Command("copy", () => Copy(false), !anyPlace),
-            LodeActions.Command("rename", BeginRename, selection.Count > 0 && !anyPlace),
-            LodeActions.Command("delete", () => Delete(false), !anyPlace),
+            LodeActions.Command("rename", BeginRename, selection.Count > 0 && changeable),
+            LodeActions.Command("delete", () => Delete(false), changeable),
             null,
-            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyPlace),
-            LodeActions.Command("compress", () => Compress(selection), !anyPlace),
+            LodeActions.Command("createShortcut", () => CreateShortcuts(selection), changeable),
+            LodeActions.Command("compress", () => Compress(selection), changeable),
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
             LodeActions.Command("properties", ShowProperties)
         ]);
@@ -4873,10 +4942,11 @@ sealed class FolderView : UserControl
         string.Join(Environment.NewLine, paths.Select(_ => $"\"{_}\""));
 
     // Windows' own menu. Not for what is in a zip, which it would change: Shift+right-click
-    // there opens nothing.
+    // there opens nothing. Nor for a file promoted to a repository's root, which it would cut,
+    // rename or delete as it would the file itself, and which isn't in the folder open.
     void ShowItemMenu(ShellContextMenu menu, List<FileEntry> selection, Point location)
     {
-        if (selection.Any(_ => _.InArchive))
+        if (selection.Any(_ => _.InArchive || _.Promoted))
         {
             return;
         }
@@ -5007,8 +5077,16 @@ sealed class FolderView : UserControl
             return;
         }
 
+        // A file promoted to a repository's root is dragged as a copy, or a shortcut, never moved
+        // from where it is by a drag from where it is only shown.
+        var effects = DragDropEffects.Copy | DragDropEffects.Link;
+        if (!selection.Any(_ => _.Promoted))
+        {
+            effects |= DragDropEffects.Move;
+        }
+
         var data = new DataObject(DataFormats.FileDrop, paths);
-        list.DoDragDrop(data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
+        list.DoDragDrop(data, effects);
     }
 
     // What is in a zip is dragged as copies extracted to the temp folder, there and then, as the
@@ -5175,6 +5253,64 @@ sealed class FolderView : UserControl
         watcher = null;
         parentWatcher?.Dispose();
         parentWatcher = null;
+        StopWatchingPromoted();
+    }
+
+    // A promoted file's date and size, or one made or deleted, is a change the folder's own watch
+    // doesn't see, as the file is a folder down. So a root with files promoted to it is watched
+    // all through, once a read has found it is one, and a change to a file a pattern names there
+    // has it read again. Not on the network, where starting a watch waits on it.
+    void WatchPromoted(string root, PromotedFiles? patterns)
+    {
+        if (patterns == null ||
+            IsRemote(root))
+        {
+            StopWatchingPromoted();
+            return;
+        }
+
+        if (promotedWatcher == null ||
+            !Locations.Same(promotedRoot, root))
+        {
+            StopWatchingPromoted();
+            StartWatchingPromoted(root);
+        }
+
+        promotedPatterns = patterns;
+    }
+
+    void StartWatchingPromoted(string root)
+    {
+        try
+        {
+            promotedWatcher = new(
+                root,
+                NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                changes.Raise,
+                subfolders: true,
+                changedAt: path =>
+                {
+                    if (promotedPatterns is { } current &&
+                        current.Promotes(root, path))
+                    {
+                        changes.Raise();
+                    }
+                });
+            promotedRoot = root;
+        }
+        catch (Exception)
+        {
+            // Not to be watched. F5 still reads the promoted files again.
+            promotedWatcher = null;
+        }
+    }
+
+    void StopWatchingPromoted()
+    {
+        promotedWatcher?.Dispose();
+        promotedWatcher = null;
+        promotedRoot = null;
+        promotedPatterns = null;
     }
 
     // The folder's name came or went in its parent. Renamed, by anything, the view follows it to
@@ -5439,6 +5575,7 @@ sealed class FolderView : UserControl
             parentChanges.Dispose();
             watcher?.Dispose();
             parentWatcher?.Dispose();
+            promotedWatcher?.Dispose();
             marquee.Dispose();
             italic.Dispose();
         }

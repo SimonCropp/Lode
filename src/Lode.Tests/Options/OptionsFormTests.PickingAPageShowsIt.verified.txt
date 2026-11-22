@@ -5,6 +5,7 @@
     Actions,
     Search,
     Code,
+    Promoted files,
     File Explorer,
     Links,
     Updates

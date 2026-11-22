@@ -24,6 +24,7 @@
   "TextEditor": null,
   "CodeDirectory": null,
   "PurgePermanently": false,
+  "PromotedFiles": [],
   "FindRegex": false,
   "FindCaseSensitive": false,
   "FindWholeWord": false,
