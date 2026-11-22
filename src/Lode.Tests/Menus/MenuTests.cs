@@ -34,7 +34,7 @@ public class MenuTests
         using var view = await Open(fixture.Root, settings);
         var docs = view.Entries.Single(_ => _.Name == "Docs");
 
-        await CaptureMenu(QuickMenu.Build(LodeActions.ForMenu(view.ItemCommands([docs]), settings), () => { }, _ => { }));
+        await Verify(QuickMenu.Build(LodeActions.ForMenu(view.ItemCommands([docs]), settings), () => { }, _ => { }));
     }
 
     // New, from the right-click menu on empty space: Folder, then each file type with its icon.
@@ -65,7 +65,7 @@ public class MenuTests
             })
             .ToList();
 
-        await CaptureMenu(QuickMenu.Build(children, null, _ => { }));
+        await Verify(QuickMenu.Build(children, null, _ => { }));
     }
 
     // SIID_ values, for the system image list.
@@ -119,7 +119,7 @@ public class MenuTests
         _ = tree.Handle;
         var thisPC = tree.Nodes.Cast<TreeNode>().Last();
 
-        await CaptureMenu(QuickMenu.Build(LodeActions.ForMenu(tree.ThisPCCommands(thisPC), settings), () => { }, _ => { }));
+        await Verify(QuickMenu.Build(LodeActions.ForMenu(tree.ThisPCCommands(thisPC), settings), () => { }, _ => { }));
     }
 
     // See more, at the end of the actions bar, with a file selected.
@@ -131,7 +131,7 @@ public class MenuTests
         form.ActiveView!.Reveal(fixture.At("notes.aleph"));
         await Pump.Loaded(form.ActiveView);
 
-        await CaptureMenu(QuickMenu.Build(form.OverflowCommands(Point.Empty), null, _ => { }));
+        await Verify(QuickMenu.Build(form.OverflowCommands(Point.Empty), null, _ => { }));
     }
 
     // The ⋯ menu at the right of the address bar.
@@ -141,7 +141,7 @@ public class MenuTests
         using var fixture = Fixture.Create();
         using var form = await Show(fixture);
 
-        await CaptureMenu(QuickMenu.Build(form.WindowCommands(), null, _ => { }));
+        await Verify(QuickMenu.Build(form.WindowCommands(), null, _ => { }));
     }
 
     // Right-clicking a column header, with Size hidden.
@@ -157,7 +157,7 @@ public class MenuTests
                 HiddenColumns = ["Size"]
             });
 
-        await CaptureMenu(view.HeaderMenu(clickedColumn: 1));
+        await Verify(view.HeaderMenu(clickedColumn: 1));
     }
 
     // Ctrl+Shift+P, with "close" typed, on the middle of three tabs.
@@ -223,23 +223,6 @@ public class MenuTests
         form.Show();
         await Pump.Loaded(form.ActiveView!);
         return form;
-    }
-
-    // A menu is a window of its own, shown off screen here and drawn as it would be on screen.
-    static async Task CaptureMenu(ToolStripDropDown menu)
-    {
-        using (menu)
-        {
-            menu.Show(new(-20000, -20000));
-            Application.DoEvents();
-            using var bitmap = new Bitmap(menu.Width, menu.Height);
-            menu.DrawToBitmap(bitmap, new(Point.Empty, menu.Size));
-            menu.Close();
-            var stream = new MemoryStream();
-            bitmap.Save(stream, ImageFormat.Png);
-            stream.Position = 0;
-            await Verify(stream, "png");
-        }
     }
 
     sealed class QuietForm(string[] arguments, Settings settings, Places places) :

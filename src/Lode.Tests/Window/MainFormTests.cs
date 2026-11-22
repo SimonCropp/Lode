@@ -155,12 +155,13 @@ public class MainFormTests
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
         using var form = new QuietForm([fixture.Root], settings, places);
 
-        // Verify.WinForms turns this off before it draws. Changing it on a visible form makes
-        // Windows recreate every control's window, which resets which tab page is showing,
-        // so it is already off by the time the form is shown.
+        // Out of the taskbar. Changing this on a visible form makes Windows recreate every
+        // control's window, which resets which tab page is showing, so it is off before the
+        // form is shown.
         form.ShowInTaskbar = false;
 
-        // Shown, off screen: DrawToBitmap of a form that was never shown leaves it blank.
+        // Shown, off screen, here rather than by Verify.WinForms, so the list has loaded (and
+        // been arranged) by the time it draws the form where it is.
         form.StartPosition = FormStartPosition.Manual;
         form.Location = new(-20000, -20000);
         form.Size = new(width, 700);
