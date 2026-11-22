@@ -80,6 +80,21 @@ public class DropMenuTests
         await Assert.That(FileOperations.GetDropEffect(Drag(sources, DragDropEffects.Move | DragDropEffects.Link, rightButton), fixture.Root)).IsEqualTo(DragDropEffects.Link);
     }
 
+    // A folder can't be dropped into itself, nor into a folder inside it, which the shell would
+    // refuse: nothing is offered, with either button.
+    [Test]
+    [STAThreadExecutor]
+    public async Task NotIntoAFolderInsideItself()
+    {
+        using var fixture = Fixture.Create();
+        string[] sources = [fixture.At("Docs")];
+        var inside = fixture.At("Docs", "Inside");
+
+        await Assert.That(FileOperations.GetDropEffect(Drag(sources, every), inside)).IsEqualTo(DragDropEffects.None);
+        await Assert.That(FileOperations.GetDropEffect(Drag(sources, every, rightButton), inside)).IsEqualTo(DragDropEffects.None);
+        await Assert.That(Drop(Drag(sources, every), inside)).IsNull();
+    }
+
     // What is picked from the menu is done: copied, or shortcuts made, there.
     [Test]
     [STAThreadExecutor]

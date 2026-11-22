@@ -908,6 +908,103 @@ public class FolderTreeTests
         return drive.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Projects");
     }
 
+    // Held over a closed folder for a moment, a drag opens it, as Explorer's pane does, so a
+    // folder inside a closed one can be dropped on.
+    [Test]
+    public async Task HeldOverAClosedFolderADragOpensIt()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.Size = new(300, 400);
+        var clock = new Clock(new(2026, 11, 22, 9, 0, 0, TimeSpan.Zero));
+        tree.Time = clock;
+        var drive = tree.Nodes.Cast<TreeNode>().Last().Nodes[0];
+        var at = new Point(drive.Bounds.Left + 5, drive.Bounds.Top + drive.Bounds.Height / 2);
+        var closed = drive.IsExpanded;
+
+        tree.FollowDrag(at);
+        clock.Now += TimeSpan.FromMilliseconds(500);
+        tree.FollowDrag(at);
+        var early = drive.IsExpanded;
+        clock.Now += TimeSpan.FromMilliseconds(400);
+        tree.FollowDrag(at);
+        await Pump.Loaded(tree);
+
+        await Assert.That((closed, early)).IsEqualTo((false, false));
+        await Assert.That(drive.IsExpanded).IsTrue();
+    }
+
+    // Near the top or bottom, a drag scrolls a line at a time, as Explorer's pane does, so a
+    // folder out of sight can be dropped on.
+    [Test]
+    public async Task NearTheTopOrBottomADragScrolls()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"), fixture.At("Archive"), fixture.At("Source"), fixture.At("Cache"));
+        tree.Size = new(300, tree.ItemHeight * 4);
+        var clock = new Clock(new(2026, 11, 22, 9, 0, 0, TimeSpan.Zero));
+        tree.Time = clock;
+        var bottom = new Point(10, tree.ClientSize.Height - 2);
+        var start = tree.TopNode;
+
+        tree.FollowDrag(bottom);
+        var once = tree.TopNode;
+        clock.Now += TimeSpan.FromMilliseconds(50);
+        tree.FollowDrag(bottom);
+        var tooSoon = tree.TopNode;
+        clock.Now += TimeSpan.FromMilliseconds(100);
+        tree.FollowDrag(bottom);
+        var twice = tree.TopNode;
+        clock.Now += TimeSpan.FromMilliseconds(100);
+        tree.FollowDrag(new(10, 2));
+
+        await Assert.That(once).IsNotEqualTo(start);
+        await Assert.That(tooSoon).IsEqualTo(once);
+        await Assert.That(twice).IsNotEqualTo(once);
+        await Assert.That(tree.TopNode).IsEqualTo(once);
+    }
+
+    // A folder drags out of the tree, to the list, Explorer or another app, as Explorer's pane
+    // allows; a drive as a shortcut only. A pinned folder dragged with the left button goes up
+    // or down the Pinned list, with the right, out. This PC and the headings don't drag.
+    [Test]
+    public async Task FoldersDragOutOfTheTree()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"));
+        var drags = new List<string>();
+        tree.StartDrag = (data, allowed) =>
+        {
+            var what = "pinned";
+            if (((IDataObject) data).GetData(DataFormats.FileDrop) is string[] paths)
+            {
+                what = string.Join(",", paths.Select(_ => Path.GetFileName(_.TrimEnd('\\'))));
+            }
+
+            drags.Add($"{what}: {allowed}");
+        };
+        var pinnedHeading = tree.Nodes[0];
+        var pinned = pinnedHeading.Nodes[0];
+        var computer = tree.Nodes.Cast<TreeNode>().Last();
+        var drive = computer.Nodes[0];
+        drive.Expand();
+        await Pump.Loaded(tree);
+        var folder = drive.Nodes.Cast<TreeNode>().Single(_ => Locations.Same(_.Tag as string, fixture.Root));
+
+        tree.DragNode(pinned, MouseButtons.Left);
+        tree.DragNode(pinned, MouseButtons.Right);
+        tree.DragNode(folder, MouseButtons.Left);
+        var beforeDrive = drags.Count;
+        tree.DragNode(drive, MouseButtons.Left);
+        tree.DragNode(computer, MouseButtons.Left);
+        tree.DragNode(pinnedHeading, MouseButtons.Left);
+
+        await Assert.That(drags.Take(beforeDrive)).IsEquivalentTo(
+            ["pinned: Move", "Docs: Copy, Move, Link", $"{Path.GetFileName(fixture.Root)}: Copy, Move, Link"],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(drags.Skip(beforeDrive).Single()).EndsWith(": Link");
+    }
+
     static FolderTree Create(Fixture fixture, Settings settings, params string[] pinned) =>
         CreateWithRecent(fixture, settings, pinned, []);
 

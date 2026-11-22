@@ -699,7 +699,7 @@ static class FileOperations
     {
         if (destination == null ||
             args.Data?.GetData(DataFormats.FileDrop) is not string[] {Length: > 0} sources ||
-            sources.Any(_ => Locations.Same(_, destination)))
+            sources.Any(_ => Locations.IsWithin(destination, _)))
         {
             return null;
         }
@@ -747,7 +747,8 @@ static class FileOperations
             return DragDropEffects.None;
         }
 
-        if (sources.Any(_ => Locations.Same(_, destination)))
+        // Not into itself, nor into a folder inside it, which the shell would refuse.
+        if (sources.Any(_ => Locations.IsWithin(destination, _)))
         {
             return DragDropEffects.None;
         }

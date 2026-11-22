@@ -111,6 +111,7 @@ sealed class FolderTree : TreeView
         SetPinned = (path, pin) => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, path, pin);
         Pin = _ => SetPinned(_, true);
         MovePinnedToEnd = _ => ShellContextMenu.MoveToEnd(FindForm()?.Handle ?? Handle, _);
+        StartDrag = (data, allowed) => DoDragDrop(data, allowed);
         DeleteFolder = (path, permanent) => FileOperations.Delete(FindForm()?.Handle ?? Handle, [path], permanent);
         HideSelection = false;
         ShowLines = false;
@@ -517,15 +518,53 @@ sealed class FolderTree : TreeView
     protected override void OnItemDrag(ItemDragEventArgs args)
     {
         base.OnItemDrag(args);
-        if (args is {Button: MouseButtons.Left, Item: TreeNode node} &&
-            IsPinnedEntry(node))
+        if (args.Item is TreeNode node)
         {
-            var data = new DataObject();
-            data.SetData(pinnedFormat, (string) node.Tag!);
-            DoDragDrop(data, DragDropEffects.Move);
-            ClearInsertMark();
+            DragNode(node, args.Button);
         }
     }
+
+    /// <summary>
+    /// Starts the drag of a node: a pinned folder, with the left button, up or down the Pinned
+    /// list; any other folder out of the tree, to the list, Explorer or another app, as Explorer's
+    /// pane allows, a drive or share as a shortcut only. This PC, a heading or a machine on the
+    /// network isn't dragged.
+    /// </summary>
+    internal void DragNode(TreeNode node, MouseButtons button)
+    {
+        if (button == MouseButtons.Left &&
+            IsPinnedEntry(node))
+        {
+            var pinned = new DataObject();
+            pinned.SetData(pinnedFormat, (string) node.Tag!);
+            StartDrag(pinned, DragDropEffects.Move);
+            ClearInsertMark();
+            return;
+        }
+
+        if (node.Tag is not string path ||
+            Locations.IsThisPC(path) ||
+            Locations.IsServer(path))
+        {
+            return;
+        }
+
+        var allowed = DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link;
+        if (node.Parent == computerNode ||
+            IsDrive(path))
+        {
+            allowed = DragDropEffects.Link;
+        }
+
+        StartDrag(new(DataFormats.FileDrop, new[] { path }), allowed);
+        ClearInsertMark();
+        HighlightDrop(null);
+    }
+
+    /// <summary>
+    /// Drags what is given, until it is dropped. Tests swap it, as dragging holds the thread.
+    /// </summary>
+    internal Action<DataObject, DragDropEffects> StartDrag;
 
     // Where a dragged pinned folder would land: before or after a pinned folder, or first when
     // over the Pinned heading. Null when not over the Pinned list.
@@ -2109,13 +2148,78 @@ sealed class FolderTree : TreeView
         base.OnDragLeave(args);
         ClearInsertMark();
         HighlightDrop(null);
+        heldOver = null;
     }
 
     protected override void OnDragOver(DragEventArgs args)
     {
         base.OnDragOver(args);
         rightDrag = FileOperations.RightButton(args);
+        FollowDrag(PointToClient(new(args.X, args.Y)));
         args.Effect = DropEffect(args);
+    }
+
+    // How long a drag is held over a closed folder before it opens.
+    static readonly TimeSpan openAfter = TimeSpan.FromMilliseconds(800);
+
+    // How often a drag near the top or bottom scrolls a line.
+    static readonly TimeSpan scrollEvery = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// The time, which tests set.
+    /// </summary>
+    internal TimeProvider Time = TimeProvider.System;
+
+    // The node a drag is over, and since when, to open it once it has been held there.
+    TreeNode? heldOver;
+    DateTimeOffset heldSince;
+    DateTimeOffset scrolledAt;
+
+    // WM_VSCROLL, a line up or down.
+    const int verticalScroll = 0x115;
+    const int lineUp = 0;
+    const int lineDown = 1;
+
+    /// <summary>
+    /// Follows a drag at a point in the tree, as Explorer's pane does: held over a closed folder
+    /// for a moment, it opens it, and near the top or bottom, it scrolls, so a folder anywhere
+    /// can be reached. Windows tells the tree of the drag over and over while it is held still,
+    /// so neither needs a timer.
+    /// </summary>
+    internal void FollowDrag(Point location)
+    {
+        var now = Time.GetUtcNow();
+        var edge = ItemHeight;
+        var scroll = -1;
+        if (location.Y < edge)
+        {
+            scroll = lineUp;
+        }
+        else if (location.Y >= ClientSize.Height - edge)
+        {
+            scroll = lineDown;
+        }
+
+        if (scroll >= 0 &&
+            now - scrolledAt >= scrollEvery)
+        {
+            scrolledAt = now;
+            SendMessage(Handle, verticalScroll, scroll, IntPtr.Zero);
+        }
+
+        var node = GetNodeAt(location);
+        if (node != heldOver)
+        {
+            heldOver = node;
+            heldSince = now;
+            return;
+        }
+
+        if (node is { IsExpanded: false, Nodes.Count: > 0 } &&
+            now - heldSince >= openAfter)
+        {
+            node.Expand();
+        }
     }
 
     protected override void OnDragDrop(DragEventArgs args)
@@ -2123,6 +2227,7 @@ sealed class FolderTree : TreeView
         base.OnDragDrop(args);
         ClearInsertMark();
         HighlightDrop(null);
+        heldOver = null;
         var owner = FindForm()?.Handle ?? Handle;
         if (args.Data?.GetDataPresent(pinnedFormat) == true)
         {
