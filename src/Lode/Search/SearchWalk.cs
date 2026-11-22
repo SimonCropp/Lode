@@ -51,6 +51,23 @@ static class SearchWalk
     static readonly string[] versionControl = [".git", ".hg", ".svn"];
 
     /// <summary>
+    /// Whether a folder's name is what version control keeps for itself, .git say, which no
+    /// search goes into.
+    /// </summary>
+    public static bool IsVersionControl(CharSpan name)
+    {
+        foreach (var kept in versionControl)
+        {
+            if (name.Equals(kept, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// A file to search, and how big it is.
     /// </summary>
     public readonly record struct File(string Path, long Size);
@@ -341,8 +358,10 @@ static class SearchWalk
         return null;
     }
 
-    // A .git folder, or the .git file of a worktree or submodule, asked of the file system once
-    // for either, as it is asked of every folder the walk comes to.
-    static bool IsRepo(string folder) =>
+    /// <summary>
+    /// A .git folder, or the .git file of a worktree or submodule, asked of the file system once
+    /// for either, as it is asked of every folder the walk comes to.
+    /// </summary>
+    public static bool IsRepo(string folder) =>
         Path.Exists(Path.Combine(folder, ".git"));
 }

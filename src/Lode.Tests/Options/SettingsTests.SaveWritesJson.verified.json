@@ -32,6 +32,7 @@
   "FindContextLines": 2,
   "FindHidden": true,
   "FindIgnored": false,
+  "SearchIgnored": false,
   "FindHistory": [],
   "WhereHistory": [],
   "ReplaceHistory": [],

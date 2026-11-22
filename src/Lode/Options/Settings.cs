@@ -200,6 +200,12 @@ sealed class Settings
     public bool FindHidden { get; set; } = true;
     public bool FindIgnored { get; set; }
 
+    /// <summary>
+    /// Whether the search box, by name, goes through what git ignores too, bin and node_modules
+    /// say, rather than leaving it out as Find in Files does.
+    /// </summary>
+    public bool SearchIgnored { get; set; }
+
     // What was searched for, where, and replaced with, newest first, for Up and Down in the
     // strip's boxes to go back through. No more than maximumHistory of each.
     public List<string> FindHistory { get; set; } = [];

@@ -22,6 +22,7 @@
   FindContextLines: 2,
   FindHidden: true,
   FindIgnored: false,
+  SearchIgnored: false,
   CloseUnusedTabs: false,
   UnusedTabHours: 24,
   Maximized: true,

@@ -133,6 +133,14 @@ class OptionsForm : Form
     /// </summary>
     internal Func<string, bool> ConfirmCodeDirectory;
 
+    readonly CheckBox searchIgnored = new()
+    {
+        Name = "searchIgnored",
+        Text = "Search what git ignores too",
+        AutoSize = true,
+        Margin = new(3, 0, 3, 3)
+    };
+
     readonly CheckBox purgePermanently = new()
     {
         Name = "purgePermanently",
@@ -403,6 +411,12 @@ class OptionsForm : Form
         showSystem.CheckedChanged += (_, _) =>
         {
             settings.ShowSystem = showSystem.Checked;
+            SettingsChanged?.Invoke(SettingsChange.Listing);
+        };
+        searchIgnored.Checked = settings.SearchIgnored;
+        searchIgnored.CheckedChanged += (_, _) =>
+        {
+            settings.SearchIgnored = searchIgnored.Checked;
             SettingsChanged?.Invoke(SettingsChange.Listing);
         };
         purgePermanently.Checked = settings.PurgePermanently;
@@ -771,6 +785,12 @@ class OptionsForm : Form
 
         return
         [
+            Section(
+                "Search box",
+                "The search box at the top right finds what is named like what is typed, in the " +
+                "folder open and every folder beneath it. In a repository it leaves out what git " +
+                "ignores, bin and node_modules say, as Find in Files does, and never goes into .git.",
+                searchIgnored),
             Section(
                 "Find in Files",
                 "Ctrl+Shift+F searches what files hold, in the folder open, leaving out what git " +

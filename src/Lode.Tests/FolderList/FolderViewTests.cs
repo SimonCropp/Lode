@@ -134,6 +134,45 @@ public class FolderViewTests
         await Verify(Describe(view, fixture));
     }
 
+    // In a repository, the search box leaves out what git ignores, as Find in Files does, and
+    // never goes into .git; a folder in no repository is searched whole. With Search what git
+    // ignores too ticked in Options, the ignored is found as well.
+    [Test]
+    public async Task SearchLeavesOutWhatGitIgnores()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/\n*.log\n");
+        Directory.CreateDirectory(Path.Combine(repo, "src"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "src", "notes.cs"), "");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Notes");
+        Directory.CreateDirectory(Path.Combine(repo, "bin"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "bin", "notes.dll"), "");
+        await File.WriteAllTextAsync(Path.Combine(repo, "notes.md"), "");
+        await File.WriteAllTextAsync(Path.Combine(repo, "notes.log"), "");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".git", "notes"), "");
+        Directory.CreateDirectory(code.At("Plain", "bin"));
+        await File.WriteAllTextAsync(code.At("Plain", "bin", "notes.dll"), "");
+        async Task<List<string>> Found(bool includeIgnored)
+        {
+            using var view = await Open(code.Root, new() { ShowHidden = true, SearchIgnored = includeIgnored });
+            view.Filter = "notes";
+            await Pump.Loaded(view);
+            return view.Entries
+                .Select(_ => code.Relative(_.FullPath))
+                .Where(_ => !_.StartsWith("origins/", StringComparison.Ordinal))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+        }
+
+        var leftOut = await Found(false);
+        var everything = await Found(true);
+
+        await Assert.That(leftOut).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/notes.md", "Repo/src/notes.cs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(everything).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/bin/notes.dll", "Repo/notes.log", "Repo/notes.md", "Repo/src/notes.cs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     // A search shows where each item is, beside its name, and can be sorted by it. Clearing it
     // takes the column away.
     [Test]

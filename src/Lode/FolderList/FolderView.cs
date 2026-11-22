@@ -2323,6 +2323,7 @@ sealed class FolderView : UserControl
         var root = CurrentPath;
         var pattern = filter;
         var showHidden = settings.ShowHidden;
+        var includeIgnored = settings.SearchIgnored;
         var hiddenSystem = settings.HiddenSystemItems();
         var sort = (sortColumn, sortAscending);
 
@@ -2337,7 +2338,7 @@ sealed class FolderView : UserControl
         try
         {
             await Task.Delay(searchDelay, cancel);
-            capped = await Task.Run(() => SearchSubfolders(root, pattern, showHidden, hiddenSystem, sort, cells, most, progress, pace, cancel), cancel);
+            capped = await Task.Run(() => SearchSubfolders(root, pattern, showHidden, includeIgnored, hiddenSystem, sort, cells, most, progress, pace, cancel), cancel);
         }
         catch (OperationCanceledException)
         {
@@ -2547,12 +2548,15 @@ sealed class FolderView : UserControl
 
     // Everything beneath the folder's subfolders whose name the filter matches, reported a batch
     // at a time, each sorted. Not the folder's own items, which its entries have. Leaves out what
-    // the folder's own listing would: hidden items, unless they are shown, and system ones.
-    // Stops once it has found the most it may, and says whether it did.
+    // the folder's own listing would: hidden items, unless they are shown, and system ones. In a
+    // repository, what git ignores too, unless told not to, as Find in Files does: an ignored
+    // folder, bin or node_modules say, isn't gone into at all. Never .git, nor what other version
+    // control keeps for itself. Stops once it has found the most it may, and says whether it did.
     static bool SearchSubfolders(
         string root,
         string pattern,
         bool showHidden,
+        bool includeIgnored,
         SystemItems? hiddenSystem,
         (int Column, bool Ascending) sort,
         GitCells cells,
@@ -2565,12 +2569,6 @@ sealed class FolderView : UserControl
         {
             IgnoreInaccessible = true,
             AttributesToSkip = showHidden ? default : FileAttributes.Hidden
-        };
-        var recursive = new EnumerationOptions
-        {
-            IgnoreInaccessible = true,
-            AttributesToSkip = options.AttributesToSkip,
-            RecurseSubdirectories = true
         };
         var compare = Order(sort.Column, sort.Ascending, cells);
         var batch = new List<FileEntry>();
@@ -2585,14 +2583,110 @@ sealed class FolderView : UserControl
             sent = Stopwatch.GetTimestamp();
         }
 
-        var subfolders = new FileSystemEnumerable<string>(root, (ref entry) => entry.ToFullPath(), options)
+        // What git doesn't ignore in a repository, as Find in Files lists it, kept until the
+        // repository changes. Null where git couldn't list it, which is searched whole.
+        GitScope? ScopeOf(string top) =>
+            GitCache.Searchable(top, () => GitScope.List(top, cancel));
+
+        // A folder still to go through, and what git doesn't ignore where it is: null for all.
+        var stack = new Stack<(string Folder, GitScope? Scope)>();
+        GitScope? rootScope = null;
+        if (!includeIgnored &&
+            SearchWalk.RepoAbove(root) is { } top)
         {
-            ShouldIncludePredicate = (ref entry) => entry.IsDirectory &&
-                                                    SearchWalk.CanSearch(ref entry, hiddenSystem)
-        };
-        foreach (var subfolder in subfolders)
+            rootScope = ScopeOf(top);
+        }
+
+        // The folder's own items are its entries: only its subfolders are gone into. Each
+        // folder's subfolders go on the stack last first, so they are gone into in the order
+        // they are listed.
+        PushAll(Read(root, onlyFolders: true).Select(_ => _.Subfolder).OfType<string>().ToList(), rootScope);
+        while (stack.Count > 0)
         {
-            var matches = new FileSystemEnumerable<FileEntry>(subfolder, ToEntry, recursive)
+            var (folder, scope) = stack.Pop();
+            var subfolders = new List<string>();
+            foreach (var (subfolder, match) in Read(folder, onlyFolders: false))
+            {
+                if (match != null &&
+                    (scope == null || IsNotIgnored(scope, match)))
+                {
+                    batch.Add(match);
+                    count++;
+                    if (count >= most)
+                    {
+                        Send();
+                        return true;
+                    }
+                }
+
+                if (subfolder != null)
+                {
+                    subfolders.Add(subfolder);
+                }
+            }
+
+            PushAll(subfolders, scope);
+        }
+
+        if (batch.Count > 0)
+        {
+            Send();
+        }
+
+        return false;
+
+        void PushAll(List<string> folders, GitScope? scope)
+        {
+            for (var index = folders.Count - 1; index >= 0; index--)
+            {
+                Push(folders[index], scope);
+            }
+        }
+
+        // Gone into, unless git ignores it. A repository of its own is gone into by what it
+        // doesn't ignore.
+        void Push(string folder, GitScope? scope)
+        {
+            if (scope != null &&
+                !scope.HasFolder(folder))
+            {
+                return;
+            }
+
+            if (!includeIgnored &&
+                SearchWalk.IsRepo(folder))
+            {
+                scope = ScopeOf(folder);
+            }
+
+            stack.Push((folder, scope));
+        }
+
+        // What a folder holds that is searched: its subfolders to go into, and what matches.
+        IEnumerable<(string? Subfolder, FileEntry? Match)> Read(string folder, bool onlyFolders)
+        {
+            var items = new FileSystemEnumerable<(string? Subfolder, FileEntry? Match)>(
+                folder,
+                (ref entry) =>
+                {
+                    string? subfolder = null;
+                    if (entry.IsDirectory &&
+                        SearchWalk.CanSearch(ref entry, hiddenSystem))
+                    {
+                        subfolder = entry.ToFullPath();
+                    }
+
+                    FileEntry? match = null;
+                    if (!onlyFolders &&
+                        Matches(pattern, entry.FileName) &&
+                        !SearchWalk.IsSystem(ref entry, hiddenSystem))
+                    {
+                        match = ToEntry(ref entry);
+                    }
+
+                    return (subfolder, match);
+                },
+                options)
             {
                 // Asked of every item, matching or not, so it is where the search notices it has
                 // been let go of, and sends what it has found once it has been holding it a while.
@@ -2605,36 +2699,36 @@ sealed class FolderView : UserControl
                         Send();
                     }
 
-                    return Matches(pattern, entry.FileName) &&
-                           !SearchWalk.IsSystem(ref entry, hiddenSystem);
-                },
-                ShouldRecursePredicate = (ref entry) => SearchWalk.CanSearch(ref entry, hiddenSystem)
+                    if (entry.IsDirectory)
+                    {
+                        return !SearchWalk.IsVersionControl(entry.FileName);
+                    }
+
+                    return !onlyFolders &&
+                           Matches(pattern, entry.FileName);
+                }
             };
             try
             {
-                foreach (var match in matches)
-                {
-                    batch.Add(match);
-                    count++;
-                    if (count >= most)
-                    {
-                        Send();
-                        return true;
-                    }
-                }
+                return items.ToList();
             }
             catch (IOException)
             {
-                // The subfolder went while it was being searched, or its drive did.
+                // The folder went while it was being searched, or its drive did.
+                return [];
             }
         }
+    }
 
-        if (batch.Count > 0)
+    // Whether git doesn't ignore what matched.
+    static bool IsNotIgnored(GitScope scope, FileEntry match)
+    {
+        if (match.IsDirectory)
         {
-            Send();
+            return scope.HasFolder(match.FullPath);
         }
 
-        return false;
+        return scope.HasFile(match.FullPath);
     }
 
     // Whether the filter matches a name: by its wildcards, where it has any, and otherwise by
