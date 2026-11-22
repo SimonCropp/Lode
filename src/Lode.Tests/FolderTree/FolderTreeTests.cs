@@ -1005,6 +1005,69 @@ public class FolderTreeTests
         await Assert.That(drags.Skip(beforeDrive).Single()).EndsWith(": Link");
     }
 
+    // A tab on a share has its place in the tree, as in Explorer: under the machine it is on,
+    // in Network, after This PC, the machine added there if it isn't yet, with what it shares
+    // beneath it, those named to be hidden left out while hidden items are.
+    [Test]
+    [NotInParallel("shares")]
+    public async Task AShareIsUnderItsMachineInNetwork()
+    {
+        using var fixture = Fixture.Create();
+        var listShares = FolderTree.ListShares;
+        FolderTree.ListShares = server => [("Docs", false), ("Backup$", true), ("Archive", false)];
+        try
+        {
+            using var tree = Create(fixture, new() { ShowHidden = false });
+            tree.MakeWatcher = (_, _) => null;
+            var before = tree.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
+
+            tree.SelectPath(@"\\lodetest\Docs");
+            await Pump.Loaded(tree);
+            var network = tree.Nodes.Cast<TreeNode>().Last();
+            var machine = network.Nodes.Cast<TreeNode>().Single();
+
+            await Assert.That(before).DoesNotContain("Network");
+            await Assert.That(network.Text).IsEqualTo("Network");
+            await Assert.That(machine.Text).IsEqualTo("lodetest");
+            await Assert.That(machine.Nodes.Cast<TreeNode>().Select(_ => _.Text)).IsEquivalentTo(["Archive", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(@"\\lodetest\Docs");
+        }
+        finally
+        {
+            FolderTree.ListShares = listShares;
+        }
+    }
+
+    // A folder pinned on a machine puts the machine in Network from the start. One whose shares
+    // can't be listed, offline say, has its share selected by its pinned entry, as before there
+    // was Network.
+    [Test]
+    [NotInParallel("shares")]
+    public async Task APinnedShareOnAMachineOffline()
+    {
+        using var fixture = Fixture.Create();
+        var listShares = FolderTree.ListShares;
+        FolderTree.ListShares = _ => throw new System.ComponentModel.Win32Exception(53);
+        try
+        {
+            using var tree = Create(fixture, new() { ShowHidden = false }, @"\\lodetest\Projects");
+            tree.MakeWatcher = (_, _) => null;
+            var network = tree.Nodes.Cast<TreeNode>().Last();
+            var machines = network.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
+
+            tree.SelectPath(@"\\lodetest\Projects");
+            await Pump.Loaded(tree);
+
+            await Assert.That(network.Text).IsEqualTo("Network");
+            await Assert.That(machines).IsEquivalentTo(["lodetest"]);
+            await Assert.That(tree.SelectedNode?.Parent?.Text).IsEqualTo("Pinned");
+        }
+        finally
+        {
+            FolderTree.ListShares = listShares;
+        }
+    }
+
     static FolderTree Create(Fixture fixture, Settings settings, params string[] pinned) =>
         CreateWithRecent(fixture, settings, pinned, []);
 

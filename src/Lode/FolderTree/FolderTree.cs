@@ -9,6 +9,11 @@ sealed class FolderTree : TreeView
     /// </summary>
     public sealed record Section(string Name);
 
+    /// <summary>
+    /// What tags the Network heading, which is no folder: Lode can't list the network itself.
+    /// </summary>
+    public sealed record NetworkHeading;
+
     const int unscaledRowHeight = 32;
     const int unscaledIndent = 8;
     const int unscaledIconSize = 16;
@@ -197,6 +202,8 @@ sealed class FolderTree : TreeView
                 computerNode.Expand();
             }
 
+            networkNode.Nodes.Clear();
+            ShowNetwork();
             selectedMoved = SelectMovedPinned();
             ShowShortcutsSelected(SelectedNode);
         }
@@ -231,6 +238,9 @@ sealed class FolderTree : TreeView
             }
 
             AddSections();
+
+            // A folder newly pinned on a machine not shown yet puts it in Network.
+            ShowNetwork();
             var selectedMoved = SelectMovedPinned();
             ShowShortcutsSelected(SelectedNode);
             return selectedMoved;
@@ -258,6 +268,7 @@ sealed class FolderTree : TreeView
     {
         var expanded = new List<string>();
         Collect(computerNode);
+        Collect(networkNode);
         return expanded
             .OrderBy(_ => _.Length)
             .ToList();
@@ -290,7 +301,7 @@ sealed class FolderTree : TreeView
                 return;
             }
 
-            if (FindLoaded(computerNode, folder) is not { } node)
+            if ((FindLoaded(computerNode, folder) ?? FindLoaded(networkNode, folder)) is not { } node)
             {
                 continue;
             }
@@ -769,6 +780,81 @@ sealed class FolderTree : TreeView
     }
 
     // A Pinned or Recent entry.
+    // The Network heading, after This PC: the machines Lode knows of, from the folders pinned or
+    // recent on them, and every share gone to since Lode started. Expanding one lists what it
+    // shares. Lode can't find the machines on the network itself, as Explorer's Network does by
+    // network discovery, which can take a minute. Only once there is a machine to show.
+    readonly TreeNode networkNode = new("Network")
+    {
+        Tag = new NetworkHeading()
+    };
+
+    readonly SortedSet<string> servers = new(StringComparer.OrdinalIgnoreCase);
+
+    // The Network heading and its machines, as places and the shares gone to have them: one
+    // added since shows, and those that show stay as they are, expanded or not.
+    void ShowNetwork()
+    {
+        foreach (var folder in places.Pinned.Concat(places.Recent))
+        {
+            if (Locations.Server(folder) is { } server)
+            {
+                servers.Add(server);
+            }
+        }
+
+        if (!places.ShowComputer ||
+            servers.Count == 0)
+        {
+            return;
+        }
+
+        var icon = ShellIcons.NetworkIcon;
+        networkNode.ImageIndex = icon;
+        networkNode.SelectedImageIndex = icon;
+        if (!Nodes.Contains(networkNode))
+        {
+            Nodes.Add(networkNode);
+        }
+
+        var index = 0;
+        foreach (var server in servers)
+        {
+            if (ServerNode(server) == null)
+            {
+                networkNode.Nodes.Insert(index, CreateNode(server, server.TrimStart('\\'), icon));
+            }
+
+            index++;
+        }
+
+        networkNode.Expand();
+    }
+
+    // A machine on the network, shown in Network from now on.
+    void AddServer(string server)
+    {
+        if (servers.Add(server))
+        {
+            ShowNetwork();
+        }
+    }
+
+    TreeNode? ServerNode(string server) =>
+        networkNode.Nodes
+            .Cast<TreeNode>()
+            .FirstOrDefault(_ => Locations.Same(_.Tag as string, server));
+
+    // A Pinned or Recent entry for the folder itself.
+    TreeNode? ShortcutFor(string path) =>
+        Shortcuts().FirstOrDefault(_ => Locations.Same((string) _.Tag!, path));
+
+    /// <summary>
+    /// Lists what a machine on the network shares, off the UI thread. Tests swap it, having no
+    /// network to ask.
+    /// </summary>
+    internal static Func<string, List<(string Name, bool Hidden)>> ListShares = Shares.List;
+
     static bool IsShortcut(TreeNode node) =>
         node.Parent?.Tag is Section;
 
@@ -781,6 +867,24 @@ sealed class FolderTree : TreeView
     // too, however many there are and however slow the drive.
     static List<Subfolder>? ReadSubfolders(string path, bool showHidden, SystemItems? hiddenSystem)
     {
+        // A machine's folders are what it shares, those named to be hidden only when hidden
+        // items show, as Explorer has them.
+        if (Locations.IsServer(path))
+        {
+            try
+            {
+                return ListShares(path)
+                    .Where(_ => showHidden || !_.Hidden)
+                    .Select(_ => new Subfolder(_.Name, Path.Join(path, _.Name), true))
+                    .OrderBy(_ => _.Name, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         try
         {
             var options = new EnumerationOptions
@@ -1453,6 +1557,13 @@ sealed class FolderTree : TreeView
                 .MaxBy(_ => ((string) _.Tag!).Length);
         }
 
+        if (current == null &&
+            networkNode.IsExpanded &&
+            Locations.Server(path) is { } server)
+        {
+            current = ServerNode(server);
+        }
+
         while (current != null)
         {
             if (Locations.Same((string) current.Tag!, path))
@@ -1545,9 +1656,20 @@ sealed class FolderTree : TreeView
             .Cast<TreeNode>()
             .Where(_ => Locations.IsWithin(path, (string) _.Tag!))
             .MaxBy(_ => ((string) _.Tag!).Length);
+
+        // On a share, under the machine it is on, in Network, as Explorer has it: the machine
+        // added there, if it isn't yet.
+        if (current == null &&
+            places.ShowComputer &&
+            Locations.Server(path) is { } server)
+        {
+            AddServer(server);
+            current = ServerNode(server);
+        }
+
         if (current == null)
         {
-            return (Shortcuts().FirstOrDefault(_ => Locations.Same((string) _.Tag!, path)), []);
+            return (ShortcutFor(path), []);
         }
 
         var currentPath = (string) current.Tag!;
@@ -1580,6 +1702,15 @@ sealed class FolderTree : TreeView
                     .FirstOrDefault(_ => Locations.Same(_.Tag as string, currentPath));
                 if (child == null)
                 {
+                    // A share that can't be listed, its machine offline say, is selected by a
+                    // Pinned or Recent entry for it, where there is one, as it was before
+                    // Network: better than its machine.
+                    if (ShortcutFor(path) is { } shortcut &&
+                        Locations.IsNetwork(path))
+                    {
+                        return (shortcut, []);
+                    }
+
                     // Hidden or since-deleted folder: settle for the deepest ancestor we have.
                     // Read on the way, it was watched, as a folder showing what is in it is.
                     // Not expanded, it is watched only while selected, as any other is.
