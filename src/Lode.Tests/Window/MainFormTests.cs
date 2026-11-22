@@ -65,6 +65,41 @@ public class MainFormTests
     public Task Filtered() =>
         Capture((form, _) => form.Controls.Find("filter", true)[0].Text = "*.aleph");
 
+    // Searched for a name nothing has: a link to search inside the files instead.
+    [Test]
+    public Task FilteredFindingNothing() =>
+        Capture((form, _) => form.Controls.Find("filter", true)[0].Text = "\"11.0");
+
+    // Find in Files: the strip along the bottom, and what it found in the Find Results tab, laid
+    // out as Sublime lays it out, each match marked.
+    [Test]
+    public async Task FindResults()
+    {
+        using var fixture = Fixture.CreateAtFixedPath();
+        await File.WriteAllTextAsync(fixture.At("Docs", "guide.aleph"), "# Guide\n\nThe alpha release\nships the beta.\n\nSee alpha notes.\n");
+        await File.WriteAllTextAsync(fixture.At("Source", "main.aleph"), "var alpha = 1;\nvar beta = alpha + 1;\n");
+        var settings = new Settings();
+        var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
+        using var form = new QuietForm([fixture.Root], settings, places)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000),
+            Size = new(1200, 700)
+        };
+        form.Show();
+        await Pump.Loaded(form.ActiveView!);
+        form.OpenFind();
+        form.FindPanel.FindBox.Text = "alpha";
+
+        form.Find();
+        await form.ResultsView!.Searching;
+        form.ActiveControl = null;
+        Application.DoEvents();
+
+        await Verify(form);
+    }
+
     [Test]
     public Task SortedBySizeDescending() =>
         Capture((form, _) =>

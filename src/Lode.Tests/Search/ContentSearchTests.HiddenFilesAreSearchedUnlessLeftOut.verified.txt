@@ -1,0 +1,17 @@
+﻿{
+  hidden: [
+    hidden.txt,
+    latin.txt,
+    marked.txt,
+    plain.txt,
+    wide.txt,
+    Sub\deep.cs
+  ],
+  notHidden: [
+    latin.txt,
+    marked.txt,
+    plain.txt,
+    wide.txt,
+    Sub\deep.cs
+  ]
+}

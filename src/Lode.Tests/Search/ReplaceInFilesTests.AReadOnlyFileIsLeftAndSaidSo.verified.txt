@@ -1,0 +1,7 @@
+﻿{
+  failed: [
+    locked.txt: It is read-only.
+  ],
+  undo: false,
+  file: alpha
+}

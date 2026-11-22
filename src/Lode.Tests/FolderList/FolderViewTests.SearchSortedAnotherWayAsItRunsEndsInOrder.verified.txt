@@ -1,0 +1,12 @@
+﻿{
+  path: Projects,
+  status: 4 items found,
+  filter: *.aleph,
+  rows: [
+    file    main.aleph  5,000 bytes  in Source,
+    file    guide.aleph  900 bytes  in Docs,
+    file    leaf.aleph  40 bytes  in Source\Deep,
+    file    notes.aleph  12 bytes
+  ],
+  selected: []
+}

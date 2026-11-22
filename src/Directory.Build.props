@@ -18,5 +18,7 @@
            Alias="CancelSource" />
     <Using Include="System.ReadOnlySpan&lt;System.Char&gt;"
            Alias="CharSpan" />
+    <Using Include="System.ReadOnlySpan&lt;System.Byte&gt;"
+           Alias="ByteSpan" />
   </ItemGroup>
 </Project>

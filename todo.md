@@ -3,9 +3,7 @@
 
 ### 7. Search
 
- * By name only: nothing looks inside files.
- * With hidden items shown, the default, it goes through `.git`, as well as `node_modules`, `bin` and `obj`. An option to leave out what git ignores would make it quicker and what it finds more useful.
- * Nothing limits how much it finds. What it has found is shown less often as there comes to be more of it, so the window is not kept busy, but each showing still merges in all of it on the UI thread.
+ * The search box, by name, with hidden items shown, the default, goes through `.git`, as well as `node_modules`, `bin` and `obj`. Leaving out what git ignores, as Find in Files does, would make it quicker and what it finds more useful.
 
 
 

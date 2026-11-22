@@ -1,0 +1,32 @@
+﻿{
+  rows: [
+    Row { Kind = Heading, File = -1, Line = -1, Summary = -1 }  Searched 2 files for "needle",
+    Row { Kind = Blank, File = -1, Line = -1, Summary = -1 }  ,
+    Row { Kind = File, File = 0, Line = -1, Summary = -1 }  {root}\a.txt:,
+    Row { Kind = Line, File = 0, Line = 0, Summary = -1 }      1  one,
+    Row { Kind = Line, File = 0, Line = 1, Summary = -1 }      2: needle,
+    Row { Kind = Line, File = 0, Line = 2, Summary = -1 }      3  three,
+    Row { Kind = Gap, File = 0, Line = -1, Summary = -1 }     ..,
+    Row { Kind = Line, File = 0, Line = 3, Summary = -1 }      6  six,
+    Row { Kind = Line, File = 0, Line = 4, Summary = -1 }      7: needle,
+    Row { Kind = Blank, File = 0, Line = -1, Summary = -1 }  ,
+    Row { Kind = File, File = 1, Line = -1, Summary = -1 }  {root}\b.txt:,
+    Row { Kind = Line, File = 1, Line = 0, Summary = -1 }      1: needle,
+    Row { Kind = Blank, File = 1, Line = -1, Summary = -1 }  ,
+    Row { Kind = Summary, File = -1, Line = -1, Summary = 0 }  3 matches across 2 files
+  ],
+  forward: [
+    4,
+    8,
+    11
+  ],
+  back: 3,
+  afterRemovingTheFirst:
+Searched 2 files for "needle"
+
+{root}\b.txt:
+    1: needle
+
+1 match across 1 file
+
+}

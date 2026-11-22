@@ -1,0 +1,26 @@
+﻿{
+  before: {
+    status: Windows Search is running, and starts shortly after Windows does.,
+    turnOffEnabled: true,
+    turnOnEnabled: false
+  },
+  off: {
+    status: Windows Search is off.,
+    turnOffEnabled: false,
+    turnOnEnabled: true
+  },
+  on: {
+    status: Windows Search is running, and starts shortly after Windows does.,
+    turnOffEnabled: true,
+    turnOnEnabled: false
+  },
+  events: [
+    asked to turn off,
+    asked to turn off,
+    turned off,
+    reported turning off: True,
+    asked to turn on,
+    turned on,
+    reported turning on: True
+  ]
+}

@@ -3,6 +3,7 @@
     General,
     View,
     Actions,
+    Search,
     Code,
     File Explorer,
     Links,

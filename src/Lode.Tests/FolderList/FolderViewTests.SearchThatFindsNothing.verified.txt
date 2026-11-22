@@ -4,5 +4,5 @@
     emptyText: Searching subfolders...
   },
   status: 0 items found,
-  emptyText: No items match your search.
+  emptyText: No items match your search. [Search inside the files]
 }

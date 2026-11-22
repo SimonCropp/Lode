@@ -1,0 +1,5 @@
+﻿[
+  D:\Other, *.cs, -bin\,
+  D:\Other,
+  <open folders>, *.cs
+]

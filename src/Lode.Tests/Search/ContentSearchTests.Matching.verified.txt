@@ -1,0 +1,12 @@
+﻿{
+  any case: 0:Foo, 4:foo, 8:foo, 13:FOO, 18:foo, 22:foo,
+  bad pattern: error: The pattern can't be read: Invalid pattern '(' at offset 1. Not enough )'s.,
+  case sensitive: 4:foo, 8:foo, 18:foo, 22:foo,
+  dot as text: 27:f.o,
+  nothing: error: Type what to find.,
+  regex: 0:Foo, 4:foo, 8:foo, 13:FOO, 18:foo, 22:foo, 27:f.o,
+  regex over lines: 27:f.o\nB,
+  regex, whole word: 0:Foo, 4:foo, 13:FOO, 27:f.o,
+  whole word: 0:Foo, 4:foo, 13:FOO,
+  whole word, case sensitive: 4:foo
+}

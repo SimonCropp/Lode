@@ -166,6 +166,75 @@ class OptionsForm : Form
     /// </summary>
     internal Action<string, DefenderExclusion.Outcome> ReportDefenderExclusion;
 
+    readonly NumericUpDown contextLines = new()
+    {
+        Name = "contextLines",
+        AccessibleName = "Lines shown either side of each match",
+        Minimum = 0,
+        Maximum = 20,
+        Width = 60
+    };
+
+    readonly Label contextLinesUnit = new()
+    {
+        Text = "lines either side of each match",
+        AutoSize = true
+    };
+
+    readonly Label windowsSearchStatus = new()
+    {
+        Name = "windowsSearchStatus",
+        AutoSize = true,
+        MaximumSize = new(textWidth, 0),
+        Margin = new(3, 0, 3, 6)
+    };
+
+    // With the shield, as each asks for administrator permission.
+    readonly Button turnOffWindowsSearch = new()
+    {
+        Name = "turnOffWindowsSearch",
+        Text = "Turn off…",
+        AutoSize = true,
+        FlatStyle = FlatStyle.System,
+        Padding = new(6, 0, 6, 0)
+    };
+
+    readonly Button turnOnWindowsSearch = new()
+    {
+        Name = "turnOnWindowsSearch",
+        Text = "Turn on…",
+        AutoSize = true,
+        FlatStyle = FlatStyle.System,
+        Padding = new(6, 0, 6, 0)
+    };
+
+    // How the Windows Search service is: read again after each change, and whenever the page
+    // shows, as it may have been changed outside Lode meanwhile.
+    readonly Func<WindowsSearchService.State> readWindowsSearch;
+
+    /// <summary>
+    /// Asks whether to turn Windows Search off, or on, saying what that does. Replaced in tests.
+    /// </summary>
+    internal Func<bool, bool> ConfirmWindowsSearch;
+
+    /// <summary>
+    /// Turns Windows Search on, or off. Replaced in tests, which must never change the service.
+    /// </summary>
+    internal Func<bool, Task<Elevated.Outcome>> ChangeWindowsSearch = on =>
+    {
+        if (on)
+        {
+            return WindowsSearchService.TurnOn();
+        }
+
+        return WindowsSearchService.TurnOff();
+    };
+
+    /// <summary>
+    /// Says how turning Windows Search on, or off, went. Replaced in tests.
+    /// </summary>
+    internal Action<bool, Elevated.Outcome> ReportWindowsSearch;
+
     readonly RepositoryLinks repositoryLinks;
 
     // For each kind of link, what opens it now, and the buttons that take it over and revert it.
@@ -262,10 +331,27 @@ class OptionsForm : Form
     /// <param name="updates">Whether there is a newer Lode, <see cref="Updates.Instance"/>.</param>
     /// <param name="repositoryLinks">Takes over links for GitHub Desktop and Visual Studio. By
     /// default for the same classes and copy of Lode as <paramref name="explorerReplacement"/>.</param>
-    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings, IReadOnlyList<TextEditors.Editor> editors, Updates updates, RepositoryLinks? repositoryLinks = null)
+    /// <param name="readWindowsSearch">How the Windows Search service is. By default as this
+    /// machine has it; passed in so tests show a fixed one.</param>
+    public OptionsForm(
+        ExplorerReplacement explorerReplacement,
+        Settings settings,
+        IReadOnlyList<TextEditors.Editor> editors,
+        Updates updates,
+        RepositoryLinks? repositoryLinks = null,
+        Func<WindowsSearchService.State>? readWindowsSearch = null)
     {
         this.explorerReplacement = explorerReplacement;
         this.repositoryLinks = repositoryLinks ?? RepositoryLinks.Like(explorerReplacement);
+        this.readWindowsSearch = readWindowsSearch ?? WindowsSearchService.Read;
+        contextLines.Value = Math.Clamp(settings.FindContextLines, (int) contextLines.Minimum, (int) contextLines.Maximum);
+        contextLines.ValueChanged += (_, _) => settings.FindContextLines = (int) contextLines.Value;
+        ConfirmWindowsSearch = ShowWindowsSearchPrompt;
+        ReportWindowsSearch = ShowWindowsSearchOutcome;
+        turnOffWindowsSearch.Click += (_, _) => OnChangeWindowsSearch(false);
+        turnOnWindowsSearch.Click += (_, _) => OnChangeWindowsSearch(true);
+        turnOffWindowsSearch.HandleCreated += (_, _) => SendMessage(turnOffWindowsSearch.Handle, buttonSetShield, IntPtr.Zero, 1);
+        turnOnWindowsSearch.HandleCreated += (_, _) => SendMessage(turnOnWindowsSearch.Handle, buttonSetShield, IntPtr.Zero, 1);
         this.settings = settings;
         this.editors = editors;
         this.updates = updates;
@@ -371,6 +457,7 @@ class OptionsForm : Form
         AddPage("General", Icons.Options, BuildGeneralPage());
         AddPage("View", Icons.View, BuildViewPage());
         AddPage("Actions", Icons.Actions, BuildActionsPage());
+        AddPage("Search", Icons.Search, BuildSearchPage());
         AddPage("Code", Icons.Code, BuildCodePage());
         AddPage("File Explorer", Icons.FileExplorer, BuildExplorerPage());
         AddPage("Links", Icons.Links, BuildLinksPage());
@@ -407,6 +494,7 @@ class OptionsForm : Form
         UpdateExplorerState();
         UpdateLinkState();
         ShowUpdateState();
+        UpdateWindowsSearchState();
     }
 
     readonly PageHost host;
@@ -476,6 +564,12 @@ class OptionsForm : Form
         for (var index = 0; index < pages.Count; index++)
         {
             pages[index].Visible = index == pageList.SelectedIndex;
+        }
+
+        // The service may have been changed outside Lode since the page last showed.
+        if (pageList.PageText(pageList.SelectedIndex) == "Search")
+        {
+            UpdateWindowsSearchState();
         }
 
         // Each page from its top, rather than as far down as the last one was scrolled.
@@ -662,6 +756,125 @@ class OptionsForm : Form
             "permission.",
             excludeFromDefender)
     ];
+
+    Control[] BuildSearchPage()
+    {
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            Margin = Padding.Empty
+        };
+        buttons.Controls.Add(turnOffWindowsSearch);
+        buttons.Controls.Add(turnOnWindowsSearch);
+
+        return
+        [
+            Section(
+                "Find in Files",
+                "Ctrl+Shift+F searches what files hold, in the folder open, leaving out what git " +
+                "ignores. With Context on in its strip, it shows lines either side of each match.",
+                Row(contextLines, contextLinesUnit)),
+            Section(
+                "Windows Search",
+                "Windows Search indexes your files in the background, for Start's search and " +
+                "Explorer's. Lode doesn't use it: its search reads the folders itself. Turning it " +
+                "off stops the indexing for good, but Start, Settings, Outlook and OneNote then " +
+                "find no files, and Explorer's search becomes slower. Turn on starts it again as " +
+                "Windows has it. Windows asks for administrator permission.",
+                windowsSearchStatus,
+                buttons)
+        ];
+    }
+
+    void UpdateWindowsSearchState()
+    {
+        var state = readWindowsSearch();
+        windowsSearchStatus.Text = WindowsSearchService.Describe(state);
+        var installed = state.Startup != WindowsSearchService.Startup.Missing;
+        turnOffWindowsSearch.Enabled = installed && !state.IsOff;
+        turnOnWindowsSearch.Enabled = installed && !state.IsOn;
+    }
+
+    async void OnChangeWindowsSearch(bool on)
+    {
+        if (!ConfirmWindowsSearch(on))
+        {
+            return;
+        }
+
+        turnOffWindowsSearch.Enabled = false;
+        turnOnWindowsSearch.Enabled = false;
+        try
+        {
+            var outcome = await ChangeWindowsSearch(on);
+            if (!IsDisposed)
+            {
+                ReportWindowsSearch(on, outcome);
+            }
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                UpdateWindowsSearchState();
+            }
+        }
+    }
+
+    bool ShowWindowsSearchPrompt(bool on)
+    {
+        TaskDialogPage page;
+        TaskDialogButton change;
+        if (on)
+        {
+            change = new("Turn on");
+            page = new()
+            {
+                Caption = "Lode",
+                Heading = "Turn Windows Search on?",
+                Text = "Windows Search starts again, and from then on shortly after Windows does, " +
+                       "as Windows has it. It indexes your files again, which takes a while at " +
+                       "first.\n\nWindows will ask for administrator permission."
+            };
+        }
+        else
+        {
+            change = new("Turn off");
+            page = new()
+            {
+                Caption = "Lode",
+                Heading = "Turn Windows Search off?",
+                Text = "Windows Search stops, and doesn't start again, even after a restart, until " +
+                       "it is turned on here. Start, Settings, Outlook and OneNote then find no " +
+                       "files, and Explorer's search becomes slower. Lode's search doesn't use it." +
+                       "\n\nWindows will ask for administrator permission."
+            };
+        }
+
+        page.Icon = TaskDialogIcon.ShieldBlueBar;
+        page.Buttons = [change, TaskDialogButton.Cancel];
+        page.DefaultButton = change;
+        return TaskDialog.ShowDialog(this, page) == change;
+    }
+
+    void ShowWindowsSearchOutcome(bool on, Elevated.Outcome outcome)
+    {
+        if (outcome.Cancelled ||
+            outcome.Succeeded)
+        {
+            return;
+        }
+
+        var change = "off";
+        if (on)
+        {
+            change = "on";
+        }
+
+        MessageBox.Show(this, $"Lode couldn't turn Windows Search {change}: {outcome.Error}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
 
     Control[] BuildLinksPage()
     {

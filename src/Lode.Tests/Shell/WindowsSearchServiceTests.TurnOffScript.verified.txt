@@ -1,0 +1,12 @@
+﻿$ErrorActionPreference = 'Stop'
+$result = 'C:\Temp\Bob''s result.txt'
+try {
+    Set-Service -Name WSearch -StartupType Disabled
+    Stop-Service -Name WSearch -Force
+    Set-Content -LiteralPath $result -Value 'off' -Encoding UTF8
+    exit 0
+}
+catch {
+    Set-Content -LiteralPath $result -Value ('error: ' + $_.Exception.Message) -Encoding UTF8
+    exit 1
+}

@@ -1,0 +1,7 @@
+﻿Searched 1 file for "alpha"
+
+{root}\repo\bin\Built.cs:
+    1: alpha
+
+1 match across 1 file
+Git couldn't list what it ignores in {root}\repo, so all of it was searched

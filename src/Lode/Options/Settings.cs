@@ -187,6 +187,46 @@ sealed class Settings
     // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
     public bool PurgePermanently { get; set; }
 
+    // Find in Files' toggles, as last set in its strip: what it looks for is a regular
+    // expression, in the case typed, as a whole word; Replace keeps each match's case; lines
+    // either side of each match are shown, FindContextLines of them; hidden files are searched
+    // (on by default); and what git ignores is searched too (off by default). See FindPanel.
+    public bool FindRegex { get; set; }
+    public bool FindCaseSensitive { get; set; }
+    public bool FindWholeWord { get; set; }
+    public bool FindPreserveCase { get; set; }
+    public bool FindContext { get; set; } = true;
+    public int FindContextLines { get; set; } = 2;
+    public bool FindHidden { get; set; } = true;
+    public bool FindIgnored { get; set; }
+
+    // What was searched for, where, and replaced with, newest first, for Up and Down in the
+    // strip's boxes to go back through. No more than maximumHistory of each.
+    public List<string> FindHistory { get; set; } = [];
+    public List<string> WhereHistory { get; set; } = [];
+    public List<string> ReplaceHistory { get; set; } = [];
+
+    const int maximumHistory = 20;
+
+    /// <summary>
+    /// Puts <paramref name="entry"/> first in <paramref name="history"/>, once, keeping no more
+    /// than the most kept.
+    /// </summary>
+    public static void Remember(List<string> history, string entry)
+    {
+        if (entry.Length == 0)
+        {
+            return;
+        }
+
+        history.Remove(entry);
+        history.Insert(0, entry);
+        if (history.Count > maximumHistory)
+        {
+            history.RemoveRange(maximumHistory, history.Count - maximumHistory);
+        }
+    }
+
     // Tabs nobody has looked at for UnusedTabHours are closed, as other apps opening folders in
     // Lode leave a tab for each. Off unless chosen in Options. See MainForm.CloseUnusedTabs.
     public bool CloseUnusedTabs { get; set; }

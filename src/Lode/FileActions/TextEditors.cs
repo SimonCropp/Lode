@@ -234,11 +234,56 @@ static class TextEditors
         return Find()[0].Path;
     }
 
-    public static void Open(IWin32Window owner, Settings settings, IReadOnlyList<string> paths)
+    public static void Open(IWin32Window owner, Settings settings, IReadOnlyList<string> paths) =>
+        Start(owner, EditorPath(settings), paths, paths[0]);
+
+    /// <summary>
+    /// Opens <paramref name="path"/> with the cursor at <paramref name="line"/> and
+    /// <paramref name="column"/>, from Find in Files' results, as the editor is told to.
+    /// </summary>
+    public static void OpenAt(IWin32Window owner, Settings settings, string path, int line, int column)
+    {
+        var editor = EditorPath(settings);
+        Start(owner, editor, AtLine(editor, path, line, column), path);
+    }
+
+    /// <summary>
+    /// What an editor is given to open a file at a line and column: VS Code and those made from
+    /// it take <c>-g file:line:column</c>, Sublime Text and Zed <c>file:line:column</c>, and
+    /// Notepad++ <c>-n</c> and <c>-c</c>. Notepad, or an editor Lode doesn't know, the file alone.
+    /// </summary>
+    internal static IReadOnlyList<string> AtLine(string editor, string path, int line, int column)
+    {
+        var name = Path.GetFileNameWithoutExtension(editor);
+        if (name.Equals("Code", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Code - Insiders", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("VSCodium", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Windsurf", StringComparison.OrdinalIgnoreCase))
+        {
+            return ["-g", $"{path}:{line}:{column}"];
+        }
+
+        if (name.Equals("subl", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("sublime_text", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Zed", StringComparison.OrdinalIgnoreCase))
+        {
+            return [$"{path}:{line}:{column}"];
+        }
+
+        if (name.Equals("notepad++", StringComparison.OrdinalIgnoreCase))
+        {
+            return [$"-n{line}", $"-c{column}", path];
+        }
+
+        return [path];
+    }
+
+    static void Start(IWin32Window owner, string editor, IReadOnlyList<string> arguments, string first)
     {
         try
         {
-            var startInfo = new ProcessStartInfo(EditorPath(settings))
+            var startInfo = new ProcessStartInfo(editor)
             {
                 UseShellExecute = false,
 
@@ -246,11 +291,11 @@ static class TextEditors
                 // which hands the files to the editor and exits. Without this, Windows gives it a
                 // console window of its own, which flashes up while it runs.
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(paths[0]) ?? ""
+                WorkingDirectory = Path.GetDirectoryName(first) ?? ""
             };
-            foreach (var path in paths)
+            foreach (var argument in arguments)
             {
-                startInfo.ArgumentList.Add(path);
+                startInfo.ArgumentList.Add(argument);
             }
 
             Process.Start(startInfo)?.Dispose();

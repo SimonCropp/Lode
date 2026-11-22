@@ -1,0 +1,8 @@
+﻿[
+  DelayedAutomatic, running True: Windows Search is running, and starts shortly after Windows does. (on True, off False),
+  Automatic, running False: Windows Search isn't running, and starts with Windows. (on False, off False),
+  Manual, running True: Windows Search is running, and starts when something asks for it. (on False, off False),
+  Disabled, running False: Windows Search is off. (on False, off True),
+  Disabled, running True: Windows Search is running, and is disabled. (on False, off False),
+  Missing, running False: Windows Search isn't installed. (on False, off False)
+]

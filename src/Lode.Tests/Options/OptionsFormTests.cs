@@ -226,6 +226,60 @@ public class OptionsFormTests
             });
     }
 
+    // Off, then on again, each asking first and only once said yes to, the buttons following
+    // how the service is after each.
+    [Test]
+    public async Task TurnWindowsSearchOffThenOn()
+    {
+        using var scratch = new RegistryScratch();
+        var service = new WindowsSearchStub();
+        using var form = Show(scratch.Replacement(), windowsSearch: service);
+        form.ShowPage("Search");
+        var before = DescribeWindowsSearch(form);
+
+        var events = new List<string>();
+        var answer = false;
+        form.ConfirmWindowsSearch = on =>
+        {
+            events.Add($"asked to turn {(on ? "on" : "off")}");
+            return answer;
+        };
+        form.ChangeWindowsSearch = on =>
+        {
+            events.Add($"turned {(on ? "on" : "off")}");
+            service.State = on
+                ? new(WindowsSearchService.Startup.DelayedAutomatic, true)
+                : new(WindowsSearchService.Startup.Disabled, false);
+            return Task.FromResult(new Elevated.Outcome(true, false, [], null));
+        };
+        form.ReportWindowsSearch = (on, outcome) =>
+            events.Add($"reported turning {(on ? "on" : "off")}: {outcome.Succeeded}");
+
+        // Turned down: nothing changes.
+        Click(form, "turnOffWindowsSearch");
+        answer = true;
+        Click(form, "turnOffWindowsSearch");
+        var off = DescribeWindowsSearch(form);
+        Click(form, "turnOnWindowsSearch");
+
+        await Verify(
+            new
+            {
+                before,
+                off,
+                on = DescribeWindowsSearch(form),
+                events
+            });
+    }
+
+    static object DescribeWindowsSearch(Form form) =>
+        new
+        {
+            status = form.Controls.Find("windowsSearchStatus", true)[0].Text,
+            turnOffEnabled = form.Controls.Find("turnOffWindowsSearch", true)[0].Enabled,
+            turnOnEnabled = form.Controls.Find("turnOnWindowsSearch", true)[0].Enabled
+        };
+
     [Test]
     public async Task UntickingShowRecentChangesTheSetting()
     {
@@ -421,6 +475,10 @@ public class OptionsFormTests
         VerifyPage("Code", new() {CodeDirectory = @"C:\Code"});
 
     [Test]
+    public Task SearchPage() =>
+        VerifyPage("Search", new());
+
+    [Test]
     public Task ExplorerInCharge() =>
         VerifyPage("File Explorer", new());
 
@@ -470,7 +528,8 @@ public class OptionsFormTests
         var list = (PageList) form.Controls.Find("pages", true)[0];
         var opened = Shown(form);
 
-        list.SelectedIndex = 5;
+        // The last but one, so going on twice comes round to the first.
+        list.SelectedIndex = list.Count - 2;
         var picked = Shown(form);
         form.Press(Keys.Control | Keys.Tab);
         var next = Shown(form);
@@ -815,9 +874,9 @@ public class OptionsFormTests
 
     // Shown, off screen and without taking the focus: buttons only click, and forms only draw,
     // once shown.
-    static QuietForm Show(ExplorerReplacement replacement, Settings? settings = null, Updates? updates = null)
+    static QuietForm Show(ExplorerReplacement replacement, Settings? settings = null, Updates? updates = null, WindowsSearchStub? windowsSearch = null)
     {
-        var form = new QuietForm(replacement, settings ?? new(), updates ?? TestUpdates.Build())
+        var form = new QuietForm(replacement, settings ?? new(), updates ?? TestUpdates.Build(), windowsSearch ?? new())
         {
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000)
@@ -857,10 +916,18 @@ public class OptionsFormTests
             restoreEnabled = form.Controls.Find("restoreExplorer", true)[0].Enabled
         };
 
+    // Windows Search as a test says it is, never as this machine has it.
+    sealed class WindowsSearchStub
+    {
+        public WindowsSearchService.State State { get; set; } = new(WindowsSearchService.Startup.DelayedAutomatic, true);
+
+        public WindowsSearchService.State Read() => State;
+    }
+
     sealed class QuietForm : OptionsForm
     {
-        public QuietForm(ExplorerReplacement replacement, Settings settings, Updates updates) :
-            base(replacement, settings, editors, updates, RegistryScratch.LinksFor(replacement.ClassesPath, replacement.Command)) =>
+        public QuietForm(ExplorerReplacement replacement, Settings settings, Updates updates, WindowsSearchStub windowsSearch) :
+            base(replacement, settings, editors, updates, RegistryScratch.LinksFor(replacement.ClassesPath, replacement.Command), windowsSearch.Read) =>
             // Never the real update, which would update Lode once the tests end.
             StartUpdate = () => UpdatesStarted++;
 

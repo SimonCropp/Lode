@@ -1,0 +1,10 @@
+﻿{
+  Code - Insiders.exe: -g C:\Code\App.cs:12:5,
+  Code.exe: -g C:\Code\App.cs:12:5,
+  Cursor.exe: -g C:\Code\App.cs:12:5,
+  notepad++.exe: -n12 -c5 C:\Code\App.cs,
+  notepad.exe: C:\Code\App.cs,
+  Other.exe: C:\Code\App.cs,
+  subl.exe: C:\Code\App.cs:12:5,
+  Zed.exe: C:\Code\App.cs:12:5
+}

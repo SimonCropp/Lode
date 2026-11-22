@@ -1,0 +1,15 @@
+﻿$ErrorActionPreference = 'Stop'
+$result = 'C:\Temp\Bob''s result.txt'
+try {
+    $configured = & sc.exe config WSearch start= delayed-auto
+    if ($LASTEXITCODE -ne 0) {
+        throw ($configured -join ' ')
+    }
+    Start-Service -Name WSearch
+    Set-Content -LiteralPath $result -Value 'on' -Encoding UTF8
+    exit 0
+}
+catch {
+    Set-Content -LiteralPath $result -Value ('error: ' + $_.Exception.Message) -Encoding UTF8
+    exit 1
+}

@@ -216,6 +216,79 @@ public class FolderViewTests
             });
     }
 
+    // What a filter that matched no names searches for inside the files.
+    [Test]
+    public Task TextAFilterSearchesFor() =>
+        Verify(
+            new[] {"11.0", "\"11.0", "*.csproj", "*version*", "v?.*", "a*b"}
+                .ToDictionary(_ => _, _ => FolderView.TextFor(_).ToString()));
+
+    // A search stops once it has found the most it may in the subfolders, and says so. The
+    // folder's own matches are shown whatever.
+    [Test]
+    public async Task SearchStopsAtTheMostItFinds()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.MostFound = 2;
+
+        view.Filter = "*.aleph";
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
+    // What is selected among what a search found stays selected as the list is given its rows
+    // again, sorted another way say, and an item of the same name in another folder doesn't
+    // take its place.
+    [Test]
+    public async Task SelectionAmongWhatASearchFoundStays()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllBytesAsync(fixture.At("Docs", "notes.aleph"), new byte[3]);
+        await File.WriteAllBytesAsync(fixture.At("Source", "Deep", "notes.aleph"), new byte[3]);
+        using var view = await Open(fixture.Root);
+        view.Filter = "*.aleph";
+        await Pump.Loaded(view);
+        var picked = new[] {fixture.At("Docs", "notes.aleph"), fixture.At("Source", "main.aleph")};
+        for (var index = 0; index < view.Entries.Count; index++)
+        {
+            if (picked.Contains(view.Entries[index].FullPath))
+            {
+                view.List.SelectedIndices.Add(index);
+            }
+        }
+
+        List<string> SelectedPaths() =>
+            view.SelectedEntries().Select(_ => fixture.Relative(_.FullPath)).Order().ToList();
+
+        var before = SelectedPaths();
+        view.SortBy(folderColumn);
+        var byFolder = SelectedPaths();
+        view.SortBy(sizeColumn);
+        var bySize = SelectedPaths();
+
+        await Assert.That(before).Count().IsEqualTo(2);
+        await Assert.That(byFolder).IsEquivalentTo(before);
+        await Assert.That(bySize).IsEquivalentTo(before);
+    }
+
+    // Sorted another way before the search sent anything, what it found, sorted as the list
+    // was when it started, is put in the list's order now.
+    [Test]
+    public async Task SearchSortedAnotherWayAsItRunsEndsInOrder()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+
+        view.Filter = "*.aleph";
+        view.SortBy(sizeColumn);
+        view.SortBy(sizeColumn);
+        await Pump.Loaded(view);
+
+        await Verify(Describe(view, fixture));
+    }
+
     // On This PC the box narrows the drives, rather than searching every one of them.
     [Test]
     public async Task FilterOnThisPCDoesNotSearch()

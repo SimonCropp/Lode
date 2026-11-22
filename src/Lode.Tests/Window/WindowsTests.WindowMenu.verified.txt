@@ -3,6 +3,7 @@
   New window,
   Reopen closed tab (disabled),
   Command palette,
+  Find in files,
   ----,
   Show hidden items,
   Show system files,

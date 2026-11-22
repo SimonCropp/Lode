@@ -692,6 +692,84 @@ static class GitCache
         }
     }
 
+    // What Find in Files last listed of each repository git doesn't ignore, kept while nothing in
+    // it has changed, as the watch hears, nor what it ignores: the entry and its counts as they
+    // were when it was listed.
+    static readonly Dictionary<string, (GitScope Scope, Known Entry, int Changes, int Forgotten)> searchable = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// What git doesn't ignore in <paramref name="repo"/>, for Find in Files: listed by
+    /// <paramref name="list"/>, and kept, in the code folder, until something changes in the
+    /// repository, so searching it again, as what is looked for is typed say, doesn't start git
+    /// every time. Anywhere else nothing hears its changes, so it is listed every time. Null when
+    /// it couldn't be listed.
+    /// </summary>
+    public static GitScope? Searchable(string repo, Func<GitScope?> list)
+    {
+        lock (gate)
+        {
+            if (!Heard(repo))
+            {
+                searchable.Remove(repo);
+                return list();
+            }
+        }
+
+        // Counted from now on, if no view has read it yet.
+        var changes = Changes(repo);
+        Known? entry;
+        int forgotten;
+        lock (gate)
+        {
+            if (!known.TryGetValue(repo, out entry))
+            {
+                return list();
+            }
+
+            forgotten = entry.Forgotten;
+            if (searchable.TryGetValue(repo, out var kept) &&
+                kept.Entry == entry &&
+                kept.Changes == changes &&
+                kept.Forgotten == forgotten)
+            {
+                return kept.Scope;
+            }
+        }
+
+        var scope = list();
+        if (scope == null)
+        {
+            return null;
+        }
+
+        lock (gate)
+        {
+            // As of the changes heard by the time it was listed, not before: listing changes
+            // .git\refs itself, which counts as a change, and kept as of before it, it would be
+            // listed every time. One made to the files while it was listed may be missed, till
+            // the next change, or Refresh.
+            if (known.TryGetValue(repo, out var now) &&
+                now == entry &&
+                entry.Forgotten == forgotten)
+            {
+                searchable[repo] = (scope, entry, entry.Changes, forgotten);
+            }
+        }
+
+        return scope;
+    }
+
+    /// <summary>
+    /// Lets go of what Find in Files listed, for it to be listed again: Refresh on its results.
+    /// </summary>
+    public static void ForgetSearchable()
+    {
+        lock (gate)
+        {
+            searchable.Clear();
+        }
+    }
+
     /// <summary>
     /// Makes the repositories stale, for Refresh, which reads them again whatever the watch says.
     /// </summary>

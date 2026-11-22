@@ -1,0 +1,7 @@
+﻿{
+  failure:
+Left as they are:
+{root}\edited.txt has changed since,
+  kept: alpha,
+  edited: edited since
+}

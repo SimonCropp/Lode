@@ -1,0 +1,15 @@
+﻿{
+  cs: [
+    src\App.cs,
+    src\obj\Gen.cs
+  ],
+  notMinified: [
+    src\App.js
+  ],
+  notObj: [
+    node_modules\lib.js,
+    src\App.cs,
+    src\App.js,
+    src\App.min.js
+  ]
+}

@@ -93,4 +93,21 @@ public class TextEditorsTests
             // Notepad's path depends on where this machine keeps Windows.
             .Select(_ => _ == TextEditors.Notepad ? "Notepad" : $"{_.Name}: {_.Path}")
             .ToList();
+
+    // Find in Files' results open each editor at the line, as it is told to.
+    [Test]
+    public Task OpeningAtALine() =>
+        Verify(
+            new[]
+                {
+                    @"C:\Programs\VS Code\Code.exe",
+                    @"C:\Programs\VS Code Insiders\Code - Insiders.exe",
+                    @"C:\Programs\Cursor\Cursor.exe",
+                    @"C:\Program Files\Sublime Text\subl.exe",
+                    @"C:\Programs\Zed\Zed.exe",
+                    @"C:\Program Files\Notepad++\notepad++.exe",
+                    @"C:\Windows\notepad.exe",
+                    @"C:\Tools\Other.exe"
+                }
+                .ToDictionary(_ => Path.GetFileName(_), _ => string.Join(" ", TextEditors.AtLine(_, @"C:\Code\App.cs", 12, 5))));
 }

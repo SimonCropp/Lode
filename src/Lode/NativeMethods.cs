@@ -313,4 +313,35 @@ static partial class NativeMethods
 
     [LibraryImport("kernel32.dll")]
     public static partial IntPtr GetStdHandle(int handle);
+
+    // Asking a service how it is needs no administrator permission, only these rights.
+    public const uint ServiceManagerConnect = 0x0001;
+    public const uint ServiceQueryStatus = 0x0004;
+    public const uint ServiceRunning = 4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ServiceStatus
+    {
+        public uint ServiceType;
+        public uint CurrentState;
+        public uint ControlsAccepted;
+        public uint Win32ExitCode;
+        public uint ServiceSpecificExitCode;
+        public uint CheckPoint;
+        public uint WaitHint;
+    }
+
+    [LibraryImport("advapi32.dll", EntryPoint = "OpenSCManagerW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial IntPtr OpenSCManager(string? machine, string? database, uint access);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "OpenServiceW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial IntPtr OpenService(IntPtr manager, string name, uint access);
+
+    [LibraryImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool QueryServiceStatus(IntPtr service, out ServiceStatus status);
+
+    [LibraryImport("advapi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool CloseServiceHandle(IntPtr handle);
 }

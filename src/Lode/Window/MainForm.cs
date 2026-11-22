@@ -42,8 +42,25 @@ class MainForm : Form
     ClosableTabControl tabs = new();
     ToolStripStatusLabel statusLabel = new()
     {
-        Spring = true,
         TextAlign = ContentAlignment.MiddleLeft
+    };
+
+    // Right after what the search box found, while it has found anything or not: the same text
+    // searched for inside the files instead, with Find in Files. Then the room left, so the
+    // link sits beside the count rather than across the bar from it.
+    ToolStripStatusLabel searchInsideLabel = new()
+    {
+        Name = "searchInside",
+        Text = "Search inside the files",
+        IsLink = true,
+        LinkBehavior = LinkBehavior.HoverUnderline,
+        Margin = new(12, 3, 0, 2),
+        Visible = false
+    };
+
+    ToolStripStatusLabel statusRoom = new()
+    {
+        Spring = true
     };
 
     // Before the free space: the state of the repository the folder is in, a part for each of
@@ -137,8 +154,29 @@ class MainForm : Form
 
     public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
+    // Every tab but Find Results holds one.
     public IEnumerable<FolderView> Views =>
-        tabs.TabPages.Cast<TabPage>().Select(_ => _.Controls.OfType<FolderView>().First());
+        tabs.TabPages.Cast<TabPage>().SelectMany(_ => _.Controls.OfType<FolderView>());
+
+    // Find in Files: its strip along the bottom, and the tab its results are in, one a window,
+    // made the first time something is searched for.
+    readonly FindPanel findPanel;
+    TabPage? resultsPage;
+    FindResultsView? resultsView;
+
+    /// <summary>
+    /// The Find Results tab's view, while there is one. For tests.
+    /// </summary>
+    internal FindResultsView? ResultsView => resultsView;
+
+    /// <summary>
+    /// The find strip. For tests.
+    /// </summary>
+    internal FindPanel FindPanel => findPanel;
+
+    bool ResultsShowing =>
+        resultsPage != null &&
+        tabs.SelectedTab == resultsPage;
 
     public MainForm(string[] arguments, Settings settings, Places places) :
         this(settings, places) =>
@@ -150,9 +188,26 @@ class MainForm : Form
         this.settings = settings;
         this.places = places;
         OpenSite = url => FileOperations.Open(this, url);
+        ConfirmReplace = ShowReplacePrompt;
         tree = new(settings, places);
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
+        findPanel = new(settings);
+        findPanel.FindRequested += () => Find();
+        findPanel.ReplaceRequested += () => _ = Replace();
+        findPanel.StopRequested += () => resultsView?.Stop();
+        findPanel.Searching = () => resultsView?.IsSearching == true;
+        findPanel.CurrentFolder = SearchableFolder;
+        findPanel.CloseRequested += () =>
+        {
+            if (ResultsShowing)
+            {
+                resultsView?.FocusList();
+                return;
+            }
+
+            ActiveView?.FocusList();
+        };
         places.Changed += RebuildPlaces;
         UndoHistory.Instance.Changed += OnUndoChanged;
         updates.Changed += OnUpdatesChanged;
@@ -196,6 +251,9 @@ class MainForm : Form
         Controls.Add(BuildContent());
         Controls.Add(BuildActionsBar());
         Controls.Add(BuildNavigationBar());
+
+        // Before the status bar, so it docks above it.
+        Controls.Add(findPanel);
         Controls.Add(BuildStatusBar());
         ResumeLayout(false);
         PerformLayout();
@@ -497,6 +555,11 @@ class MainForm : Form
             {
                 Glyph = Icons.CommandPalette,
                 Shortcut = "Ctrl+Shift+P"
+            },
+            new("Find in files", OpenFind)
+            {
+                Glyph = Icons.Search,
+                Shortcut = "Ctrl+Shift+F"
             },
             null,
             new("Show hidden items", ToggleHidden)
@@ -851,6 +914,8 @@ class MainForm : Form
             Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
         };
         status.Items.Add(statusLabel);
+        status.Items.Add(searchInsideLabel);
+        status.Items.Add(statusRoom);
         status.Items.Add(updateLabel);
         status.Items.Add(gitButton);
         AddGitPart(
@@ -877,6 +942,7 @@ class MainForm : Form
         gitButton.Image = Icons.Bitmap(Icons.Branch, LogicalToDeviceUnits(16), SystemColors.ControlText, LogicalToDeviceUnits(4));
         gitButton.Click += (_, _) => ShowBranches();
         updateLabel.Click += (_, _) => ShowOptions("Updates");
+        searchInsideLabel.Click += (_, _) => ActiveView?.SearchInsideTheFiles();
         siteLabel.Click += (_, _) =>
         {
             if (siteLabel.Tag is RemoteSite site)
@@ -1198,9 +1264,8 @@ class MainForm : Form
         settings.Height = bounds.Height;
         settings.Maximized = WasMaximized;
         settings.SplitterDistance = split.SplitterDistance;
-        settings.Tabs = tabs.TabPages
-            .Cast<TabPage>()
-            .Select(_ => _.Controls.OfType<FolderView>().First().CurrentPath)
+        settings.Tabs = Views
+            .Select(_ => _.CurrentPath)
             .ToList();
         // The tab showing is looked at until now.
         var now = Time.GetUtcNow();
@@ -1212,7 +1277,9 @@ class MainForm : Form
         settings.TabsLastShown = Views
             .Select(_ => _.LastShown)
             .ToList();
-        settings.ActiveTab = tabs.SelectedIndex;
+        // Among the folders' tabs, which are all that open again: with Find Results showing, the
+        // one before it.
+        settings.ActiveTab = Math.Max(0, TabPages.Take(tabs.SelectedIndex + 1).Count(_ => _ != resultsPage) - 1);
         settings.Save();
 
         if (hiding)
@@ -1247,6 +1314,7 @@ class MainForm : Form
         view.ColumnWidthsChanged += RefreshColumnWidthsInAllWindows;
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
         view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false, intoZip: true);
+        view.FindInFilesRequested += (find, regex) => WindowOf(view)?.FindInFiles(view, find, regex);
         tabs.TabPages.Add(page);
         view.OpenAt(path, intoZip);
 
@@ -1332,6 +1400,12 @@ class MainForm : Form
         RememberClosed(page);
         LeaveTab(page);
         tabs.TabPages.Remove(page);
+        if (page == resultsPage)
+        {
+            resultsPage = null;
+            resultsView = null;
+        }
+
         page.Dispose();
 
         // A folder that had the same name as this one's may go back to its name alone.
@@ -1363,7 +1437,12 @@ class MainForm : Form
 
     void RememberClosed(TabPage page)
     {
-        closedTabs.Add(page.Controls.OfType<FolderView>().First().CurrentPath);
+        if (page.Controls.OfType<FolderView>().FirstOrDefault() is not { } view)
+        {
+            return;
+        }
+
+        closedTabs.Add(view.CurrentPath);
         if (closedTabs.Count > maximumClosedTabs)
         {
             closedTabs.RemoveAt(0);
@@ -1423,9 +1502,15 @@ class MainForm : Form
 
     void OnTabDraggedOff(TabPage page, Point screenLocation)
     {
+        // Find Results stays with the window whose strip it is of.
+        if (page.Controls.OfType<FolderView>().FirstOrDefault() is not { } view)
+        {
+            return;
+        }
+
         // A tab dropped in the Pinned list pins its folder there, and stays where it was.
         if (WindowAt(screenLocation) is FolderTree tree &&
-            tree.PinIfOverPinned(screenLocation, page.Controls.OfType<FolderView>().First().CurrentPath))
+            tree.PinIfOverPinned(screenLocation, view.CurrentPath))
         {
             return;
         }
@@ -1655,8 +1740,15 @@ class MainForm : Form
         // is asked for.
         UpdateShowing();
         var view = ActiveView;
+        ShowingFolder(view != null);
         if (view == null)
         {
+            if (ResultsShowing)
+            {
+                Text = "Find Results" + TitleSuffix;
+                UpdateResultsStatus();
+            }
+
             return;
         }
 
@@ -1679,6 +1771,17 @@ class MainForm : Form
         var selection = view.SelectedEntries();
         UpdateActions(selection);
         statusLabel.Text = view.StatusFor(selection);
+        var searchesInside = view.CanSearchInsideTheFiles;
+        if (searchInsideLabel.Visible != searchesInside)
+        {
+            searchInsideLabel.Visible = searchesInside;
+        }
+
+        if (searchesInside)
+        {
+            searchInsideLabel.ToolTipText = $"Search for \"{view.Filter}\" in what the files hold, with Find in Files (Ctrl+Enter)";
+        }
+
         ShowGitParts(view.GitRepoState);
         var site = view.GitSite;
         siteLabel.Tag = site;
@@ -1908,6 +2011,12 @@ class MainForm : Form
         ShellIcons.ForgetDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();
+        if (ResultsShowing)
+        {
+            resultsView?.SearchAgain();
+            return;
+        }
+
         ActiveView?.ReloadRows();
     }
 
@@ -2223,6 +2332,19 @@ class MainForm : Form
 
     void OnFilterKeyDown(object? sender, KeyEventArgs args)
     {
+        // What it says, searched for inside the files instead.
+        if (args.KeyData == (Keys.Control | Keys.Enter))
+        {
+            args.Handled = true;
+            args.SuppressKeyPress = true;
+            if (ActiveView is { CanSearchInsideTheFiles: true } view)
+            {
+                view.SearchInsideTheFiles();
+            }
+
+            return;
+        }
+
         if (args.KeyCode == Keys.Escape)
         {
             filterBox.Clear();
@@ -2263,18 +2385,23 @@ class MainForm : Form
     /// </summary>
     internal ExplorerMenu TabMenu(TabPage page)
     {
-        var view = page.Controls.OfType<FolderView>().First();
         var menu = new ExplorerMenu();
-        menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true, intoZip: true));
-        var path = view.CurrentPath;
-        if (!Locations.IsThisPC(path))
+
+        // Find Results has no folder to duplicate or pin.
+        if (page.Controls.OfType<FolderView>().FirstOrDefault() is { } view)
         {
-            var pinned = IsPinned(path);
-            var pinText = pinned ? "Unpin from Quick access" : "Pin to Quick access";
-            menu.Items.Add(pinText, null, (_, _) => ShellContextMenu.SetPinned(Handle, path, !pinned));
+            menu.Items.Add("Duplicate tab", null, (_, _) => AddTab(view.CurrentPath, true, intoZip: true));
+            var path = view.CurrentPath;
+            if (!Locations.IsThisPC(path))
+            {
+                var pinned = IsPinned(path);
+                var pinText = pinned ? "Unpin from Quick access" : "Pin to Quick access";
+                menu.Items.Add(pinText, null, (_, _) => ShellContextMenu.SetPinned(Handle, path, !pinned));
+            }
+
+            menu.Items.Add(new ToolStripSeparator());
         }
 
-        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Close tab", null, (_, _) => CloseTab(page));
         var index = tabs.TabPages.IndexOf(page);
         menu.Items.Add("Close other tabs", null, (_, _) => CloseOtherTabs(page));
@@ -2329,9 +2456,14 @@ class MainForm : Form
         Add("Search this folder", FocusFilter, "Ctrl+F");
         Add("New tab", NewTab, "Ctrl+T");
         Add("New window", NewWindow, "Ctrl+N");
+        Add("Find in files", OpenFind, "Ctrl+Shift+F");
         if (page != null)
         {
-            Add("Duplicate tab", () => AddTab(view!.CurrentPath, true, intoZip: true));
+            if (view != null)
+            {
+                Add("Duplicate tab", () => AddTab(view.CurrentPath, true, intoZip: true));
+            }
+
             Add("Close tab", () => CloseTab(page), "Ctrl+W");
             Add("Close other tabs", () => CloseOtherTabs(page), enabled: tabs.TabCount > 1);
             Add("Close tabs to the left", () => CloseTabsToTheLeft(page), enabled: index > 0);
@@ -2340,8 +2472,8 @@ class MainForm : Form
         }
 
         Add("Reopen closed tab", ReopenClosedTab, "Ctrl+Shift+T", CanReopenClosedTab);
-        Add(UndoHistory.Instance.UndoText, () => ActiveView?.Undo(), "Ctrl+Z", UndoHistory.Instance.CanUndo);
-        Add(UndoHistory.Instance.RedoText, () => ActiveView?.Redo(), "Ctrl+Y", UndoHistory.Instance.CanRedo);
+        Add(UndoHistory.Instance.UndoText, Undo, "Ctrl+Z", UndoHistory.Instance.CanUndo);
+        Add(UndoHistory.Instance.RedoText, Redo, "Ctrl+Y", UndoHistory.Instance.CanRedo);
         Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
@@ -2451,6 +2583,352 @@ class MainForm : Form
     {
         filterBox.Focus();
         filterBox.SelectAll();
+    }
+
+    // The folder Find in Files was last opened on, which Where's folders not given in full are
+    // in while Find Results, which has none, shows.
+    string? findFolder;
+
+    // The folder the tab showing has open, where Find in Files can search: not This PC, a
+    // machine on the network, or a zip.
+    string? SearchableFolder()
+    {
+        if (ActiveView is { IsReadOnly: false } view)
+        {
+            return view.CurrentPath;
+        }
+
+        return null;
+    }
+
+    // The folders the window's tabs show, for <open folders>.
+    List<string> OpenFolders() =>
+        Views
+            .Where(_ => !_.IsReadOnly)
+            .Select(_ => _.CurrentPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    // Ctrl+Shift+F: the find strip, on the folder open. From Find Results, Where is left as it
+    // is.
+    internal void OpenFind()
+    {
+        var folder = SearchableFolder();
+        if (folder != null)
+        {
+            findFolder = folder;
+        }
+
+        findPanel.Open(folder);
+    }
+
+    // From the search box, whose filter matched no names: the same, searched for inside the
+    // files of the tab's folder.
+    void FindInFiles(FolderView view, string find, bool regex)
+    {
+        findFolder = view.CurrentPath;
+        findPanel.Open(view.CurrentPath);
+        findPanel.SetFind(find, regex);
+        Find();
+    }
+
+    // What the strip says, searched for, in the Find Results tab, which it shows.
+    internal void Find()
+    {
+        var query = findPanel.ReadQuery();
+        findPanel.Remember(replacing: false);
+        var view = ShowResultsTab();
+        var where = SearchWhere.Parse(query.Where, SearchableFolder() ?? findFolder, OpenFolders(), out var error);
+        Matcher? matcher = null;
+        if (where != null)
+        {
+            matcher = Matcher.Create(query, out error);
+        }
+
+        view.Run(query, where, matcher, error, settings.HiddenSystemItems());
+    }
+
+    FindResultsView ShowResultsTab()
+    {
+        if (resultsView == null ||
+            resultsPage == null)
+        {
+            resultsView = new(settings)
+            {
+                Dock = DockStyle.Fill
+            };
+            resultsView.StateChanged += OnResultsChanged;
+            resultsView.ShowInFolderRequested += ShowInFolder;
+            resultsPage = new()
+            {
+                Padding = Padding.Empty,
+                Text = "Find Results",
+                ToolTipText = "Find in Files (Ctrl+Shift+F)"
+            };
+            resultsPage.Controls.Add(resultsView);
+            tabs.TabPages.Add(resultsPage);
+        }
+
+        tabs.SelectedTab = resultsPage;
+        return resultsView;
+    }
+
+    // The tab says while it is searching, and the status bar how far it has got.
+    void OnResultsChanged()
+    {
+        if (resultsPage == null ||
+            resultsView == null)
+        {
+            return;
+        }
+
+        var text = "Find Results";
+        if (resultsView.IsSearching)
+        {
+            text = "Find Results…";
+        }
+
+        if (resultsPage.Text != text)
+        {
+            resultsPage.Text = text;
+        }
+
+        if (ResultsShowing)
+        {
+            ShowResultsProgress();
+        }
+    }
+
+    // As Find Results shows: what was found so far in the status bar, and none of what is a
+    // folder's, its free space, its repository, or the actions on its selection.
+    void UpdateResultsStatus()
+    {
+        ShowResultsProgress();
+        searchInsideLabel.Visible = false;
+        spaceLabel.Text = "";
+        siteLabel.Visible = false;
+        ShowGitParts(null);
+        UpdateActions();
+    }
+
+    // Ten times a second while searching. Set once, and only when it says something else: the
+    // status bar emptied, even for a moment, is shorter, and everything above it moves.
+    void ShowResultsProgress()
+    {
+        var summary = resultsView?.Results.SummaryLines() ?? [];
+        var text = "Find Results";
+        if (summary.Count > 0)
+        {
+            text = summary[0];
+        }
+
+        if (statusLabel.Text != text)
+        {
+            statusLabel.Text = text;
+        }
+    }
+
+    // Find Results has no folder: going back, forward and up, the address and the search box
+    // are for the folders' tabs.
+    void ShowingFolder(bool folder)
+    {
+        breadcrumb.Enabled = folder;
+        filterFrame.Enabled = folder;
+        if (folder)
+        {
+            return;
+        }
+
+        backButton.Enabled = false;
+        forwardButton.Enabled = false;
+        upButton.Enabled = false;
+    }
+
+    // Show in folder, from Find Results: the tab showing the folder the file is in, or a new
+    // one, with the file selected.
+    void ShowInFolder(string path)
+    {
+        if (SelectTabShowing(path))
+        {
+            return;
+        }
+
+        AddTab(path, true);
+    }
+
+    /// <summary>
+    /// Asks whether to replace, saying how many and with what. Replaced in tests.
+    /// </summary>
+    internal Func<int, int, string, string, bool> ConfirmReplace;
+
+    bool ShowReplacePrompt(int matches, int files, string find, string replacement)
+    {
+        var replace = new TaskDialogButton("Replace");
+        var occurrences = $"{matches:N0} occurrences";
+        if (matches == 1)
+        {
+            occurrences = "1 occurrence";
+        }
+
+        var inFiles = $"{files:N0} files";
+        if (files == 1)
+        {
+            inFiles = "1 file";
+        }
+
+        var page = new TaskDialogPage
+        {
+            Caption = "Lode",
+            Heading = $"Replace {occurrences} in {inFiles}?",
+            Text = $"Each \"{find}\" becomes \"{replacement}\", in the files as they are now. Undo " +
+                   "(Ctrl+Z) puts them back.",
+            Icon = TaskDialogIcon.Warning,
+            Buttons = { replace, TaskDialogButton.Cancel },
+            DefaultButton = replace
+        };
+        return TaskDialog.ShowDialog(this, page) == replace;
+    }
+
+    // Whether results are of the query, and searched everything, as Replace replaces in what
+    // was found.
+    static bool IsFinishedFor(FindResults results, FindQuery query) =>
+        results is
+        {
+            Done: true,
+            Stopped: false,
+            Error: null,
+            Replaced: null
+        } &&
+        results.Query == query;
+
+    // Replace: in what Find Results shows, if it is of what the strip says now and the search
+    // finished, otherwise in what a search for that finds. Asks first, saying how many, then
+    // runs in the Actions panel, and Find Results then shows each line replaced.
+    internal async Task Replace()
+    {
+        var query = findPanel.ReadQuery();
+        if (resultsView is not { IsSearching: false } view ||
+            !IsFinishedFor(view.Results, query))
+        {
+            Find();
+            view = resultsView!;
+            await view.Searching;
+            if (IsDisposed ||
+                !IsFinishedFor(view.Results, query))
+            {
+                return;
+            }
+        }
+
+        var results = view.Results;
+        var files = results.Files.Select(_ => _.Path).ToList();
+        if (files.Count == 0 ||
+            Matcher.Create(query, out _) is not { } matcher)
+        {
+            return;
+        }
+
+        var replacement = findPanel.ReplaceBox.Text;
+        if (!ConfirmReplace(results.Files.Sum(_ => _.MatchCount), files.Count, query.Find, replacement))
+        {
+            return;
+        }
+
+        findPanel.Remember(replacing: true);
+        var preserveCase = findPanel.PreserveCase;
+        var roots = SearchWhere.Parse(query.Where, SearchableFolder() ?? findFolder, OpenFolders(), out _)?.Roots ?? [query.Where];
+        ReplaceInFiles.Outcome? done = null;
+        await ActionLog.Run(
+            $"Replace \"{query.Find}\"",
+            roots,
+            async (progress, cancel) =>
+            {
+                done = await Task.Run(() => ReplaceInFiles.Run(files, matcher, replacement, preserveCase, query.ContextLines, progress, cancel), Cancel.None);
+                return ReplaceOutcome(done);
+            });
+        if (done == null)
+        {
+            return;
+        }
+
+        if (done.Undo != null)
+        {
+            UndoHistory.Instance.Record(done.Undo);
+        }
+
+        var shown = new FindResults(query)
+        {
+            Done = true,
+            Replaced = (replacement, done.Replaced, done.Changed.Count, done.Failed.Count)
+        };
+        foreach (var file in done.Changed)
+        {
+            shown.Add(file);
+        }
+
+        resultsView?.ShowReplaced(shown);
+    }
+
+    static ActionLog.Outcome ReplaceOutcome(ReplaceInFiles.Outcome done)
+    {
+        var occurrences = $"{done.Replaced:N0} occurrences";
+        if (done.Replaced == 1)
+        {
+            occurrences = "1 occurrence";
+        }
+
+        var summary = $"Replaced {occurrences} in {done.Changed.Count:N0} files";
+        if (done.Failed.Count > 0)
+        {
+            summary += $", {done.Failed.Count:N0} couldn't be written";
+        }
+
+        var details = new StringBuilder();
+        foreach (var failure in done.Failed)
+        {
+            details.AppendLine($"Not written: {failure.Path}: {failure.Error}");
+        }
+
+        foreach (var file in done.Changed)
+        {
+            details.AppendLine($"{file.Path}: {file.MatchCount:N0}");
+        }
+
+        return new(done.Failed.Count == 0, summary, details.ToString().TrimEnd());
+    }
+
+    // Ctrl+Z and Ctrl+Y: through the tab's view, which says when one can't be done; with Find
+    // Results showing, which has none, the window says.
+    void Undo()
+    {
+        if (ActiveView is { } view)
+        {
+            view.Undo();
+            return;
+        }
+
+        RunUndo(UndoHistory.Instance.Undo);
+    }
+
+    void Redo()
+    {
+        if (ActiveView is { } view)
+        {
+            view.Redo();
+            return;
+        }
+
+        RunUndo(UndoHistory.Instance.Redo);
+    }
+
+    async void RunUndo(Func<IntPtr, Task<string?>> step)
+    {
+        var failure = await step(Handle);
+        if (failure != null &&
+            !IsDisposed)
+        {
+            MessageBox.Show(this, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     TabPage? TabAt(Point location)
@@ -2592,11 +3070,14 @@ class MainForm : Form
 
                 return true;
             case Keys.Control | Keys.Z when !IsEditingText():
-                ActiveView?.Undo();
+                Undo();
                 return true;
             case Keys.Control | Keys.Y when !IsEditingText():
             case Keys.Control | Keys.Shift | Keys.Z when !IsEditingText():
-                ActiveView?.Redo();
+                Redo();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.F:
+                OpenFind();
                 return true;
             case Keys.Control | Keys.Shift | Keys.T:
                 ReopenClosedTab();
@@ -2609,6 +3090,13 @@ class MainForm : Form
                 return true;
             case Keys.Control | Keys.Shift | Keys.Tab:
                 SelectAdjacentTab(-1);
+                return true;
+            // With Find Results showing, which has no address, the next match and the one before.
+            case Keys.F4 when ResultsShowing:
+                resultsView?.GoToMatch(true);
+                return true;
+            case Keys.Shift | Keys.F4 when ResultsShowing:
+                resultsView?.GoToMatch(false);
                 return true;
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D:
