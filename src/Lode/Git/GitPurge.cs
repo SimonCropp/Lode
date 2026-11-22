@@ -397,7 +397,11 @@ static class GitPurge
                 return failures;
             });
 
-    static void DeleteOutright(string path)
+    /// <summary>
+    /// Deletes a file or folder outright, not to the Recycle Bin, read-only files and all, as git
+    /// leaves its objects.
+    /// </summary>
+    internal static void DeleteOutright(string path)
     {
         if (Directory.Exists(path))
         {

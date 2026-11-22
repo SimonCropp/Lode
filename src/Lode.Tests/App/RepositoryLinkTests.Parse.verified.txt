@@ -22,15 +22,22 @@
     Remote: https://github.com/SimonCropp/Lode,
     Name: SimonCropp/Lode
   },
+  x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=--orphan: {
+    scheme: x-github-client,
+    Remote: https://github.com/SimonCropp/Lode,
+    Name: SimonCropp/Lode
+  },
   x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=feature&pr=12: {
     scheme: x-github-client,
     Remote: https://github.com/SimonCropp/Lode,
+    Branch: feature,
     Name: SimonCropp/Lode
   },
   x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=main&filepath=src%2FLode%2FProgram.cs: {
     scheme: x-github-client,
     Remote: https://github.com/SimonCropp/Lode,
     File: src/Lode/Program.cs,
+    Branch: main,
     Name: SimonCropp/Lode
   }
 }

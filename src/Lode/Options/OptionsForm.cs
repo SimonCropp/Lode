@@ -915,7 +915,8 @@ class OptionsForm : Form
             Description(
                 "Open the repository from the code folder in Lode when a site's button would hand " +
                 "it to a desktop app, with the file the link names selected. A link for a " +
-                "repository that isn't in the code folder is offered to the app it was for. " +
+                "repository that isn't in the code folder offers to clone it there, or to hand " +
+                "the link to the app it was for. " +
                 "Revert gives the links back to that app. This applies to your Windows account only.",
                 new(3, 0, 3, 3))
         };

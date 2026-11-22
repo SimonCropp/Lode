@@ -145,8 +145,9 @@ static class Program
     }
 
     // The clone in the code folder of each repository the links name, or the file in it a link
-    // names. A link for a repository not there, or one Lode can't read, is offered to the app it
-    // was for, as Windows would have handed it on before Lode took such links over.
+    // names. A repository not there is offered to be cloned there, or the link to the app it was
+    // for, as Windows would have handed it on before Lode took such links over. A link Lode
+    // can't read goes to that app.
     static List<string> RepositoriesOf(IReadOnlyList<string> links)
     {
         Settings.SeedFromInstalled();
@@ -178,18 +179,29 @@ static class Program
                 continue;
             }
 
-            NotInCodeFolder(link, codeFolder, repositoryLinks);
+            if (NotInCodeFolder(link, codeFolder, repositoryLinks) is { } cloned)
+            {
+                found.Add(cloned);
+            }
         }
 
         return found;
     }
 
-    static void NotInCodeFolder(RepositoryLink link, string? codeFolder, RepositoryLinks repositoryLinks)
+    // Cloned into the code folder, or handed to the app the link was for, which can clone it
+    // elsewhere. The clone, or the file in it the link names, once cloned.
+    static string? NotInCodeFolder(RepositoryLink link, string? codeFolder, RepositoryLinks repositoryLinks)
     {
+        if (codeFolder != null &&
+            Directory.Exists(codeFolder))
+        {
+            return RepositoryClone.Offer(link, codeFolder, repositoryLinks);
+        }
+
         var app = link.Handler.App;
         var why = codeFolder == null
             ? $"No code folder is chosen, so Lode can't look for {link.Name}. Choose one on the Code page of Options."
-            : $"{link.Name} isn't cloned in the code folder, {codeFolder}.";
+            : $"Lode can't find the code folder, {codeFolder}, to look for {link.Name} in. Choose another on the Code page of Options.";
         if (repositoryLinks.ForwardCommand(link.Handler) == null)
         {
             MessageBox.Show(
@@ -197,7 +209,7 @@ static class Program
                 "Lode",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
-            return;
+            return null;
         }
 
         var answer = MessageBox.Show(
@@ -210,6 +222,8 @@ static class Program
         {
             MessageBox.Show($"{app} wouldn't start.", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+
+        return null;
     }
 
     // Explorer opens a folder named on its command line itself, not through the explore verb,

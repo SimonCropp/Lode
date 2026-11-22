@@ -169,6 +169,43 @@ public class CodeCommandsTests
             () => CodeCommands.Pull([one], cancel: new(canceled: true)));
     }
 
+    // What git wrote, as a terminal shows it: a line written over is gone, and so is what clears
+    // the rest of a terminal's line, as origin's lines end. Each line is reported as it comes,
+    // those written over too.
+    [Test]
+    public async Task ReadReportingKeepsWhatATerminalShows()
+    {
+        var reported = new List<string>();
+
+        var output = CodeCommands.ReadReporting(
+            new StringReader(
+                "Cloning into 'Lode'...\n" +
+                "remote: Counting objects:  50% (1/2)\e[K\r" +
+                "remote: Counting objects: 100% (2/2), done.\e[K\r\n" +
+                "Receiving objects:  50% (1/2)\r" +
+                "Receiving objects: 100% (2/2), done.\n" +
+                "\n" +
+                "fatal: the last line"),
+            reported.Add);
+
+        await Assert.That(output).IsEqualTo(
+            "Cloning into 'Lode'...\n" +
+            "remote: Counting objects: 100% (2/2), done.\n" +
+            "Receiving objects: 100% (2/2), done.\n" +
+            "\n" +
+            "fatal: the last line");
+        await Assert.That(reported).IsEquivalentTo(
+            [
+                "Cloning into 'Lode'...",
+                "remote: Counting objects:  50% (1/2)",
+                "remote: Counting objects: 100% (2/2), done.",
+                "Receiving objects:  50% (1/2)",
+                "Receiving objects: 100% (2/2), done.",
+                "fatal: the last line"
+            ],
+            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     // Cancels as soon as progress is reported, on the thread reporting it.
     sealed class CancelOnReport(CancelSource cancel) : IProgress<string>
     {

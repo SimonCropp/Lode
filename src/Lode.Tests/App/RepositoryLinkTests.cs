@@ -8,6 +8,8 @@ public class RepositoryLinkTests
         "x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=feature&pr=12",
         // A file's: the file, on the branch shown.
         "x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=main&filepath=src%2FLode%2FProgram.cs",
+        // A branch git would take for an option, which no branch can be named.
+        "x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=--orphan",
         // GitHub's Open with Visual Studio.
         "git-client://clone?repo=https%3A%2F%2Fgithub.com%2FSimonCropp%2FLode",
         "git-client://clone/?repo=https%3A%2F%2Fgithub.com%2FSimonCropp%2FLode",
@@ -30,6 +32,7 @@ public class RepositoryLinkTests
                         scheme = link.Handler.Scheme,
                         link.Remote,
                         link.File,
+                        link.Branch,
                         link.Name
                     }
                     : "(none)"));

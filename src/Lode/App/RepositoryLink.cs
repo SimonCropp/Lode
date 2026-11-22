@@ -6,6 +6,12 @@
 sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, string Remote, string? File)
 {
     /// <summary>
+    /// The branch the link was for, a pull request's say, or null. Only a clone the link made is
+    /// switched to it: one already in the code folder may have changes on its own branch.
+    /// </summary>
+    public string? Branch { get; init; }
+
+    /// <summary>
     /// The repository a link names, or null when it names none Lode can tell. GitHub Desktop's
     /// are x-github-client://openRepo/{url}, with ?branch= and, for a file, &amp;filepath=.
     /// Visual Studio's are git-client://clone?repo={url, escaped}.
@@ -25,6 +31,7 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
 
         string? remote;
         string? file = null;
+        string? branch = null;
         if (handler == RepositoryLinks.GitHubDesktop)
         {
             const string openRepo = "openRepo/";
@@ -35,6 +42,7 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
 
             remote = Uri.UnescapeDataString(path[openRepo.Length..]);
             file = parameters.GetValueOrDefault("filepath");
+            branch = parameters.GetValueOrDefault("branch");
         }
         else
         {
@@ -57,7 +65,17 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
             file = null;
         }
 
-        return new(handler, link, remote, file);
+        // One git would take for an option, which no branch's name can be.
+        if (string.IsNullOrWhiteSpace(branch) ||
+            branch.StartsWith('-'))
+        {
+            branch = null;
+        }
+
+        return new(handler, link, remote, file)
+        {
+            Branch = branch
+        };
     }
 
     static Dictionary<string, string> Query(string query)
@@ -131,6 +149,15 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
             return null;
         }
 
+        return In(repo);
+    }
+
+    /// <summary>
+    /// The file the link names in <paramref name="repo"/>, a clone of the repository, when that
+    /// is there; otherwise the clone.
+    /// </summary>
+    public string In(string repo)
+    {
         if (File == null)
         {
             return repo;

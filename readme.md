@@ -112,7 +112,7 @@ On the **Links** page of **Options**, Lode can take over the links code sites us
 Each has **Open in Lode**, and **Revert** to give the links back.
 
  * The repository is found up to two levels into the code folder, by its origin, however its url is written.
- * One not in the code folder goes to the app it was for, which can clone it.
+ * One not in the code folder can be cloned into it, with the git you have installed, then opened. It goes in a folder named for the repository, or, with that taken, one in a folder named for its owner. A pull request's link checks out its branch, where the repository has it. Or the link can go to the app it was for.
  * It writes only to `HKEY_CURRENT_USER\Software\Classes`, keeping what was there for Revert.
  * GitHub Desktop may take its links back when it updates: the **Links** page then says so.
 

@@ -508,7 +508,12 @@ static class CodeCommands
 
     /// <param name="cancel">Stops git, and whatever it started, ssh say, where it is.</param>
     /// <param name="network">Whether git may go to a remote, over ssh perhaps.</param>
-    internal static RepoResult Git(string repo, Cancel cancel, bool network, params string[] arguments)
+    internal static RepoResult Git(string repo, Cancel cancel, bool network, params string[] arguments) =>
+        Git(repo, cancel, network, null, arguments);
+
+    /// <param name="progress">Each line git writes as it goes, clone's "Receiving objects:  45%"
+    /// with --progress say, as it writes it.</param>
+    internal static RepoResult Git(string repo, Cancel cancel, bool network, Action<string>? progress, string[] arguments)
     {
         if (cancel.IsCancellationRequested)
         {
@@ -552,7 +557,16 @@ static class CodeCommands
             // Cancel.None, not the token: cancelled, git is stopped, which ends its output, and
             // what it said till then goes in the details. Given the token, reading would throw
             // instead, and the details would say only that a task was cancelled.
-            var error = process.StandardError.ReadToEndAsync(Cancel.None);
+            Task<string> error;
+            if (progress == null)
+            {
+                error = process.StandardError.ReadToEndAsync(Cancel.None);
+            }
+            else
+            {
+                error = Task.Run(() => ReadReporting(process.StandardError, progress), Cancel.None);
+            }
+
             var output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
             if (cancel.IsCancellationRequested)
@@ -569,6 +583,79 @@ static class CodeCommands
     }
 
     const string cancelled = "Cancelled";
+
+    /// <summary>
+    /// What git wrote, as a terminal would show it, giving <paramref name="progress"/> each line
+    /// as it comes. Git ends a line with a carriage return to write the next over it, so such a
+    /// line is gone once the next one starts. A line from origin may end with what clears the
+    /// rest of a terminal's line, which goes too.
+    /// </summary>
+    internal static string ReadReporting(TextReader reader, Action<string> progress)
+    {
+        var output = new StringBuilder();
+        var line = new StringBuilder();
+        var overwrite = false;
+        var buffer = new char[1024];
+        int read;
+        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            foreach (var character in buffer.AsSpan(0, read))
+            {
+                switch (character)
+                {
+                    case '\r':
+                        Report();
+                        overwrite = true;
+                        break;
+                    case '\n':
+                        // After a carriage return, \r\n: the line is reported already.
+                        if (!overwrite)
+                        {
+                            Report();
+                        }
+
+                        output.Append(Clean()).Append('\n');
+                        line.Clear();
+                        overwrite = false;
+                        break;
+                    default:
+                        if (overwrite)
+                        {
+                            line.Clear();
+                            overwrite = false;
+                        }
+
+                        line.Append(character);
+                        break;
+                }
+            }
+        }
+
+        // The last line, as the terminal would be left showing it.
+        if (line.Length > 0)
+        {
+            if (!overwrite)
+            {
+                Report();
+            }
+
+            output.Append(Clean());
+        }
+
+        return output.ToString();
+
+        string Clean() =>
+            line.ToString().Replace("\e[K", "").Trim();
+
+        void Report()
+        {
+            var clean = Clean();
+            if (clean.Length > 0)
+            {
+                progress(clean);
+            }
+        }
+    }
 
     // The user's own ssh, set in the environment Lode was started with or in git's config, is
     // left as it is: it may be one that asks some other way.
