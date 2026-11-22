@@ -1363,12 +1363,16 @@ public class FolderViewTests
         view.Reveal(fixture.At("Archive", "already.aleph"));
         await Pump.Loaded(view);
 
+        // The shell copies on a thread of its own, slowly on a busy machine, and the list has
+        // already loaded: waiting on that, the second paste could start before the first had
+        // made the file it copies, and the shell would stop to say it can't find it. So each
+        // waits for what was pasted to be selected, as it is once it is there.
         view.Paste(new([fixture.At("notes.aleph"), fixture.At("Docs")], false));
-        await Pump.Loaded(view);
+        await Pump.Until(() => Selected(view).Order().SequenceEqual(["Docs", "notes.aleph"]));
         var intoArchive = Selected(view);
 
         view.Paste(new([fixture.At("Archive", "notes.aleph")], false));
-        await Pump.Loaded(view);
+        await Pump.Until(() => Selected(view).SequenceEqual(["notes - Copy.aleph"]));
 
         await Assert.That(intoArchive).IsEquivalentTo(["Docs", "notes.aleph"]);
         await Assert.That(Selected(view)).IsEquivalentTo(["notes - Copy.aleph"]);
@@ -2025,10 +2029,47 @@ public class FolderViewTests
         }
     }
 
+    // Which of two repositories a change at path is a change to, as the cache counts their
+    // changes. Not whether each is still fresh after it, which also asks whether the watch is
+    // listening just then, and takes in whatever else the watch has heard meanwhile.
+    static async Task<(bool, bool)> ChangeAt(string path, string first, string second)
+    {
+        await Quiet(first, second);
+        var firstBefore = GitCache.Changes(first);
+        var secondBefore = GitCache.Changes(second);
+        GitCache.ChangedAt(path);
+        return (GitCache.Changes(first) != firstBefore, GitCache.Changes(second) != secondBefore);
+    }
+
+    // The watch can yet tell of what a test made just before it began, a folder's time changed
+    // say, and on a busy machine, as CI's is, that comes after what the test then counts. So it
+    // counts once neither repository has had a change for a moment.
+    static async Task Quiet(string first, string second)
+    {
+        var quiet = Stopwatch.StartNew();
+        var waited = Stopwatch.StartNew();
+        var counts = (GitCache.Changes(first), GitCache.Changes(second));
+        while (quiet.Elapsed < TimeSpan.FromMilliseconds(250))
+        {
+            if (waited.Elapsed > TimeSpan.FromSeconds(10))
+            {
+                throw new($"The watch went on hearing of changes to {first} and {second}.");
+            }
+
+            await Pump.For(TimeSpan.FromMilliseconds(25));
+            var now = (GitCache.Changes(first), GitCache.Changes(second));
+            if (now != counts)
+            {
+                counts = now;
+                quiet.Restart();
+            }
+        }
+    }
+
     // What changes in a worktree's own git folder, its index say, is a change to it and not to
     // the repository it is of, whose index is no change to the worktree. A branch, which they
     // share, is a change to both: a worktree's commit moves one, and a fetch those it is
-    // ahead of and behind.
+    // ahead of and behind. Its log is noise, a change to neither.
     [Test]
     public async Task AWorktreesGitFolderIsItsOwnAndItsBranchesShared()
     {
@@ -2042,23 +2083,15 @@ public class FolderViewTests
         await File.WriteAllTextAsync(Path.Combine(tree, ".git"), $"gitdir: {own.Replace('\\', '/')}");
         GitCache.Watch(code.Root);
 
-        ReadNow(main, tree);
-        GitCache.ChangedAt(Path.Combine(own, "index"));
-        var afterItsIndex = (IsFresh(main), IsFresh(tree));
-        ReadNow(main, tree);
-        GitCache.ChangedAt(Path.Combine(main, ".git", "index"));
-        var afterTheOthersIndex = (IsFresh(main), IsFresh(tree));
-        ReadNow(main, tree);
-        GitCache.ChangedAt(Path.Combine(main, ".git", "refs", "heads", "tree"));
-        var afterABranch = (IsFresh(main), IsFresh(tree));
-        ReadNow(main, tree);
-        GitCache.ChangedAt(Path.Combine(own, "logs", "HEAD"));
-        var afterItsLog = (IsFresh(main), IsFresh(tree));
+        var itsIndex = await ChangeAt(Path.Combine(own, "index"), main, tree);
+        var theOthersIndex = await ChangeAt(Path.Combine(main, ".git", "index"), main, tree);
+        var aBranch = await ChangeAt(Path.Combine(main, ".git", "refs", "heads", "tree"), main, tree);
+        var itsLog = await ChangeAt(Path.Combine(own, "logs", "HEAD"), main, tree);
 
-        await Assert.That(afterItsIndex).IsEqualTo((true, false));
-        await Assert.That(afterTheOthersIndex).IsEqualTo((false, true));
-        await Assert.That(afterABranch).IsEqualTo((false, false));
-        await Assert.That(afterItsLog).IsEqualTo((true, true));
+        await Assert.That(itsIndex).IsEqualTo((false, true));
+        await Assert.That(theOthersIndex).IsEqualTo((true, false));
+        await Assert.That(aBranch).IsEqualTo((true, true));
+        await Assert.That(itsLog).IsEqualTo((false, false));
     }
 
     // A submodule's git folder is in the .git of the repository it is in. A commit there is a
@@ -2076,15 +2109,11 @@ public class FolderViewTests
         await File.WriteAllTextAsync(Path.Combine(sub, ".git"), "gitdir: ../.git/modules/sub");
         GitCache.Watch(code.Root);
 
-        ReadNow(super, sub);
-        GitCache.ChangedAt(Path.Combine(own, "HEAD"));
-        var afterItsHead = (IsFresh(super), IsFresh(sub));
-        ReadNow(super, sub);
-        GitCache.ChangedAt(Path.Combine(own, "objects", "3f", "9a8b"));
-        var afterItsObjects = (IsFresh(super), IsFresh(sub));
+        var itsHead = await ChangeAt(Path.Combine(own, "HEAD"), super, sub);
+        var itsObjects = await ChangeAt(Path.Combine(own, "objects", "3f", "9a8b"), super, sub);
 
-        await Assert.That(afterItsHead).IsEqualTo((false, false));
-        await Assert.That(afterItsObjects).IsEqualTo((true, true));
+        await Assert.That(itsHead).IsEqualTo((true, true));
+        await Assert.That(itsObjects).IsEqualTo((false, false));
     }
 
     // A repository that ignores bin and obj, with nothing to commit.
