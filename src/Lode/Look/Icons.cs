@@ -86,6 +86,8 @@ static class Icons
     public const char Actions = '\uE945';
     public const char Code = '\uE943';
     public const char FileExplorer = '\uEC50';
+    // A chain link, for the links sites hand to desktop apps.
+    public const char Links = '\uE71B';
     // Arrows round in a circle, as Windows Update has.
     public const char Updates = '\uE777';
     // A magnifier, as Explorer's search box has.

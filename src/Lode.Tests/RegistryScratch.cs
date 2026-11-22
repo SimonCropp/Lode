@@ -20,6 +20,36 @@ sealed class RegistryScratch : IDisposable
                          """) =>
         new(ClassesPath, command);
 
+    public string AssociationsPath => AssociationsFor(ClassesPath);
+
+    static string AssociationsFor(string classesPath) =>
+        $@"{Path.GetDirectoryName(classesPath)}\Associations";
+
+    /// <summary>
+    /// For the scratch classes.
+    /// </summary>
+    public RepositoryLinks Links(
+        string command = """
+                         "C:\Tools\lode.exe"
+                         """) =>
+        LinksFor(ClassesPath, command);
+
+    /// <summary>
+    /// For <paramref name="classesPath"/>, a scratch's, with Windows' own choices read from beside
+    /// it, and the app Windows has for links named after the app they are for, never the
+    /// machine's.
+    /// </summary>
+    public static RepositoryLinks LinksFor(string classesPath, string command) =>
+        new(
+            classesPath,
+            command,
+            AssociationsFor(classesPath),
+            (scheme, what) =>
+            {
+                var app = RepositoryLinks.All.Single(_ => _.Scheme == scheme).App;
+                return what == NativeMethods.AssocCommand ? $"\"C:\\Apps\\{app}.exe\" \"%1\"" : app;
+            });
+
     /// <summary>
     /// Sets a value under the classes key. A null name is the key's default value.
     /// </summary>

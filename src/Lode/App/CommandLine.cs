@@ -13,6 +13,16 @@ sealed record CommandLine(CommandKind Kind, IReadOnlyList<string> Paths, string?
     public IReadOnlyList<string> ForExplorer { get; init; } = [];
 
     /// <summary>
+    /// Links a code site gave for a desktop app, GitHub Desktop or Visual Studio, which reach
+    /// Lode once it has taken them over (see <see cref="RepositoryLinks"/>). Each opens the
+    /// repository it names from the code folder.
+    /// </summary>
+    public IReadOnlyList<string> Links { get; init; } = [];
+
+    static bool IsLink(string argument) =>
+        RepositoryLinks.HandlerOf(argument) != null;
+
+    /// <summary>
     /// <see cref="Paths"/> as full paths. A relative one is from the folder this launch was
     /// started in, which only this launch knows: a copy of Lode already running, which the
     /// paths are handed to, was started somewhere else.
@@ -41,9 +51,10 @@ sealed record CommandLine(CommandKind Kind, IReadOnlyList<string> Paths, string?
         var switches = arguments.Where(IsSwitch).ToList();
         if (switches.Count == 0)
         {
-            return new(CommandKind.Open, arguments.Where(_ => !Locations.IsVirtual(_)).ToList())
+            return new(CommandKind.Open, arguments.Where(_ => !Locations.IsVirtual(_) && !IsLink(_)).ToList())
             {
-                ForExplorer = arguments.Where(Locations.IsVirtual).ToList()
+                ForExplorer = arguments.Where(Locations.IsVirtual).ToList(),
+                Links = arguments.Where(IsLink).ToList()
             };
         }
 

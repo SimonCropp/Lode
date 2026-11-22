@@ -95,6 +95,24 @@ Any one of these works:
 After restoring, folders open in Explorer straight away. If one still opens in Lode, sign out and back in, or restart Explorer from Task Manager.
 
 
+## Repository links
+
+Code sites have buttons that hand a repository to a desktop app. On the **Links** page of **Options**, Lode can take those links over, so the repository opens in a Lode tab from the code folder instead:
+
+ * GitHub's **Open with GitHub Desktop**, on a repository's Code button, a pull request, or a file. These are `x-github-client://openRepo/…` links. A file's link opens the repository's folder with the file selected.
+ * GitHub's **Open with Visual Studio**, and Azure DevOps' **Clone in Visual Studio**. These are `git-client://clone?repo=…` links.
+
+![The Links page of Options](src/Lode.Tests/Options/OptionsFormTests.LinksPage.verified.png)
+
+Each has an **Open in Lode** button, and a **Revert** button that gives the links back to the app they were for. The two kinds are separate, so GitHub Desktop's links can go to Lode while Visual Studio keeps its own, or the other way round.
+
+ * The clone is found among the repositories up to two levels into the code folder, by its origin. https, ssh, a user name in the url, and Azure DevOps' older `visualstudio.com` urls all count as the same repository. Lode doesn't switch to the branch a pull request's link names.
+ * A link for a repository that isn't in the code folder, or with no code folder chosen, is offered to the app it was for, GitHub Desktop or Visual Studio, which can clone it. Other links of those apps that don't name a repository, GitHub Desktop's sign-in say, go straight to the app.
+ * It writes only to `HKEY_CURRENT_USER\Software\Classes\x-github-client` and `…\git-client`, so it needs no administrator rights. The command that was there before is kept beside Lode's, and Revert puts it back. A scheme key Lode added, Visual Studio's, which is registered for the whole machine, goes again.
+ * If GitHub Desktop registers its links again, as it may when it updates, it takes them back from Lode. The **Links** page then says GitHub Desktop opens them: click **Open in Lode** again.
+ * An app chosen for these links in Windows' **Default apps** comes before Lode's command. The **Links** page says so when there is one.
+
+
 ## Features
 
  * Address bar that shows each folder up the path as a button, with chevrons between, as Explorer does, with This PC as an icon: click a folder to go there. The chevrons are only separators, without Explorer's drop-down lists. Click the empty space after the path, or press Ctrl+L, to type a path instead. One that is not full, `src`, `..` or `\Code`, is taken from the folder open, as in Explorer. The shell's names for folders, `shell:downloads` or `shell:startup` say, go to them. Anything else that isn't somewhere in the folder open, `cmd`, `powershell`, `wt` or `code .`, is run there, as Explorer runs it, found as the Run box finds a program.
@@ -136,6 +154,7 @@ After restoring, folders open in Explorer straight away. If one still opens in L
    * **Actions**: which actions show as buttons and which in the right-click menus, and in each, which are nested under their parent.
    * **Code**: the code folder, whether Git purge deletes permanently, and excluding the code folder from Microsoft Defender.
    * **File Explorer**: replace or restore it.
+   * **Links**: open GitHub's and Azure DevOps' repository links for GitHub Desktop and Visual Studio in Lode, or revert them. See [Repository links](#repository-links).
 
    ![The ⋯ menu](src/Lode.Tests/Menus/MenuTests.WindowMenu.verified.png) ![The General page of Options](src/Lode.Tests/Options/OptionsFormTests.GeneralPage.verified.png) ![The View page of Options](src/Lode.Tests/Options/OptionsFormTests.ViewPage.verified.png)
 

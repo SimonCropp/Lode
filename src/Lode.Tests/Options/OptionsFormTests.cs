@@ -26,6 +26,44 @@ public class OptionsFormTests
             });
     }
 
+    // Each kind of repository link is taken over, and reverted, on its own.
+    [Test]
+    public async Task TakeThenRevertRepositoryLinks()
+    {
+        using var scratch = new RegistryScratch();
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("Links");
+        var before = DescribeLinks(form);
+
+        Click(form, "takeLinks.gitHubDesktop");
+        var gitHubDesktop = DescribeLinks(form);
+        Click(form, "takeLinks.visualStudio");
+        var both = DescribeLinks(form);
+        var registry = scratch.Dump();
+        Click(form, "revertLinks.gitHubDesktop");
+        Click(form, "revertLinks.visualStudio");
+
+        await Verify(
+            new
+            {
+                before,
+                gitHubDesktop,
+                both,
+                registry,
+                reverted = DescribeLinks(form),
+                registryReverted = scratch.Dump()
+            });
+    }
+
+    static object DescribeLinks(Form form) =>
+        RepositoryLinks.All.Select(_ => new
+            {
+                status = form.Controls.Find($"linkStatus.{_.Id}", true)[0].Text,
+                takeEnabled = form.Controls.Find($"takeLinks.{_.Id}", true)[0].Enabled,
+                revertEnabled = form.Controls.Find($"revertLinks.{_.Id}", true)[0].Enabled
+            })
+            .ToList();
+
     // Folders point at a copy of Lode installed somewhere else. Replace stays available, to
     // point them at this copy instead.
     [Test]
@@ -391,6 +429,10 @@ public class OptionsFormTests
         VerifyPage("File Explorer", new(), replace: true);
 
     [Test]
+    public Task LinksPage() =>
+        VerifyPage("Links", new());
+
+    [Test]
     public Task UpdatesPage() =>
         VerifyPage(
             "Updates",
@@ -428,7 +470,7 @@ public class OptionsFormTests
         var list = (PageList) form.Controls.Find("pages", true)[0];
         var opened = Shown(form);
 
-        list.SelectedIndex = 4;
+        list.SelectedIndex = 5;
         var picked = Shown(form);
         form.Press(Keys.Control | Keys.Tab);
         var next = Shown(form);
@@ -459,6 +501,11 @@ public class OptionsFormTests
         if (form.Controls.Find("codeDirectory", true)[0].Visible)
         {
             return "Code";
+        }
+
+        if (form.Controls.Find("linkStatus.gitHubDesktop", true)[0].Visible)
+        {
+            return "Links";
         }
 
         if (form.Controls.Find("explorerStatus", true)[0].Visible)
@@ -813,7 +860,7 @@ public class OptionsFormTests
     sealed class QuietForm : OptionsForm
     {
         public QuietForm(ExplorerReplacement replacement, Settings settings, Updates updates) :
-            base(replacement, settings, editors, updates) =>
+            base(replacement, settings, editors, updates, RegistryScratch.LinksFor(replacement.ClassesPath, replacement.Command)) =>
             // Never the real update, which would update Lode once the tests end.
             StartUpdate = () => UpdatesStarted++;
 

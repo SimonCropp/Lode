@@ -1,0 +1,80 @@
+﻿{
+  before: [
+    {
+      status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them.,
+      takeEnabled: true,
+      revertEnabled: false
+    },
+    {
+      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+      takeEnabled: true,
+      revertEnabled: false
+    }
+  ],
+  gitHubDesktop: [
+    {
+      status: GitHub's Open with GitHub Desktop: Lode opens them.,
+      takeEnabled: false,
+      revertEnabled: true
+    },
+    {
+      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+      takeEnabled: true,
+      revertEnabled: false
+    }
+  ],
+  both: [
+    {
+      status: GitHub's Open with GitHub Desktop: Lode opens them.,
+      takeEnabled: false,
+      revertEnabled: true
+    },
+    {
+      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Lode opens them.,
+      takeEnabled: false,
+      revertEnabled: true
+    }
+  ],
+  registry: {
+    git-client\: {
+      (default): URL:git-client,
+      CreatedBy: Lode,
+      shell\: {
+        open\: {
+          command\: {
+            (default): "C:\Tools\lode.exe" "%1",
+            LodeForwardCommand: "C:\Apps\Visual Studio.exe" "%1"
+          }
+        }
+      },
+      TakenBy: Lode,
+      URL Protocol: 
+    },
+    x-github-client\: {
+      (default): URL:x-github-client,
+      CreatedBy: Lode,
+      shell\: {
+        open\: {
+          command\: {
+            (default): "C:\Tools\lode.exe" "%1",
+            LodeForwardCommand: "C:\Apps\GitHub Desktop.exe" "%1"
+          }
+        }
+      },
+      TakenBy: Lode,
+      URL Protocol: 
+    }
+  },
+  reverted: [
+    {
+      status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them.,
+      takeEnabled: true,
+      revertEnabled: false
+    },
+    {
+      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+      takeEnabled: true,
+      revertEnabled: false
+    }
+  ]
+}

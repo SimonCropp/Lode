@@ -57,6 +57,16 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         new(@"Software\Classes", PreferredCommand(), notifyShell: true);
 
     /// <summary>
+    /// Where Replace writes, under the current user's registry hive.
+    /// </summary>
+    internal string ClassesPath => classesPath;
+
+    /// <summary>
+    /// The Lode Replace registers, as a command without the folder argument.
+    /// </summary>
+    internal string Command => command;
+
+    /// <summary>
     /// True when folders open in a Lode, this copy or another.
     /// </summary>
     public bool IsActive

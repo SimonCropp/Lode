@@ -141,6 +141,7 @@ static partial class NativeMethods
     // ASSOCF_IS_PROTOCOL: the association is a link's scheme ("claude"), not a file extension.
     public const int AssocIsProtocol = 0x1000;
     public const int AssocFriendlyAppName = 4;
+    public const int AssocCommand = 1;
 
     // With no output buffer, only says how long the answer would be: S_FALSE when there is one.
     [LibraryImport("shlwapi.dll", EntryPoint = "AssocQueryStringW", StringMarshalling = StringMarshalling.Utf16)]

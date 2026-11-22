@@ -1,5 +1,5 @@
 /// <summary>
-/// Lode's options, a page each for General, View, Actions, Code, File Explorer and Updates, picked
+/// Lode's options, a page each for General, View, Actions, Code, File Explorer, Links and Updates, picked
 /// from the list down the left, as Windows 11's Settings does. A change applies straight away.
 /// </summary>
 class OptionsForm : Form
@@ -166,6 +166,11 @@ class OptionsForm : Form
     /// </summary>
     internal Action<string, DefenderExclusion.Outcome> ReportDefenderExclusion;
 
+    readonly RepositoryLinks repositoryLinks;
+
+    // For each kind of link, what opens it now, and the buttons that take it over and revert it.
+    readonly List<(RepositoryLinks.Handler Handler, Label Status, Button Take, Button Revert)> linkRows = [];
+
     readonly Updates updates;
     readonly Label updateStatus = new()
     {
@@ -255,9 +260,12 @@ class OptionsForm : Form
     /// <param name="editors">The text editors installed, Notepad last, from
     /// <see cref="TextEditors.Find()"/>. Passed in so tests show a fixed list.</param>
     /// <param name="updates">Whether there is a newer Lode, <see cref="Updates.Instance"/>.</param>
-    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings, IReadOnlyList<TextEditors.Editor> editors, Updates updates)
+    /// <param name="repositoryLinks">Takes over links for GitHub Desktop and Visual Studio. By
+    /// default for the same classes and copy of Lode as <paramref name="explorerReplacement"/>.</param>
+    public OptionsForm(ExplorerReplacement explorerReplacement, Settings settings, IReadOnlyList<TextEditors.Editor> editors, Updates updates, RepositoryLinks? repositoryLinks = null)
     {
         this.explorerReplacement = explorerReplacement;
+        this.repositoryLinks = repositoryLinks ?? RepositoryLinks.Like(explorerReplacement);
         this.settings = settings;
         this.editors = editors;
         this.updates = updates;
@@ -365,6 +373,7 @@ class OptionsForm : Form
         AddPage("Actions", Icons.Actions, BuildActionsPage());
         AddPage("Code", Icons.Code, BuildCodePage());
         AddPage("File Explorer", Icons.FileExplorer, BuildExplorerPage());
+        AddPage("Links", Icons.Links, BuildLinksPage());
         AddPage("Updates", Icons.Updates, BuildUpdatesPage());
         pageList.SelectedChanged += ShowSelectedPage;
         ShowSelectedPage();
@@ -396,6 +405,7 @@ class OptionsForm : Form
         PerformLayout();
 
         UpdateExplorerState();
+        UpdateLinkState();
         ShowUpdateState();
     }
 
@@ -652,6 +662,103 @@ class OptionsForm : Form
             "permission.",
             excludeFromDefender)
     ];
+
+    Control[] BuildLinksPage()
+    {
+        var controls = new List<Control>
+        {
+            Description(
+                "Open the repository from the code folder in Lode when a site's button would hand " +
+                "it to a desktop app, with the file the link names selected. A link for a " +
+                "repository that isn't in the code folder is offered to the app it was for. " +
+                "Revert gives the links back to that app. This applies to your Windows account only.",
+                new(3, 0, 3, 3))
+        };
+        foreach (var handler in RepositoryLinks.All)
+        {
+            var status = new Label
+            {
+                Name = $"linkStatus.{handler.Id}",
+                AutoSize = true,
+                MaximumSize = new(textWidth, 0),
+                Margin = new(3, 6, 3, 3)
+            };
+            var take = new Button
+            {
+                Name = $"takeLinks.{handler.Id}",
+                Text = "Open in Lode",
+                AccessibleName = $"Open {handler.Buttons} links in Lode",
+                AutoSize = true,
+                Padding = new(6, 0, 6, 0)
+            };
+            var revert = new Button
+            {
+                Name = $"revertLinks.{handler.Id}",
+                Text = $"Revert to {handler.App}",
+                AutoSize = true,
+                Padding = new(6, 0, 6, 0)
+            };
+            take.Click += (_, _) => ChangeLinks(() => repositoryLinks.Take(handler));
+            revert.Click += (_, _) => ChangeLinks(() => repositoryLinks.GiveBack(handler));
+            linkRows.Add((handler, status, take, revert));
+            controls.Add(status);
+            controls.Add(Row(take, revert));
+        }
+
+        return controls.ToArray();
+    }
+
+    void ChangeLinks(Action change)
+    {
+        try
+        {
+            change();
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException or IOException)
+        {
+            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        UpdateLinkState();
+    }
+
+    void UpdateLinkState()
+    {
+        foreach (var (handler, status, take, revert) in linkRows)
+        {
+            var taken = repositoryLinks.IsTaken(handler);
+            var here = repositoryLinks.IsTakenHere(handler);
+            string opens;
+            if (here)
+            {
+                opens = "Lode opens them.";
+            }
+            else if (taken)
+            {
+                opens = "Another copy of Lode opens them.";
+            }
+            else if (repositoryLinks.CurrentApp(handler) is { } app)
+            {
+                opens = $"{app} opens them.";
+            }
+            else
+            {
+                opens = "No app opens them.";
+            }
+
+            // An app picked in Windows' own settings is asked for the links ahead of the
+            // command Lode writes.
+            if (taken &&
+                repositoryLinks.ChosenInWindows(handler) is { } chosen)
+            {
+                opens += $" But Windows' Default apps has {chosen} chosen for {handler.Scheme} links, which comes first, so they still open there.";
+            }
+
+            status.Text = $"{handler.Buttons}: {opens}";
+            take.Enabled = !here;
+            revert.Enabled = taken;
+        }
+    }
 
     Control[] BuildExplorerPage()
     {

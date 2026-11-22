@@ -45,15 +45,20 @@ static class Program
             OpenInExplorer(folder);
         }
 
-        // Nothing for Lode: handing over no folders would bring its windows back.
-        if (commandLine is { Paths.Count: 0, ForExplorer.Count: > 0 })
-        {
-            return 0;
-        }
-
         // Made full before they leave this launch, which is the one that knows where a relative
         // path is from.
         var paths = commandLine.FullPaths();
+        if (commandLine.Links.Count > 0)
+        {
+            paths = [.. paths, .. RepositoriesOf(commandLine.Links)];
+        }
+
+        // Nothing for Lode: handing over no folders would bring its windows back.
+        if (paths.Count == 0 &&
+            (commandLine.ForExplorer.Count > 0 || commandLine.Links.Count > 0))
+        {
+            return 0;
+        }
         using var instance = new SingleInstance();
         if (!instance.IsFirst &&
             instance.TryHandOff(paths))
@@ -136,6 +141,74 @@ static class Program
         JumpList.Follow(places, settings);
         Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
         return 0;
+    }
+
+    // The clone in the code folder of each repository the links name, or the file in it a link
+    // names. A link for a repository not there, or one Lode can't read, is offered to the app it
+    // was for, as Windows would have handed it on before Lode took such links over.
+    static List<string> RepositoriesOf(IReadOnlyList<string> links)
+    {
+        Settings.SeedFromInstalled();
+        var codeFolder = Settings.Load(Settings.DefaultPath).CodeDirectory;
+        var repositoryLinks = RepositoryLinks.ForCurrentUser();
+        var found = new List<string>();
+        foreach (var text in links)
+        {
+            if (RepositoryLink.Parse(text) is not { } link)
+            {
+                // Another of the app's links, GitHub Desktop's sign-in say: the app's to open.
+                var handler = RepositoryLinks.HandlerOf(text)!;
+                if (!new RepositoryLink(handler, text, "", null).Forward(repositoryLinks))
+                {
+                    MessageBox.Show(
+                        $"Lode can't tell which repository this link is for, and can't find {handler.App} to hand it to:{Environment.NewLine}{Environment.NewLine}{text}",
+                        "Lode",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+
+                continue;
+            }
+
+            if (codeFolder != null &&
+                link.Find(codeFolder) is { } path)
+            {
+                found.Add(path);
+                continue;
+            }
+
+            NotInCodeFolder(link, codeFolder, repositoryLinks);
+        }
+
+        return found;
+    }
+
+    static void NotInCodeFolder(RepositoryLink link, string? codeFolder, RepositoryLinks repositoryLinks)
+    {
+        var app = link.Handler.App;
+        var why = codeFolder == null
+            ? $"No code folder is chosen, so Lode can't look for {link.Name}. Choose one on the Code page of Options."
+            : $"{link.Name} isn't cloned in the code folder, {codeFolder}.";
+        if (repositoryLinks.ForwardCommand(link.Handler) == null)
+        {
+            MessageBox.Show(
+                $"{why}{Environment.NewLine}{Environment.NewLine}{app} isn't there to open the link instead.",
+                "Lode",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            $"{why}{Environment.NewLine}{Environment.NewLine}Open the link in {app} instead?",
+            "Lode",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (answer == DialogResult.Yes &&
+            !link.Forward(repositoryLinks))
+        {
+            MessageBox.Show($"{app} wouldn't start.", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     // Explorer opens a folder named on its command line itself, not through the explore verb,

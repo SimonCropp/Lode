@@ -5,10 +5,11 @@
     Actions,
     Code,
     File Explorer,
+    Links,
     Updates
   ],
   opened: General,
-  picked: File Explorer,
+  picked: Links,
   next: Updates,
   wrapped: General,
   back: Updates
