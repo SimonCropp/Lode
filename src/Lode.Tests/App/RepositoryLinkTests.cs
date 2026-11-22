@@ -47,7 +47,7 @@ public class RepositoryLinkTests
 
     [Test]
     public async Task CanonicalTellsRepositoriesApart() =>
-        await Assert.That(RepositoryLink.Canonical("https://github.com/SimonCropp/Lode"))
+        await Assert.That(RepositoryLink.Canonical("https://github.com/SimonCropp/Lode"))!
             .IsNotEqualTo(RepositoryLink.Canonical("https://github.com/SimonCropp/Verify"));
 
     [Test]
@@ -87,9 +87,9 @@ public class RepositoryLinkTests
         Directory.CreateDirectory(Path.Combine(clone, ".git"));
         Directory.CreateDirectory(Path.Combine(other, ".git"));
         Directory.CreateDirectory(Path.Combine(clone, "src"));
-        File.WriteAllText(Path.Combine(clone, "src", "Program.cs"), "");
-        File.WriteAllText(Path.Combine(clone, ".git", "config"), "[remote \"origin\"]\n\turl = git@github.com:SimonCropp/Lode.git\n");
-        File.WriteAllText(Path.Combine(other, ".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/SimonCropp/Other\n");
+        await File.WriteAllTextAsync(Path.Combine(clone, "src", "Program.cs"), "");
+        await File.WriteAllTextAsync(Path.Combine(clone, ".git", "config"), "[remote \"origin\"]\n\turl = git@github.com:SimonCropp/Lode.git\n");
+        await File.WriteAllTextAsync(Path.Combine(other, ".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/SimonCropp/Other\n");
 
         var repo = RepositoryLink.Parse("x-github-client://openRepo/https://github.com/SimonCropp/Lode")!.Find(temp);
         var file = RepositoryLink.Parse("x-github-client://openRepo/https://github.com/SimonCropp/Lode?filepath=src%2FProgram.cs")!.Find(temp);
