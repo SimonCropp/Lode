@@ -2133,7 +2133,18 @@ class MainForm : Form
         window.Show();
     }
 
-    Size NormalSize => WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
+    Size NormalSize
+    {
+        get
+        {
+            if (WindowState == FormWindowState.Normal)
+            {
+                return Size;
+            }
+
+            return RestoreBounds.Size;
+        }
+    }
 
     void ShowOptions() =>
         ShowOptions(null);

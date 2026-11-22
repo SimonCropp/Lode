@@ -62,7 +62,7 @@ public class UndoHistoryTests
                 .ToList();
         }
 
-        public IReadOnlyList<string> Restore(IReadOnlyList<string> inBin)
+        public IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin)
         {
             Calls.Add($"restore {string.Join(", ", inBin)}");
             return inBin.Where(_ => MissingFromBin.Contains(_) || SkippedInBin.Contains(_)).ToList();

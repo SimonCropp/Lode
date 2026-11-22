@@ -1160,13 +1160,18 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 return null;
             }
 
-            var folder = (IShellFolder)Marshal.GetObjectForIUnknown(folderPointer);
+            var folder = (IShellFolder) Marshal.GetObjectForIUnknown(folderPointer);
             Marshal.Release(folderPointer);
             try
             {
                 var menuId = contextMenuId;
                 var result = folder.CreateViewObject(owner, ref menuId, out var menuPointer);
-                return result == 0 ? Wrap(menuPointer) : null;
+                if (result == 0)
+                {
+                    return Wrap(menuPointer);
+                }
+
+                return null;
             }
             finally
             {

@@ -260,7 +260,12 @@ sealed class RepositoryLinks(
             }
 
             var text = Marshal.PtrToStringUni(buffer);
-            return string.IsNullOrWhiteSpace(text) ? null : text;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            return text;
         }
         finally
         {

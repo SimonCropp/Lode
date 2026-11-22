@@ -1544,7 +1544,12 @@ sealed class FolderTree : TreeView
     {
         if (Locations.IsThisPC(path))
         {
-            return places.ShowComputer ? computerNode : null;
+            if (places.ShowComputer)
+            {
+                return computerNode;
+            }
+
+            return null;
         }
 
         TreeNode? current = null;

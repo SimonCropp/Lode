@@ -392,8 +392,12 @@ sealed class Breadcrumb : Control
         {
             hovered = index;
             // The icon-only This PC gets its name as a tooltip.
-            toolTip.SetToolTip(this, index >= 0 &&
-                                     Locations.IsThisPC(segments[index].Path) ? Locations.ThisPC : null);
+            toolTip.SetToolTip(
+                this,
+                index >= 0 &&
+                Locations.IsThisPC(segments[index].Path)
+                    ? Locations.ThisPC
+                    : null);
             Invalidate();
         }
     }

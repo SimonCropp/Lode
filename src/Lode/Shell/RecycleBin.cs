@@ -12,7 +12,7 @@ static class RecycleBin
     /// or still there, skipped at the shell's prompt for something of the same name where it
     /// goes back to.
     /// </summary>
-    public static List<string> Restore(IReadOnlyCollection<string> binPaths)
+    public static IReadOnlyCollection<string> Restore(IReadOnlyCollection<string> binPaths)
     {
         var wanted = new HashSet<string>(binPaths, StringComparer.OrdinalIgnoreCase);
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -52,6 +52,6 @@ static class RecycleBin
             // What was not found is reported back.
         }
 
-        return [.. wanted];
+        return wanted;
     }
 }

@@ -440,7 +440,12 @@ static class ShellIcons
     {
         var info = new ShellFileInfo();
         var result = SHGetFileInfo(path, 0, ref info, infoSize, systemIconIndexFlag | smallIconFlag);
-        return result == IntPtr.Zero ? FolderIcon : info.IconIndex;
+        if (result == IntPtr.Zero)
+        {
+            return FolderIcon;
+        }
+
+        return info.IconIndex;
     }
 
     // The icons of files that have their own (programs, shortcuts), each as of when the file was

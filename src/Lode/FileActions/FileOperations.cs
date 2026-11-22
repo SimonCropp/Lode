@@ -361,17 +361,17 @@ static class FileOperations
         }
 
         var template = entry.Template == null ? null : ShellNew.ResolveTemplate(entry.Template);
-        if (template != null)
-        {
-            File.Copy(template, path);
-        }
-        else
+        if (template == null)
         {
             using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
             if (entry.Data != null)
             {
                 stream.Write(entry.Data);
             }
+        }
+        else
+        {
+            File.Copy(template, path);
         }
 
         UndoHistory.Instance.RecordCreated("new file", [path]);
@@ -465,7 +465,12 @@ static class FileOperations
 
             dynamic shell = Activator.CreateInstance(type)!;
             string target = shell.CreateShortcut(path).TargetPath;
-            return Directory.Exists(target) ? target : null;
+            if (Directory.Exists(target))
+            {
+                return target;
+            }
+
+            return null;
         }
         catch (Exception)
         {

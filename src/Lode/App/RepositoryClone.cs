@@ -124,7 +124,12 @@ static class RepositoryClone
                     }
                 });
                 var url = RemoteSite.For(link.Remote)?.Url ?? link.Remote;
-                var result = await Task.Run(() => Clone(url, destination, link.Branch, progress.Report, cancellation.Token));
+
+                // Cancel.None, not the token: Clone watches the token itself, and cancelled, ends
+                // with what it cloned so far deleted. Given the token, a Cancel before the clone
+                // had started would have the await throw instead, and nothing would close the
+                // dialog.
+                var result = await Task.Run(() => Clone(url, destination, link.Branch, progress.Report, cancellation.Token), Cancel.None);
                 if (result.Succeeded)
                 {
                     cloned = link.In(destination);

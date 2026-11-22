@@ -35,7 +35,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         /// Restores items from the Recycle Bin, returning those not restored: gone from it, or
         /// still in it, skipped at the shell's prompt.
         /// </summary>
-        IReadOnlyList<string> Restore(IReadOnlyList<string> inBin);
+        IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin);
 
         /// <summary>
         /// Whether a file or folder is still there.
@@ -601,7 +601,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
                 .Select(_ => (_.Source, _.Result))
                 .ToList();
 
-        public IReadOnlyList<string> Restore(IReadOnlyList<string> inBin) =>
+        public IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin) =>
             RecycleBin.Restore(inBin);
 
         public bool Exists(string path) =>
