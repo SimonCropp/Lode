@@ -251,6 +251,10 @@ class MainForm : Form
 
         backButton = CreateButton(backGlyph, "Back (Alt+Left)", () => ActiveView?.GoBack());
         forwardButton = CreateButton(forwardGlyph, "Forward (Alt+Right)", () => ActiveView?.GoForward());
+
+        // Right-clicked, each lists where it would go, to go several steps at once.
+        backButton.MouseUp += (_, args) => ShowHistory(backButton, args, _ => _.BackHistory);
+        forwardButton.MouseUp += (_, args) => ShowHistory(forwardButton, args, _ => _.ForwardHistory);
         upButton = CreateButton(upGlyph, "Up (Alt+Up)", () => ActiveView?.GoUp());
 
         Controls.Add(BuildContent());
@@ -325,6 +329,38 @@ class MainForm : Form
 
     // Its text is a glyph of the icon font, which a screen reader can't say, so it is named by
     // its tooltip, less the keys, which describe it.
+    // How many places Back's and Forward's lists show, the nearest: as many as are easily read.
+    const int mostHistory = 15;
+
+    void ShowHistory(Button button, MouseEventArgs args, Func<FolderView, IReadOnlyList<(string Path, int Position)>> history)
+    {
+        if (args.Button != MouseButtons.Right ||
+            ActiveView is not { } view ||
+            HistoryCommands(view, history(view)) is not { Count: > 0 } commands)
+        {
+            return;
+        }
+
+        var menu = new ExplorerMenu();
+        foreach (var (text, go) in commands)
+        {
+            menu.Items.Add(text, null, (_, _) => go());
+        }
+
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(button, new(0, button.Height));
+    }
+
+    /// <summary>
+    /// What Back's or Forward's list offers: each place by its name, the nearest first, and
+    /// going straight to it.
+    /// </summary>
+    internal static List<(string Text, Action Go)> HistoryCommands(FolderView view, IReadOnlyList<(string Path, int Position)> history) =>
+        history
+            .Take(mostHistory)
+            .Select(_ => (Locations.DisplayName(_.Path), (Action)(() => view.GoToHistory(_.Position))))
+            .ToList();
+
     Button CreateButton(string glyph, string tip, Action action)
     {
         var name = tip;

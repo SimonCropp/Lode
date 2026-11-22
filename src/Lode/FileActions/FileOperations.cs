@@ -198,6 +198,67 @@ static class FileOperations
     }
 
     /// <summary>
+    /// Renames several items to the one name, as Explorer does: "name (1)", "name (2)" and so
+    /// on, in the order given, on the calling thread, undone and redone as one. Gives what each
+    /// is now, those that were renamed.
+    /// </summary>
+    public static IReadOnlyList<string> RenameSeveral(IntPtr owner, IReadOnlyList<string> paths, string newName)
+    {
+        var names = NumberedNames(paths, newName);
+        var items = paths
+            .Select((path, index) => new ShellFileOperation.Item(path, NewName: names[index]))
+            .ToList();
+        IReadOnlyList<string> renamed = [];
+        Report(
+            owner,
+            ShellFileOperation.Kind.Rename,
+            () => ShellFileOperation.Run(owner, ShellFileOperation.Kind.Rename, items, undoFlags),
+            outcome =>
+            {
+                var pairs = Pairs(outcome);
+                UndoHistory.Instance.RecordMove(pairs, Emptied(outcome), "rename");
+                renamed = pairs
+                    .Select(_ => _.To)
+                    .ToList();
+            });
+        return renamed;
+    }
+
+    /// <summary>
+    /// What several items renamed to <paramref name="newName"/> are each named: it, numbered
+    /// from one. The first, the one whose name was typed, takes the extension typed; the rest
+    /// keep their own, and a folder has none.
+    /// </summary>
+    internal static List<string> NumberedNames(IReadOnlyList<string> paths, string newName)
+    {
+        var stem = newName;
+        var typed = "";
+        if (!Directory.Exists(paths[0]))
+        {
+            typed = Path.GetExtension(newName);
+            stem = newName[..^typed.Length];
+        }
+
+        var names = new List<string>(paths.Count);
+        for (var index = 0; index < paths.Count; index++)
+        {
+            var extension = typed;
+            if (index > 0)
+            {
+                extension = "";
+                if (!Directory.Exists(paths[index]))
+                {
+                    extension = Path.GetExtension(paths[index]);
+                }
+            }
+
+            names.Add($"{stem} ({index + 1}){extension}");
+        }
+
+        return names;
+    }
+
+    /// <summary>
     /// Pastes what was copied or cut into <paramref name="destination"/>. What was cut is taken
     /// off the clipboard once it has been moved, unless something else has been put there since.
     /// </summary>

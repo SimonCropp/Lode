@@ -495,6 +495,56 @@ public class FolderViewTests
         await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source", "Deep"));
     }
 
+    // A folder in the history deleted since is no place to go back to: Back goes to the one
+    // before it, rather than saying it can't be found every time, with nothing before it to be
+    // got to. It is out of the history from then on.
+    [Test]
+    public async Task BackGoesPastAFolderThatHasGone()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        view.Navigate(fixture.At("Source"));
+        await Pump.Loaded(view);
+        Directory.Delete(fixture.At("Docs"), true);
+
+        view.GoBack();
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(view.CanGoBack).IsFalse();
+        await Assert.That(view.ForwardHistory.Select(_ => _.Path)).IsEquivalentTo([fixture.At("Source")]);
+    }
+
+    // Back's list is where it would go, the nearest first, and Forward's the same the other
+    // way. Gone to from the list, somewhere keeps the rest of the history either side of it.
+    [Test]
+    public async Task GoingStraightToSomewhereInTheHistory()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        view.Navigate(fixture.At("Docs"));
+        await Pump.Loaded(view);
+        view.Navigate(fixture.At("Source"));
+        await Pump.Loaded(view);
+        view.Navigate(fixture.At("Source", "Deep"));
+        await Pump.Loaded(view);
+        var back = view.BackHistory.Select(_ => Path.GetFileName(_.Path)).ToList();
+
+        view.GoToHistory(view.BackHistory[^1].Position);
+        await Pump.Loaded(view);
+        var forward = view.ForwardHistory.Select(_ => Path.GetFileName(_.Path)).ToList();
+        view.GoToHistory(view.ForwardHistory[1].Position);
+        await Pump.Loaded(view);
+
+        await Assert.That(back).IsEquivalentTo(["Source", "Docs", "Projects"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(forward).IsEquivalentTo(["Docs", "Source", "Deep"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source"));
+        await Assert.That(view.CanGoBack).IsTrue();
+        await Assert.That(view.CanGoForward).IsTrue();
+    }
+
     [Test]
     public async Task UpSelectsTheFolderLeft()
     {
@@ -1420,6 +1470,32 @@ public class FolderViewTests
         await Assert.That(File.Exists(fixture.At("renamed.aleph"))).IsTrue();
         await Assert.That(File.Exists(fixture.At("notes.aleph"))).IsFalse();
         await Assert.That(File.Exists(fixture.At(inItsRow))).IsTrue();
+    }
+
+    // With several selected, the name typed for one is given to them all, numbered from it,
+    // each keeping its own extension, as Explorer does. They are selected under their new
+    // names.
+    [Test]
+    public async Task RenamingSeveralNumbersThem()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var names = Names(view);
+        string[] chosen = ["notes.aleph", "report2.beta", "Docs"];
+        foreach (var name in chosen)
+        {
+            view.List.SelectedIndices.Add(names.IndexOf(name));
+        }
+
+        var index = names.IndexOf("report2.beta");
+        view.OnBeforeLabelEdit(null, new(index));
+        view.OnAfterLabelEdit(null, new(index, "Plan.beta"));
+        await Pump.Loaded(view);
+        var renamed = Selected(view);
+
+        await Assert.That(renamed).IsEquivalentTo(["Plan (1).beta", "Plan (2)", "Plan (3).aleph"]);
+        await Assert.That(Directory.Exists(fixture.At("Plan (2)"))).IsTrue();
+        await Assert.That(File.Exists(fixture.At("notes.aleph"))).IsFalse();
     }
 
     // The list goes by where a row is, which moves when the folder changes. What was selected

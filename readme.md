@@ -130,7 +130,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![The Actions page of Options](src/Lode.Tests/Options/OptionsFormTests.ActionsPage.verified.png)
 
- * <a id="tabs"></a>**Tabs**, each with its own history. Right-click one to duplicate, pin or close it, or the others. **Reopen closed tab** (Ctrl+Shift+T) brings back the last closed. A tab follows its folder when it is renamed or moved, and goes up when it is deleted. Drag a tab along the row to reorder it, off the row for a window of its own, or onto another window to move it there. **Close tabs not looked at for**, on the **General** page of Options, closes tabs unused for the hours given.
+ * <a id="tabs"></a>**Tabs**, each with its own history: right-click **Back** or **Forward** for where it goes, to go several steps at once, and a folder deleted since is passed over. Right-click one to duplicate, pin or close it, or the others. **Reopen closed tab** (Ctrl+Shift+T) brings back the last closed. A tab follows its folder when it is renamed or moved, and goes up when it is deleted. Drag a tab along the row to reorder it, off the row for a window of its own, or onto another window to move it there. **Close tabs not looked at for**, on the **General** page of Options, closes tabs unused for the hours given.
 
    ![Tabs](src/Lode.Tests/Window/MainFormTests.Tabs.verified.png)
 
@@ -202,7 +202,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![Actions panel](src/Lode.Tests/Window/MainFormTests.Actions.verified.png)
 
- * **Copy, move, delete and rename** go through the Windows shell, as Explorer's do, with its progress, conflict prompts and Recycle Bin. What is pasted is selected.
+ * **Copy, move, delete and rename** go through the Windows shell, as Explorer's do, with its progress, conflict prompts and Recycle Bin. What is pasted is selected. With several selected, the name typed for one is given to them all, numbered: `Plan (1).txt`, `Plan (2).md`.
  * <a id="undo"></a>**Undo** (Ctrl+Z) and **Redo** (Ctrl+Y), across every window: renames, moves, copies, deletes to the Recycle Bin, and new items. Permanent deletes can't be undone.
  * **Drag and drop**, with Explorer and other apps. The folder a drag would drop into is highlighted. In the tree, a folder held over opens, and the tree scrolls at its edges. Drag with the right button to choose Copy here, Move here or Create shortcuts here.
  * **Zips**: **Compress to ZIP file**, **Extract All** and **Extract here**, in the Actions panel, undoable. Double-click a zip to go into it as a folder, without changing it; what is opened, copied or dragged from it is extracted first.

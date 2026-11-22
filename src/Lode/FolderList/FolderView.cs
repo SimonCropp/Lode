@@ -1536,20 +1536,105 @@ sealed class FolderView : UserControl
         return true;
     }
 
-    public void GoBack()
+    public void GoBack() =>
+        GoThrough(-1);
+
+    public void GoForward() =>
+        GoThrough(1);
+
+    // Back, or forward, to the nearest place that way that is still there. One that has gone,
+    // a folder deleted since, is taken out of the history: gone to, it only said it couldn't be
+    // found, every time, and nothing before it could be got back to.
+    void GoThrough(int step)
     {
-        if (CanGoBack)
+        var position = historyIndex + step;
+        var forgot = false;
+        while (position >= 0 &&
+               position < history.Count &&
+               HasGone(history[position]))
         {
-            GoTo(historyIndex - 1);
+            history.RemoveAt(position);
+            forgot = true;
+            if (step < 0)
+            {
+                // What is open is one further down now, and so is the one before it.
+                historyIndex--;
+                position--;
+            }
+        }
+
+        if (position >= 0 &&
+            position < history.Count)
+        {
+            GoTo(position);
+            return;
+        }
+
+        if (forgot)
+        {
+            // Nowhere left that way, which the buttons are to show.
+            QueueStatusChanged();
         }
     }
 
-    public void GoForward()
+    // Whether a place in the history is known to be no longer there. Only a folder on this
+    // machine: one on the network is not asked after here, where the window would wait on it,
+    // and what is inside a zip is for going there to find out.
+    bool HasGone(string path) =>
+        !Locations.IsThisPC(path) &&
+        !IsRemote(path) &&
+        Zip.Split(path) == null &&
+        !Directory.Exists(path);
+
+    /// <summary>
+    /// Where Back would go, the nearest first, each with where it is in the history, for
+    /// <see cref="GoToHistory"/>: what the Back button lists.
+    /// </summary>
+    public IReadOnlyList<(string Path, int Position)> BackHistory =>
+        Enumerable
+            .Range(0, Math.Max(historyIndex, 0))
+            .Reverse()
+            .Select(_ => (history[_], _))
+            .ToList();
+
+    /// <summary>
+    /// Where Forward would go, the nearest first.
+    /// </summary>
+    public IReadOnlyList<(string Path, int Position)> ForwardHistory =>
+        Enumerable
+            .Range(historyIndex + 1, Math.Max(history.Count - historyIndex - 1, 0))
+            .Select(_ => (history[_], _))
+            .ToList();
+
+    /// <summary>
+    /// Goes straight to somewhere in the history, however far back or forward, keeping the
+    /// rest of it either side.
+    /// </summary>
+    public void GoToHistory(int position)
     {
-        if (CanGoForward)
+        if (position < 0 ||
+            position >= history.Count ||
+            position == historyIndex)
         {
-            GoTo(historyIndex + 1);
+            return;
         }
+
+        if (HasGone(history[position]))
+        {
+            // Out of the history, with what would be said of it had it been gone to.
+            var gone = history[position];
+            history.RemoveAt(position);
+            if (position < historyIndex)
+            {
+                historyIndex--;
+            }
+
+            QueueStatusChanged();
+            SayNotFound(gone);
+            return;
+        }
+
+        GoTo(position);
     }
 
     // Back or forward, to somewhere in the history.
@@ -4336,6 +4421,17 @@ sealed class FolderView : UserControl
             return;
         }
 
+        // With others selected too, they are all renamed to it, numbered, as Explorer does:
+        // the one whose name was typed first, then the rest as the list has them.
+        var selection = SelectedEntries();
+        if (selection.Count > 1 &&
+            selection.Contains(entry))
+        {
+            args.CancelEdit = true;
+            RenameSeveral(entry, selection, newName);
+            return;
+        }
+
         if (!FileOperations.Rename(Owner, entry.FullPath, newName))
         {
             args.CancelEdit = true;
@@ -4393,6 +4489,29 @@ sealed class FolderView : UserControl
         }
 
         changes.Raise();
+    }
+
+    // Read again once they are renamed, and selected under their new names: there are as many
+    // rows to change as were selected, and where each belongs now is for the sort to say.
+    void RenameSeveral(FileEntry typedOn, List<FileEntry> selection, string newName)
+    {
+        List<string> paths =
+        [
+            typedOn.FullPath,
+            .. selection
+                .Where(_ => _ != typedOn &&
+                            !_.IsPlace &&
+                            !_.InArchive)
+                .Select(_ => _.FullPath)
+        ];
+        var renamed = FileOperations.RenameSeveral(Owner, paths, newName);
+        if (renamed.Count == 0)
+        {
+            return;
+        }
+
+        pendingSelection = renamed;
+        Reload();
     }
 
     // The row showing the item at a path, or -1 when none does.
@@ -4508,7 +4627,7 @@ sealed class FolderView : UserControl
             null,
             LodeActions.Command("cut", () => Copy(true), !anyPlace),
             LodeActions.Command("copy", () => Copy(false), !anyPlace),
-            LodeActions.Command("rename", BeginRename, selection.Count == 1 && !anyPlace),
+            LodeActions.Command("rename", BeginRename, selection.Count > 0 && !anyPlace),
             LodeActions.Command("delete", () => Delete(false), !anyPlace),
             null,
             LodeActions.Command("createShortcut", () => CreateShortcuts(selection), !anyPlace),

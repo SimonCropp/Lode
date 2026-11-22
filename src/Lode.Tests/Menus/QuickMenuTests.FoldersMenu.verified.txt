@@ -11,7 +11,7 @@
   ----,
   Cut,
   Copy,
-  Rename (disabled),
+  Rename,
   Delete,
   ----,
   Create shortcut,
