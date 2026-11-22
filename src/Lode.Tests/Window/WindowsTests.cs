@@ -121,6 +121,32 @@ public class WindowsTests
             });
     }
 
+    // While Lode runs, the tabs saved are those of the window used last, as they are when it
+    // exits, so a Lode ended without closing comes back with them. A window with no folder left
+    // in it, its last tab moved to another window, saves none in their place as it closes.
+    [Test]
+    public async Task TheWindowUsedLastSavesItsTabsWhileItIsOpen()
+    {
+        const int activate = 0x0006;
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        var first = await Show(fixture, settings, fixture.At("Docs"));
+        using var second = await Show(fixture, settings, fixture.Root, fixture.At("Source"));
+        NativeMethods.SendMessage(second.Handle, activate, 1, IntPtr.Zero);
+
+        first.SaveTabs();
+        var fromTheOther = settings.Tabs.ToList();
+        second.SaveTabs();
+        var fromTheOneUsedLast = settings.Tabs.Select(_ => Path.GetFileName(_)).ToList();
+        first.MoveTab((TabPage)first.Views.Single().Parent!, second);
+        Application.DoEvents();
+
+        await Assert.That(fromTheOther).IsEmpty();
+        await Assert.That(fromTheOneUsedLast).IsEquivalentTo(["Projects", "Source"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(first.IsDisposed).IsTrue();
+        await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Projects", "Source"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     [Test]
     public async Task MoveTabToNewWindow()
     {

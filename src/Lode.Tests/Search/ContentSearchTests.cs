@@ -407,6 +407,23 @@ public class ContentSearchTests
         await Assert.That(Paths(notAnyGen, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"tests\App.cs"]);
     }
 
+    // A folder's name can have a comma in it, which otherwise ends an entry: in quotes it is the
+    // one entry, and Where is given such a folder in them.
+    [Test]
+    public async Task AFolderWithACommaInItsName()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, @"Smith, John\notes.txt", "alpha");
+        Write(scratch.Root, @"Smith, John\notes.md", "alpha");
+        var folder = scratch.At("Smith, John");
+
+        var where = SearchWhere.WithFolder(@"C:\Elsewhere, *.txt", folder);
+        var results = await Find(new("alpha", where), scratch.Root);
+
+        await Assert.That(where).IsEqualTo($"\"{folder}\", *.txt");
+        await Assert.That(Paths(results, scratch.Root)).IsEquivalentTo([@"Smith, John\notes.txt"]);
+    }
+
     // Folders one within another, as the open folders can be, and a file named that is in one
     // of them: each file is found the once, or Replace would replace in it twice.
     [Test]

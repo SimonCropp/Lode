@@ -230,6 +230,11 @@ class MainForm : Form
             }
         };
         unusedTabsTimer.Start();
+        tabsTimer.Tick += (_, _) =>
+        {
+            tabsTimer.Stop();
+            SaveTabs();
+        };
         drivesTimer.Tick += (_, _) =>
         {
             drivesTimer.Stop();
@@ -900,6 +905,9 @@ class MainForm : Form
         tabs.TabDraggedOff += OnTabDraggedOff;
         tabs.TabDraggingOff += OnTabDraggingOff;
         tabs.SelectedIndexChanged += (_, _) => SyncToActiveView();
+        tabs.SelectedIndexChanged += (_, _) => SaveTabsSoon();
+        tabs.ControlAdded += (_, _) => SaveTabsSoon();
+        tabs.ControlRemoved += (_, _) => SaveTabsSoon();
         tabs.MouseUp += OnTabsMouseUp;
 
         split.Dock = DockStyle.Fill;
@@ -1275,6 +1283,27 @@ class MainForm : Form
         settings.Height = bounds.Height;
         settings.Maximized = WasMaximized;
         settings.SplitterDistance = split.SplitterDistance;
+        tabsTimer.Stop();
+        RememberTabs();
+        settings.Save();
+
+        if (hiding)
+        {
+            args.Cancel = true;
+            Hide();
+        }
+    }
+
+    // Puts the window's tabs in the settings, for the next start to open. Not those of a window
+    // with no folder left in it, its last tab dragged to another window, which closes for
+    // that: none would be saved, in place of the tabs last saved, until the other closed.
+    void RememberTabs()
+    {
+        if (!Views.Any())
+        {
+            return;
+        }
+
         settings.Tabs = Views
             .Select(_ => _.CurrentPath)
             .ToList();
@@ -1291,13 +1320,50 @@ class MainForm : Form
         // Among the folders' tabs, which are all that open again: with Find Results showing, the
         // one before it.
         settings.ActiveTab = Math.Max(0, TabPages.Take(tabs.SelectedIndex + 1).Count(_ => _ != resultsPage) - 1);
-        settings.Save();
+    }
 
-        if (hiding)
+    // The window used last: the one whose tabs are saved while Lode runs, as it is the one
+    // whose tabs are saved last when Lode exits.
+    static MainForm? usedLast;
+
+    Timer tabsTimer = new()
+    {
+        Interval = 5000
+    };
+
+    // The tabs are saved a little after they change, or the window comes to the front, not only
+    // as it closes. Left until then, a Lode ended by a crash, the power going or Task Manager
+    // came back with the tabs of whichever window closed last, days before perhaps. A little
+    // after, as tabs change in runs: a start putting its tabs back, a folder gone down into a
+    // level at a time.
+    void SaveTabsSoon()
+    {
+        // Its tabs go as a window does, which is no change to save, and its timer has gone.
+        if (Disposing ||
+            IsDisposed)
         {
-            args.Cancel = true;
-            Hide();
+            return;
         }
+
+        tabsTimer.Stop();
+        tabsTimer.Start();
+    }
+
+    /// <summary>
+    /// Saves the tabs, if this is the window used last, and has any.
+    /// </summary>
+    internal void SaveTabs()
+    {
+        if (Disposing ||
+            IsDisposed ||
+            usedLast != this ||
+            !Views.Any())
+        {
+            return;
+        }
+
+        RememberTabs();
+        settings.Save();
     }
 
     /// <param name="intoZip">For somewhere a tab was, inside a zip: the tab opens inside it,
@@ -1638,6 +1704,8 @@ class MainForm : Form
             return;
         }
 
+        SaveTabsSoon();
+
         if (view == ActiveView)
         {
             SyncToActiveView();
@@ -1853,6 +1921,8 @@ class MainForm : Form
     protected override void OnActivated(EventArgs args)
     {
         base.OnActivated(args);
+        usedLast = this;
+        SaveTabsSoon();
         foreach (var view in Views)
         {
             view.ReadGitStateUnlessFresh();
@@ -3268,7 +3338,12 @@ class MainForm : Form
             statusTip.Dispose();
             trayTimer.Dispose();
             unusedTabsTimer.Dispose();
+            tabsTimer.Dispose();
             drivesTimer.Dispose();
+            if (usedLast == this)
+            {
+                usedLast = null;
+            }
         }
 
         base.Dispose(disposing);

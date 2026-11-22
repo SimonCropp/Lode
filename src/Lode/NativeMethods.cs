@@ -293,6 +293,10 @@ static partial class NativeMethods
     [LibraryImport("user32.dll", EntryPoint = "RegisterWindowMessageW", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int RegisterWindowMessage(string name);
 
+    // The code page of programs that know no Unicode, as the machine has it set.
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetOEMCP();
+
     [LibraryImport("shell32.dll")]
     public static partial int SHGetKnownFolderPath(in Guid folderId, uint flags, IntPtr token, out IntPtr path);
 

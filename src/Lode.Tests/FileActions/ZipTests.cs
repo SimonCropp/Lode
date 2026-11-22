@@ -92,6 +92,75 @@ public class ZipTests
         await Assert.That(Entries(zip)).IsEquivalentTo(["Docs/Inner/deep.aleph (4 bytes)", "Docs/guide.aleph (900 bytes)"]);
     }
 
+    // Items found in more than one folder can share a name. The zip holds each of them, those
+    // after the first numbered, rather than two entries of the one name.
+    [Test]
+    public async Task CompressNumbersItemsThatShareAName()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("One", "Same"));
+        Directory.CreateDirectory(fixture.At("Two", "Same"));
+        await File.WriteAllTextAsync(fixture.At("One", "same.txt"), "one");
+        await File.WriteAllTextAsync(fixture.At("Two", "same.txt"), "second");
+        await File.WriteAllTextAsync(fixture.At("Two", "Same", "inner.txt"), "inner");
+        var zip = fixture.At("Same.zip");
+
+        Zip.Compress(zip, [fixture.At("One", "same.txt"), fixture.At("Two", "same.txt"), fixture.At("One", "Same"), fixture.At("Two", "Same")], null, Cancel.None);
+
+        await Assert.That(Entries(zip)).IsEquivalentTo(["same.txt (3 bytes)", "same (2).txt (6 bytes)", "Same/ (0 bytes)", "Same (2)/inner.txt (5 bytes)"]);
+    }
+
+    // A zip made where case tells names apart can hold two entries that are the one file here.
+    // The first is extracted, the one shown when the zip is gone into, and the other said to
+    // be left out, rather than the second failing all of it.
+    [Test]
+    public async Task ExtractKeepsTheFirstOfEntriesThatAreOneFileHere()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Target"));
+        var zip = MakeZip(fixture, "Case.zip", ("Makefile", "first"), ("makefile", "second"), ("other.txt", "other"));
+
+        var extraction = Zip.Extract(zip, fixture.At("Target"), null, Cancel.None);
+
+        await Assert.That(extraction.LeftOut).IsEquivalentTo(["makefile"]);
+        await Assert.That(await File.ReadAllTextAsync(fixture.At("Target", "Makefile"))).IsEqualTo("first");
+        await Assert.That(File.Exists(fixture.At("Target", "other.txt"))).IsTrue();
+    }
+
+    // Entries that don't say how their names are written. A zip made on a Mac, or by Linux's
+    // zip, names them in UTF-8 without saying so; one of Windows' own, in the code page of
+    // programs that know no Unicode. Each is read as what it is.
+    [Test]
+    public async Task EntryNamesThatDoNotSayHowTheyAreWritten()
+    {
+        var unsaid = CodePagesEncodingProvider.Instance.GetEncoding((int) NativeMethods.GetOEMCP());
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Target"));
+        var asUtf8 = fixture.At("utf8.zip");
+        using (var archive = ZipFile.Open(asUtf8, ZipArchiveMode.Create, Encoding.Latin1))
+        {
+            archive.CreateEntry(Encoding.Latin1.GetString(Encoding.UTF8.GetBytes("naïve.txt")));
+        }
+
+        Zip.Extract(asUtf8, fixture.At("Target"), null, Cancel.None);
+
+        // A machine set to UTF-8 throughout has no other code page to name them in.
+        if (unsaid != null)
+        {
+            var inCodePage = fixture.At("codepage.zip");
+            using (var archive = ZipFile.Open(inCodePage, ZipArchiveMode.Create, unsaid))
+            {
+                archive.CreateEntry("café.txt");
+            }
+
+            Zip.Extract(inCodePage, fixture.At("Target"), null, Cancel.None);
+
+            await Assert.That(File.Exists(fixture.At("Target", "café.txt"))).IsTrue();
+        }
+
+        await Assert.That(File.Exists(fixture.At("Target", "naïve.txt"))).IsTrue();
+    }
+
     // Stopped, or failed, nothing is left of the zip.
     [Test]
     public async Task CancelledCompressLeavesNoZip()

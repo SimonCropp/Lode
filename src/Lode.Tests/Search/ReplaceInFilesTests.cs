@@ -50,6 +50,27 @@ public class ReplaceInFilesTests
         await Assert.That(await File.ReadAllTextAsync(ends)).IsEqualTo("one();\r\ntwo();\r\n");
     }
 
+    // A file that isn't UTF-8 is read a byte a character, and has no byte for most characters:
+    // one of those in what replaces would be written as a question mark. The file is left, and
+    // says why.
+    [Test]
+    public async Task WhatTheFilesEncodingCantHoldIsNotWritten()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var latin = scratch.At("latin.txt");
+        byte[] bytes = [.. "caf"u8, 0xE9, .. " alpha"u8];
+        await File.WriteAllBytesAsync(latin, bytes);
+
+        var held = Replace([latin], new("alpha", ""), "é");
+        var afterHeld = await File.ReadAllBytesAsync(latin);
+        var notHeld = Replace([latin], new("caf", ""), "€");
+
+        await Assert.That(held.Failed).IsEmpty();
+        await Assert.That(afterHeld).IsEquivalentTo(new byte[] {0x63, 0x61, 0x66, 0xE9, 0x20, 0xE9}, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(notHeld.Failed.Single().Error).IsEqualTo("What replaces it has characters the file's encoding has none for.");
+        await Assert.That(await File.ReadAllBytesAsync(latin)).IsEquivalentTo(afterHeld, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
     [Test]
     public async Task UndoThenRedo()
     {

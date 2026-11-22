@@ -99,6 +99,28 @@ public class ShellContextMenuTests
         await Assert.That(apart).IsEqualTo(IntPtr.Zero);
     }
 
+    // Their properties are still shown, though: by the shell's properties for several items,
+    // which takes them each named in full, in what a selection is handed over in.
+    [Test]
+    [STAThreadExecutor]
+    public async Task PropertiesTakeItemsFromDifferentFolders()
+    {
+        using var fixture = Fixture.Create();
+        string[] paths = [fixture.At("notes.aleph"), fixture.At("Docs", "guide.aleph")];
+
+        var pointer = ShellContextMenu.CreateDataObjectAcrossFolders(paths);
+        string[]? files = null;
+        if (pointer != IntPtr.Zero)
+        {
+            var dataObject = new DataObject(Marshal.GetObjectForIUnknown(pointer));
+            dataObject.TryGetData(DataFormats.FileDrop, out files);
+            Marshal.Release(pointer);
+        }
+
+        await Assert.That(files).IsNotNull();
+        await Assert.That(files!).IsEquivalentTo(paths);
+    }
+
     // An entry with a submenu of 8 to 15 entries, or 24 to 31, reads from GetMenuState as a
     // separator, which tidying would delete, along with a real separator just above it. Only
     // separators at the ends or side by side go.

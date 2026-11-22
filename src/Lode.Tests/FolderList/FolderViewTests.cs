@@ -585,12 +585,14 @@ public class FolderViewTests
 
     // Typed in the address bar, what isn't somewhere here is run in the folder open, as Explorer
     // runs cmd, powershell, wt or code there. A folder of that name here, and This PC, are gone
-    // to instead.
+    // to instead: but not for a command given the folder open, `code .`, which as a path would
+    // be the folder named code, Windows dropping the dot.
     [Test]
     public async Task TypedCommandsRunInTheFolder()
     {
         using var fixture = Fixture.Create();
         Directory.CreateDirectory(fixture.At("cmd"));
+        Directory.CreateDirectory(fixture.At("Docs", "code"));
         using var view = await Open(fixture.At("Docs"));
         var started = new List<string>();
         var startTyped = FolderView.StartTyped;
@@ -615,6 +617,25 @@ public class FolderViewTests
         {
             FolderView.StartTyped = startTyped;
         }
+    }
+
+    // A folder named as a variable is written, which a script that never filled it in leaves
+    // behind, is gone into as any other is, and typed, the variable is where it goes.
+    [Test]
+    public async Task AFolderNamedAsAVariableIsGoneInto()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("%TEMP%"));
+        using var view = await Open(fixture.Root);
+
+        view.Navigate(fixture.At("%TEMP%"));
+        await Pump.Loaded(view);
+        var named = view.CurrentPath;
+        view.GoToTyped("%TEMP%");
+        await Pump.Loaded(view);
+
+        await Assert.That(named).IsEqualTo(fixture.At("%TEMP%"));
+        await Assert.That(view.CurrentPath).IsEqualTo(Locations.Normalize(Environment.ExpandEnvironmentVariables("%TEMP%")));
     }
 
     // Run for real, a program is found as Run finds it, on the PATH, and starts in the folder
@@ -1345,6 +1366,29 @@ public class FolderViewTests
         await Assert.That(atOnce.Name).IsEqualTo("renamed.aleph");
         await Assert.That(atOnce.FullPath).IsEqualTo(fixture.At("renamed.aleph"));
         await Assert.That(File.Exists(fixture.At("renamed.aleph"))).IsTrue();
+    }
+
+    // The list says only which row an edit was on, and the rows can be shown again under it: a
+    // read of the folder landing, here with a file made that sorts above. The item renamed is
+    // the one the edit was begun on, not the one now in its row.
+    [Test]
+    public async Task RenamingGoesByTheItemNotItsRow()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var index = Names(view).IndexOf("notes.aleph");
+
+        view.OnBeforeLabelEdit(null, new(index));
+        await File.WriteAllTextAsync(fixture.At("above.aleph"), "");
+        view.Reload();
+        await Pump.Loaded(view);
+        var inItsRow = view.Entries[index].Name;
+        view.OnAfterLabelEdit(null, new(index, "renamed.aleph"));
+
+        await Assert.That(inItsRow).IsNotEqualTo("notes.aleph");
+        await Assert.That(File.Exists(fixture.At("renamed.aleph"))).IsTrue();
+        await Assert.That(File.Exists(fixture.At("notes.aleph"))).IsFalse();
+        await Assert.That(File.Exists(fixture.At(inItsRow))).IsTrue();
     }
 
     // The list goes by where a row is, which moves when the folder changes. What was selected

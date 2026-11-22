@@ -77,6 +77,34 @@ public class ActionsPanelTests
         }
     }
 
+    // One that went well, but reported something to come back for, the commit a deleted branch
+    // was at, says it stays, and does, until cleared.
+    [Test]
+    public async Task AnEntryThatSaysItStaysDoesNotAgeOut()
+    {
+        var clock = new Clock(new(2026, 11, 20, 9, 0, 0, TimeSpan.Zero));
+        ActionLog.Time = clock;
+        try
+        {
+            await ActionLog.Run(
+                "Git delete branch feature",
+                @"C:\Code\Lode",
+                () => Task.FromResult(
+                    new ActionLog.Outcome(true, "Done", "Deleted branch feature (was 1a2b3c4).")
+                    {
+                        Stays = true
+                    }));
+            clock.Now += TimeSpan.FromHours(1);
+            ActionLog.AgeOut();
+
+            await Assert.That(ActionLog.Entries.Select(_ => _.Details)).IsEquivalentTo(["Deleted branch feature (was 1a2b3c4)."]);
+        }
+        finally
+        {
+            ActionLog.Time = TimeProvider.System;
+        }
+    }
+
     // Work that can be stopped can be cancelled while it runs. It ends as failed, "Cancelled",
     // with what it did till then in its details. Work that can't be stopped can't be cancelled.
     [Test]

@@ -54,16 +54,42 @@ static class IssueLauncher
             return;
         }
 
-        var extraBody =
+        OpenUrl(UrlForException(message, exception.ToString()));
+    }
+
+    // GitHub turns away a link much longer than this, as VS Code's issue reporter, which keeps
+    // to it too, found. A deep stack trace, once encoded, is longer.
+    const int mostUrl = 7500;
+
+    /// <summary>
+    /// The issue for an exception, <paramref name="exception"/> being all it says of itself,
+    /// its stack trace included. Where the link would be too long for GitHub to take, the trace
+    /// is cut short from its end, the frames furthest from what threw, and says so.
+    /// </summary>
+    internal static string UrlForException(string message, string exception)
+    {
+        var url = BuildUrl(message, Body(exception));
+        while (url.Length > mostUrl &&
+               exception.Length > 0)
+        {
+            // A character of a stack trace is three at most once encoded, so cutting a third
+            // of what is over never cuts more than is needed.
+            var cut = Math.Max((url.Length - mostUrl) / 3, 1);
+            exception = exception[..Math.Max(exception.Length - cut, 0)];
+            url = BuildUrl(message, Body($"{exception}\n… cut short, the whole of it being too long for a link."));
+        }
+
+        return url;
+
+        string Body(string text) =>
             $"""
 
               * Action: {message}
               * Exception:
              ```
-             {exception}
+             {text}
              ```
              """;
-        OpenUrl(BuildUrl(message, extraBody));
     }
 
     /// <summary>

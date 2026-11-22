@@ -69,6 +69,11 @@ sealed class FolderTree : TreeView
     string? selecting;
     int selectVersion;
 
+    // Which rebuild the tree is of, so expanding again what an earlier one had expanded gives
+    // up. Its own count, not the selecting's: whoever rebuilds selects straight after, which
+    // is no reason to stop expanding.
+    int rebuildVersion;
+
     // The folder last asked to be selected. One the tree has not caught up with, just made or
     // renamed, say, is settled short of, and selected once it shows up.
     string? wanted;
@@ -189,6 +194,7 @@ sealed class FolderTree : TreeView
         // settings that were. Whoever rebuilds selects again.
         selectVersion++;
         selecting = null;
+        rebuildVersion++;
         using (this.SuspendPainting())
         {
             UnwatchAll();
@@ -292,11 +298,11 @@ sealed class FolderTree : TreeView
     // Another rebuild meanwhile overtakes it.
     async Task ExpandAgain(List<string> folders)
     {
-        var version = selectVersion;
+        var version = rebuildVersion;
         foreach (var folder in folders)
         {
             if (IsDisposed ||
-                version != selectVersion)
+                version != rebuildVersion)
             {
                 return;
             }
@@ -1401,8 +1407,24 @@ sealed class FolderTree : TreeView
         if (args.Node is { } node &&
             IsFolder(node))
         {
-            Unwatch(node);
+            UnwatchUnlessSelected(node);
         }
+    }
+
+    // For a folder that no longer shows what is in it, collapsed say. The one selected is
+    // watched while it is, though, and being selected already, no AfterSelect is coming to
+    // watch it again: let go of, a folder made in it and gone to would never show, the tree
+    // staying where it was.
+    void UnwatchUnlessSelected(TreeNode node)
+    {
+        if (node == SelectedNode &&
+            watched.ContainsKey(node))
+        {
+            watchedForSelection = node;
+            return;
+        }
+
+        Unwatch(node);
     }
 
     // The tree has one selected row, and a picked Pinned or Recent folder hands it on to the
@@ -1721,7 +1743,7 @@ sealed class FolderTree : TreeView
                     // Not expanded, it is watched only while selected, as any other is.
                     if (!current.IsExpanded)
                     {
-                        Unwatch(current);
+                        UnwatchUnlessSelected(current);
                     }
 
                     break;

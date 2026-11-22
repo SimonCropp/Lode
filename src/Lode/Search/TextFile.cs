@@ -336,6 +336,17 @@ sealed class TextFile
         };
 
     /// <summary>
+    /// Whether <paramref name="bytes"/>, text written as <paramref name="kind"/>, read back as
+    /// <paramref name="text"/>: not where it has a character the encoding has no bytes for,
+    /// which is written as another, a question mark.
+    /// </summary>
+    public static bool Holds(ByteSpan bytes, Encoding kind, CharSpan text) =>
+        EncodingOf(kind)
+            .GetString(bytes[PreambleLength(kind)..])
+            .AsSpan()
+            .SequenceEqual(text);
+
+    /// <summary>
     /// <paramref name="text"/> as bytes in <paramref name="kind"/>, its byte order mark first
     /// when it has one: what a file read as that is written back as.
     /// </summary>

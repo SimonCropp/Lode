@@ -343,6 +343,11 @@ sealed class FolderView : UserControl
 
     string? pendingRename;
     bool editing;
+
+    // The item whose name is being edited. The list says only which row the edit was on, and
+    // the rows can be shown again under it, a read of the folder landing say: the row is then
+    // another item's, which is not the one to rename.
+    FileEntry? edited;
     bool statusPending;
 
     public event Action? PathChanged;
@@ -704,9 +709,10 @@ sealed class FolderView : UserControl
             return;
         }
 
-        var normalized = Locations.Normalize(text, CurrentPath);
+        var normalized = Locations.NormalizeTyped(text, CurrentPath);
         if (TypedCommand.Parse(text) is { } command &&
-            !IsSomewhere(normalized))
+            (GivenOnlyDots(command) ||
+             !IsSomewhere(normalized)))
         {
             Run(command.Program, command.Arguments, text);
             return;
@@ -714,6 +720,12 @@ sealed class FolderView : UserControl
 
         Navigate(normalized ?? text);
     }
+
+    // `code .` is code given the folder open, though as a path it is the folder named code,
+    // where the folder open has one: Windows drops the dots and spaces a name ends with.
+    static bool GivenOnlyDots(TypedCommand.Command command) =>
+        command.Arguments.Length > 0 &&
+        command.Arguments.AsSpan().Trim(". \t").IsEmpty;
 
     // Whether what was typed is somewhere to go: This PC, or a folder or file here, which a
     // command never shadows.
@@ -4084,7 +4096,7 @@ sealed class FolderView : UserControl
         {
             if (!selection.Any(_ => _.InArchive))
             {
-                ShellContextMenu.InvokeVerb(Owner, selection.Select(_ => _.FullPath).ToArray(), "properties");
+                ShellContextMenu.ShowProperties(Owner, selection.Select(_ => _.FullPath).ToArray());
             }
         }
         else if (!IsReadOnly)
@@ -4093,7 +4105,7 @@ sealed class FolderView : UserControl
         }
     }
 
-    void OnBeforeLabelEdit(object? sender, LabelEditEventArgs args)
+    internal void OnBeforeLabelEdit(object? sender, LabelEditEventArgs args)
     {
         if (args.Item >= displayed.Count ||
             displayed[args.Item].IsPlace ||
@@ -4106,6 +4118,7 @@ sealed class FolderView : UserControl
         var entry = displayed[args.Item];
 
         editing = true;
+        edited = entry;
         if (!entry.IsDirectory)
         {
             // Preselect the name but not the extension, so typing keeps the file type.
@@ -4160,8 +4173,20 @@ sealed class FolderView : UserControl
 
         var index = args.Item;
 
-        // The folder was read again under the edit, and the row is no longer there.
-        if (index >= displayed.Count)
+        // The rows were shown again under the edit, and its row is now another item's, or
+        // gone: the item is found where it is now.
+        var begunOn = edited;
+        edited = null;
+        if (begunOn != null &&
+            (index >= displayed.Count ||
+             !Locations.Same(displayed[index].FullPath, begunOn.FullPath)))
+        {
+            index = RowOf(begunOn.FullPath);
+        }
+
+        // The folder was read again under the edit, and the item is no longer there.
+        if (index < 0 ||
+            index >= displayed.Count)
         {
             args.CancelEdit = true;
             return;
@@ -4212,7 +4237,16 @@ sealed class FolderView : UserControl
             Name = newName,
             FullPath = Path.Combine(Path.GetDirectoryName(entry.FullPath)!, newName)
         };
-        displayed[index] = renamed;
+
+        // Found again: the shell may have asked something first, a name being taken say, and
+        // the folder been read again while it waited for the answer.
+        index = RowOf(entry.FullPath);
+        if (index >= 0)
+        {
+            displayed[index] = renamed;
+            rows.Remove(index);
+        }
+
         entryEdits++;
         var position = entries.IndexOf(entry);
         if (position >= 0)
@@ -4230,9 +4264,12 @@ sealed class FolderView : UserControl
             foundSort = (-1, true);
         }
 
-        rows.Remove(index);
         changes.Raise();
     }
+
+    // The row showing the item at a path, or -1 when none does.
+    int RowOf(string path) =>
+        displayed.FindIndex(_ => Locations.Same(_.FullPath, path));
 
     void OnContextMenuRequested(Point location, bool fromKeyboard)
     {

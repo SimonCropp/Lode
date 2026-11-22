@@ -8,6 +8,52 @@ static class Zip
 {
     public const string Extension = ".zip";
 
+    // For reading. An entry that says its name is UTF-8 is read as that whatever is given here:
+    // this is for those that don't say.
+    static ZipArchive OpenRead(string zip) =>
+        ZipFile.Open(zip, ZipArchiveMode.Read, entryNames);
+
+    static EntryNames entryNames = new();
+
+    // How an entry is named when it doesn't say. As UTF-8 where its bytes are that, as zips made
+    // on a Mac, or by Linux's zip, are named without saying so. Otherwise in the code page of
+    // programs that know no Unicode, which Windows' own zips were long named in, and DOS's
+    // before them: read as UTF-8, as they are when nothing is given, the é of such a name came
+    // out as the mark for a character that couldn't be read.
+    sealed class EntryNames : Encoding
+    {
+        static Encoding unsaid = CodePagesEncodingProvider.Instance.GetEncoding((int) GetOEMCP()) ?? UTF8;
+
+        static Encoding Of(byte[] bytes, int index, int count)
+        {
+            if (Utf8.IsValid(bytes.AsSpan(index, count)))
+            {
+                return UTF8;
+            }
+
+            return unsaid;
+        }
+
+        public override int GetCharCount(byte[] bytes, int index, int count) =>
+            Of(bytes, index, count).GetCharCount(bytes, index, count);
+
+        public override int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex) =>
+            Of(bytes, byteIndex, byteCount).GetChars(bytes, byteIndex, byteCount, chars, charIndex);
+
+        public override int GetMaxCharCount(int byteCount) =>
+            Math.Max(UTF8.GetMaxCharCount(byteCount), unsaid.GetMaxCharCount(byteCount));
+
+        // Names are only ever read with it: nothing is written.
+        public override int GetByteCount(char[] chars, int index, int count) =>
+            UTF8.GetByteCount(chars, index, count);
+
+        public override int GetBytes(char[] chars, int charIndex, int charCount, byte[] bytes, int byteIndex) =>
+            UTF8.GetBytes(chars, charIndex, charCount, bytes, byteIndex);
+
+        public override int GetMaxByteCount(int charCount) =>
+            UTF8.GetMaxByteCount(charCount);
+    }
+
     public static bool IsZip(string path) =>
         path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase);
 
@@ -79,16 +125,22 @@ static class Zip
         // The files, and the folders with nothing in them, which a zip holds as entries of their
         // own. A folder with something in it is there in the names of what it holds.
         var items = new List<(string Path, string Name, bool IsFolder)>();
+
+        // Items of more than one folder, as a search finds, can share a name, which the zip
+        // would then hold twice, and extracting it fail on. Those after the first are numbered,
+        // as Explorer numbers a copy.
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in sources)
         {
             var name = Path.GetFileName(source);
             if (Directory.Exists(source))
             {
-                AddFolder(source, name, items, zip);
+                AddFolder(source, Untaken(name, "", taken), items, zip);
                 continue;
             }
 
-            items.Add((source, name, false));
+            var extension = Path.GetExtension(name);
+            items.Add((source, Untaken(name[..^extension.Length], extension, taken), false));
         }
 
         var files = items.Count(_ => !_.IsFolder);
@@ -118,6 +170,18 @@ static class Zip
 
         UndoHistory.Instance.RecordCreated("compress", [zip]);
         return new(true, $"Compressed {Count(files, "file")} into {Path.GetFileName(zip)}", zip);
+    }
+
+    // The name, or, once taken, the first of "name (2)", "name (3)" and so on that isn't.
+    static string Untaken(string stem, string extension, HashSet<string> taken)
+    {
+        var name = stem + extension;
+        for (var number = 2; !taken.Add(name); number++)
+        {
+            name = $"{stem} ({number}){extension}";
+        }
+
+        return name;
     }
 
     // A folder, named in the zip as zips name what is in them, with forward slashes: what it
@@ -269,9 +333,10 @@ static class Zip
     /// </summary>
     public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel)
     {
-        using var archive = ZipFile.OpenRead(zip);
+        using var archive = OpenRead(zip);
         var targets = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>();
         var leftOut = new List<string>();
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in archive.Entries)
         {
             if (Segments(entry.FullName) is not { } segments)
@@ -293,7 +358,18 @@ static class Zip
                 continue;
             }
 
-            targets.Add((entry, path, IsFolderEntry(entry.FullName)));
+            // Two entries for the one file here, as a zip made where case tells names apart
+            // can hold, Makefile and makefile say. The first is the one extracted, as it is
+            // the one shown when the zip is gone into, rather than the second failing it all.
+            var isFolder = IsFolderEntry(entry.FullName);
+            if (!isFolder &&
+                !files.Add(path))
+            {
+                leftOut.Add(entry.FullName);
+                continue;
+            }
+
+            targets.Add((entry, path, isFolder));
         }
 
         var conflicts = targets
@@ -326,7 +402,6 @@ static class Zip
             }
         }
 
-        var files = targets.Count(_ => !_.IsFolder);
         var written = 0;
         try
         {
@@ -340,7 +415,7 @@ static class Zip
                 }
 
                 written++;
-                progress?.Report($"Extracting {written} of {files}");
+                progress?.Report($"Extracting {written} of {files.Count}");
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 entry.ExtractToFile(path, overwrite: false);
             }
@@ -546,7 +621,7 @@ static class Zip
         {
             [""] = new(StringComparer.OrdinalIgnoreCase)
         };
-        using var archive = ZipFile.OpenRead(path);
+        using var archive = OpenRead(path);
         foreach (var entry in archive.Entries)
         {
             if (Segments(entry.FullName) is not { Length: > 0 } segments)
@@ -706,7 +781,7 @@ static class Zip
             if (TryClear(target))
             {
                 Directory.CreateDirectory(folder);
-                using var archive = ZipFile.OpenRead(location.Archive);
+                using var archive = OpenRead(location.Archive);
                 ExtractItem(archive, location.Inner, target);
             }
 

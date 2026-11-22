@@ -387,7 +387,7 @@ sealed class FindPanel : Panel
         menu.Items.Add("Add folder…", null, (_, _) => AddFolderBrowsed());
         if (CurrentFolder() is { } folder)
         {
-            menu.Items.Add("Add current folder", null, (_, _) => AddToWhere(folder));
+            menu.Items.Add("Add current folder", null, (_, _) => AddToWhere(SearchWhere.Quote(folder)));
         }
 
         menu.Items.Add("Add open folders", null, (_, _) => AddToWhere(SearchWhere.OpenFolders));
@@ -401,7 +401,7 @@ sealed class FindPanel : Panel
     {
         if (BrowseForFolder() is { } folder)
         {
-            AddToWhere(folder);
+            AddToWhere(SearchWhere.Quote(folder));
         }
     }
 

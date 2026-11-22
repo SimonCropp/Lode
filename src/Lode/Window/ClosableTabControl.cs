@@ -6,6 +6,7 @@
 sealed class ClosableTabControl : TabControl
 {
     const int leftButtonDownMessage = 0x0201;
+    const int leftButtonDoubleClickMessage = 0x0203;
 
     // Pixels at 100% scale.
     const int crossBoxSize = 20;
@@ -513,8 +514,9 @@ sealed class ClosableTabControl : TabControl
     protected override void WndProc(ref Message message)
     {
         // Caught before the tab strip sees it, so clicking the cross of a background tab
-        // closes that tab without first switching to it.
-        if (message.Msg == leftButtonDownMessage)
+        // closes that tab without first switching to it. A second click soon after the first,
+        // on the cross of the tab that took the closed one's place, comes as a double click.
+        if (message.Msg is leftButtonDownMessage or leftButtonDoubleClickMessage)
         {
             var packed = unchecked((int)message.LParam.ToInt64());
             var location = new Point((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));

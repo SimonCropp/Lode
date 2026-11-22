@@ -466,7 +466,13 @@ sealed class Settings
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-            File.WriteAllText(filePath, JsonSerializer.Serialize(this, serializerOptions));
+
+            // Written beside the file, then put in its place. Written over the file where it
+            // is, a save cut short, by the power going or Lode being ended, left it empty or
+            // half written, and the next start with no settings at all.
+            var writing = $"{filePath}.writing";
+            File.WriteAllText(writing, JsonSerializer.Serialize(this, serializerOptions));
+            File.Move(writing, filePath, overwrite: true);
         }
         catch (Exception exception)
             when (

@@ -645,6 +645,48 @@ public class FolderTreeTests
         await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
     }
 
+    // The folder open stays watched when it is collapsed in the tree, being the one selected:
+    // nothing selects it again to watch it, so, let go of, a folder made in it and gone to
+    // would leave the tree where it was.
+    [Test]
+    public async Task AFolderMadeInTheSelectedOneOnceCollapsedIsSelectedWhenGoneTo()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.SelectPath(fixture.At("Source"));
+        await Pump.Loaded(tree);
+        var source = tree.SelectedNode!;
+        await Expand(tree, source);
+        source.Collapse();
+
+        Directory.CreateDirectory(fixture.At("Source", "New"));
+        tree.SelectPath(fixture.At("Source", "New"));
+        await Pump.Until(() => tree.SelectedNode?.Tag as string == fixture.At("Source", "New"));
+
+        await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+    }
+
+    // The window selects the folder open again straight after a rebuild, which is no reason to
+    // leave what else was expanded collapsed.
+    [Test]
+    public async Task RebuildingThenSelectingStillExpandsAgainWhatWasExpanded()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Docs", "Inner"));
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.SelectPath(fixture.At("Source", "Deep"));
+        await Pump.Loaded(tree);
+        tree.SelectPath(fixture.At("Docs", "Inner"));
+        await Pump.Loaded(tree);
+
+        tree.Rebuild();
+        tree.SelectPath(fixture.At("Docs", "Inner"));
+        await Pump.Until(() => Expanded(tree).Contains(fixture.At("Source")));
+
+        await Assert.That(Expanded(tree)).Contains(fixture.At("Docs"));
+        await Assert.That(tree.SelectedNode?.Tag as string).IsEqualTo(fixture.At("Docs", "Inner"));
+    }
+
     // Nor is one with no subfolders when its parent was read: one made in it since shows once it
     // is gone to.
     [Test]

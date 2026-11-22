@@ -49,6 +49,18 @@ public class LocationsTests
                 "This PC"
             }.ToDictionary(_ => $"[{_}]", _ => Locations.Normalize(_, @"D:\Code\Lode") ?? "(rejected)"));
 
+    // A folder can be named as a variable is written, %TEMP% say, by a script that never filled
+    // it in. Gone to by its path, it is that folder: only what is typed has variables filled in.
+    [Test]
+    public async Task OnlyWhatIsTypedHasItsVariablesFilledIn()
+    {
+        var temp = Locations.Normalize(Environment.ExpandEnvironmentVariables("%TEMP%"));
+
+        await Assert.That(Locations.Normalize(@"D:\Code\%TEMP%")).IsEqualTo(@"D:\Code\%TEMP%");
+        await Assert.That(Locations.NormalizeTyped("%TEMP%")).IsEqualTo(temp);
+        await Assert.That(Locations.NormalizeTyped(@"""%TEMP%\Lode""")).IsEqualTo($@"{temp}\Lode");
+    }
+
     // Nor is a name that is not a path in the folder: it is as it would be without one.
     [Test]
     public async Task NormalizeRelativeToAFolderLeavesShellNames() =>

@@ -189,7 +189,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    * **Switch to default branch**, origin's, unless anything is uncommitted. Not offered when already on it.
    * **Tag** tags the commit and pushes the tag; **Delete tag** deletes one, from origin too.
    * **Purge** deletes everything git doesn't track, ignored files included (`git clean -xdf`), to the Recycle Bin, unless Options says permanently. It asks once it knows how many items, and how big.
-   * Each runs in the **Actions** panel under the tree, with progress. Click a line for what it reported; right-click to cancel or remove it. A line that went well leaves after a minute; one that failed stays.
+   * Each runs in the **Actions** panel under the tree, with progress. Click a line for what it reported; right-click to cancel or remove it. A line that went well leaves after a minute; one that failed stays, as does a deleted branch's, which says the commit the branch was at.
    * <a id="git-state"></a>**Git state**: a **Git** column says of each repository its branch, changes, and commits ahead and behind (`main · 3 changes · 2 ahead`), and in a repository what has become of each file. The status bar says it of the repository, links to its page on GitHub, Azure DevOps, GitLab or Bitbucket, and acts on it when clicked: behind offers Pull, ahead Push, changes Commit and push, or Discard. Each repository is read once and again only when something in it changes, so going back to a folder reads nothing. F5 reads them all again. How it works: [docs/git-status.md](docs/git-status.md).
    * **Switch branch**: click the branch in the status bar, or press Ctrl+B, for the repository's branches, as GitHub Desktop lists them. Type to filter; Enter switches. Uncommitted changes can be left on the branch, stashed, or brought along. It also makes, renames and deletes branches, copies a branch's name, and checks one out in a new worktree.
    * **Rider keeps asking** to exclude each project from Defender, as it can't see the code folder is excluded. Turn its notification off for all projects, from **More** on it.
@@ -212,7 +212,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * <a id="find-in-files"></a>**Find in Files** (Ctrl+Shift+F) searches what files hold, reading every file, so nothing needs indexing. In its strip along the bottom:
    * **Find**: text, or a regular expression (**.\***), case (**Aa**) and whole word (**ab**) as wanted.
-   * **Where**: folders and files, `<open folders>`, and patterns: `*.cs` to include, `-*.min.js` or `-node_modules\` to exclude.
+   * **Where**: folders and files, `<open folders>`, and patterns: `*.cs` to include, `-*.min.js` or `-node_modules\` to exclude. A folder with a comma in its name goes in quotes.
    * In a repository only what git doesn't ignore is searched, unless **Git-ignored** is on. `.git` never is, nor binary files.
    * **Find Results** opens in a tab: each file's matching lines, with context. Enter opens the file in the editor at the line; F4 and Shift+F4 go through the matches.
    * **Replace** replaces in every file found, asking first, keeping each file's encoding and line endings, and can be undone.
@@ -221,7 +221,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * **The list refreshes itself** when the folder changes on disk. Lode lets go of a drive while Windows removes it, so it never blocks **Safely remove**.
  * **A shell extension that stops answering** is cut off after 3 seconds, and skipped for the session.
- * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options. A Debug build keeps its own, and runs beside the installed Lode.
+ * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options. The tabs are saved as they change, those of the window used last, so they come back after a crash too. A Debug build keeps its own, and runs beside the installed Lode.
 
 
 ## Keyboard

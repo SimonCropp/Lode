@@ -228,6 +228,22 @@ public class ClosableTabControlTests
             });
     }
 
+    // Closing one tab after another by clicking where the cross is, each tab coming under the
+    // pointer as the one before it goes: Windows makes the second of two quick clicks a double
+    // click, which closes its tab as a click does.
+    [Test]
+    public async Task ASecondQuickClickOnACrossClosesItsTabToo()
+    {
+        const int leftButtonDoubleClick = 0x0203;
+        using var tabs = Create(out var closed);
+        var tab = tabs.GetTabRect(1);
+
+        Send(tabs, leftButtonDoubleClick, tab.Right - 12, tab.Top + tab.Height / 2);
+
+        await Assert.That(closed).IsEquivalentTo(["Second"]);
+        await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("First");
+    }
+
     [Test]
     public async Task ClickingATabTitleSelectsIt()
     {

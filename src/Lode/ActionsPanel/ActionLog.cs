@@ -14,7 +14,14 @@ static class ActionLog
     /// <summary>
     /// How a command ended: a short summary for the panel, and everything it reported.
     /// </summary>
-    public sealed record Outcome(bool Succeeded, string Summary, string Details);
+    public sealed record Outcome(bool Succeeded, string Summary, string Details)
+    {
+        /// <summary>
+        /// Whether it stays in the list until cleared, though it went well: what it reported is
+        /// something to come back for, the commit a deleted branch was at say.
+        /// </summary>
+        internal bool Stays { get; init; }
+    }
 
     /// <param name="folders">What it acts on: one folder, or several selected together.</param>
     public sealed class Entry(string title, IReadOnlyList<string> folders)
@@ -32,7 +39,8 @@ static class ActionLog
 
         /// <summary>
         /// Whether it leaves the list a while after it finished: it went well, or was
-        /// cancelled. One that failed stays until cleared, to be seen.
+        /// cancelled. One that failed stays until cleared, to be seen, as does one whose
+        /// outcome says it <see cref="Outcome.Stays"/>.
         /// </summary>
         public bool AgesOut { get; internal set; }
 
@@ -196,7 +204,8 @@ static class ActionLog
         entry.Summary = outcome.Summary;
         entry.Details = outcome.Details;
         entry.Finished = Time.GetUtcNow();
-        entry.AgesOut = outcome.Succeeded || cancelled;
+        entry.AgesOut = (outcome.Succeeded || cancelled) &&
+                        !outcome.Stays;
         if (entry.AgesOut)
         {
             ageing.Start();

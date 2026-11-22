@@ -159,7 +159,7 @@ static class CodeMenu
     // In the Actions panel, off the UI thread. The repository is marked stale before the entry
     // ends, which has the windows read the states again: the watch may not have heard of the
     // change yet, and the state would still be fresh.
-    static Task<ActionLog.Entry> RunOnBranch(string title, string repo, Func<Cancel, CodeCommands.RepoResult> work) =>
+    static Task<ActionLog.Entry> RunOnBranch(string title, string repo, Func<Cancel, CodeCommands.RepoResult> work, bool stays = false) =>
         ActionLog.Run(
             title,
             [repo],
@@ -167,7 +167,10 @@ static class CodeMenu
             {
                 var result = await Task.Run(() => work(cancel), cancel);
                 GitCache.MarkStale([repo]);
-                return CodeCommands.GitOutcome([result]);
+                return CodeCommands.GitOutcome([result]) with
+                {
+                    Stays = stays
+                };
             });
 
     /// <summary>
@@ -318,7 +321,14 @@ static class CodeMenu
             return;
         }
 
-        _ = RunOnBranch($"Git delete branch {branch.Name}", repo, cancel => GitBranches.Delete(repo, branch, alsoOnRemote, switchTo, cancel));
+        // A local branch's entry stays until cleared, rather than leaving after a minute as one
+        // that went well does: the commit the branch was at, which is what gets it back, is
+        // nowhere else, and the prompt says it is there.
+        _ = RunOnBranch(
+            $"Git delete branch {branch.Name}",
+            repo,
+            cancel => GitBranches.Delete(repo, branch, alsoOnRemote, switchTo, cancel),
+            stays: !branch.Remote);
     }
 
     /// <summary>

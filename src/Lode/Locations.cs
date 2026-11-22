@@ -158,7 +158,7 @@ static class Locations
     /// </summary>
     public static string? Normalize(CharSpan input, string? relativeTo = null)
     {
-        var text = Environment.ExpandEnvironmentVariables(input.Trim().Trim('"').ToString());
+        var text = input.Trim().Trim('"').ToString();
         if (text.Length == 0)
         {
             return null;
@@ -193,6 +193,15 @@ static class Locations
             return null;
         }
     }
+
+    /// <summary>
+    /// What was typed, in the address bar say, as <see cref="Normalize"/> has it, with
+    /// %USERPROFILE% and the like filled in first, as Explorer fills them in. Only what is
+    /// typed: a folder can be named %TEMP%, as a script that never filled it in leaves one, and
+    /// gone to by its path, that folder is where it goes.
+    /// </summary>
+    public static string? NormalizeTyped(string input, string? relativeTo = null) =>
+        Normalize(Environment.ExpandEnvironmentVariables(input), relativeTo);
 
     // A name with a colon past its drive letter, "shell:downloads" say, is not a path in the
     // folder.

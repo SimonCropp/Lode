@@ -137,14 +137,8 @@ sealed class SearchWhere
             }
         }
 
-        foreach (var part in text.Split(','))
+        foreach (var entry in Entries(text))
         {
-            var entry = part.Trim();
-            if (entry.Length == 0)
-            {
-                continue;
-            }
-
             if (entry.Equals(OpenFolders, StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var open in openFolders)
@@ -280,18 +274,68 @@ sealed class SearchWhere
     /// </summary>
     public static string WithFolder(string text, string folder)
     {
-        var entries = text
-            .Split(',')
-            .Select(_ => _.Trim())
-            .Where(_ => _.Length > 0)
-            .ToList();
+        var entries = Entries(text);
         if (entries.Any(_ => _.Equals(OpenFolders, StringComparison.OrdinalIgnoreCase)))
         {
-            return string.Join(", ", entries);
+            return string.Join(", ", entries.Select(Quote));
         }
 
         var kept = entries.Where(_ => _[0] == '-' ||
                                       _.AsSpan().IndexOfAny('*', '?') >= 0);
-        return string.Join(", ", [folder, .. kept]);
+        return string.Join(", ", [Quote(folder), .. kept.Select(Quote)]);
+    }
+
+    // The entries Where's text holds, between its commas, none of them empty. A folder's name
+    // can have a comma in it, though, so what is in quotes is one entry, commas and all, as
+    // Copy as path gives a path: taken without the quotes, which no name has in it.
+    static List<string> Entries(string text)
+    {
+        var entries = new List<string>();
+        var entry = new StringBuilder();
+        var quoted = false;
+        foreach (var character in text)
+        {
+            if (character == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (character == ',' &&
+                !quoted)
+            {
+                Add();
+                continue;
+            }
+
+            entry.Append(character);
+        }
+
+        Add();
+        return entries;
+
+        void Add()
+        {
+            var trimmed = entry.ToString().Trim();
+            entry.Clear();
+            if (trimmed.Length > 0)
+            {
+                entries.Add(trimmed);
+            }
+        }
+    }
+
+    /// <summary>
+    /// An entry as Where's text holds it: in quotes when it has a comma in it, as a folder's
+    /// name can, which would otherwise end it there.
+    /// </summary>
+    public static string Quote(string entry)
+    {
+        if (entry.Contains(','))
+        {
+            return $"\"{entry}\"";
+        }
+
+        return entry;
     }
 }

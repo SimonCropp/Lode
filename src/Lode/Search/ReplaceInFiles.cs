@@ -135,7 +135,15 @@ static class ReplaceInFiles
             return null;
         }
 
+        // What was read went back to the same bytes, checked above, but what replaces it may
+        // not: a file that isn't UTF-8 is read a byte a character, and has no byte for most
+        // characters, each of which would be written as a question mark.
         var after = TextFile.Encode(newText, kind);
+        if (!TextFile.Holds(after, kind, newText))
+        {
+            throw new CantWriteBack("What replaces it has characters the file's encoding has none for.");
+        }
+
         Directory.CreateDirectory(kept);
         var before = Path.Combine(kept, $"{number}.before");
         var afterCopy = Path.Combine(kept, $"{number}.after");

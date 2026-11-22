@@ -259,6 +259,88 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     ];
 
     /// <summary>
+    /// Shows the items' properties. Items of one folder are that folder's to show them for, by
+    /// its menu's Properties. Those of more than one, as a search finds, have no folder to ask,
+    /// so the shell's properties for several items are given them all, each named in full.
+    /// </summary>
+    public static void ShowProperties(IntPtr owner, IReadOnlyList<string> paths)
+    {
+        if (InOneFolder(paths))
+        {
+            InvokeVerb(owner, paths, "properties");
+            return;
+        }
+
+        var dataObject = CreateDataObjectAcrossFolders(paths);
+        if (dataObject == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            SHMultiFileProperties(dataObject, 0);
+        }
+        finally
+        {
+            Marshal.Release(dataObject);
+        }
+    }
+
+    static Guid dataObjectHandler = new("b8c0bd9f-ed24-455c-83e6-d5390c4fe8c4");
+
+    /// <summary>
+    /// The shell's data object for items wherever they are, each named in full rather than to
+    /// the folder it is in. Zero when the shell knows none of them; otherwise the caller
+    /// releases it.
+    /// </summary>
+    internal static IntPtr CreateDataObjectAcrossFolders(IReadOnlyList<string> paths)
+    {
+        var identifiers = new List<IntPtr>();
+        try
+        {
+            foreach (var path in paths)
+            {
+                if (SHParseDisplayName(path, IntPtr.Zero, out var identifier, 0, out _) == 0)
+                {
+                    identifiers.Add(identifier);
+                }
+            }
+
+            if (identifiers.Count == 0 ||
+                SHCreateShellItemArrayFromIDLists((uint)identifiers.Count, [.. identifiers], out var itemsPointer) != 0)
+            {
+                return IntPtr.Zero;
+            }
+
+            var items = (IShellItemArray)Marshal.GetObjectForIUnknown(itemsPointer);
+            Marshal.Release(itemsPointer);
+            try
+            {
+                var handler = dataObjectHandler;
+                var interfaceId = dataObjectId;
+                if (items.BindToHandler(IntPtr.Zero, ref handler, ref interfaceId, out var dataObject) != 0)
+                {
+                    return IntPtr.Zero;
+                }
+
+                return dataObject;
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(items);
+            }
+        }
+        finally
+        {
+            foreach (var identifier in identifiers)
+            {
+                Marshal.FreeCoTaskMem(identifier);
+            }
+        }
+    }
+
+    /// <summary>
     /// Runs a shell verb such as "properties" against the items without showing a menu.
     /// </summary>
     public static void InvokeVerb(IntPtr owner, IReadOnlyList<string> paths, string verb)
@@ -358,6 +440,14 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     {
         foreach (var folder in folders)
         {
+            // One the shell can't name now, on a drive since unplugged, or a share out of
+            // reach, could be unpinned but not pinned again: left pinned where it is, rather
+            // than lost from Quick access for being moved.
+            if (!CanPin(folder))
+            {
+                continue;
+            }
+
             // Pinning toggles, so a folder is pinned again only once it has been unpinned. Were
             // pinning to fail, the folders after it are left pinned where they are rather than
             // unpinned too.
@@ -367,6 +457,19 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 return;
             }
         }
+    }
+
+    // Whether the shell can name the folder, which is the first thing pinning it asks.
+    static bool CanPin(string path)
+    {
+        var itemId = shellItemId;
+        if (SHCreateItemFromParsingName(path, IntPtr.Zero, ref itemId, out var item) != 0)
+        {
+            return false;
+        }
+
+        Marshal.Release(item);
+        return true;
     }
 
     // Unpin is only offered by the folder's Quick access entry, so it is asked for that. True
@@ -460,7 +563,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         using var workingDirectory = new WorkingDirectory(directory);
         try
         {
-            contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, 0);
+            // The whole menu is built to run the one verb, so a stuck extension would hold up
+            // Properties, or an unpin, as it would the menu shown.
+            using (new ShellExtensionGuard())
+            {
+                contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, 0);
+            }
+
             var info = new InvokeCommandInfo
             {
                 Size = Marshal.SizeOf<InvokeCommandInfo>(),
@@ -1081,11 +1190,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         // Each item is named to the folder by its own name alone, so they must all be in the one
         // folder, as a search's items need not be: named to the first one's, the others would
         // name whatever is there by their names, if anything.
-        if (paths
-            .Select(_ => Path.GetDirectoryName(_) ?? "")
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Skip(1)
-            .Any())
+        if (!InOneFolder(paths))
         {
             return IntPtr.Zero;
         }
@@ -1144,6 +1249,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             }
         }
     }
+
+    static bool InOneFolder(IReadOnlyList<string> paths) =>
+        !paths
+            .Select(_ => Path.GetDirectoryName(_) ?? "")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Skip(1)
+            .Any();
 
     static IContextMenu? CreateForFolder(IntPtr owner, string folderPath)
     {
@@ -1243,6 +1355,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     [LibraryImport("shell32.dll")]
     private static partial int SHCreateShellItemArrayFromShellItem(IntPtr item, ref Guid interfaceId, out IntPtr items);
+
+    [LibraryImport("shell32.dll")]
+    private static partial int SHCreateShellItemArrayFromIDLists(uint count, IntPtr[] identifiers, out IntPtr items);
+
+    [LibraryImport("shell32.dll")]
+    private static partial int SHMultiFileProperties(IntPtr dataObject, uint flags);
 
 
     [LibraryImport("user32.dll")]
