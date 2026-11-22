@@ -174,7 +174,12 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
                 return path;
             }
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception)
+            when (
+                exception is
+                    ArgumentException or
+                    NotSupportedException or
+                    PathTooLongException)
         {
         }
 
@@ -287,7 +292,12 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
             });
             return true;
         }
-        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or FileNotFoundException)
+        catch (Exception exception)
+            when (
+                exception is
+                    Win32Exception or
+                    InvalidOperationException or
+                    FileNotFoundException)
         {
             return false;
         }

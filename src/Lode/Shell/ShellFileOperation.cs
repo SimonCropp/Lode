@@ -212,7 +212,11 @@ static class ShellFileOperation
                     Add(folder, Path.Combine(target, Path.GetFileName(folder)));
                 }
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
             {
                 // What can't be read here can't be copied either.
             }
@@ -277,7 +281,11 @@ static class ShellFileOperation
         {
             item = TryCreateItem(parsingName);
         }
-        catch (Exception exception) when (exception is COMException or ArgumentException)
+        catch (Exception exception)
+            when (
+                exception is
+                    COMException or
+                    ArgumentException)
         {
             return null;
         }

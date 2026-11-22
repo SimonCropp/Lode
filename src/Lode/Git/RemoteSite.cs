@@ -20,7 +20,12 @@ sealed record RemoteSite(string Name, string Url)
 
             return For(url);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
         {
             return null;
         }

@@ -129,7 +129,9 @@ static class RepositoryClone
                 // with what it cloned so far deleted. Given the token, a Cancel before the clone
                 // had started would have the await throw instead, and nothing would close the
                 // dialog.
-                var result = await Task.Run(() => Clone(url, destination, link.Branch, progress.Report, cancellation.Token), Cancel.None);
+                var result = await Task.Run(
+                    () => Clone(url, destination, link.Branch, progress.Report, cancellation.Token),
+                    Cancel.None);
                 if (result.Succeeded)
                 {
                     cloned = link.In(destination);
@@ -308,7 +310,11 @@ static class RepositoryClone
         {
             Directory.CreateDirectory(parent);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
         {
             return new(destination, false, exception.Message);
         }
@@ -348,7 +354,11 @@ static class RepositoryClone
             {
                 GitPurge.DeleteOutright(folder);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
             {
                 Thread.Sleep(100);
             }

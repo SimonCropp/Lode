@@ -52,7 +52,13 @@ static class LibGitState
         }
         // Not a repository libgit2 will take, or libgit2 itself not loaded: its native library
         // missing, or not for this processor.
-        catch (Exception exception) when (exception is LibGit2SharpException or DllNotFoundException or TypeInitializationException or BadImageFormatException)
+        catch (Exception exception)
+            when (
+                exception is
+                    LibGit2SharpException or
+                    DllNotFoundException or
+                    TypeInitializationException or
+                    BadImageFormatException)
         {
             return null;
         }
@@ -111,7 +117,16 @@ static class LibGitState
                 }
             }
         }
-        catch (Exception exception) when (exception is LibGit2SharpException or DllNotFoundException or TypeInitializationException or BadImageFormatException or IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception exception)
+            when (
+                exception is
+                    LibGit2SharpException or
+                    DllNotFoundException or
+                    TypeInitializationException or
+                    BadImageFormatException or
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
         {
             foreach (var folder in folders)
             {
@@ -226,7 +241,11 @@ static class LibGitState
 
             return BinaryPrimitives.ReadInt32BigEndian(header[8..]);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
         {
             return 0;
         }

@@ -85,7 +85,12 @@ static class ShellNew
 
             return ReadShellNew(shellNew, extension, typeName);
         }
-        catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException or IOException)
+        catch (Exception exception)
+            when (
+                exception is
+                    SecurityException or
+                    UnauthorizedAccessException or
+                    IOException)
         {
             return null;
         }

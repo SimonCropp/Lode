@@ -416,10 +416,11 @@ static class GitCache
             return (git, CodeCommands.CommonDirectory(git));
         }
         catch (Exception exception)
-            when (exception is
-                      IOException or
-                      UnauthorizedAccessException or
-                      ArgumentException)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
         {
             return null;
         }

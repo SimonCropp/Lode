@@ -612,7 +612,12 @@ static class Zip
         {
             folders = Read(location.Archive);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    InvalidDataException or
+                    UnauthorizedAccessException)
         {
             return Kind.Missing;
         }
@@ -719,7 +724,11 @@ static class Zip
 
             return true;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
         {
             return false;
         }
@@ -787,7 +796,11 @@ static class Zip
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
         {
             // Left for the next start.
         }

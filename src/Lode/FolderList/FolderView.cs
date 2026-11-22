@@ -402,6 +402,7 @@ sealed class FolderView : UserControl
     /// inside a zip.
     /// </summary>
     public bool IsReadOnly => ListsPlaces || InArchive;
+
     IntPtr Owner => FindForm()?.Handle ?? Handle;
 
     public FolderView(Settings settings, Places places)
@@ -654,7 +655,7 @@ sealed class FolderView : UserControl
         }
 
         // The zip itself is a file, to be revealed as one. Inside it, what it holds.
-        if (Zip.Split(path) is { Inner.Length: > 0 } inArchive)
+        if (Zip.Split(path) is {Inner.Length: > 0} inArchive)
         {
             var kind = Zip.Find(inArchive);
             if (kind == Zip.Kind.Folder)
@@ -745,15 +746,21 @@ sealed class FolderView : UserControl
                     WorkingDirectory = directory
                 });
         }
-        catch (Win32Exception exception) when (exception.NativeErrorCode is fileNotFound or pathNotFound)
+        catch (Win32Exception exception)
+            when (exception.NativeErrorCode is fileNotFound or pathNotFound)
         {
             SayNotFound(typed);
         }
-        catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
+        catch (Win32Exception exception)
+            when (exception.NativeErrorCode == cancelledByUser)
         {
             // The user dismissed an elevation prompt.
         }
-        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        catch (Exception exception)
+            when (
+                exception is
+                    Win32Exception or
+                    InvalidOperationException)
         {
             MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
@@ -1644,28 +1651,27 @@ sealed class FolderView : UserControl
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
         // space is read there as well, as asking a drive mapped to a share waits on the network.
         // So are which folders are repositories.
-        var (loaded, late, free, failure, nearest, foundRepos, containing) = await Task.Run(
-            () =>
+        var (loaded, late, free, failure, nearest, foundRepos, containing) = await Task.Run(() =>
+        {
+            var space = FreeSpaceOf(path, freeSpace);
+            // A watch that failed, the folder deleted and made again say, watches again
+            // before the read, so nothing after the read is missed. F5 mends one too.
+            watching?.Revive();
+            watchingParent?.Revive();
+            try
             {
-                var space = FreeSpaceOf(path, freeSpace);
-                // A watch that failed, the folder deleted and made again say, watches again
-                // before the read, so nothing after the read is missed. F5 mends one too.
-                watching?.Revive();
-                watchingParent?.Revive();
-                try
-                {
-                    var found = Enumerate(path, showHidden, hiddenSystem, out var late);
-                    found.Sort((first, second) => Compare(first, second, column, ascending, cells));
-                    var (foundRepos, containing) = FindRepos(found, path, codeFolder);
-                    return (found, late, space, null, null, foundRepos, containing);
-                }
-                catch (Exception exception)
-                {
-                    // Not there to read. Gone, the view goes up to the nearest folder that is.
-                    var nearest = MeansGone(exception) ? NearestFolder(path) : null;
-                    return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?)exception.Message, nearest, new HashSet<string>(), (string?)null);
-                }
-            });
+                var found = Enumerate(path, showHidden, hiddenSystem, out var late);
+                found.Sort((first, second) => Compare(first, second, column, ascending, cells));
+                var (foundRepos, containing) = FindRepos(found, path, codeFolder);
+                return (found, late, space, null, null, foundRepos, containing);
+            }
+            catch (Exception exception)
+            {
+                // Not there to read. Gone, the view goes up to the nearest folder that is.
+                var nearest = MeansGone(exception) ? NearestFolder(path) : null;
+                return (new List<FileEntry>(), new List<Task<FileEntry>>(), space, (string?) exception.Message, nearest, new HashSet<string>(), (string?) null);
+            }
+        });
 
         if (version != loadVersion || IsDisposed)
         {
@@ -1689,7 +1695,7 @@ sealed class FolderView : UserControl
         // Sorted by Git when last open: the column shows only now the repositories are known.
         if (!preserveState &&
             sortColumn != gitColumn &&
-            settings.SortOf(path) is { Column: "Git" })
+            settings.SortOf(path) is {Column: "Git"})
         {
             (sortColumn, sortAscending) = SortOfFolder();
         }
@@ -2050,19 +2056,18 @@ sealed class FolderView : UserControl
         }
 
         gitStatesArriving = true;
-        BeginInvoke(
-            () =>
+        BeginInvoke(() =>
+        {
+            // Shown already, as the reading finished first.
+            if (!gitStatesArriving ||
+                IsDisposed)
             {
-                // Shown already, as the reading finished first.
-                if (!gitStatesArriving ||
-                    IsDisposed)
-                {
-                    return;
-                }
+                return;
+            }
 
-                gitStatesArriving = false;
-                ShowGitStates();
-            });
+            gitStatesArriving = false;
+            ShowGitStates();
+        });
     }
 
     void ShowGitStates()
@@ -2143,7 +2148,7 @@ sealed class FolderView : UserControl
     /// again. Tests call it to stand in for a folder slow to read.
     /// </summary>
     internal void ReadTook(TimeSpan read) =>
-        readAgainAt = Environment.TickCount64 + (long)WaitAfter(read).TotalMilliseconds;
+        readAgainAt = Environment.TickCount64 + (long) WaitAfter(read).TotalMilliseconds;
 
     static FileEntry DriveEntry(DriveInfo drive) =>
         DriveEntry(
@@ -2345,10 +2350,11 @@ sealed class FolderView : UserControl
             return;
         }
         catch (Exception exception)
-            when (exception is
-                      IOException or
-                      UnauthorizedAccessException or
-                      SecurityException)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             // The folder went, or a subfolder could not be read part way through. What was
             // found before that stays.
@@ -3039,7 +3045,7 @@ sealed class FolderView : UserControl
         }
 
         var key = columnDefinitions[shownColumns[shown]].Key;
-        settings.ColumnWidths[key] = (int)Math.Round(width * 96.0 / DeviceDpi);
+        settings.ColumnWidths[key] = (int) Math.Round(width * 96.0 / DeviceDpi);
         ColumnWidthsChanged?.Invoke(this);
     }
 
@@ -3350,13 +3356,12 @@ sealed class FolderView : UserControl
         }
 
         fileIconsArriving = true;
-        BeginInvoke(
-            () =>
-            {
-                fileIconsArriving = false;
-                rows.Clear();
-                list.Invalidate();
-            });
+        BeginInvoke(() =>
+        {
+            fileIconsArriving = false;
+            rows.Clear();
+            list.Invalidate();
+        });
     }
 
     // Something cut, or pasted, here or in Explorer: the rows are drawn again, as dimmed or not.
@@ -3439,7 +3444,7 @@ sealed class FolderView : UserControl
         if (entry.IsDrive)
         {
             var (driveCells, driveIcon) = DescribeDrive(entry);
-            var drive = new ListViewItem(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) { Tag = entry };
+            var drive = new ListViewItem(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) {Tag = entry};
             ColorDetails(drive, ExplorerStyle.SecondaryText);
             return drive;
         }
@@ -3467,7 +3472,7 @@ sealed class FolderView : UserControl
                 ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory));
         }
 
-        var item = new ListViewItem(ShownCells(cells), icon) { Tag = entry };
+        var item = new ListViewItem(ShownCells(cells), icon) {Tag = entry};
         if (entry.IsHidden)
         {
             item.ForeColor = SystemColors.GrayText;
@@ -3613,7 +3618,7 @@ sealed class FolderView : UserControl
     // share, nor what is in a zip, which is copied or dragged by extracting it first.
     string[] SelectedPaths() =>
         SelectedEntries()
-            .Where(_ => _ is { IsPlace: false, InArchive: false })
+            .Where(_ => _ is {IsPlace: false, InArchive: false})
             .Select(_ => _.FullPath)
             .ToArray();
 
@@ -3624,7 +3629,7 @@ sealed class FolderView : UserControl
         {
             // In a zip, a file is opened from a copy extracted to the temp folder, and a zip in
             // one is gone into there.
-            if (entry is { InArchive: true, IsDirectory: false })
+            if (entry is {InArchive: true, IsDirectory: false})
             {
                 _ = OpenFromArchive(entry, !navigated);
                 navigated |= Zip.IsZip(entry.Name);
@@ -3956,7 +3961,7 @@ sealed class FolderView : UserControl
 
     public void BeginRename()
     {
-        if (list.FocusedItem is { Selected: true } item)
+        if (list.FocusedItem is {Selected: true} item)
         {
             item.BeginEdit();
         }
@@ -4220,7 +4225,7 @@ sealed class FolderView : UserControl
         var selection = SelectedEntries();
         if (fromKeyboard)
         {
-            var anchor = list.FocusedItem is { Selected: true } focused
+            var anchor = list.FocusedItem is {Selected: true} focused
                 ? new Point(focused.Bounds.Left + 24, focused.Bounds.Bottom)
                 : new Point(8, 8);
             location = list.PointToScreen(anchor);
@@ -4737,7 +4742,7 @@ sealed class FolderView : UserControl
     string? DropDestination(DragEventArgs args)
     {
         var point = list.PointToClient(new(args.X, args.Y));
-        if (list.GetItemAt(point.X, point.Y)?.Tag is FileEntry { IsDirectory: true, InArchive: false } target)
+        if (list.GetItemAt(point.X, point.Y)?.Tag is FileEntry {IsDirectory: true, InArchive: false} target)
         {
             return target.FullPath;
         }
@@ -4766,7 +4771,7 @@ sealed class FolderView : UserControl
         if (args.Effect != DragDropEffects.None)
         {
             var point = list.PointToClient(new(args.X, args.Y));
-            if (list.GetItemAt(point.X, point.Y) is { Tag: FileEntry { IsDirectory: true, InArchive: false } } item)
+            if (list.GetItemAt(point.X, point.Y) is {Tag: FileEntry {IsDirectory: true, InArchive: false}} item)
             {
                 target = item.Index;
             }

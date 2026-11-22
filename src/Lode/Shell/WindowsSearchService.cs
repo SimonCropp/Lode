@@ -55,7 +55,12 @@ static class WindowsSearchService
 
             return StartupOf(key.GetValue("Start"), key.GetValue("DelayedAutostart"));
         }
-        catch (Exception exception) when (exception is SecurityException or IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    SecurityException or
+                    IOException or
+                    UnauthorizedAccessException)
         {
             return Startup.Missing;
         }

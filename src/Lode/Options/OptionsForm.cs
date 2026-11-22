@@ -960,7 +960,12 @@ class OptionsForm : Form
         {
             change();
         }
-        catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException or IOException)
+        catch (Exception exception)
+            when (
+                exception is
+                    UnauthorizedAccessException or
+                    SecurityException or
+                    IOException)
         {
             MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
@@ -1133,7 +1138,11 @@ class OptionsForm : Form
         {
             StartUpdate();
         }
-        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        catch (Exception exception)
+            when (
+                exception is
+                    Win32Exception or
+                    InvalidOperationException)
         {
             MessageBox.Show(this, $"Lode couldn't start the update: {exception.Message}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
@@ -1545,7 +1554,12 @@ class OptionsForm : Form
         {
             change();
         }
-        catch (Exception exception) when (exception is UnauthorizedAccessException or SecurityException or IOException)
+        catch (Exception exception)
+            when (
+                exception is
+                    UnauthorizedAccessException or
+                    SecurityException or
+                    IOException)
         {
             MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }

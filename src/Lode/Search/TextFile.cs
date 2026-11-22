@@ -183,7 +183,12 @@ sealed class TextFile
 
             return Decode(bytes.AsSpan(0, read), out skip, buffers);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             skip = Skip.Unreadable;
             return null;

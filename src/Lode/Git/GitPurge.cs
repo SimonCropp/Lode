@@ -103,7 +103,12 @@ static class GitPurge
         {
             children = Directory.EnumerateDirectories(folder, "*", folderOptions).ToList();
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             // An unreadable folder holds no repositories we can use.
             return;
@@ -204,18 +209,17 @@ static class GitPurge
     internal static async Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, Remover remove, bool permanent, IProgress<string>? progress = null, Func<string, bool>? confirm = null)
     {
         // Several folders looked in at once, as git runs in each on its own.
-        var found = await Task.Run(
-            () => CodeCommands.InParallel(
-                folders,
-                Cancel.None,
-                Find,
-                done =>
+        var found = await Task.Run(() => CodeCommands.InParallel(
+            folders,
+            Cancel.None,
+            Find,
+            done =>
+            {
+                if (folders.Count > 1)
                 {
-                    if (folders.Count > 1)
-                    {
-                        progress?.Report($"Looked in {done} of {folders.Count}");
-                    }
-                }));
+                    progress?.Report($"Looked in {done} of {folders.Count}");
+                }
+            }));
 
         var paths = found
             .SelectMany(_ => _.Entries)
@@ -315,7 +319,12 @@ static class GitPurge
                 return new FileInfo(path).Length;
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             // Unreadable, so not counted.
         }
@@ -337,65 +346,67 @@ static class GitPurge
         (paths, progress) =>
         {
             progress?.Report($"Moving {Items(paths.Count)} to the Recycle Bin");
-            return FileOperations.OnStaThread<IReadOnlyList<Failure>>(
-                () =>
+            return FileOperations.OnStaThread<IReadOnlyList<Failure>>(() =>
+            {
+                ShellFileOperation.Outcome outcome;
+                try
                 {
-                    ShellFileOperation.Outcome outcome;
-                    try
-                    {
-                        outcome = ShellFileOperation.Run(
-                            owner,
-                            ShellFileOperation.Kind.Delete,
-                            paths,
-                            null,
-                            ShellFileOperation.AllowUndo |
-                            ShellFileOperation.RecycleOnDelete |
-                            ShellFileOperation.NoConfirmation |
-                            ShellFileOperation.WantNukeWarning);
-                    }
-                    catch (Exception exception)
-                    {
-                        // None of it done, which each says, so what was found is still listed.
-                        return paths
-                            .Select(_ => new Failure(_, exception.Message))
-                            .ToList();
-                    }
-
-                    // What has gone since the dry run, removed by a build say, is as good as
-                    // purged.
-                    var done = outcome.Changes
-                        .Select(_ => _.Source)
-                        .Concat(outcome.Missing)
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    outcome = ShellFileOperation.Run(
+                        owner,
+                        ShellFileOperation.Kind.Delete,
+                        paths,
+                        null,
+                        ShellFileOperation.AllowUndo |
+                        ShellFileOperation.RecycleOnDelete |
+                        ShellFileOperation.NoConfirmation |
+                        ShellFileOperation.WantNukeWarning);
+                }
+                catch (Exception exception)
+                {
+                    // None of it done, which each says, so what was found is still listed.
                     return paths
-                        .Where(_ => !done.Contains(_))
-                        .Select(_ => new Failure(_, "Not moved to the Recycle Bin"))
+                        .Select(_ => new Failure(_, exception.Message))
                         .ToList();
-                });
+                }
+
+                // What has gone since the dry run, removed by a build say, is as good as
+                // purged.
+                var done = outcome.Changes
+                    .Select(_ => _.Source)
+                    .Concat(outcome.Missing)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return paths
+                    .Where(_ => !done.Contains(_))
+                    .Select(_ => new Failure(_, "Not moved to the Recycle Bin"))
+                    .ToList();
+            });
         };
 
     // Straight through the file system: much faster than the shell for the thousands of small
     // files obj and node_modules hold.
     static Task<IReadOnlyList<Failure>> Outright(IReadOnlyList<string> paths, IProgress<string>? progress) =>
-        Task.Run<IReadOnlyList<Failure>>(
-            () =>
+        Task.Run<IReadOnlyList<Failure>>(() =>
+        {
+            var failures = new List<Failure>();
+            for (var index = 0; index < paths.Count; index++)
             {
-                var failures = new List<Failure>();
-                for (var index = 0; index < paths.Count; index++)
+                progress?.Report($"Deleting {index + 1} of {paths.Count}");
+                try
                 {
-                    progress?.Report($"Deleting {index + 1} of {paths.Count}");
-                    try
-                    {
-                        DeleteOutright(paths[index]);
-                    }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                    {
-                        failures.Add(new(paths[index], exception.Message));
-                    }
+                    DeleteOutright(paths[index]);
                 }
+                catch (Exception exception)
+                    when (
+                        exception is
+                            IOException or
+                            UnauthorizedAccessException)
+                {
+                    failures.Add(new(paths[index], exception.Message));
+                }
+            }
 
-                return failures;
-            });
+            return failures;
+        });
 
     /// <summary>
     /// Deletes a file or folder outright, not to the Recycle Bin, read-only files and all, as git
@@ -450,7 +461,11 @@ static class GitPurge
             {
                 Delete(child);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
             {
                 first ??= exception;
             }

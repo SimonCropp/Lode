@@ -301,7 +301,12 @@ static class SearchWalk
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             // Gone while it was searched, or its drive went.
         }

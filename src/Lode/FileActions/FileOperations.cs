@@ -435,7 +435,8 @@ static class FileOperations
             };
             Process.Start(startInfo)?.Dispose();
         }
-        catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
+        catch (Win32Exception exception)
+            when (exception.NativeErrorCode == cancelledByUser)
         {
             // The user dismissed an elevation prompt.
         }
@@ -536,7 +537,8 @@ static class FileOperations
 
             Process.Start(startInfo)?.Dispose();
         }
-        catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
+        catch (Win32Exception exception)
+            when (exception.NativeErrorCode == cancelledByUser)
         {
             // The user said no to the UAC prompt; a prompt that is not elevated would not be
             // what they asked for.

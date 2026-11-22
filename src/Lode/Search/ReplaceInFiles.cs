@@ -60,7 +60,13 @@ static class ReplaceInFiles
                 changed.Add(done.Shown);
                 replaced += done.Shown.MatchCount;
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException or RegexMatchTimeoutException)
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException or
+                        SecurityException or
+                        RegexMatchTimeoutException)
             {
                 failed.Add(new(path, Describe(exception)));
             }
@@ -252,14 +258,22 @@ static class ReplaceInFiles
                     {
                         Directory.Delete(folder, true);
                     }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    catch (Exception exception)
+                        when (
+                            exception is
+                                IOException or
+                                UnauthorizedAccessException)
                     {
                         // Left for the next start.
                     }
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
         {
             // Left for the next start.
         }
@@ -304,7 +318,12 @@ static class ReplaceInFiles
                     WriteInPlace(file.Path, File.ReadAllBytes(write(file)));
                     done++;
                 }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+                catch (Exception exception)
+                    when (
+                        exception is
+                            IOException or
+                            UnauthorizedAccessException or
+                            SecurityException)
                 {
                     left.Add($"{file.Path}: {exception.Message}");
                 }

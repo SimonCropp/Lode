@@ -168,7 +168,12 @@ sealed class SearchWhere
 
             return Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.Combine(folder, entry)));
         }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        catch (Exception exception)
+            when (
+                exception is
+                    ArgumentException or
+                    NotSupportedException or
+                    PathTooLongException)
         {
             return null;
         }

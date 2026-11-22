@@ -620,7 +620,11 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
                     Directory.Delete(path);
                 }
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
             {
                 // Left there: an empty folder does no harm, and the move itself was done.
             }

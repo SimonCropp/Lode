@@ -366,7 +366,12 @@ sealed class Settings
                 settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path));
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             problem = $"""
                        Lode couldn't read its settings from {path}
@@ -463,7 +468,12 @@ sealed class Settings
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
             File.WriteAllText(filePath, JsonSerializer.Serialize(this, serializerOptions));
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
         {
             // The disk, or the file's permissions: nothing Lode did wrong, but what was changed
             // is lost when Lode ends unless a later save gets through, so the user is told.

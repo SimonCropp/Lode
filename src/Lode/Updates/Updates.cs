@@ -241,7 +241,10 @@ sealed class Updates
             outcome = ToolUpdateOutcome.Take(Tool.Outcome);
         }
         catch (Exception exception)
-            when (exception is IOException or UnauthorizedAccessException)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
         {
             return null;
         }

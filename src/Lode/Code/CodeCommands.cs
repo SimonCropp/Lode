@@ -120,7 +120,12 @@ static class CodeCommands
                    origin.StartsWith(remote, StringComparison.Ordinal) &&
                    head[local.Length..] == origin[remote.Length..];
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
         {
             return false;
         }
@@ -367,17 +372,16 @@ static class CodeCommands
     /// </summary>
     public static List<string> Tags(IReadOnlyList<string> repos) =>
         repos
-            .SelectMany(
-                repo =>
+            .SelectMany(repo =>
+            {
+                var result = Git(repo, "tag", "--sort=-creatordate");
+                if (!result.Succeeded)
                 {
-                    var result = Git(repo, "tag", "--sort=-creatordate");
-                    if (!result.Succeeded)
-                    {
-                        return [];
-                    }
+                    return [];
+                }
 
-                    return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                })
+                return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            })
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
@@ -678,7 +682,11 @@ static class CodeCommands
         {
             process.Kill(entireProcessTree: true);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        catch (Exception exception)
+            when (
+                exception is
+                    InvalidOperationException or
+                    Win32Exception)
         {
             // Ended by itself meanwhile.
         }

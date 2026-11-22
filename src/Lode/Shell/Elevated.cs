@@ -42,7 +42,8 @@ static class Elevated
             await process.WaitForExitAsync();
             return Read(process.ExitCode, resultFile);
         }
-        catch (Win32Exception exception) when (exception.NativeErrorCode == cancelledByUser)
+        catch (Win32Exception exception)
+            when (exception.NativeErrorCode == cancelledByUser)
         {
             return new(false, true, [], null);
         }
