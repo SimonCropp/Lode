@@ -5,7 +5,7 @@
 /// </summary>
 sealed class PageList : Control
 {
-    readonly List<(string Text, char Glyph)> pages = [];
+    List<(string Text, char Glyph)> pages = [];
     int selected = -1;
     int hovered = -1;
 

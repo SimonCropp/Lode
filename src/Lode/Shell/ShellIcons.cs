@@ -185,11 +185,11 @@ static class ShellIcons
     // SHIL_LARGE and SHIL_EXTRALARGE, and IImageList, whose pointer is the HIMAGELIST.
     const int largeList = 0;
     const int extraLargeList = 2;
-    static readonly Guid imageListInterface = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
+    static Guid imageListInterface = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
 
     // The system image lists, smallest first, for drawing an icon at a size other than the
     // small one's: a monitor at another scale than the one Windows started on.
-    static readonly Lazy<IntPtr[]> imageLists = new(() =>
+    static Lazy<IntPtr[]> imageLists = new(() =>
     {
         var lists = new List<IntPtr> { SmallImageList };
         foreach (var size in (int[])[largeList, extraLargeList])
@@ -305,7 +305,7 @@ static class ShellIcons
     }
 
     // Each file being read for its icon, so asking again while it is waits for the same read.
-    static readonly ConcurrentDictionary<(string Path, DateTime Modified), Task> readingFileIcons = new();
+    static ConcurrentDictionary<(string Path, DateTime Modified), Task> readingFileIcons = new();
 
     static Task ReadFileIcon(string path, DateTime modified) =>
         readingFileIcons.GetOrAdd(
@@ -446,7 +446,7 @@ static class ShellIcons
     // The icons of files that have their own (programs, shortcuts), each as of when the file was
     // last written. Asking the shell reads the file, and a folder's rows are made again for every
     // sort, filter and change on disk.
-    static readonly ConcurrentDictionary<string, (DateTime Modified, int Icon)> iconsByFile = new(StringComparer.OrdinalIgnoreCase);
+    static ConcurrentDictionary<string, (DateTime Modified, int Icon)> iconsByFile = new(StringComparer.OrdinalIgnoreCase);
 
     // Browsing keeps finding more programs. Past this many, start again rather than keep them all.
     const int maximumFileIcons = 4096;
@@ -572,7 +572,7 @@ static class ShellIcons
     // The icons of places, as tabs and Pinned show them, each asked of the shell once: every tab
     // is named again on every navigation. Forgotten on Refresh, as a folder's icon can change,
     // with its desktop.ini say.
-    static readonly ConcurrentDictionary<string, int> placeIcons = new(StringComparer.OrdinalIgnoreCase);
+    static ConcurrentDictionary<string, int> placeIcons = new(StringComparer.OrdinalIgnoreCase);
     static int placeIconsRead;
 
     /// <summary>
@@ -590,11 +590,11 @@ static class ShellIcons
     // for its name and icon: one mapped to a share asks the share, which waits on the network,
     // long when the share is offline, and one just plugged in, a disk spinning up or a card
     // reader, can be slow to answer too. So each is described off the UI thread.
-    static readonly ConcurrentDictionary<string, Task<(string DisplayName, string TypeName, int Icon)>> drives =
+    static ConcurrentDictionary<string, Task<(string DisplayName, string TypeName, int Icon)>> drives =
         new(StringComparer.OrdinalIgnoreCase);
 
     // How each was last described, to show while it is being described again.
-    static readonly ConcurrentDictionary<string, (string DisplayName, string TypeName, int Icon)> describedDrives =
+    static ConcurrentDictionary<string, (string DisplayName, string TypeName, int Icon)> describedDrives =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>

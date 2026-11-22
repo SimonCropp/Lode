@@ -31,9 +31,9 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     const uint invokeControlDown = 0x40000000;
     const int showNormal = 1;
 
-    static readonly Guid shellFolderId = new("000214E6-0000-0000-C000-000000000046");
-    static readonly Guid contextMenuId = new("000214E4-0000-0000-C000-000000000046");
-    static readonly Guid dataObjectId = new("0000010E-0000-0000-C000-000000000046");
+    static Guid shellFolderId = new("000214E6-0000-0000-C000-000000000046");
+    static Guid contextMenuId = new("000214E4-0000-0000-C000-000000000046");
+    static Guid dataObjectId = new("0000010E-0000-0000-C000-000000000046");
 
     IContextMenu2? menu2;
     IContextMenu3? menu3;
@@ -251,7 +251,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         return true;
     }
 
-    static readonly HashSet<string> thisPCRemovedVerbs =
+    static HashSet<string> thisPCRemovedVerbs =
     [
         with(StringComparer.OrdinalIgnoreCase),
         "delete",
@@ -398,9 +398,9 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     }
 
     // What the shell's Pin to Quick access entries run, for folders, drives and files alike.
-    static readonly Guid pinToQuickAccessCommand = new("b455f46e-e4af-4035-b0a4-cf18d2f6f28e");
-    static readonly Guid shellItemId = new("43826d1e-e718-42ee-bc55-a1e261c37bfe");
-    static readonly Guid shellItemArrayId = new("b63ea76d-1f85-456f-a19c-48159efa858b");
+    static Guid pinToQuickAccessCommand = new("b455f46e-e4af-4035-b0a4-cf18d2f6f28e");
+    static Guid shellItemId = new("43826d1e-e718-42ee-bc55-a1e261c37bfe");
+    static Guid shellItemArrayId = new("b63ea76d-1f85-456f-a19c-48159efa858b");
 
     // Pins the folder, or unpins it if it is pinned. True when the command ran.
     static bool TogglePinned(string path)
@@ -567,7 +567,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     /// </summary>
     public static event Action? QuickAccessChanged;
 
-    static readonly HashSet<string> quickAccessVerbs =
+    static HashSet<string> quickAccessVerbs =
     [
         with(StringComparer.OrdinalIgnoreCase),
         "pintohome",
@@ -576,7 +576,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     // Entries left out of every menu, by verb, which unlike the text is the same in every
     // language.
-    static readonly HashSet<string> removedVerbs =
+    static HashSet<string> removedVerbs =
     [
         with(StringComparer.OrdinalIgnoreCase),
         // Restore previous versions
@@ -743,7 +743,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
 
     // Asking the shell for every name took most of the time this class adds to a right-click, so
     // each folder's names are kept, and read again only once the folder has changed.
-    static readonly ConcurrentDictionary<string, (DateTime Changed, HashSet<string> Names)> namesByFolder =
+    static ConcurrentDictionary<string, (DateTime Changed, HashSet<string> Names)> namesByFolder =
         new(StringComparer.OrdinalIgnoreCase);
 
     // What Explorer calls each item in a folder, such as "Mail recipient" for

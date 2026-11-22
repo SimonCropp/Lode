@@ -19,7 +19,7 @@ sealed class FolderView : UserControl
     // it says what has become of the file, or the repository, it names.
     sealed record ColumnDefinition(string Key, string Title, string ThisPCTitle, int Width, HorizontalAlignment Alignment);
 
-    static readonly ColumnDefinition[] columnDefinitions =
+    static ColumnDefinition[] columnDefinitions =
     [
         new("Name", "Name", "Name", 380, HorizontalAlignment.Left),
         new("Git", "Git", "Git", 220, HorizontalAlignment.Left),
@@ -90,7 +90,7 @@ sealed class FolderView : UserControl
     const int searchDelay = 300;
 
     // How often what the search has found so far is added to the list.
-    static readonly TimeSpan searchBatch = TimeSpan.FromMilliseconds(250);
+    static TimeSpan searchBatch = TimeSpan.FromMilliseconds(250);
 
     // What the search of the subfolders has found: everything beneath them whose name the filter
     // matches, ordered as the entries are. The folder's own matches are taken from its entries,
@@ -167,7 +167,7 @@ sealed class FolderView : UserControl
 
     // How long after the states were read the window coming back to the front reads them again.
     // Going between windows a moment apart reads them once: a code folder is dozens of reads.
-    static readonly TimeSpan gitFresh = TimeSpan.FromSeconds(3);
+    static TimeSpan gitFresh = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// The reading of the repositories' states under way. Completes once they are all shown.
@@ -2182,7 +2182,7 @@ sealed class FolderView : UserControl
     // How long This PC's read waits for its drives' sizes. A drive that answers later, one mapped
     // to a share that is offline or a disk that has to spin up, is listed without its size, which
     // follows once it has answered.
-    static readonly TimeSpan drivesWait = TimeSpan.FromMilliseconds(250);
+    static TimeSpan drivesWait = TimeSpan.FromMilliseconds(250);
 
     /// <param name="late">This PC's drives that had not said how big they are in time, each as
     /// it will be listed once it has.</param>
@@ -4097,7 +4097,7 @@ sealed class FolderView : UserControl
     }
 
     // Shortcut extensions are hidden, matching Explorer's NeverShowExt behaviour.
-    static readonly string[] hiddenExtensions = [".lnk", ".url"];
+    static string[] hiddenExtensions = [".lnk", ".url"];
 
     static string? HiddenExtension(FileEntry entry)
     {

@@ -66,9 +66,9 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
 
     const int maximumEntries = 50;
 
-    readonly Lock gate = new();
-    readonly List<Entry> undoable = [];
-    readonly List<Entry> redoable = [];
+    Lock gate = new();
+    List<Entry> undoable = [];
+    List<Entry> redoable = [];
     bool busy;
 
     // How many changes have been recorded, so an undo or redo knows of those made meanwhile.

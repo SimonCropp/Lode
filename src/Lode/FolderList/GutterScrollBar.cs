@@ -11,7 +11,7 @@ sealed class GutterScrollBar : HScrollBar
     const int horizontalScrollMessage = 0x0114;
     const int listViewScroll = 0x1014;
 
-    readonly ShellListView list;
+    ShellListView list;
 
     public GutterScrollBar(ShellListView list)
     {

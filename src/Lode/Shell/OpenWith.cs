@@ -16,7 +16,7 @@ static partial class OpenWith
 
     // What Explorer gives no Open with: programs, which an app chosen for them would stop
     // running, and shortcuts, which open what they point at.
-    static readonly HashSet<string> excluded =
+    static HashSet<string> excluded =
     [
         with(StringComparer.OrdinalIgnoreCase),
         ".exe",
@@ -48,7 +48,7 @@ static partial class OpenWith
 
     // What each extension's files are opened with, looked up once: the shell asked for every app
     // and an icon for each, on every right-click. Forgotten on Refresh, as apps come and go.
-    static readonly ConcurrentDictionary<string, List<App>> found = new(StringComparer.OrdinalIgnoreCase);
+    static ConcurrentDictionary<string, List<App>> found = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Asks the shell again, for Refresh.

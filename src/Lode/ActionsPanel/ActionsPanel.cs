@@ -7,7 +7,7 @@ sealed class ActionsPanel : Panel
 {
     const int maximumVisibleRows = 5;
 
-    readonly Label header = new()
+    Label header = new()
     {
         Text = "Actions",
         AutoSize = false,
@@ -16,7 +16,7 @@ sealed class ActionsPanel : Panel
         Padding = new(4, 0, 0, 0)
     };
 
-    readonly LinkLabel clear = new()
+    LinkLabel clear = new()
     {
         Name = "clearActions",
         Text = "Clear",
@@ -27,7 +27,7 @@ sealed class ActionsPanel : Panel
         Padding = new(0, 0, 4, 0)
     };
 
-    readonly ListBox list = new()
+    ListBox list = new()
     {
         Name = "actions",
         Dock = DockStyle.Fill,
@@ -36,13 +36,13 @@ sealed class ActionsPanel : Panel
         IntegralHeight = false
     };
 
-    readonly Panel headerRow = new()
+    Panel headerRow = new()
     {
         Dock = DockStyle.Top
     };
 
     // Turns the rings beside running actions, only while there are any and the panel shows.
-    readonly Timer spinner = new()
+    Timer spinner = new()
     {
         Interval = 30
     };

@@ -1,6 +1,6 @@
 static class Formatting
 {
-    static readonly string[] units = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+    static string[] units = ["bytes", "KB", "MB", "GB", "TB", "PB"];
 
     public static string Kilobytes(long bytes) =>
         $"{(bytes + 1023) / 1024:N0} KB";

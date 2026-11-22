@@ -167,25 +167,25 @@ static class GitCache
         }
     }
 
-    static readonly Lock gate = new();
-    static readonly Dictionary<string, Known> known = new(StringComparer.OrdinalIgnoreCase);
+    static Lock gate = new();
+    static Dictionary<string, Known> known = new(StringComparer.OrdinalIgnoreCase);
 
     // The git folder of each worktree and submodule known, which is in the .git of another
     // repository, with whether it shares that one's branches, as a worktree does. And for each
     // git folder shared, the worktrees sharing it.
-    static readonly Dictionary<string, (string Repo, bool Shares)> gitFolders = new(StringComparer.OrdinalIgnoreCase);
-    static readonly Dictionary<string, List<string>> sharing = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, (string Repo, bool Shares)> gitFolders = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, List<string>> sharing = new(StringComparer.OrdinalIgnoreCase);
 
     // The watch on each code folder: one, but for tests, which have many. Null for one that
     // can't be watched, on a share say, or not there when it was first shown.
-    static readonly Dictionary<string, FolderWatcher?> watchers = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, FolderWatcher?> watchers = new(StringComparer.OrdinalIgnoreCase);
 
     // Whether a watch that failed, its folder deleted say, is being started again.
     static bool reviving;
 
     // The repositories changing, until the views are told of each: see Known.Due. The timer is
     // set for the first of them due, and when that is, which is never while none is.
-    static readonly Dictionary<string, Known> changing = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, Known> changing = new(StringComparer.OrdinalIgnoreCase);
     static System.Threading.Timer? settling;
     static long settlingAt = long.MaxValue;
 
@@ -466,10 +466,10 @@ static class GitCache
     // of a folder the first time something changes in it, off this thread, as it is asked of
     // the repository. Forgotten, for a repository, when what git ignores in it may be other
     // than it was: see Forget.
-    static readonly Dictionary<string, bool> folders = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, bool> folders = new(StringComparer.OrdinalIgnoreCase);
 
     // The folders yet to be looked at, each with its repository, and whether they are being.
-    static readonly Dictionary<string, string> toLearn = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, string> toLearn = new(StringComparer.OrdinalIgnoreCase);
     static bool learning;
 
     /// <summary>
@@ -583,7 +583,7 @@ static class GitCache
     }
 
     // The read of each repository under way, the latest begun where there are two.
-    static readonly Dictionary<string, Reading> reading = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, Reading> reading = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Reads <paramref name="repo"/> with <paramref name="read"/>, or waits for a read of it
@@ -695,7 +695,7 @@ static class GitCache
     // What Find in Files last listed of each repository git doesn't ignore, kept while nothing in
     // it has changed, as the watch hears, nor what it ignores: the entry and its counts as they
     // were when it was listed.
-    static readonly Dictionary<string, (GitScope Scope, Known Entry, int Changes, int Forgotten)> searchable = new(StringComparer.OrdinalIgnoreCase);
+    static Dictionary<string, (GitScope Scope, Known Entry, int Changes, int Forgotten)> searchable = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// What git doesn't ignore in <paramref name="repo"/>, for Find in Files: listed by

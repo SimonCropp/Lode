@@ -9,7 +9,7 @@ static class CodingAgents
     public sealed record Agent(string Name, string Path);
 
     // Each agent's name, and the command it is run as, which is the file it is found by.
-    static readonly (string Name, string Command)[] known =
+    static (string Name, string Command)[] known =
     [
         ("Claude Code", "claude"),
         ("GitHub Copilot CLI", "copilot"),
@@ -19,7 +19,7 @@ static class CodingAgents
 
     // As Windows tries a command's extensions. npm puts a .cmd file on the PATH for each tool it
     // installs, beside a script without an extension that only other shells can run.
-    static readonly string[] extensions = [".exe", ".cmd", ".bat"];
+    static string[] extensions = [".exe", ".cmd", ".bat"];
 
     /// <summary>
     /// The agents installed, in the order of <see cref="known"/>.

@@ -6,7 +6,7 @@
 /// </summary>
 sealed class ChevronDropDownButton : ToolStripDropDownButton
 {
-    readonly char chevron;
+    char chevron;
 
     public ChevronDropDownButton(string text, char chevron = Icons.ChevronDown) :
         base(text)

@@ -387,7 +387,7 @@ static class Zip
     static bool IsFolderEntry(string name) =>
         name.EndsWith('/') || name.EndsWith('\\');
 
-    static readonly char[] invalidNameChars = Path.GetInvalidFileNameChars();
+    static char[] invalidNameChars = Path.GetInvalidFileNameChars();
 
     /// <summary>
     /// The folders and name of an entry, by its name in the zip, which may use either slash. Null
@@ -500,7 +500,7 @@ static class Zip
     // once, and the file is not held open in between.
     sealed record Listing(DateTime Written, long Length, Dictionary<string, Dictionary<string, Item>> Folders);
 
-    static readonly ConcurrentDictionary<string, Listing> listings = new(StringComparer.OrdinalIgnoreCase);
+    static ConcurrentDictionary<string, Listing> listings = new(StringComparer.OrdinalIgnoreCase);
     const int listingsKept = 16;
 
     /// <summary>

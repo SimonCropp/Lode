@@ -60,17 +60,17 @@ public static partial class ShellWindows
     const uint deselectOthersFlag = 0x4;
 
     // IFolderView, which is also the service the shell asks a document for to reach its view.
-    static readonly Guid folderViewService = new("CDE725B0-CCC9-4519-917E-325D72FAB4CE");
+    static Guid folderViewService = new("CDE725B0-CCC9-4519-917E-325D72FAB4CE");
 
-    static readonly Guid shellWindowsClass = new("9BA05972-F6A8-11CF-A442-00A0C90A8F39");
+    static Guid shellWindowsClass = new("9BA05972-F6A8-11CF-A442-00A0C90A8F39");
 
     static IShellWindows? list;
-    static readonly Dictionary<FolderView, ShellWindow> registered = [];
+    static Dictionary<FolderView, ShellWindow> registered = [];
 
     // A change while the list is being brought in line, from a call the shell made into Lode
     // while Lode was calling out to it, waits for the one under way to finish.
     static bool syncing;
-    static readonly List<MainForm> waiting = [];
+    static List<MainForm> waiting = [];
 
     /// <summary>
     /// Brings the list in line with each window open, as after Replace or Restore.

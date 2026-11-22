@@ -8,8 +8,8 @@
 sealed class FolderWatcher : IDisposable
 {
     // Every folder watcher there is, for LetGo to find those beneath what is being moved.
-    static readonly Lock everyGate = new();
-    static readonly List<FolderWatcher> every = [];
+    static Lock everyGate = new();
+    static List<FolderWatcher> every = [];
 
     string path;
     NotifyFilters filter;

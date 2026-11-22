@@ -29,14 +29,14 @@ static class LodeActions
     /// </summary>
     public sealed record Parent(string Text, char Glyph);
 
-    static readonly Parent clipboard = new("Clipboard", Icons.Paste);
-    static readonly Parent undoAndRedo = new("Undo and redo", Icons.Undo);
-    static readonly Parent file = new("File", Icons.Document);
-    static readonly Parent open = new("Open", Icons.Open);
-    static readonly Parent terminal = new("Terminal", Icons.Terminal);
-    static readonly Parent ai = new("AI", Icons.Agent);
-    static readonly Parent git = new("Git", Icons.Git);
-    static readonly Parent packages = new("Packages", Icons.Package);
+    static Parent clipboard = new("Clipboard", Icons.Paste);
+    static Parent undoAndRedo = new("Undo and redo", Icons.Undo);
+    static Parent file = new("File", Icons.Document);
+    static Parent open = new("Open", Icons.Open);
+    static Parent terminal = new("Terminal", Icons.Terminal);
+    static Parent ai = new("AI", Icons.Agent);
+    static Parent git = new("Git", Icons.Git);
+    static Parent packages = new("Packages", Icons.Package);
 
     /// <summary>
     /// The git actions. Pull, push, discard and purge were one, Git, a submenu of them. See
@@ -104,7 +104,7 @@ static class LodeActions
                               (agents || _.Id != "agent"));
     }
 
-    static readonly Dictionary<string, Definition> byId = All.ToDictionary(_ => _.Id);
+    static Dictionary<string, Definition> byId = All.ToDictionary(_ => _.Id);
 
     public static Definition? Find(string id) =>
         byId.GetValueOrDefault(id);

@@ -11,9 +11,9 @@ sealed class BranchPicker : Form
     /// </summary>
     internal sealed record Row(string Text, GitBranches.Branch? Branch = null, bool Heading = false);
 
-    readonly TextBox filterBox = new();
-    readonly Button newButton = new();
-    readonly ListBox list = new();
+    TextBox filterBox = new();
+    Button newButton = new();
+    ListBox list = new();
     GitBranches.Listing? listing;
     List<Row> shown = [];
     Font? headingFont;
@@ -21,7 +21,7 @@ sealed class BranchPicker : Form
 
     // On screen, what opened it: the status bar's branch. It opens above that, as a drop-down on
     // a bar at the bottom of a window does. Empty, it is left where it was put.
-    readonly Rectangle opener;
+    Rectangle opener;
 
     /// <summary>
     /// How long ago each branch was committed to is said against this. Tests put in a clock of

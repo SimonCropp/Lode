@@ -18,11 +18,11 @@ static partial class TaskbarIdentity
     public const string AppId = "Lode";
 
     // The System.AppUserModel properties.
-    static readonly Guid appUserModel = new("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
-    static readonly PropertyStore.PropertyKey relaunchCommandKey = new(appUserModel, 2);
-    static readonly PropertyStore.PropertyKey relaunchIconKey = new(appUserModel, 3);
-    static readonly PropertyStore.PropertyKey relaunchNameKey = new(appUserModel, 4);
-    static readonly PropertyStore.PropertyKey idKey = new(appUserModel, 5);
+    static Guid appUserModel = new("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+    static PropertyStore.PropertyKey relaunchCommandKey = new(appUserModel, 2);
+    static PropertyStore.PropertyKey relaunchIconKey = new(appUserModel, 3);
+    static PropertyStore.PropertyKey relaunchNameKey = new(appUserModel, 4);
+    static PropertyStore.PropertyKey idKey = new(appUserModel, 5);
 
     // SHSTOCKICONID: Windows' own icons for a folder, a drive, a machine on the network and a
     // share.

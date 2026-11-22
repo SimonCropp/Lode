@@ -99,8 +99,8 @@ static class Icons
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";
 
-    static readonly ConcurrentDictionary<(char, int, int), Bitmap> cache = new();
-    static readonly Lazy<string> fontName = new(() =>
+    static ConcurrentDictionary<(char, int, int), Bitmap> cache = new();
+    static Lazy<string> fontName = new(() =>
     {
         using var installed = new InstalledFontCollection();
         return FontName(installed.Families.Select(_ => _.Name));
@@ -126,7 +126,7 @@ static class Icons
     public static Bitmap Bitmap(char glyph, int size, Color color) =>
         cache.GetOrAdd((glyph, size, color.ToArgb()), _ => Draw(glyph, size, color));
 
-    static readonly ConcurrentDictionary<(char, int, int, int), Bitmap> spacedCache = new();
+    static ConcurrentDictionary<(char, int, int, int), Bitmap> spacedCache = new();
 
     /// <summary>
     /// The glyph as <see cref="Bitmap(char, int, Color)"/> draws it, with <paramref name="gap"/>

@@ -432,7 +432,7 @@ sealed class Settings
 
     // Each reason told once a run: a disk that is full or read only fails every save, and every
     // window that closes saves.
-    static readonly ConcurrentDictionary<string, byte> unsavedReasons = new();
+    static ConcurrentDictionary<string, byte> unsavedReasons = new();
 
     /// <summary>
     /// Tells the user the settings could not be written. A field so that a test is not left

@@ -45,13 +45,13 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     // Where Lode is made the default verb. Directory covers every file system folder; Drive
     // covers drive roots. Folder is left alone: it also covers virtual folders (Control Panel,
     // Recycle Bin) that Lode cannot show.
-    static readonly string[] folderClasses = ["Directory", "Drive"];
+    static string[] folderClasses = ["Directory", "Drive"];
 
     // Where the explore verb is added. An app that names just a folder finds the one on
     // Directory or Drive before Explorer's own on Folder. Chromium, and so Electron, names the
     // Folder class outright as well, which finds only one on Folder. That one is asked for
     // virtual folders too, and Lode passes those on to Explorer.
-    static readonly string[] exploreClasses = ["Directory", "Drive", "Folder"];
+    static string[] exploreClasses = ["Directory", "Drive", "Folder"];
 
     public static ExplorerReplacement ForCurrentUser() =>
         new(@"Software\Classes", PreferredCommand(), notifyShell: true);

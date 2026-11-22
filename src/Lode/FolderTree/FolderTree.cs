@@ -18,12 +18,12 @@ sealed class FolderTree : TreeView
     const int unscaledIndent = 8;
     const int unscaledIconSize = 16;
 
-    static readonly object placeholder = new();
+    static object placeholder = new();
 
-    readonly Settings settings;
-    readonly Places places;
+    Settings settings;
+    Places places;
 
-    readonly TreeNode computerNode = new(Locations.ThisPC)
+    TreeNode computerNode = new(Locations.ThisPC)
     {
         Tag = Locations.ThisPC,
         ImageIndex = ShellIcons.ComputerIcon,
@@ -33,13 +33,13 @@ sealed class FolderTree : TreeView
     // The folders whose subfolders are kept up to date: those loaded and still expanded. Each has
     // a watcher, or null where the location can't be watched. A folder drops out when it is
     // collapsed, and is brought up to date when it is expanded again.
-    readonly Dictionary<TreeNode, FolderWatcher?> watched = [];
+    Dictionary<TreeNode, FolderWatcher?> watched = [];
 
     // Folders a watcher has seen change. Watcher events arrive on thread-pool threads and can
     // come in bursts, so they only land here; the signal syncs each folder at most once per
     // interval on the UI thread.
-    readonly ConcurrentDictionary<TreeNode, bool> changed = [];
-    readonly ChangeSignal changes;
+    ConcurrentDictionary<TreeNode, bool> changed = [];
+    ChangeSignal changes;
 
     // False while the window is hidden or minimized. Folders that change then wait, and are
     // synced when it shows again.
@@ -49,7 +49,7 @@ sealed class FolderTree : TreeView
     /// A subfolder as the tree shows it, and whether it has subfolders the tree would show
     /// beneath it, which is what gives it an expander.
     /// </summary>
-    readonly record struct Subfolder(string Name, string FullPath, bool HasSubfolders);
+    record struct Subfolder(string Name, string FullPath, bool HasSubfolders);
 
     // The selected folder, when it is watched only for being selected: kept up to date while it
     // is, as an expanded folder is, so that one with no subfolders gets its expander as soon as
@@ -58,7 +58,7 @@ sealed class FolderTree : TreeView
 
     // Folders being read because their expander was clicked, so that clicking it again
     // meanwhile doesn't read them again.
-    readonly HashSet<TreeNode> reading = [];
+    HashSet<TreeNode> reading = [];
 
     // A round of bringing changed folders up to date is under way. The next waits for it, so an
     // older reading of a folder can't land after a newer one.
@@ -784,12 +784,12 @@ sealed class FolderTree : TreeView
     // recent on them, and every share gone to since Lode started. Expanding one lists what it
     // shares. Lode can't find the machines on the network itself, as Explorer's Network does by
     // network discovery, which can take a minute. Only once there is a machine to show.
-    readonly TreeNode networkNode = new("Network")
+    TreeNode networkNode = new("Network")
     {
         Tag = new NetworkHeading()
     };
 
-    readonly SortedSet<string> servers = new(StringComparer.OrdinalIgnoreCase);
+    SortedSet<string> servers = new(StringComparer.OrdinalIgnoreCase);
 
     // The Network heading and its machines, as places and the shares gone to have them: one
     // added since shows, and those that show stay as they are, expanded or not.
@@ -2291,10 +2291,10 @@ sealed class FolderTree : TreeView
     }
 
     // How long a drag is held over a closed folder before it opens.
-    static readonly TimeSpan openAfter = TimeSpan.FromMilliseconds(800);
+    static TimeSpan openAfter = TimeSpan.FromMilliseconds(800);
 
     // How often a drag near the top or bottom scrolls a line.
-    static readonly TimeSpan scrollEvery = TimeSpan.FromMilliseconds(100);
+    static TimeSpan scrollEvery = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// The time, which tests set.

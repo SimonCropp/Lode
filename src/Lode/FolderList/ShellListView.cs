@@ -206,9 +206,9 @@ sealed class ShellListView : ListView
 
     // NMHDR is a window, an id and a code; NMHEADER follows it with the header item's index, the
     // mouse button, and the HDITEM, which starts with its mask and then its width.
-    static readonly int notificationCodeOffset = 2 * IntPtr.Size;
-    static readonly int headerNotificationItemOffset = 3 * IntPtr.Size;
-    static readonly int headerNotificationHeaderItemOffset = 3 * IntPtr.Size + 2 * sizeof(int);
+    static int notificationCodeOffset = 2 * IntPtr.Size;
+    static int headerNotificationItemOffset = 3 * IntPtr.Size;
+    static int headerNotificationHeaderItemOffset = 3 * IntPtr.Size + 2 * sizeof(int);
     const int headerItemWidthOffset = sizeof(uint);
 
     public ShellListView() =>
@@ -284,7 +284,7 @@ sealed class ShellListView : ListView
 
     // NMLVDISPINFO is NMHDR, then LVITEM: mask, item, subitem, state, state mask. LVITEM holds
     // pointers, so starts on a pointer's boundary.
-    static readonly int itemOffset = IntPtr.Size == 8 ? 24 : 12;
+    static int itemOffset = IntPtr.Size == 8 ? 24 : 12;
 
     /// <summary>
     /// Whether the row at an index is of an item cut to the clipboard, which the list draws

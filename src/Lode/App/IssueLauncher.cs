@@ -7,7 +7,7 @@ static class IssueLauncher
 {
     const string repository = "https://github.com/SimonCropp/Lode";
 
-    static readonly ConcurrentDictionary<string, byte> raised = new();
+    static ConcurrentDictionary<string, byte> raised = new();
 
     static string DefaultBody =>
         $"""

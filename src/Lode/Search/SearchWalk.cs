@@ -48,7 +48,7 @@ static class SearchWalk
     }
 
     // What version control keeps for itself, never searched, as Sublime leaves them out.
-    static readonly string[] versionControl = [".git", ".hg", ".svn"];
+    static string[] versionControl = [".git", ".hg", ".svn"];
 
     /// <summary>
     /// Whether a folder's name is what version control keeps for itself, .git say, which no
@@ -86,7 +86,7 @@ static class SearchWalk
 
     // A folder still to go through, and what git doesn't ignore where it is: null for all of it.
     // A repository of its own, to be searched by what it doesn't ignore, is being listed.
-    readonly record struct Pending(string Path, string Root, GitScope? Scope, bool IsRepo);
+    record struct Pending(string Path, string Root, GitScope? Scope, bool IsRepo);
 
     /// <summary>
     /// The files Find in Files searches, in order: each folder's files, by name as the list sorts
@@ -214,7 +214,7 @@ static class SearchWalk
     // started the first time one is asked for. Let go of, those not yet listed never are.
     sealed class Listers(Func<string, GitScope?> list, Cancel cancel) : IDisposable
     {
-        readonly BlockingCollection<(string Top, TaskCompletionSource<GitScope?> Done)> waiting = new();
+        BlockingCollection<(string Top, TaskCompletionSource<GitScope?> Done)> waiting = new();
         bool started;
         volatile bool finished;
 

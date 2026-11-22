@@ -118,7 +118,7 @@ static class ActionLog
             $"{Title} – {FolderName}: {Summary}";
     }
 
-    static readonly List<Entry> entries = [];
+    static List<Entry> entries = [];
 
     public static IReadOnlyList<Entry> Entries => entries;
 
@@ -219,7 +219,7 @@ static class ActionLog
 
     // Goes over the entries every few seconds while any are to leave, so each goes close to its
     // time.
-    static readonly Timer ageing = CreateAgeing();
+    static Timer ageing = CreateAgeing();
 
     static Timer CreateAgeing()
     {

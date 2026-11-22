@@ -640,7 +640,7 @@ static class CodeCommands
 
     // Only one update at a time. Two over the same files, as a folder and a repository in it
     // are, would race to write them, and two builds of a solution fight over its obj folder.
-    static readonly SemaphoreSlim nugetGate = new(1, 1);
+    static SemaphoreSlim nugetGate = new(1, 1);
 
     /// <summary>
     /// Updates the NuGet packages and dotnet tools of every solution in the folder, with

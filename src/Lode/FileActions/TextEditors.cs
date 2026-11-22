@@ -24,7 +24,7 @@ static class TextEditors
     static (RegistryHive, string) Machine32(string key) => (RegistryHive.LocalMachine, $@"{wow64Uninstall}\{key}");
 
     // Keys, names and publishers from GitHub Desktop's app/src/lib/editors/win32.ts.
-    static readonly Definition[] definitions =
+    static Definition[] definitions =
     [
         new(
             "Visual Studio Code",
@@ -327,7 +327,7 @@ static class TextEditors
 
     // What Windows said each extension is. Asking reads the registry, and the actions bar asks
     // about every file selected each time the selection changes.
-    static readonly ConcurrentDictionary<string, string?> perceivedTypes = new(StringComparer.OrdinalIgnoreCase);
+    static ConcurrentDictionary<string, string?> perceivedTypes = new(StringComparer.OrdinalIgnoreCase);
 
     static string? RememberedPerceivedType(string extension) =>
         perceivedTypes.GetOrAdd(extension, PerceivedType);

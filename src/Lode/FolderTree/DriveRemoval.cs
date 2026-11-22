@@ -16,12 +16,12 @@ static unsafe partial class DriveRemoval
     const int success = 0;
 
     // Volume events, from ioevent.h.
-    static readonly Guid volumeLock = new("50708874-c9af-11d1-8fef-00a0c9a06d32");
-    static readonly Guid volumeLockFailed = new("ae2eed10-0ba8-11d2-8ffb-00a0c9a06d32");
-    static readonly Guid volumeUnlock = new("9a8c3d68-d0cb-11d1-8fef-00a0c9a06d32");
-    static readonly Guid volumeDismount = new("d16a55e8-1059-11d2-8ffd-00a0c9a06d32");
-    static readonly Guid volumeDismountFailed = new("e3c5b178-105d-11d2-8ffd-00a0c9a06d32");
-    static readonly Guid volumeMount = new("b5804878-1a96-11d2-8ffd-00a0c9a06d32");
+    static Guid volumeLock = new("50708874-c9af-11d1-8fef-00a0c9a06d32");
+    static Guid volumeLockFailed = new("ae2eed10-0ba8-11d2-8ffb-00a0c9a06d32");
+    static Guid volumeUnlock = new("9a8c3d68-d0cb-11d1-8fef-00a0c9a06d32");
+    static Guid volumeDismount = new("d16a55e8-1059-11d2-8ffd-00a0c9a06d32");
+    static Guid volumeDismountFailed = new("e3c5b178-105d-11d2-8ffd-00a0c9a06d32");
+    static Guid volumeMount = new("b5804878-1a96-11d2-8ffd-00a0c9a06d32");
 
     sealed class Registration(string root)
     {
@@ -37,8 +37,8 @@ static unsafe partial class DriveRemoval
         public bool Unregistered;
     }
 
-    static readonly Lock gate = new();
-    static readonly Dictionary<string, Registration> registrations = new(StringComparer.OrdinalIgnoreCase);
+    static Lock gate = new();
+    static Dictionary<string, Registration> registrations = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Calls <paramref name="changed"/> with true when <paramref name="root"/>'s drive is about to

@@ -9,7 +9,7 @@ static class LibGitState
     // Ignored files don't count, and nor do folders git doesn't track looked into: one is one
     // change, as git status shows it. Nor submodules at all: libgit2 can't leave out only what is
     // uncommitted inside one, as git does, without opening every one.
-    static readonly StatusOptions statusOptions = new()
+    static StatusOptions statusOptions = new()
     {
         IncludeIgnored = false,
         IncludeUntracked = true,

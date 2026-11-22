@@ -612,7 +612,7 @@ static class CodeMenu
     /// </summary>
     internal sealed class GitTextForm : Form
     {
-        readonly Control input;
+        Control input;
 
         public string Value => input.Text.Trim();
 

@@ -18,7 +18,7 @@ class MainForm : Form
     // the pointer, and at the bottom of the screen Windows moves them up over it, which the bar
     // takes for the pointer leaving: the tooltip hides, the pointer is over the bar again, and
     // it shows again, over and over.
-    readonly ToolTip statusTip = new()
+    ToolTip statusTip = new()
     {
         ShowAlways = true
     };
@@ -27,18 +27,18 @@ class MainForm : Form
     ToolStrip actionsBar = new();
 
     // The actions bar's buttons, by action id.
-    readonly Dictionary<string, ToolStripItem> actionButtons = [];
+    Dictionary<string, ToolStripItem> actionButtons = [];
 
     // The actions bar's drop-downs for parents that Options nests buttons under, each with the
     // actions in it, in LodeActions' order.
-    readonly Dictionary<LodeActions.Parent, (ToolStripItem Button, List<LodeActions.Definition> Members)> parentButtons = [];
+    Dictionary<LodeActions.Parent, (ToolStripItem Button, List<LodeActions.Definition> Members)> parentButtons = [];
     FramedTextBox filterFrame = new();
     TextBox filterBox;
     PaneSplitContainer split = new();
     Settings settings;
     Places places;
     FolderTree tree;
-    readonly ActionsPanel actionsPanel = new();
+    ActionsPanel actionsPanel = new();
     ClosableTabControl tabs = new();
     ToolStripStatusLabel statusLabel = new()
     {
@@ -76,7 +76,7 @@ class MainForm : Form
 
     // After the branch, each after a dot: that there are no commits yet, which there is nothing
     // to do about, then the changes, to commit or discard, and the commits to push and to pull.
-    readonly Dictionary<GitState.PartKind, (ToolStripStatusLabel Dot, ToolStripItem Item)> gitParts = [];
+    Dictionary<GitState.PartKind, (ToolStripStatusLabel Dot, ToolStripItem Item)> gitParts = [];
 
     // After the branch: the site the repository's origin is on, GitHub say, which it opens.
     ToolStripStatusLabel siteLabel = new()
@@ -90,7 +90,7 @@ class MainForm : Form
     ToolStripStatusLabel spaceLabel = new();
 
     // The instance this window listens to, so it stops listening to that one when it closes.
-    readonly Updates updates = Updates.Instance;
+    Updates updates = Updates.Instance;
 
     // Beside the free space: a newer Lode, when there is one. Clicking it opens Options at Updates.
     ToolStripStatusLabel updateLabel = new()
@@ -108,7 +108,7 @@ class MainForm : Form
     bool updatingFilter;
 
     // Folders of tabs closed in this window, most recent last, for Ctrl+Shift+T.
-    readonly List<string> closedTabs = [];
+    List<string> closedTabs = [];
     const int maximumClosedTabs = 20;
 
     // False for a window opened from another: it is placed beside that one rather than where
@@ -160,7 +160,7 @@ class MainForm : Form
 
     // Find in Files: its strip along the bottom, and the tab its results are in, one a window,
     // made the first time something is searched for.
-    readonly FindPanel findPanel;
+    FindPanel findPanel;
     TabPage? resultsPage;
     FindResultsView? resultsView;
 
@@ -707,7 +707,7 @@ class MainForm : Form
     }
 
     // Icons drawn for the open drop-down's entries.
-    readonly List<Image> dropDownImages = [];
+    List<Image> dropDownImages = [];
 
     // Back on the list first, so Rename has an item to edit and what the action opens has the
     // focus to return to.
@@ -1916,7 +1916,7 @@ class MainForm : Form
         }
     }
 
-    readonly Timer trayTimer = new()
+    Timer trayTimer = new()
     {
         Interval = 5000
     };
@@ -1942,7 +1942,7 @@ class MainForm : Form
     }
 
     // Hours are what Options counts in, so every five minutes is close enough.
-    readonly Timer unusedTabsTimer = new()
+    Timer unusedTabsTimer = new()
     {
         Interval = 300_000
     };
@@ -3159,7 +3159,7 @@ class MainForm : Form
 
     // What Explorer tells every window when it starts, as the taskbar: after a crash, or when
     // restarted from Task Manager, which empties the shell's list of folder windows.
-    static readonly int explorerStartedMessage = RegisterWindowMessage("TaskbarCreated");
+    static int explorerStartedMessage = RegisterWindowMessage("TaskbarCreated");
 
     // WM_CLIPBOARDUPDATE.
     const int clipboardUpdate = 0x031D;
@@ -3180,7 +3180,7 @@ class MainForm : Form
     // A drive coming or going is told of more than once, as each of its parts arrives, and
     // several drives can come at once, from a card reader say; the drives are read once, a
     // little after the last.
-    readonly Timer drivesTimer = new()
+    Timer drivesTimer = new()
     {
         Interval = 300
     };

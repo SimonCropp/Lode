@@ -5,7 +5,7 @@
 /// </summary>
 static class PowerShellScripts
 {
-    static readonly string windowsPowerShell = Path.Combine(
+    static string windowsPowerShell = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.System),
         @"WindowsPowerShell\v1.0\powershell.exe");
 

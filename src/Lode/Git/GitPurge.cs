@@ -90,7 +90,7 @@ static class GitPurge
     }
 
     // Links aren't followed, so a junction back up the tree can't send the walk round forever.
-    static readonly EnumerationOptions folderOptions = new()
+    static EnumerationOptions folderOptions = new()
     {
         AttributesToSkip = FileAttributes.ReparsePoint,
         IgnoreInaccessible = true
@@ -323,7 +323,7 @@ static class GitPurge
         return 0;
     }
 
-    static readonly EnumerationOptions sizeOptions = new()
+    static EnumerationOptions sizeOptions = new()
     {
         AttributesToSkip = FileAttributes.ReparsePoint,
         IgnoreInaccessible = true,
@@ -430,7 +430,7 @@ static class GitPurge
         entry.Delete();
     }
 
-    static readonly EnumerationOptions contentOptions = new()
+    static EnumerationOptions contentOptions = new()
     {
         AttributesToSkip = 0
     };

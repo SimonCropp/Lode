@@ -16,7 +16,7 @@
 sealed class JumpList
 {
     // System.Title, which the taskbar shows as an entry's name.
-    static readonly PropertyStore.PropertyKey titleKey = new(new("F29F85E0-4FF9-1068-AB91-08002B27B3D9"), 2);
+    static PropertyStore.PropertyKey titleKey = new(new("F29F85E0-4FF9-1068-AB91-08002B27B3D9"), 2);
 
     // SHGFI_ICONLOCATION: the file an icon is in, and its index there, rather than the icon.
     const uint iconLocationFlag = 0x1000;
@@ -33,7 +33,7 @@ sealed class JumpList
     // Where Windows describes its known folders, in the user's hive and the machine's, the
     // user's own first.
     const string folderDescriptions = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FolderDescriptions";
-    static readonly RegistryKey[] hives = [Registry.CurrentUser, Registry.LocalMachine];
+    static RegistryKey[] hives = [Registry.CurrentUser, Registry.LocalMachine];
 
     Places places;
     Settings settings;

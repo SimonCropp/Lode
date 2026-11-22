@@ -11,16 +11,16 @@
 /// </summary>
 sealed class Updates
 {
-    static readonly TimeSpan interval = TimeSpan.FromDays(1);
+    static TimeSpan interval = TimeSpan.FromDays(1);
 
     // The first check waits until Lode has started and settled; after that, whether a day has
     // passed is looked at each hour, since Lode runs in the tray for days.
-    static readonly TimeSpan firstDelay = TimeSpan.FromSeconds(15);
-    static readonly TimeSpan pollInterval = TimeSpan.FromHours(1);
+    static TimeSpan firstDelay = TimeSpan.FromSeconds(15);
+    static TimeSpan pollInterval = TimeSpan.FromHours(1);
 
-    readonly Settings settings;
-    readonly Func<Cancel, Task<NuGetVersion?>> fetchLatest;
-    readonly TimeProvider time;
+    Settings settings;
+    Func<Cancel, Task<NuGetVersion?>> fetchLatest;
+    TimeProvider time;
     Timer? timer;
 
     /// <summary>

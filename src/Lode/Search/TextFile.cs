@@ -113,8 +113,8 @@ sealed class TextFile
         Unreadable
     }
 
-    readonly char[] buffer;
-    readonly int length;
+    char[] buffer;
+    int length;
 
     public Encoding Kind { get; }
 

@@ -10,8 +10,8 @@
 sealed class GitScope
 {
     // Looked up by a part of the full path, so asking makes no string for every file.
-    readonly HashSet<string>.AlternateLookup<CharSpan> files;
-    readonly HashSet<string>.AlternateLookup<CharSpan> folders;
+    HashSet<string>.AlternateLookup<CharSpan> files;
+    HashSet<string>.AlternateLookup<CharSpan> folders;
 
     /// <summary>
     /// The repository's top folder.
