@@ -11,6 +11,7 @@ The short version: each repository is read once and cached. One watch on the cod
 | `GitCache` | [src/Lode/Git/GitCache.cs](../src/Lode/Git/GitCache.cs) | The cache, the watch on the code folder, and when a repository is read again |
 | `FolderView` | [src/Lode/FolderList/FolderView.cs](../src/Lode/FolderList/FolderView.cs) | Decides which repositories it shows, reads them, and draws the result |
 
+
 ## Overview
 
 ```mermaid
@@ -23,6 +24,7 @@ flowchart TD
     Reader -->|"GitCache.Store"| Cache[("Cached GitState<br/>per repository")]
     Cache -->|"GitCache.TryGet"| Views
 ```
+
 
 ## What a state is
 
@@ -53,6 +55,7 @@ When a `FolderView` loads a folder in the code folder, `FindRepos` works out, on
 
 For each repository wanted, `ShowCached` asks `GitCache.TryGet`. Whatever is cached is shown at once. Only repositories never read, or not fresh, go on to be read.
 
+
 ## Reading a repository
 
 There are two readers, and `LibGitState.FromFaster` picks between them by the number of entries in the repository's index, read from the 12-byte header of `.git/index`.
@@ -76,6 +79,7 @@ For a code folder of 91 repositories, picking per repository took 341 ms, agains
 
 A view reads its repositories in parallel on background threads, in the order they are listed, and shows each as it arrives.
 
+
 ## The cache and the watch
 
 `GitCache` keeps one `Known` entry per repository that a view has asked about. It holds the last `GitState`, the repository's remote site, and a count of the changes seen in it. An entry is **fresh** while that count is the same as when it was last read.
@@ -83,6 +87,7 @@ A view reads its repositories in parallel on background threads, in the order th
 `GitCache.Watch` puts a single `FileSystemWatcher` on the code folder, with subfolders included, so nothing else on the drive is heard of.
 
 Where the code folder can't be watched, on a network share say, or because it isn't there, nothing is ever fresh. Repositories are then read whenever the folder is, and when its tab or window comes back to the front.
+
 
 ### What the watch holds
 
@@ -100,6 +105,7 @@ So choosing a code folder in Options asks first, saying this. Clearing it there,
 Lode's own moves, renames and deletes are not affected: `FolderWatcher.LetGo` lets go of every watch at or beneath what is being moved, for as long as that takes.
 
 A code folder that is no longer there when Lode starts is reported in a message before the first window, as `Settings.MissingCodeDirectory` finds it. Nothing then gets a Git menu or column until another is chosen.
+
 
 ## What happens to a change
 
@@ -119,6 +125,7 @@ flowchart TD
     Mark --> Arm["Arm the settle timer"]
 ```
 
+
 ### Noise in `.git`
 
 Some of what git writes changes no state, so `IsNoise` drops it:
@@ -131,6 +138,7 @@ Some of what git writes changes no state, so `IsNoise` drops it:
 | `fsmonitor--daemon/` | Cookie files made and deleted for every status, Lode's own included. Counted, each read would cause the next |
 
 What a state is made of still counts: `index`, `HEAD`, `refs/`, `packed-refs`, `config`, `info/exclude`.
+
 
 ### Folders git ignores
 
@@ -145,6 +153,7 @@ A folder that is ignored but holds a file git tracks all the same, one added by 
 What was learned of a repository is forgotten, and asked again, when what git ignores may have changed: a `.gitignore` in it changes, or its `index`, `config` or `info/exclude`; on Refresh; and when the watch loses track.
 
 Only folders are learned. A single ignored file in a folder that isn't ignored still counts.
+
 
 ### Worktrees and submodules
 
@@ -168,6 +177,7 @@ flowchart TD
 
 This works only where the main repository is in the code folder as well.
 
+
 ## From stale to read again
 
 A stale repository is not read on the spot. A commit, a pull or a build changes many files one after another, and reading means looking at every file. `GitCache` waits for the changes to settle, then raises `Stale` for the views.
@@ -178,6 +188,7 @@ A stale repository is not read on the spot. A commit, a pull or a build changes 
 One timer serves every repository: it is set for whichever is due first.
 
 A view that isn't looking doesn't wait for the timer. Going to a folder calls `TryGet`, which finds the repository not fresh and reads it straight away.
+
 
 ### Backing off while nothing new is found
 
@@ -204,9 +215,11 @@ The hold ends early when:
 - the changes stop for 3 seconds, so what a build leaves behind is soon shown
 - Refresh is pressed
 
+
 ### Who is told
 
 `Stale` is raised on a background thread with the repositories that are due. Every `FolderView` in every window hears it, but each checks first, on that thread, whether it is showing and whether it lists, or is inside, one of them. Only then does it post to its window's thread and read. A view that can't be seen reads what has gone stale once it shows.
+
 
 ### One read between several views
 
@@ -240,11 +253,13 @@ In both cases the second view reads for itself.
 
 `Store` is given the change count from when the read began. If a change arrived during the read, the count has moved on, so what was stored is not fresh and the repository is read again.
 
+
 ## When the watch loses track
 
 The watcher's buffer can overflow when too many changes come at once, and a watch can fail and come back. Either way anything may have changed, so `AllChanged` makes every known repository in that code folder stale, ends every hold, and forgets what was learned of ignored folders.
 
 The views are still told through the settle timer: 1 second after the last overflow, and no later than 3 seconds after the first. Overflows come again and again while whatever is causing them goes on, and reading every repository shown for each one would add to the load.
+
 
 ## Cost of a change
 
@@ -262,6 +277,7 @@ Run them with:
 ```powershell
 dotnet run -c Release --project src/Lode.Benchmarks
 ```
+
 
 ## Limits
 
