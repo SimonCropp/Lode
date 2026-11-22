@@ -31,7 +31,11 @@ dotnet tool install -g Lode
 
 Once a day Lode checks nuget.org for a newer version, prereleases included. When it finds one, a link beside the free space at the bottom of each window says so. Click it, or open the **Updates** page of **Options**, and click **Update and restart**, which waits for anything running in the Actions panel to finish. Lode closes, a hidden PowerShell runs `dotnet tool update` for the tool path Lode is installed in, and then starts Lode again with the tabs it had. The tray icon then says whether the update worked. **Check now** on the same page checks straight away.
 
+A newer Lode, said in the status bar beside the free space:
+
 ![An update available](src/Lode.Tests/Window/MainFormTests.UpdateAvailable.verified.png)
+
+The **Updates** page of **Options**, with **Update and restart**:
 
 ![The Updates page of Options](src/Lode.Tests/Options/OptionsFormTests.UpdatesPage.verified.png)
 
@@ -120,7 +124,13 @@ Each has an **Open in Lode** button, and a **Revert** button that gives the link
 
    Most actions have a parent: Clipboard (Cut, Copy, Paste, Copy as path), Undo and redo, File (Rename, Delete, Create shortcut, Compress to ZIP file, Extract All, Extract here, Pin to Quick access), Open (Open, Open in new tab, Run, Edit, Open with), Terminal (both terminals), AI (Open in Claude, Coding agent), Git (Git fetch, Git pull, Git switch to default branch, Git push, Git tag, Git delete tag, Git discard, Git purge) and Packages (Update NuGets, and with a build). Each **Nested** box on the Actions page puts the action under its parent: in the right-click menus, a submenu where the first of them would be, and on the bar, a drop-down button. Under Git, the git actions drop the "Git": Fetch, Pull, Switch to default branch, Push, Tag, Delete tag, Discard and Purge. The right-click menus start with the terminals, the AI actions, Git and Packages nested; nothing on the bar is nested until you tick it.
 
-   ![See more](src/Lode.Tests/Menus/MenuTests.SeeMore.verified.png) ![The Actions page of Options](src/Lode.Tests/Options/OptionsFormTests.ActionsPage.verified.png)
+   **See more** (⋯), at the end of the bar, with the actions that aren't buttons, those that don't apply to the selection greyed:
+
+   ![See more](src/Lode.Tests/Menus/MenuTests.SeeMore.verified.png)
+
+   The **Actions** page of **Options**, which places each action as a button, in the right-click menus, or both, nested or not:
+
+   ![The Actions page of Options](src/Lode.Tests/Options/OptionsFormTests.ActionsPage.verified.png)
 
  * Tabs, each with its own back/forward history and a cross to close it. Right-click a tab to duplicate it, pin its folder to Quick access or unpin it, close it, close the others, those to its left or right, or all of them. **Reopen closed tab** (Ctrl+Shift+T) brings back the last tab closed in that window, at the folder it was showing, or the nearest folder above it still there if that has gone. As in Explorer, a tab follows the folder it shows when it is renamed, by Lode or another program, or moved by Lode, whether the folder itself or one above it, keeping what was selected; places in its history inside the folder follow too, so Back goes where they went. When the folder is deleted, sent to the Recycle Bin, or moved by another program, the tab goes up to the nearest folder still there.
 
@@ -146,7 +156,13 @@ Each has an **Open in Lode** button, and a **Revert** button that gives the link
 
  * A short right-click menu that opens at once: Open, Terminal and Terminal (admin) (on a folder, or empty space; on several folders, one Windows Terminal window with a tab for each), Cut, Copy, Rename, Delete, Create shortcut, Copy as path, Properties and so on. **Create shortcut** puts a `name - Shortcut.lnk` beside each selected item, as Explorer does. On files of one type, **Open with** lists the apps Windows recommends for it, with their icons, as Explorer does; for a single file, **Choose another app** opens Windows' own dialog, which can also make the app the default. Programs and shortcuts get no Open with, as in Explorer. On empty space, **New** lists Folder and the file types Windows offers under New (Text Document and whatever installed apps add, less Access databases, which nobody makes from a folder's menu); the new item is ready to rename. **Show more options** at the bottom, or Shift+right-click, opens the classic Windows context menu, with installed shell extensions (7-Zip and so on), less Send to, Include in library, Restore previous versions and Edit in Notepad. Its Delete, Create shortcut, and New's Folder and file types are done by Lode, as from its own menu, so Ctrl+Z can undo them, and a new item is ready to rename.
 
-   ![Right-click menu on a folder](src/Lode.Tests/Menus/MenuTests.FolderMenu.verified.png) ![New](src/Lode.Tests/Menus/MenuTests.NewMenu.verified.png)
+   The right-click menu on a folder:
+
+   ![Right-click menu on a folder](src/Lode.Tests/Menus/MenuTests.FolderMenu.verified.png)
+
+   **New**, on the right-click menu of empty space, with Folder and the file types Windows offers:
+
+   ![New](src/Lode.Tests/Menus/MenuTests.NewMenu.verified.png)
 
  * **Options** in the ⋯ menu, a page each, picked from the list down the left as in Windows' Settings (Ctrl+Tab and Ctrl+Shift+Tab go through them). Changes apply straight away.
    * **General**: the default folder new tabs open in, the text editor, and closing tabs not looked at for a while (off by default).
@@ -157,7 +173,17 @@ Each has an **Open in Lode** button, and a **Revert** button that gives the link
    * **File Explorer**: replace or restore it.
    * **Links**: open GitHub's and Azure DevOps' repository links for GitHub Desktop and Visual Studio in Lode, or revert them. See [Repository links](#repository-links).
 
-   ![The ⋯ menu](src/Lode.Tests/Menus/MenuTests.WindowMenu.verified.png) ![The General page of Options](src/Lode.Tests/Options/OptionsFormTests.GeneralPage.verified.png) ![The View page of Options](src/Lode.Tests/Options/OptionsFormTests.ViewPage.verified.png)
+   The ⋯ menu, at the right of the address bar:
+
+   ![The ⋯ menu](src/Lode.Tests/Menus/MenuTests.WindowMenu.verified.png)
+
+   The **General** page of **Options**:
+
+   ![The General page of Options](src/Lode.Tests/Options/OptionsFormTests.GeneralPage.verified.png)
+
+   The **View** page of **Options**:
+
+   ![The View page of Options](src/Lode.Tests/Options/OptionsFormTests.ViewPage.verified.png)
 
  * **Edit** on the right-click menu of text files opens them in the text editor chosen on the **General** page of Options. Installed editors (Visual Studio Code, Notepad++ and others) are found from the registry; Notepad is always there.
  * **Run** on the right-click menu of PowerShell scripts (`.ps1`), whose Open usually only shows them in Notepad, runs each in a Windows Terminal tab of its own, in the script's folder: by PowerShell 7 where it is on the PATH, otherwise by Windows PowerShell. The tab stays at a prompt once the script ends, so what it wrote can be read. As Explorer's Run with PowerShell does, the execution policy is bypassed for that tab unless it is AllSigned, so an unsigned or downloaded script still runs; a policy set by Group Policy still applies.
@@ -172,7 +198,13 @@ Each has an **Open in Lode** button, and a **Revert** button that gives the link
    * **Purge** deletes every file and folder git doesn't track, ignored ones included (bin, obj, node_modules and the like): what `git clean -xdf` would, leaving repositories nested inside alone. In a repository, or a folder anywhere inside one, it purges just that folder. In a folder that isn't in a repository, it purges every repository under it, however deep. It asks once it has found what will go, saying how many items and how big, and naming the first ten. Everything goes to the Recycle Bin in one go, unless **Delete them permanently** is ticked on the Code page of Options, which is faster. Its line in the Actions panel lists what went.
    * Each runs in the background and shows in an **Actions** panel under the folder tree, with progress while it runs; click a line for everything it reported, right-click to remove lines, or to cancel a Pull, Switch to default branch, Push or Discard still running. A line that went well, or was cancelled, leaves a minute after it finished, so the panel needn't be cleared by hand; one that failed stays until removed. Git is told not to ask for anything, since nobody could answer it there: ssh fails, rather than waits, on a key with a passphrase no agent holds or a host it doesn't know yet, unless you have set an ssh command of your own.
 
-   ![The Code page of Options](src/Lode.Tests/Options/OptionsFormTests.CodePage.verified.png) ![Actions panel](src/Lode.Tests/Window/MainFormTests.Actions.verified.png)
+   The **Code** page of **Options**, with the code folder, how Git purge deletes, and excluding the folder from Defender:
+
+   ![The Code page of Options](src/Lode.Tests/Options/OptionsFormTests.CodePage.verified.png)
+
+   The **Actions** panel under the folder tree, with one action running, one that failed and one done:
+
+   ![Actions panel](src/Lode.Tests/Window/MainFormTests.Actions.verified.png)
 
  * Copy, move, delete and rename go through the Windows shell (IFileOperation, as Explorer uses): standard progress dialog, conflict prompts, Recycle Bin and undo. Paths longer than 260 characters work. What is pasted is selected once it is there, as in Explorer. Something gone since it was picked, deleted by another program after it was cut say, is left out and Lode says so, rather than the shell doing none of it. Windows won't move or rename a folder, or send it to the Recycle Bin, while a program is watching a folder inside it, so Lode stops watching the folders inside one while it does that: a tab open inside the folder, or a folder expanded beneath it in the tree, doesn't stop it. Another program can't move a folder a Lode tab is open inside, as it can't one an Explorer window is open inside.
  * **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y or Ctrl+Shift+Z), across every window: renames, moves, copies, deletes to the Recycle Bin, and new folders, files and shortcuts. Lode reverses each itself: a rename or move is done back, a copy or new item goes to the Recycle Bin, a deleted item is restored from it. A folder copied, moved or renamed onto one of the same name merges into it, and undoing that takes back only what it brought, leaving what was there before. On a drive with no Recycle Bin, a USB stick or a share, Windows asks before undoing a copy deletes it for good, and that can't be redone. One that can't be done twice running, access denied say, is let go, so what was done before it can still be undone. Also on the right-click menu of empty space, under See more, and in the command palette, worded for what they would do ("Undo rename"). Permanent deletes can't be undone.
