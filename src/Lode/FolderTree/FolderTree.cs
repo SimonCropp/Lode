@@ -2215,13 +2215,35 @@ sealed class FolderTree : TreeView
             return null;
         }
 
-        var folders = Pinnable(paths);
+        var folders = FoldersDragged(args.Data, paths)
+            .Where(_ => !places.Pinned.Any(pinned => Locations.Same(pinned, _)))
+            .ToArray();
         if (folders.Length == 0)
         {
             return null;
         }
 
         return (folders, target.Index, target.Mark, target.After);
+    }
+
+    // The folders among what a drag carries, asked of the disk once a drag rather than at every
+    // move of it over the pinned folders: each asking is a trip to the disk, or to a share,
+    // with the window waiting on it.
+    (object? Data, string[] Folders) dragged;
+
+    string[] FoldersDragged(object data, string[] paths)
+    {
+        if (!ReferenceEquals(dragged.Data, data))
+        {
+            dragged = (
+                data,
+                paths
+                    .Where(_ => !Locations.IsThisPC(_) &&
+                                Directory.Exists(_))
+                    .ToArray());
+        }
+
+        return dragged.Folders;
     }
 
     // TVM_SELECTITEM and TVM_GETNEXTITEM, for the item drawn as where a drop would go.
@@ -2311,6 +2333,7 @@ sealed class FolderTree : TreeView
     protected override void OnDragEnter(DragEventArgs args)
     {
         base.OnDragEnter(args);
+        dragged = default;
         rightDrag = FileOperations.RightButton(args);
         args.Effect = DropEffect(args);
     }
@@ -2318,6 +2341,7 @@ sealed class FolderTree : TreeView
     protected override void OnDragLeave(EventArgs args)
     {
         base.OnDragLeave(args);
+        dragged = default;
         ClearInsertMark();
         HighlightDrop(null);
         heldOver = null;

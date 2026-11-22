@@ -707,13 +707,22 @@ static class GitCache
     /// </summary>
     public static GitScope? Searchable(string repo, Func<GitScope?> list)
     {
+        // Listing starts git, so never under the gate, which the UI thread and the watch wait
+        // on: held for it, several repositories listed at once took turns, and the window
+        // waited on git with them.
+        bool heard;
         lock (gate)
         {
-            if (!Heard(repo))
+            heard = Heard(repo);
+            if (!heard)
             {
                 searchable.Remove(repo);
-                return list();
             }
+        }
+
+        if (!heard)
+        {
+            return list();
         }
 
         // Counted from now on, if no view has read it yet.
@@ -722,10 +731,16 @@ static class GitCache
         int forgotten;
         lock (gate)
         {
-            if (!known.TryGetValue(repo, out entry))
-            {
-                return list();
-            }
+            known.TryGetValue(repo, out entry);
+        }
+
+        if (entry == null)
+        {
+            return list();
+        }
+
+        lock (gate)
+        {
 
             forgotten = entry.Forgotten;
             if (searchable.TryGetValue(repo, out var kept) &&

@@ -371,17 +371,21 @@ static class CodeCommands
     /// The tags in the repositories, the newest first, each once.
     /// </summary>
     public static List<string> Tags(IReadOnlyList<string> repos) =>
-        repos
-            .SelectMany(repo =>
-            {
-                var result = Git(repo, "tag", "--sort=-creatordate");
-                if (!result.Succeeded)
+        // Several at once, as the commands themselves go: one git after another across a code
+        // folder's repositories was a wait of seconds before the tags were offered.
+        InParallel(
+                repos,
+                repo =>
                 {
-                    return [];
-                }
+                    var result = Git(repo, "tag", "--sort=-creatordate");
+                    if (!result.Succeeded)
+                    {
+                        return [];
+                    }
 
-                return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            })
+                    return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                })
+            .SelectMany(_ => _)
             .Distinct(StringComparer.Ordinal)
             .ToList();
 

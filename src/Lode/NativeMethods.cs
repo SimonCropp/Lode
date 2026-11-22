@@ -293,6 +293,13 @@ static partial class NativeMethods
     [LibraryImport("user32.dll", EntryPoint = "RegisterWindowMessageW", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int RegisterWindowMessage(string name);
 
+    [LibraryImport("user32.dll")]
+    public static partial uint GetClipboardSequenceNumber();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsClipboardFormatAvailable(uint format);
+
     // The code page of programs that know no Unicode, as the machine has it set.
     [LibraryImport("kernel32.dll")]
     public static partial uint GetOEMCP();

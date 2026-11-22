@@ -1480,6 +1480,15 @@ sealed class FolderView : UserControl
     bool TryFindRows(IReadOnlyList<FileEntry> probes, HashSet<string> selected, string? focused, List<int> indexes, out int focus)
     {
         focus = -1;
+
+        // With much of the list selected, everything say, a search for each costs more than
+        // going through the rows once: each of its steps is a comparison, which is a call into
+        // Windows, where going through is a lookup a row.
+        if ((long)probes.Count * BitOperations.Log2((uint)Math.Max(displayed.Count, 2)) > displayed.Count)
+        {
+            return false;
+        }
+
         var compare = Order(sortColumn, sortAscending, gitCells);
         foreach (var probe in probes)
         {
@@ -2618,8 +2627,26 @@ sealed class FolderView : UserControl
         GitScope? ScopeOf(string top) =>
             GitCache.Searchable(top, () => GitScope.List(top, cancel));
 
+        // A repository is listed from when the walk comes to it, several at once, not when it
+        // is gone into: listing starts git, and one after another, a folder of repositories
+        // was a wait on each in turn.
+        var listers = new SemaphoreSlim(Math.Clamp(Environment.ProcessorCount, 2, 8));
+        async Task<GitScope?> ListSoon(string top)
+        {
+            await listers.WaitAsync(cancel);
+            try
+            {
+                return await Task.Run(() => ScopeOf(top), cancel);
+            }
+            finally
+            {
+                listers.Release();
+            }
+        }
+
         // A folder still to go through, and what git doesn't ignore where it is: null for all.
-        var stack = new Stack<(string Folder, GitScope? Scope)>();
+        // A repository of its own is being listed.
+        var stack = new Stack<(string Folder, GitScope? Scope, Task<GitScope?>? Listing)>();
         GitScope? rootScope = null;
         if (!includeIgnored &&
             SearchWalk.RepoAbove(root) is { } top)
@@ -2633,7 +2660,12 @@ sealed class FolderView : UserControl
         PushAll(Read(root, onlyFolders: true).Select(_ => _.Subfolder).OfType<string>().ToList(), rootScope);
         while (stack.Count > 0)
         {
-            var (folder, scope) = stack.Pop();
+            var (folder, scope, listing) = stack.Pop();
+            if (listing != null)
+            {
+                scope = listing.GetAwaiter().GetResult();
+            }
+
             var subfolders = new List<string>();
             foreach (var (subfolder, match) in Read(folder, onlyFolders: false))
             {
@@ -2683,13 +2715,14 @@ sealed class FolderView : UserControl
                 return;
             }
 
+            Task<GitScope?>? listing = null;
             if (!includeIgnored &&
                 SearchWalk.IsRepo(folder))
             {
-                scope = ScopeOf(folder);
+                listing = ListSoon(folder);
             }
 
-            stack.Push((folder, scope));
+            stack.Push((folder, scope, listing));
         }
 
         // What a folder holds that is searched: its subfolders to go into, and what matches.
@@ -2797,13 +2830,33 @@ sealed class FolderView : UserControl
         return merged;
     }
 
+    // Sorted the other way by the same column is the same order backwards, the folders still
+    // above the files: turned round, rather than sorted again, which for a folder of a hundred
+    // thousand is over a million comparisons, each a call into Windows.
+    static void TurnRound(List<FileEntry> sorted)
+    {
+        var files = sorted.FindIndex(_ => !_.IsDirectory);
+        if (files < 0)
+        {
+            files = sorted.Count;
+        }
+
+        sorted.Reverse(0, files);
+        sorted.Reverse(files, sorted.Count - files);
+    }
+
     // Gives the list its rows: the entries the filter matches, with what the search found, unless
     // a merge off the UI thread has made them already.
     void Populate(bool preserveState, List<FileEntry>? merged = null)
     {
         // Before sorting: hiding the column the list is sorted by sorts it by name.
         var columnsChanged = UpdateColumns();
-        if (entriesSort != (sortColumn, sortAscending))
+        if (entriesSort == (sortColumn, !sortAscending))
+        {
+            TurnRound(entries);
+            entriesSort = (sortColumn, sortAscending);
+        }
+        else if (entriesSort != (sortColumn, sortAscending))
         {
             var column = sortColumn;
             var ascending = sortAscending;
@@ -2811,9 +2864,15 @@ sealed class FolderView : UserControl
             entriesSort = (column, ascending);
         }
 
-        if (foundSort != (sortColumn, sortAscending))
+        if (foundSort == (sortColumn, !sortAscending))
         {
             // A new list, not the one a merge may be reading.
+            found = [.. found];
+            TurnRound(found);
+            foundSort = (sortColumn, sortAscending);
+        }
+        else if (foundSort != (sortColumn, sortAscending))
+        {
             found = [.. found];
             found.Sort(Order(sortColumn, sortAscending, gitCells));
             foundSort = (sortColumn, sortAscending);

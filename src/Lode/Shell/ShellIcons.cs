@@ -308,20 +308,26 @@ static class ShellIcons
     static ConcurrentDictionary<(string Path, DateTime Modified), Task> readingFileIcons = new();
 
     static Task ReadFileIcon(string path, DateTime modified) =>
-        readingFileIcons.GetOrAdd(
-            (path, modified),
-            static key => Task.Run(
-                () =>
-                {
-                    try
-                    {
-                        GetFileIcon(key.Path, key.Modified);
-                    }
-                    finally
-                    {
-                        readingFileIcons.TryRemove(key, out _);
-                    }
-                }));
+        readingFileIcons.GetOrAdd((path, modified), static key => ReadWhenFree(key));
+
+    // A few at a time. Each waits on the disk, or the network, for as long as the shell takes,
+    // and a folder of programs asked for one each at once: on the threads the next folder's
+    // listing wanted, which then waited behind the icons of the folder just left.
+    static SemaphoreSlim fileIconReaders = new(4);
+
+    static async Task ReadWhenFree((string Path, DateTime Modified) key)
+    {
+        await fileIconReaders.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() => GetFileIcon(key.Path, key.Modified)).ConfigureAwait(false);
+        }
+        finally
+        {
+            fileIconReaders.Release();
+            readingFileIcons.TryRemove(key, out _);
+        }
+    }
 
     // Back on the thread that asked, as awaiting there returns to it.
     static async void Tell(Task reading, Action known)
