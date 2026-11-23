@@ -19,5 +19,21 @@ public class DriveRemovalTests
                 volumeMount = DriveRemoval.Meaning(6, new("b5804878-1a96-11d2-8ffd-00a0c9a06d32")),
                 otherCustomEvent = DriveRemoval.Meaning(6, Guid.Empty)?.ToString() ?? "neither",
                 interfaceArrival = DriveRemoval.Meaning(0, null)?.ToString() ?? "neither"
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  queryRemove: true,
+                  queryRemoveFailed: false,
+                  removePending: true,
+                  removeComplete: true,
+                  volumeLock: true,
+                  volumeLockFailed: false,
+                  volumeUnlock: false,
+                  volumeDismount: true,
+                  volumeMount: false,
+                  otherCustomEvent: neither,
+                  interfaceArrival: neither
+                }
+                """);
 }

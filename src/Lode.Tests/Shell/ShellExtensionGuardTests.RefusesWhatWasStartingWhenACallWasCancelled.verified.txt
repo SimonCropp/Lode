@@ -1,5 +1,0 @@
-﻿{
-  stuck: true,
-  earlier: false,
-  untouched: false
-}

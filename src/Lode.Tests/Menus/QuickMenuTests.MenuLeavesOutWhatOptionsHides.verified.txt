@@ -1,7 +1,0 @@
-﻿[
-  Open,
-  Open with,
-    Choose another app,
-  ----,
-  Show more options
-]

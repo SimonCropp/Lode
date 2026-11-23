@@ -1,4 +1,0 @@
-﻿{
-  windows11: Segoe Fluent Icons,
-  windows10: Segoe MDL2 Assets
-}

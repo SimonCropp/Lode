@@ -40,7 +40,24 @@ public class FolderWatcherTests
                 sameRegistrationOnceRevived,
                 whileGoingAgain,
                 afterwards = new { before = before.IsWatching, since = since.IsWatching }
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  whileGone: false,
+                  registeredAfresh: true,
+                  watchingAgain: true,
+                  sameRegistrationOnceRevived: true,
+                  whileGoingAgain: {
+                    before: false,
+                    since: false
+                  },
+                  afterwards: {
+                    before: true,
+                    since: true
+                  }
+                }
+                """);
     }
 
     const uint queryRemove = 2;
@@ -74,7 +91,16 @@ public class FolderWatcherTests
                 changesWhileGoing,
                 watchingAfter,
                 reportedOnReturn = changesOnReturn > changesWhileGoing
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  watchingAtFirst: true,
+                  watchingWhileGoing: false,
+                  watchingAfter: true,
+                  reportedOnReturn: true
+                }
+                """);
     }
 
     // For the length of an operation on a folder, the watches at or beneath it let go, so Windows
@@ -113,7 +139,28 @@ public class FolderWatcherTests
                     deep = changes["deep"] > 0,
                     source = changes["source"] > 0
                 }
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  whileMoving: {
+                    deep: false,
+                    source: false,
+                    docs: true,
+                    root: true
+                  },
+                  after: {
+                    deep: false,
+                    source: false,
+                    docs: true,
+                    root: true
+                  },
+                  reported: {
+                    deep: true,
+                    source: true
+                  }
+                }
+                """);
 
         object Watching() =>
             new
@@ -163,7 +210,18 @@ public class FolderWatcherTests
                 releasedWhileDriveGoing,
                 after = watcher.IsWatching,
                 reportedAfter = changes > 0
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  whileLetGo: false,
+                  driveBackWhileLetGo: false,
+                  reportedWhileLetGo: false,
+                  releasedWhileDriveGoing: false,
+                  after: true,
+                  reportedAfter: true
+                }
+                """);
     }
 
     // A watch on a folder deleted fails, and would report nothing more even once the folder is

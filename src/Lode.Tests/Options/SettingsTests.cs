@@ -60,7 +60,77 @@ public class SettingsTests
 
         settings.Save();
 
-        await VerifyFile(path);
+        await VerifyFile(path)
+            .Snapshot(
+                """
+                {
+                  "ShowHidden": true,
+                  "ShowSystem": false,
+                  "Theme": "System",
+                  "ShowRecent": true,
+                  "ExpandToOpenFolder": true,
+                  "Actions": {},
+                  "HiddenColumns": [],
+                  "ColumnWidths": {
+                    "Name": 420
+                  },
+                  "FolderSorts": [
+                    {
+                      "Folder": "C:\\Code",
+                      "Column": "Date",
+                      "Ascending": false
+                    }
+                  ],
+                  "PinnedPanes": [],
+                  "PaneWidth": 0,
+                  "PaneSplit": 0,
+                  "StripLabels": "Vertical",
+                  "DiffPlacement": "Tab",
+                  "DiffSplit": false,
+                  "DiffHideWhitespace": false,
+                  "AzureDevOpsOrganizations": [],
+                  "CollapsedSections": [],
+                  "PinnedFolders": [],
+                  "RecentFolders": [],
+                  "JumpListRemoved": [],
+                  "DefaultDirectory": null,
+                  "TextEditor": null,
+                  "CodeDirectory": null,
+                  "PurgePermanently": false,
+                  "PromotedFiles": [],
+                  "FindRegex": false,
+                  "FindCaseSensitive": false,
+                  "FindWholeWord": false,
+                  "FindPreserveCase": false,
+                  "FindContext": true,
+                  "FindContextLines": 2,
+                  "FindHidden": true,
+                  "FindIgnored": false,
+                  "SearchIgnored": false,
+                  "FindHistory": [],
+                  "WhereHistory": [],
+                  "ReplaceHistory": [],
+                  "CloseUnusedTabs": false,
+                  "UnusedTabHours": 24,
+                  "LastUpdateCheck": null,
+                  "AvailableUpdate": null,
+                  "Left": 10,
+                  "Top": 20,
+                  "Width": 1200,
+                  "Height": 800,
+                  "Maximized": false,
+                  "SplitterDistance": 250,
+                  "Tabs": [
+                    "C:\\Code",
+                    "This PC"
+                  ],
+                  "TabsLastShown": [
+                    "2026-11-19T09:00:00+00:00",
+                    "2026-11-19T17:30:00+00:00"
+                  ],
+                  "ActiveTab": 1
+                }
+                """);
     }
 
     [Test]
@@ -75,7 +145,44 @@ public class SettingsTests
         settings.SetSort(@"D:\Work", "Size", ascending: true);
         settings.Save();
 
-        await Verify(Settings.Load(path));
+        await Verify(Settings.Load(path))
+            .Snapshot(
+                """
+                {
+                  ShowHidden: true,
+                  ShowSystem: false,
+                  ShowRecent: true,
+                  ExpandToOpenFolder: true,
+                  ColumnWidths: {
+                    Type: 140
+                  },
+                  FolderSorts: [
+                    {
+                      Folder: D:\Work,
+                      Column: Size,
+                      Ascending: true
+                    }
+                  ],
+                  DiffSplit: false,
+                  DiffHideWhitespace: false,
+                  PurgePermanently: false,
+                  FindRegex: false,
+                  FindCaseSensitive: false,
+                  FindWholeWord: false,
+                  FindPreserveCase: false,
+                  FindContext: true,
+                  FindContextLines: 2,
+                  FindHidden: true,
+                  FindIgnored: false,
+                  SearchIgnored: false,
+                  CloseUnusedTabs: false,
+                  UnusedTabHours: 24,
+                  Maximized: true,
+                  Tabs: [
+                    D:\Work
+                  ]
+                }
+                """);
     }
 
     // Git was one action, a submenu of pull, push, discard and purge. Settings saved then have
@@ -101,7 +208,64 @@ public class SettingsTests
                     buttonNested = settings.NestsButton(_),
                     menuNested = settings.NestsInMenu(_)
                 })
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  gitKept: false,
+                  actions: [
+                    {
+                      id: gitFetch,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitPull,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitSyncFork,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitSwitchToDefault,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitPush,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitDiscard,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitPurge,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    }
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -111,7 +275,31 @@ public class SettingsTests
         var path = fixture.At("settings.json");
         await File.WriteAllTextAsync(path, "{ not json");
 
-        await Verify(Settings.Load(path));
+        await Verify(Settings.Load(path))
+            .Snapshot(
+                """
+                {
+                  ShowHidden: true,
+                  ShowSystem: false,
+                  ShowRecent: true,
+                  ExpandToOpenFolder: true,
+                  DiffSplit: false,
+                  DiffHideWhitespace: false,
+                  PurgePermanently: false,
+                  FindRegex: false,
+                  FindCaseSensitive: false,
+                  FindWholeWord: false,
+                  FindPreserveCase: false,
+                  FindContext: true,
+                  FindContextLines: 2,
+                  FindHidden: true,
+                  FindIgnored: false,
+                  SearchIgnored: false,
+                  CloseUnusedTabs: false,
+                  UnusedTabHours: 24,
+                  Maximized: false
+                }
+                """);
     }
 
     /// <summary>

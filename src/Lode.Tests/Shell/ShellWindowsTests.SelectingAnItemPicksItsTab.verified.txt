@@ -1,6 +1,0 @@
-﻿{
-  active: Source,
-  selected: [
-    main.aleph
-  ]
-}

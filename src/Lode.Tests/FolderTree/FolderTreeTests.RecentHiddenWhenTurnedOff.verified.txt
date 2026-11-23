@@ -1,4 +1,0 @@
-﻿- Pinned
-    Docs
-- This PC
-  + FolderTreeTests.RecentHiddenWhenTurnedOff

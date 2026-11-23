@@ -1,5 +1,0 @@
-﻿{
-  Succeeded: true,
-  Summary: Nothing to update,
-  Details: 
-}

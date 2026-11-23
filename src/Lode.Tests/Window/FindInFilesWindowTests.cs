@@ -49,7 +49,32 @@ public class FindInFilesWindowTests
                 savedTabs = settings.Tabs.Select(fixture.Relative),
                 settings.ActiveTab,
                 findHistory = settings.FindHistory
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  title: Find Results,
+                  addressEnabled: false,
+                  results:
+                Searched 2 files for "alpha"
+
+                {root}\Docs\notes.txt:
+                    1: alpha
+                    2  beta
+
+                1 match across 1 file
+                Left out: 1 binary file
+                ,
+                  savedTabs: [
+                    Projects,
+                    Projects/Docs
+                  ],
+                  ActiveTab: 1,
+                  findHistory: [
+                    alpha
+                  ]
+                }
+                """);
     }
 
     // Replace replaces in what was found, asking first, and the results then show each line as
@@ -79,7 +104,28 @@ public class FindInFilesWindowTests
                 asked,
                 file = await File.ReadAllTextAsync(file),
                 results = form.ResultsView!.Results.ToText().Replace(fixture.Root, "{root}")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  asked: [
+                    2 in 1: alpha -> omega
+                  ],
+                  file:
+                omega
+                omega beta
+                ,
+                  results:
+                Replaced "alpha" with "omega"
+
+                {root}\Docs\notes.txt:
+                    1: omega
+                    2: omega beta
+
+                2 occurrences replaced across 1 file
+
+                }
+                """);
     }
 
     // A filter matching no names offers to search inside the files instead, which runs Find in
@@ -106,7 +152,25 @@ public class FindInFilesWindowTests
                 where = form.FindPanel.WhereBox.Text.Replace(fixture.Root, "{root}"),
                 form.FindPanel.ReadQuery().Regex,
                 results = form.ResultsView.Results.ToText().Replace(fixture.Root, "{root}")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  emptyText: No items match your search. [Search inside the files],
+                  find: "11.0,
+                  where: {root},
+                  Regex: false,
+                  results:
+                Searched 10 files for ""11.0"
+
+                {root}\Docs\notes.txt:
+                    1: version "11.0" here
+
+                1 match across 1 file
+                Left out: 8 binary files
+
+                }
+                """);
     }
 
     // The strip stays where it is while a search goes on. The status bar under it, emptied for
@@ -166,7 +230,26 @@ public class FindInFilesWindowTests
                 onResults = link.Visible,
                 find = form.FindPanel.FindBox.Text,
                 results = form.ResultsView.Results.ToText().Replace(fixture.Root, "{root}")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  withoutFilter: false,
+                  withFilter: true,
+                  found: 5,
+                  onResults: false,
+                  find: aleph,
+                  results:
+                Searched 10 files for "aleph"
+
+                {root}\Docs\notes.txt:
+                    1: the aleph is here
+
+                1 match across 1 file
+                Left out: 8 binary files
+
+                }
+                """);
     }
 
     // Closing Find Results lets go of it; the next search makes it again.

@@ -29,5 +29,23 @@ public class SystemItemsTests
                 systemButNotHidden = items.IsSystem(@"D:\Customised", folder | FileAttributes.System),
                 hiddenOnly = items.IsSystem(@"D:\.git", folder | FileAttributes.Hidden),
                 ordinaryFolder = items.IsSystem(@"C:\Code", folder)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  windows: true,
+                  programFiles: true,
+                  programFilesX86: true,
+                  insideProgramFiles: false,
+                  anotherUser: true,
+                  myFolder: false,
+                  publicFolder: false,
+                  insideAnotherUser: false,
+                  fileInUsers: false,
+                  hiddenAndSystem: true,
+                  systemButNotHidden: false,
+                  hiddenOnly: false,
+                  ordinaryFolder: false
+                }
+                """);
 }

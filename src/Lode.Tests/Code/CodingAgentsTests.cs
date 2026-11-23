@@ -22,7 +22,14 @@ public class CodingAgentsTests
 
         var agents = CodingAgents.Find([fixture.At("Missing"), first, second]);
 
-        await Verify(agents.Select(_ => $"{_.Name}: {Path.GetRelativePath(fixture.Root, _.Path)}"));
+        await Verify(agents.Select(_ => $"{_.Name}: {Path.GetRelativePath(fixture.Root, _.Path)}"))
+            .Snapshot(
+                """
+                [
+                  Claude Code: Second\claude.exe,
+                  Codex CLI: First\codex.cmd
+                ]
+                """);
     }
 
     // The PATH is looked through once, off the thread that asks: a folder on it that waits on a

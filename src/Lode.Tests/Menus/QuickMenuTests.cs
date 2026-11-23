@@ -48,7 +48,27 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.ItemCommands([Entry(view, "notes.aleph")])));
+        await Verify(Describe(view.ItemCommands([Entry(view, "notes.aleph")])))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open with,
+                    Choose another app,
+                  ----,
+                  Cut,
+                  Copy,
+                  Rename,
+                  Delete,
+                  ----,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // A file promoted to a repository's root is a shortcut to it there: it opens and copies as
@@ -68,7 +88,46 @@ public class QuickMenuTests
             {
                 alone = Describe(view.ItemCommands([promoted])),
                 withAnother = Describe(view.ItemCommands([promoted, Entry(view, "notes.aleph")]))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  alone: [
+                    Open,
+                    Open with,
+                      Choose another app,
+                    ----,
+                    Cut (disabled),
+                    Copy,
+                    Rename (disabled),
+                    Delete (disabled),
+                    ----,
+                    Create shortcut (disabled),
+                    Compress to ZIP file (disabled),
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ],
+                  withAnother: [
+                    Open,
+                    Open with,
+                      None (disabled),
+                    ----,
+                    Cut (disabled),
+                    Copy,
+                    Rename (disabled),
+                    Delete (disabled),
+                    ----,
+                    Create shortcut (disabled),
+                    Compress to ZIP file (disabled),
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ]
+                }
+                """);
     }
 
     // Text files offer Edit, after Open.
@@ -79,7 +138,28 @@ public class QuickMenuTests
         await File.WriteAllTextAsync(fixture.At("todo.txt"), "todo");
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.ItemCommands([Entry(view, "todo.txt")])));
+        await Verify(Describe(view.ItemCommands([Entry(view, "todo.txt")])))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Edit,
+                  Open with,
+                    Choose another app,
+                  ----,
+                  Cut,
+                  Copy,
+                  Rename,
+                  Delete,
+                  ----,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // PowerShell scripts offer Run, after Open, and so do several; a script selected with
@@ -101,7 +181,65 @@ public class QuickMenuTests
                 script = Describe(view.ItemCommands([Entry(view, "build.ps1")])),
                 scripts = Describe(view.ItemCommands([Entry(view, "build.ps1"), Entry(view, "clean.PS1")])),
                 scriptAndFile = Describe(view.ItemCommands([Entry(view, "build.ps1"), Entry(view, "notes.aleph")]))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  script: [
+                    Open,
+                    Run,
+                    Edit,
+                    Open with,
+                      Choose another app,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ],
+                  scripts: [
+                    Open,
+                    Run,
+                    Edit,
+                    Open with,
+                      None (disabled),
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ],
+                  scriptAndFile: [
+                    Open,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ]
+                }
+                """);
     }
 
     // Open with's apps are found as it opens, not as the right-click menu is built: building it
@@ -177,7 +315,40 @@ public class QuickMenuTests
                 differentTypes = OpenWithEntries("notes.aleph", "report2.beta"),
                 program = OpenWithEntries("setup.exe"),
                 shortcut = OpenWithEntries("Notepad.lnk")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  oneFile: [
+                    Open with,
+                      Firefox,
+                      GIMP 3.2.6,
+                      Choose another app
+                  ],
+                  twoFiles: [
+                    Open with,
+                      Firefox,
+                      GIMP 3.2.6
+                  ],
+                  twoFilesNoApps: [
+                    Open with,
+                      None (disabled)
+                  ],
+                  oneFileNoApps: [
+                    Open with,
+                      Choose another app
+                  ],
+                  differentTypes: [
+                    none
+                  ],
+                  program: [
+                    none
+                  ],
+                  shortcut: [
+                    none
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -186,7 +357,33 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.ItemCommands([Entry(view, "Docs")])));
+        await Verify(Describe(view.ItemCommands([Entry(view, "Docs")])))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude,
+                  Coding agent,
+                    Claude Code,
+                    Codex CLI,
+                  Pin to Quick access,
+                  ----,
+                  Cut,
+                  Copy,
+                  Rename,
+                  Delete,
+                  ----,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // A folder under the code folder gets the git and NuGet commands, and so do several; a
@@ -205,7 +402,142 @@ public class QuickMenuTests
                 file = Describe(view.ItemCommands([Entry(view, "notes.aleph")])),
                 folderAndFile = Describe(view.ItemCommands([Entry(view, "Docs"), Entry(view, "notes.aleph")])),
                 background = Describe(view.BackgroundCommands(canPaste: false, newTypes))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  folder: [
+                    Open,
+                    Open in new tab,
+                    Terminal,
+                    Terminal (admin),
+                    Open in Claude,
+                    Coding agent,
+                      Claude Code,
+                      Codex CLI,
+                    Pin to Quick access,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git fetch,
+                    Git pull,
+                    Git sync fork,
+                    Git switch to default branch,
+                    Git push…,
+                    Git discard…,
+                    Git purge…,
+                    Update NuGets,
+                    Update NuGets and build,
+                    ----,
+                    Show more options
+                  ],
+                  folders: [
+                    Open,
+                    Open in new tab,
+                    Terminal,
+                    Terminal (admin),
+                    Open in Claude (disabled),
+                    Coding agent,
+                      Claude Code,
+                      Codex CLI,
+                    Pin to Quick access,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git fetch,
+                    Git pull,
+                    Git sync fork,
+                    Git switch to default branch,
+                    Git push…,
+                    Git discard…,
+                    Git purge…,
+                    Update NuGets,
+                    Update NuGets and build,
+                    ----,
+                    Show more options
+                  ],
+                  file: [
+                    Open,
+                    Open with,
+                      Choose another app,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ],
+                  folderAndFile: [
+                    Open,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Show more options
+                  ],
+                  background: [
+                    New,
+                      Folder,
+                      ----,
+                      Bitmap image,
+                      Text Document,
+                      Word Document,
+                    Paste (disabled),
+                    Undo (disabled),
+                    Redo (disabled),
+                    ----,
+                    Terminal,
+                    Terminal (admin),
+                    Open in Claude,
+                    Coding agent,
+                      Claude Code,
+                      Codex CLI,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git fetch,
+                    Git pull,
+                    Git sync fork,
+                    Git switch to default branch,
+                    Git push…,
+                    Git discard…,
+                    Git purge…,
+                    Update NuGets,
+                    Update NuGets and build,
+                    ----,
+                    Show more options
+                  ]
+                }
+                """);
     }
 
     // Outside the code folder, several folders still get a terminal, a tab for each.
@@ -215,7 +547,33 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.ItemCommands([Entry(view, "Archive"), Entry(view, "Docs")])));
+        await Verify(Describe(view.ItemCommands([Entry(view, "Archive"), Entry(view, "Docs")])))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude (disabled),
+                  Coding agent,
+                    Claude Code,
+                    Codex CLI,
+                  Pin to Quick access,
+                  ----,
+                  Cut,
+                  Copy,
+                  Rename,
+                  Delete,
+                  ----,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // No Open in new tab once a file is in the mix, and Rename needs a single item.
@@ -225,7 +583,25 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.ItemCommands([Entry(view, "Docs"), Entry(view, "notes.aleph")])));
+        await Verify(Describe(view.ItemCommands([Entry(view, "Docs"), Entry(view, "notes.aleph")])))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  ----,
+                  Cut,
+                  Copy,
+                  Rename,
+                  Delete,
+                  ----,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     [Test]
@@ -234,7 +610,32 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.BackgroundCommands(canPaste: true, newTypes)));
+        await Verify(Describe(view.BackgroundCommands(canPaste: true, newTypes)))
+            .Snapshot(
+                """
+                [
+                  New,
+                    Folder,
+                    ----,
+                    Bitmap image,
+                    Text Document,
+                    Word Document,
+                  Paste,
+                  Undo (disabled),
+                  Redo (disabled),
+                  ----,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude,
+                  Coding agent,
+                    Claude Code,
+                    Codex CLI,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     [Test]
@@ -243,7 +644,32 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view.BackgroundCommands(canPaste: false, newTypes)));
+        await Verify(Describe(view.BackgroundCommands(canPaste: false, newTypes)))
+            .Snapshot(
+                """
+                [
+                  New,
+                    Folder,
+                    ----,
+                    Bitmap image,
+                    Text Document,
+                    Word Document,
+                  Paste (disabled),
+                  Undo (disabled),
+                  Redo (disabled),
+                  ----,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude,
+                  Coding agent,
+                    Claude Code,
+                    Codex CLI,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // What Options keeps off the menu is left out, with the separators that would leave
@@ -260,7 +686,17 @@ public class QuickMenuTests
 
         using var view = await Open(fixture.Root, settings);
 
-        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "notes.aleph")]), settings)));
+        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "notes.aleph")]), settings)))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open with,
+                    Choose another app,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // The menus start with the terminals, the AI actions and the code folder's nested under
@@ -277,7 +713,85 @@ public class QuickMenuTests
             {
                 folder = Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)),
                 background = Describe(LodeActions.ForMenu(view.BackgroundCommands(canPaste: false, newTypes), settings))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  folder: [
+                    Open,
+                    Open in new tab,
+                    Terminal,
+                      Terminal,
+                      Terminal (admin),
+                    AI,
+                      Open in Claude,
+                      Coding agent,
+                        Claude Code,
+                        Codex CLI,
+                    Pin to Quick access,
+                    ----,
+                    Cut,
+                    Copy,
+                    Rename,
+                    Delete,
+                    ----,
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git,
+                      Fetch,
+                      Pull,
+                      Sync fork,
+                      Switch to default branch,
+                      Push…,
+                      Discard…,
+                      Purge…,
+                    Packages,
+                      Update NuGets,
+                      Update NuGets and build,
+                    ----,
+                    Show more options
+                  ],
+                  background: [
+                    New,
+                      Folder,
+                      ----,
+                      Bitmap image,
+                      Text Document,
+                      Word Document,
+                    Paste (disabled),
+                    Undo (disabled),
+                    Redo (disabled),
+                    ----,
+                    Terminal,
+                      Terminal,
+                      Terminal (admin),
+                    AI,
+                      Open in Claude,
+                      Coding agent,
+                        Claude Code,
+                        Codex CLI,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git,
+                      Fetch,
+                      Pull,
+                      Sync fork,
+                      Switch to default branch,
+                      Push…,
+                      Discard…,
+                      Purge…,
+                    Packages,
+                      Update NuGets,
+                      Update NuGets and build,
+                    ----,
+                    Show more options
+                  ]
+                }
+                """);
     }
 
     // Nesting follows Options. With Clipboard's and File's actions nested and the terminals not,
@@ -300,7 +814,36 @@ public class QuickMenuTests
 
         using var view = await Open(fixture.Root, settings);
 
-        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)));
+        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab,
+                  Terminal,
+                  Terminal (admin),
+                  AI,
+                    Open in Claude,
+                    Coding agent,
+                      Claude Code,
+                      Codex CLI,
+                  File,
+                    Pin to Quick access,
+                    Rename,
+                    Delete,
+                    Create shortcut,
+                  ----,
+                  Clipboard,
+                    Cut,
+                    Copy,
+                    Copy as path,
+                  ----,
+                  Compress to ZIP file,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // The git actions, un-nested, are entries of their own, named for git, as the Git submenu's
@@ -317,7 +860,46 @@ public class QuickMenuTests
 
         using var view = await Open(fixture.Root, settings);
 
-        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)));
+        await Verify(Describe(LodeActions.ForMenu(view.ItemCommands([Entry(view, "Docs")]), settings)))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab,
+                  Terminal,
+                    Terminal,
+                    Terminal (admin),
+                  AI,
+                    Open in Claude,
+                    Coding agent,
+                      Claude Code,
+                      Codex CLI,
+                  Pin to Quick access,
+                  ----,
+                  Cut,
+                  Copy,
+                  Rename,
+                  Delete,
+                  ----,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Git fetch,
+                  Git pull,
+                  Git sync fork,
+                  Git switch to default branch,
+                  Git push…,
+                  Git discard…,
+                  Git purge…,
+                  Packages,
+                    Update NuGets,
+                    Update NuGets and build,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     [Test]
@@ -326,7 +908,40 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var tree = CreateTree([fixture.Root], []);
 
-        await Verify(Describe(tree.NodeCommands(fixture.At("Docs"), newTypes: newTypes)));
+        await Verify(Describe(tree.NodeCommands(fixture.At("Docs"), newTypes: newTypes)))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude,
+                  Coding agent,
+                    Claude Code,
+                    Codex CLI,
+                  ----,
+                  New,
+                    Folder,
+                    ----,
+                    Bitmap image,
+                    Text Document,
+                    Word Document,
+                  Cut,
+                  Copy,
+                  Paste (disabled),
+                  Rename (disabled),
+                  Delete,
+                  ----,
+                  Pin to Quick access,
+                  Create shortcut,
+                  Compress to ZIP file,
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // Without the Claude desktop app or a coding agent, no menu offers Open in Claude or Coding
@@ -367,7 +982,40 @@ public class QuickMenuTests
         using var fixture = Fixture.Create();
         using var tree = CreateTree([fixture.Root], []);
 
-        await Verify(Describe(tree.NodeCommands(Path.GetPathRoot(fixture.Root)!, canPaste: true, newTypes: newTypes)));
+        await Verify(Describe(tree.NodeCommands(Path.GetPathRoot(fixture.Root)!, canPaste: true, newTypes: newTypes)))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude,
+                  Coding agent,
+                    Claude Code,
+                    Codex CLI,
+                  ----,
+                  New,
+                    Folder,
+                    ----,
+                    Bitmap image,
+                    Text Document,
+                    Word Document,
+                  Cut (disabled),
+                  Copy,
+                  Paste,
+                  Rename (disabled),
+                  Delete (disabled),
+                  ----,
+                  Pin to Quick access,
+                  Create shortcut (disabled),
+                  Compress to ZIP file (disabled),
+                  Copy as path,
+                  Properties,
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // A machine on the network has shares rather than folders, so nothing can be made in it.
@@ -621,7 +1269,16 @@ public class QuickMenuTests
 
         tree.MovePinned(fixture.At("Source"), 0);
 
-        await Verify(moves);
+        await Verify(moves)
+            .Snapshot(
+                """
+                [
+                  [
+                    Projects/Archive,
+                    Projects/Docs
+                  ]
+                ]
+                """);
     }
 
     // The tree shows the folder in its new place, selected, without waiting for the shell.

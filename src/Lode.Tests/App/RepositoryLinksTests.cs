@@ -39,7 +39,33 @@ public class RepositoryLinksTests
             {
                 taken,
                 state
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  taken: {
+                    x-github-client\: {
+                      (default): URL:x-github-client,
+                      shell\: {
+                        open\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            LodeForwardCommand: "C:\Apps\GitHub Desktop.exe" "%1",
+                            LodePreviousCommand: "C:\Users\Someone\AppData\Local\GitHubDesktop\app-3.6.11\GitHubDesktop.exe" --protocol-launcher "%1"
+                          }
+                        }
+                      },
+                      TakenBy: Lode,
+                      URL Protocol: 
+                    }
+                  },
+                  state: {
+                    taken: true,
+                    here: true,
+                    forward: "C:\Apps\GitHub Desktop.exe" "%1"
+                  }
+                }
+                """);
     }
 
     // Visual Studio's links are only in the machine's classes. Take adds the scheme to the user's,
@@ -62,7 +88,29 @@ public class RepositoryLinksTests
                 taken,
                 forward,
                 givenBack = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  taken: {
+                    git-client\: {
+                      (default): URL:git-client,
+                      CreatedBy: Lode,
+                      shell\: {
+                        open\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            LodeForwardCommand: "C:\Apps\Visual Studio.exe" "%1"
+                          }
+                        }
+                      },
+                      TakenBy: Lode,
+                      URL Protocol: 
+                    }
+                  },
+                  forward: "C:\Apps\Visual Studio.exe" "%1"
+                }
+                """);
     }
 
     // A second Take, by another copy of Lode, points the links at it and still keeps what the

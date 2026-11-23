@@ -78,7 +78,22 @@ public class GitBranchesTests
             "WIP on main: 1a2b3c4 Initial",
             "On main: something of the user's own");
 
-        return Verify(Describe(GitBranches.Parse(refs, "main", reflog, stashes)));
+        return Verify(Describe(GitBranches.Parse(refs, "main", reflog, stashes)))
+            .Snapshot(
+                """
+                {
+                  Current: feature-b,
+                  Default: main,
+                  Recent: [
+                    feature-b,
+                    feature-a (stashed)
+                  ],
+                  Other: [
+                    zebra,
+                    origin/only-remote (remote)
+                  ]
+                }
+                """);
     }
 
     // GitHub Desktop lists five.
@@ -129,7 +144,23 @@ public class GitBranchesTests
                     TimeSpan.FromDays(364),
                     TimeSpan.FromDays(800)
                 }
-                .Select(_ => $"{_} -> {GitBranches.Ago(now - _, now)}"));
+                .Select(_ => $"{_} -> {GitBranches.Ago(now - _, now)}"))
+                .Snapshot(
+                    """
+                    [
+                      -00:00:05 -> just now,
+                      00:00:30 -> just now,
+                      00:01:00 -> 1 minute ago,
+                      00:59:00 -> 59 minutes ago,
+                      01:00:00 -> 1 hour ago,
+                      15:00:00 -> 15 hours ago,
+                      1.00:00:00 -> 1 day ago,
+                      29.00:00:00 -> 29 days ago,
+                      45.00:00:00 -> 1 month ago,
+                      364.00:00:00 -> 12 months ago,
+                      800.00:00:00 -> 2 years ago
+                    ]
+                    """);
     }
 
     // A repository made by init has no default recorded, so main is; a branch pushed without

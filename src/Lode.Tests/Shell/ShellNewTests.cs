@@ -36,6 +36,29 @@ public class ShellNewTests
                 _.TypeName,
                 Data = _.Data == null ? null : Encoding.UTF8.GetString(_.Data),
                 _.Template
-            }));
+            }))
+            .Snapshot(
+                """
+                [
+                  {
+                    Extension: .doc,
+                    TypeName: Type.doc,
+                    Data: content
+                  },
+                  {
+                    Extension: .empty,
+                    TypeName: Type.empty
+                  },
+                  {
+                    Extension: .tmpl,
+                    TypeName: Type.tmpl,
+                    Template: template.tmpl
+                  },
+                  {
+                    Extension: .txt,
+                    TypeName: Type.txt
+                  }
+                ]
+                """);
     }
 }

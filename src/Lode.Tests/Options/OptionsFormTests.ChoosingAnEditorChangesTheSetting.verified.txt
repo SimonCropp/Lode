@@ -1,8 +1,0 @@
-﻿{
-  before: [
-    Visual Studio Code   <- selected,
-    Notepad,
-    Browse…
-  ],
-  setting: C:\Windows\notepad.exe
-}

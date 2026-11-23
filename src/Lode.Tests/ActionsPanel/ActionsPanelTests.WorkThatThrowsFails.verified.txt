@@ -1,7 +1,0 @@
-﻿[
-  {
-    line: Update NuGets – Lode: Failed,
-    state: Failed,
-    Details: No network
-  }
-]

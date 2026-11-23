@@ -11,7 +11,36 @@ public class ContentSearchTests
         using var scratch = TextScratch();
         var results = await Find(new("alpha", ""), scratch.Root);
 
-        await Verify(Text(results, scratch.Root));
+        await Verify(Text(results, scratch.Root))
+            .Snapshot(
+                """
+                Searched 7 files for "alpha"
+
+                {root}\hidden.txt:
+                    1: hidden alpha
+
+                {root}\latin.txt:
+                    1: café alpha
+
+                {root}\marked.txt:
+                    1  first
+                    2: alpha in marked
+
+                {root}\plain.txt:
+                    1: alpha beta
+                    2  gamma
+                    3: Alpha delta
+
+                {root}\wide.txt:
+                    1: wide alpha
+
+                {root}\Sub\deep.cs:
+                    1: // alpha
+
+                7 matches across 6 files
+                Left out: 1 binary file
+
+                """);
     }
 
     [Test]
@@ -26,7 +55,27 @@ public class ContentSearchTests
             {
                 hidden = Paths(hidden, scratch.Root),
                 notHidden = Paths(notHidden, scratch.Root)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  hidden: [
+                    hidden.txt,
+                    latin.txt,
+                    marked.txt,
+                    plain.txt,
+                    wide.txt,
+                    Sub\deep.cs
+                  ],
+                  notHidden: [
+                    latin.txt,
+                    marked.txt,
+                    plain.txt,
+                    wide.txt,
+                    Sub\deep.cs
+                  ]
+                }
+                """);
     }
 
     // A file named as a device is, which a redirect to nul leaves behind in a shell that isn't
@@ -95,7 +144,40 @@ public class ContentSearchTests
             {
                 context = Text(results, scratch.Root),
                 overLines = Text(overLines, scratch.Root)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  context:
+                Searched 1 file for "needle"
+
+                {root}\lines.txt:
+                    1  line 1
+                    2  line 2
+                    3: line 3 has needle
+                    4  line 4
+                    5  line 5
+                   ..
+                   13  line 13
+                   14  line 14
+                   15: line 15 has needle
+                   16: and needle again
+                   17  line 17
+                   18  line 18
+
+                3 matches across 1 file
+                ,
+                  overLines:
+                Searched 1 file for "needle\r?\nand" (regex)
+
+                {root}\lines.txt:
+                   15: line 15 has needle
+                   16: and needle again
+
+                1 match across 1 file
+
+                }
+                """);
     }
 
     // A file is looked through as bytes before it is decoded, and left undecoded when they can't
@@ -174,7 +256,16 @@ public class ContentSearchTests
                 start = line.Text[..10],
                 match = line.Text.Substring(line.Matches[0].Start, line.Matches[0].Length),
                 line.Column
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Length: 302,
+                  start: …aaaaaaaaa,
+                  match: needle,
+                  Column: 501
+                }
+                """);
     }
 
     [Test]
@@ -208,7 +299,22 @@ public class ContentSearchTests
                 ["dot as text"] = Found(new("f.o", "")),
                 ["nothing"] = Found(new("", "")),
                 ["bad pattern"] = Found(new("(", "", Regex: true))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  any case: 0:Foo, 4:foo, 8:foo, 13:FOO, 18:foo, 22:foo,
+                  bad pattern: error: The pattern can't be read: Invalid pattern '(' at offset 1. Not enough )'s.,
+                  case sensitive: 4:foo, 8:foo, 18:foo, 22:foo,
+                  dot as text: 27:f.o,
+                  nothing: error: Type what to find.,
+                  regex: 0:Foo, 4:foo, 8:foo, 13:FOO, 18:foo, 22:foo, 27:f.o,
+                  regex over lines: 27:f.o\nB,
+                  regex, whole word: 0:Foo, 4:foo, 13:FOO, 27:f.o,
+                  whole word: 0:Foo, 4:foo, 13:FOO,
+                  whole word, case sensitive: 4:foo
+                }
+                """);
     }
 
     // In a repository, only what git doesn't ignore: a tracked file in an ignored folder still,
@@ -251,7 +357,33 @@ public class ContentSearchTests
                 fromInside = Paths(fromInside, repo),
                 everything = Paths(everything, repo),
                 listed
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  notIgnored: [
+                    bin\Tracked.cs,
+                    Nested\Kept.txt,
+                    src\Code.cs
+                  ],
+                  fromInside: [
+                    src\Code.cs
+                  ],
+                  everything: [
+                    run.log,
+                    bin\Built.cs,
+                    bin\Tracked.cs,
+                    Nested\Kept.txt,
+                    Nested\out\Left.txt,
+                    src\Code.cs
+                  ],
+                  listed: [
+                    repo,
+                    repo\Nested,
+                    repo
+                  ]
+                }
+                """);
     }
 
     // In the code folder, which Lode watches, what git lists of a repository is kept until
@@ -312,7 +444,18 @@ public class ContentSearchTests
 
         var results = await Find(new("alpha", ""), repo, _ => null);
 
-        await Verify(Text(results, scratch.Root));
+        await Verify(Text(results, scratch.Root))
+            .Snapshot(
+                """
+                Searched 1 file for "alpha"
+
+                {root}\repo\bin\Built.cs:
+                    1: alpha
+
+                1 match across 1 file
+                Git couldn't list what it ignores in {root}\repo, so all of it was searched
+
+                """);
     }
 
     [Test]
@@ -347,7 +490,57 @@ public class ContentSearchTests
                 ["open folders"] = Parsed("<open folders>, *.md"),
                 ["missing"] = Parsed("Nowhere"),
                 ["the same folder twice"] = Parsed("Source, source")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  empty: {
+                    roots: [
+                      {root}
+                    ],
+                    includes: [],
+                    excludes: []
+                  },
+                  full folder and patterns: {
+                    roots: [
+                      {root}\Docs
+                    ],
+                    includes: [
+                      *.cs
+                    ],
+                    excludes: [
+                      *.min.js,
+                      node_modules\,
+                      *\obj\
+                    ]
+                  },
+                  missing: error: There's no folder or file Nowhere.,
+                  open folders: {
+                    roots: [
+                      {root}\Docs,
+                      {root}\Source
+                    ],
+                    includes: [
+                      *.md
+                    ],
+                    excludes: []
+                  },
+                  relative folder: {
+                    roots: [
+                      {root}\Source
+                    ],
+                    includes: [],
+                    excludes: []
+                  },
+                  the same folder twice: {
+                    roots: [
+                      {root}\Source
+                    ],
+                    includes: [],
+                    excludes: []
+                  }
+                }
+                """);
     }
 
     // Opening the strip on another folder changes Where's folder, keeping its patterns, unless
@@ -360,7 +553,15 @@ public class ContentSearchTests
                 SearchWhere.WithFolder(@"C:\Code, *.cs, -bin\", @"D:\Other"),
                 SearchWhere.WithFolder("", @"D:\Other"),
                 SearchWhere.WithFolder("<open folders>, *.cs", @"D:\Other")
-            });
+            })
+            .Snapshot(
+                """
+                [
+                  D:\Other, *.cs, -bin\,
+                  D:\Other,
+                  <open folders>, *.cs
+                ]
+                """);
 
     [Test]
     public async Task IncludesAndExcludes()
@@ -382,7 +583,25 @@ public class ContentSearchTests
                 cs = Paths(cs, scratch.Root),
                 notMinified = Paths(notMinified, scratch.Root),
                 notObj = Paths(notObj, scratch.Root)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  cs: [
+                    src\App.cs,
+                    src\obj\Gen.cs
+                  ],
+                  notMinified: [
+                    src\App.js
+                  ],
+                  notObj: [
+                    node_modules\lib.js,
+                    src\App.cs,
+                    src\App.js,
+                    src\App.min.js
+                  ]
+                }
+                """);
     }
 
     // A pattern with a slash in it is matched against the path from the folder searched, either
@@ -467,7 +686,42 @@ public class ContentSearchTests
                 forward,
                 back = results.NextMatchRow(results.RowCount - 1, false),
                 afterRemovingTheFirst = Text(results, scratch.Root)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  rows: [
+                    Row { Kind = Heading, File = -1, Line = -1, Summary = -1 }  Searched 2 files for "needle",
+                    Row { Kind = Blank, File = -1, Line = -1, Summary = -1 }  ,
+                    Row { Kind = File, File = 0, Line = -1, Summary = -1 }  {root}\a.txt:,
+                    Row { Kind = Line, File = 0, Line = 0, Summary = -1 }      1  one,
+                    Row { Kind = Line, File = 0, Line = 1, Summary = -1 }      2: needle,
+                    Row { Kind = Line, File = 0, Line = 2, Summary = -1 }      3  three,
+                    Row { Kind = Gap, File = 0, Line = -1, Summary = -1 }     ..,
+                    Row { Kind = Line, File = 0, Line = 3, Summary = -1 }      6  six,
+                    Row { Kind = Line, File = 0, Line = 4, Summary = -1 }      7: needle,
+                    Row { Kind = Blank, File = 0, Line = -1, Summary = -1 }  ,
+                    Row { Kind = File, File = 1, Line = -1, Summary = -1 }  {root}\b.txt:,
+                    Row { Kind = Line, File = 1, Line = 0, Summary = -1 }      1: needle,
+                    Row { Kind = Blank, File = 1, Line = -1, Summary = -1 }  ,
+                    Row { Kind = Summary, File = -1, Line = -1, Summary = 0 }  3 matches across 2 files
+                  ],
+                  forward: [
+                    4,
+                    8,
+                    11
+                  ],
+                  back: 3,
+                  afterRemovingTheFirst:
+                Searched 2 files for "needle"
+
+                {root}\b.txt:
+                    1: needle
+
+                1 match across 1 file
+
+                }
+                """);
     }
 
     internal static CodeCommandsTests.Scratch TextScratch()

@@ -118,7 +118,40 @@ public class UndoHistoryTests
                     undo = history.UndoText,
                     redo = history.RedoText
                 }
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  labels: [
+                    Undo new folder,
+                    Undo delete,
+                    Undo copy,
+                    Undo move,
+                    Undo rename,
+                    Redo rename,
+                    Redo move,
+                    Redo copy,
+                    Redo delete,
+                    Redo new folder
+                  ],
+                  Calls: [
+                    recycle C:\Work\New folder,
+                    restore C:\$Recycle.Bin\$RC,
+                    recycle C:\Work\b - Copy.txt,
+                    move C:\Archive\a.txt to C:\Work\a.txt,
+                    rename C:\Work\new.txt to old.txt,
+                    rename C:\Work\old.txt to new.txt,
+                    move C:\Work\a.txt to C:\Archive\a.txt,
+                    restore C:\$Recycle.Bin\$R2,
+                    recycle C:\Work\c.txt,
+                    restore C:\$Recycle.Bin\$R1
+                  ],
+                  afterwards: {
+                    undo: Undo new folder,
+                    redo: Redo
+                  }
+                }
+                """);
     }
 
     // Something new clears what could be redone.
@@ -138,7 +171,15 @@ public class UndoHistoryTests
                 canRedoBefore = canRedo,
                 canRedoAfter = history.CanRedo,
                 undo = history.UndoText
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  canRedoBefore: true,
+                  canRedoAfter: false,
+                  undo: Undo new folder
+                }
+                """);
     }
 
     // A change made while an undo is going on, in another window say, clears redo as any does:
@@ -186,7 +227,15 @@ public class UndoHistoryTests
                 failure,
                 undo = history.UndoText,
                 canRedo = history.CanRedo
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  failure: 1 of 1 items are no longer in the Recycle Bin, so can't be restored.,
+                  undo: Undo rename,
+                  canRedo: false
+                }
+                """);
     }
 
     // A delete whose item was skipped at the shell's prompt, as something of the same name has
@@ -387,7 +436,45 @@ public class UndoHistoryTests
                 failures = new[] { undoMove, undoRename, redoRename, redoMove }.Where(_ => _ != null),
                 undone,
                 redone = fixture.Tree()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  failures: [],
+                  undone: [
+                    Projects/Archive/,
+                    Projects/Cache/,
+                    Projects/Docs/,
+                    Projects/Docs/guide.aleph (900 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/Source/,
+                    Projects/Source/Deep/,
+                    Projects/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Source/main.aleph (5,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ],
+                  redone: [
+                    Projects/Archive/,
+                    Projects/Archive/report2.beta (2,048 bytes),
+                    Projects/Cache/,
+                    Projects/Docs/,
+                    Projects/Docs/guide.aleph (900 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/Source/,
+                    Projects/Source/Deep/,
+                    Projects/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Source/main.aleph (5,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/renamed.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ]
+                }
+                """);
     }
 
     // On disk: a folder moved into one of the same name already there. Windows merges the two,
@@ -426,7 +513,73 @@ public class UndoHistoryTests
                 moved,
                 undone,
                 redone = fixture.Tree()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  failures: [],
+                  moved: [
+                    Projects/Archive/,
+                    Projects/Archive/Source/,
+                    Projects/Archive/Source/Deep/,
+                    Projects/Archive/Source/Deep/existing.aleph (12 bytes),
+                    Projects/Archive/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Archive/Source/Empty/,
+                    Projects/Archive/Source/existing.aleph (12 bytes),
+                    Projects/Archive/Source/main.aleph (5,000 bytes),
+                    Projects/Cache/,
+                    Projects/Docs/,
+                    Projects/Docs/guide.aleph (900 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ],
+                  undone: [
+                    Projects/Archive/,
+                    Projects/Archive/Source/,
+                    Projects/Archive/Source/Deep/,
+                    Projects/Archive/Source/Deep/existing.aleph (12 bytes),
+                    Projects/Archive/Source/Empty/,
+                    Projects/Archive/Source/existing.aleph (12 bytes),
+                    Projects/Cache/,
+                    Projects/Docs/,
+                    Projects/Docs/guide.aleph (900 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/Source/,
+                    Projects/Source/Deep/,
+                    Projects/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Source/Empty/,
+                    Projects/Source/main.aleph (5,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ],
+                  redone: [
+                    Projects/Archive/,
+                    Projects/Archive/Source/,
+                    Projects/Archive/Source/Deep/,
+                    Projects/Archive/Source/Deep/existing.aleph (12 bytes),
+                    Projects/Archive/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Archive/Source/Empty/,
+                    Projects/Archive/Source/existing.aleph (12 bytes),
+                    Projects/Archive/Source/main.aleph (5,000 bytes),
+                    Projects/Cache/,
+                    Projects/Docs/,
+                    Projects/Docs/guide.aleph (900 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ]
+                }
+                """);
     }
 
     // On disk: a new folder deleted since. Windows' copy engine refuses everything it is asked

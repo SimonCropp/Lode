@@ -44,7 +44,19 @@ public class TaskbarIdentityTests
             {
                 applied,
                 cleared = TaskbarIdentity.Read(form.Handle)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  applied: {
+                    Id: Lode,
+                    Command: "lode.exe",
+                    Name: Lode,
+                    Icon: imageres.dll,-3
+                  },
+                  cleared: {}
+                }
+                """);
     }
 
     [Test]

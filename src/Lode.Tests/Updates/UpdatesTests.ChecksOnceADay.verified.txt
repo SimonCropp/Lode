@@ -1,5 +1,0 @@
-﻿{
-  twoHoursOn: false,
-  aDayOn: true,
-  anHourAfterThat: false
-}

@@ -10,5 +10,15 @@ public class WindowContextTests
                 controlClick = WindowContext.TrayClick(MouseButtons.Left, Keys.Control).ToString(),
                 rightClick = WindowContext.TrayClick(MouseButtons.Right, Keys.None).ToString(),
                 shiftRightClick = WindowContext.TrayClick(MouseButtons.Right, Keys.Shift).ToString()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  leftClick: ShowWindows,
+                  shiftClick: NewWindow,
+                  controlClick: ShowWindows,
+                  rightClick: None,
+                  shiftRightClick: None
+                }
+                """);
 }

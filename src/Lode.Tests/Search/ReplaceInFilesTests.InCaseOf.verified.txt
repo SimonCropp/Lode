@@ -1,7 +1,0 @@
-﻿{
-  123: barBaz,
-  foo: barbaz,
-  Foo: BarBaz,
-  FOO: BARBAZ,
-  fOo: barBaz
-}

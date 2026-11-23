@@ -36,7 +36,33 @@ public class ShellWindowsTests
                 navigated,
                 closed = list.Describe(),
                 calls = list.Calls
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  registered: [
+                    window: Source,
+                    window: Docs
+                  ],
+                  navigated: [
+                    window: Source\Deep,
+                    window: Docs
+                  ],
+                  closed: [
+                    window: Source\Deep
+                  ],
+                  calls: [
+                    RegisterPending 1 Source, class 1, root empty,
+                    Register 1, class 1,
+                    OnNavigate 1 Source,
+                    RegisterPending 2 Docs, class 1, root empty,
+                    Register 2, class 1,
+                    OnNavigate 2 Docs,
+                    OnNavigate 1 Source\Deep,
+                    Revoke 2
+                  ]
+                }
+                """);
     }
 
     // Another launch's folders don't open in a window in the tray, so an app looking for one
@@ -54,7 +80,13 @@ public class ShellWindowsTests
         await Assert.That(list.Describe()).IsEmpty();
         form.Show();
 
-        await Verify(list.Describe());
+        await Verify(list.Describe())
+            .Snapshot(
+                """
+                [
+                  window: Source
+                ]
+                """);
     }
 
     [Test]
@@ -70,7 +102,15 @@ public class ShellWindowsTests
 
         source.MoveTab((TabPage)source.Views.Last().Parent!, target);
 
-        await Verify(list.Describe());
+        await Verify(list.Describe())
+            .Snapshot(
+                """
+                [
+                  source: Source,
+                  target: .,
+                  target: Docs
+                ]
+                """);
     }
 
     // An app asking for a file shown selected while Explorer opens folders gets Explorer.
@@ -127,7 +167,16 @@ public class ShellWindowsTests
             {
                 active = Path.GetFileName(form.ActiveView!.CurrentPath),
                 selected = form.ActiveView.SelectedEntries().Select(_ => _.Name).ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  active: Source,
+                  selected: [
+                    main.aleph
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -143,7 +192,14 @@ public class ShellWindowsTests
         Select(list, fixture.At("report2.beta"), selectAnother);
         await Pump.Until(() => view.SelectedEntries().Count == 2);
 
-        await Verify(view.SelectedEntries().Select(_ => _.Name).ToList());
+        await Verify(view.SelectedEntries().Select(_ => _.Name).ToList())
+            .Snapshot(
+                """
+                [
+                  notes.aleph,
+                  report2.beta
+                ]
+                """);
     }
 
     static void Select(FakeList list, string path, uint flags)

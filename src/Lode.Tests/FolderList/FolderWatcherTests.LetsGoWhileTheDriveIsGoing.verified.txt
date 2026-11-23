@@ -1,6 +1,0 @@
-﻿{
-  watchingAtFirst: true,
-  watchingWhileGoing: false,
-  watchingAfter: true,
-  reportedOnReturn: true
-}

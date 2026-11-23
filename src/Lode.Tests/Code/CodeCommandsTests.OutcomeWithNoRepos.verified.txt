@@ -1,5 +1,0 @@
-﻿{
-  Succeeded: true,
-  Summary: No git repositories,
-  Details: 
-}

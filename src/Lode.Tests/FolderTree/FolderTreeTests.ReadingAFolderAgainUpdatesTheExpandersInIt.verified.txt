@@ -1,7 +1,0 @@
-﻿- This PC
-  - FolderTreeTests.ReadingAFolderAgainUpdatesTheExpandersInIt
-    - Projects
-      + Archive
-        Build
-        Docs
-        Source

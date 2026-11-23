@@ -1,6 +1,0 @@
-﻿{
-  Length: 302,
-  start: …aaaaaaaaa,
-  match: needle,
-  Column: 501
-}

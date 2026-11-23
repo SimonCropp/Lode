@@ -1,4 +1,0 @@
-﻿{
-  saysNothing: true,
-  left: true
-}

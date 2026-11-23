@@ -35,7 +35,53 @@ public class RepositoryLinkTests
                         link.Branch,
                         link.Name
                     }
-                    : "(none)"));
+                    : "(none)"))
+                    .Snapshot(
+                        """
+                        {
+                          git-client://clone/?repo=https%3A%2F%2Fgithub.com%2FSimonCropp%2FLode: {
+                            scheme: git-client,
+                            Remote: https://github.com/SimonCropp/Lode,
+                            Name: SimonCropp/Lode
+                          },
+                          git-client://clone?repo=: (none),
+                          git-client://clone?repo=https%3A%2F%2Fexample.com%2Frepo: (none),
+                          git-client://clone?repo=https%3A%2F%2Fgithub.com%2FSimonCropp%2FLode: {
+                            scheme: git-client,
+                            Remote: https://github.com/SimonCropp/Lode,
+                            Name: SimonCropp/Lode
+                          },
+                          git-client://clone?repo=https%3A%2F%2Forganization%40dev.azure.com%2Forganization%2FMy%20Project%2F_git%2FMy%20Repo: {
+                            scheme: git-client,
+                            Remote: https://organization@dev.azure.com/organization/My Project/_git/My Repo,
+                            Name: My Project/My Repo
+                          },
+                          x-github-client://oauth?code=abc: (none),
+                          x-github-client://openRepo/https://github.com/SimonCropp/Lode: {
+                            scheme: x-github-client,
+                            Remote: https://github.com/SimonCropp/Lode,
+                            Name: SimonCropp/Lode
+                          },
+                          x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=--orphan: {
+                            scheme: x-github-client,
+                            Remote: https://github.com/SimonCropp/Lode,
+                            Name: SimonCropp/Lode
+                          },
+                          x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=feature&pr=12: {
+                            scheme: x-github-client,
+                            Remote: https://github.com/SimonCropp/Lode,
+                            Branch: feature,
+                            Name: SimonCropp/Lode
+                          },
+                          x-github-client://openRepo/https://github.com/SimonCropp/Lode?branch=main&filepath=src%2FLode%2FProgram.cs: {
+                            scheme: x-github-client,
+                            Remote: https://github.com/SimonCropp/Lode,
+                            File: src/Lode/Program.cs,
+                            Branch: main,
+                            Name: SimonCropp/Lode
+                          }
+                        }
+                        """);
 
     // Every url of a repository is the one page, whichever way the clone and the link name it.
     [Test]
@@ -65,7 +111,24 @@ public class RepositoryLinkTests
                     "x-github-client://openRepo/https://github.com/a/b"),
                 unquoted = RepositoryLink.Split(@"C:\Apps\VSWebLauncher.exe /openuri %1", "git-client://clone?repo=x"),
                 noArgument = RepositoryLink.Split(@"C:\Apps\Thing.exe", "git-client://clone?repo=x")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  quoted: {
+                    Item1: C:\Apps\GitHubDesktop.exe,
+                    Item2: --protocol-launcher "x-github-client://openRepo/https://github.com/a/b"
+                  },
+                  unquoted: {
+                    Item1: C:\Apps\VSWebLauncher.exe,
+                    Item2: /openuri git-client://clone?repo=x
+                  },
+                  noArgument: {
+                    Item1: C:\Apps\Thing.exe,
+                    Item2: "git-client://clone?repo=x"
+                  }
+                }
+                """);
 
     // The clone in the code folder is the one opened, a level down too, and the file a link names
     // is selected in it, unless it is outside the repository.

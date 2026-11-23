@@ -27,7 +27,27 @@ public class WindowsTests
             {
                 source = Describe(source),
                 target = Describe(target)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  source: {
+                    title: Source,
+                    tabs: [
+                      Source
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.MoveTabToAnotherWindow\Projects\Source
+                  },
+                  target: {
+                    title: Deep,
+                    tabs: [
+                      Projects,
+                      Deep
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.MoveTabToAnotherWindow\Projects\Source\Deep
+                  }
+                }
+                """);
     }
 
     // Dropped between two of another window's tabs, a tab goes in there, and is the one shown.
@@ -118,7 +138,21 @@ public class WindowsTests
             {
                 sourceClosed = source.IsDisposed,
                 target = Describe(target)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  sourceClosed: true,
+                  target: {
+                    title: Docs,
+                    tabs: [
+                      Projects,
+                      Docs
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.MovingTheLastTabClosesItsWindow\Projects\Docs
+                  }
+                }
+                """);
     }
 
     // While Lode runs, the tabs saved are those of the window used last, as they are when it
@@ -165,7 +199,27 @@ public class WindowsTests
                     source = Describe(source),
                     window = Describe(window),
                     announced = opened.SequenceEqual([window])
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      source: {
+                        title: Source,
+                        tabs: [
+                          Source
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.MoveTabToNewWindow\Projects\Source
+                      },
+                      window: {
+                        title: Docs,
+                        tabs: [
+                          Docs
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.MoveTabToNewWindow\Projects\Docs
+                      },
+                      announced: true
+                    }
+                    """);
         }
         finally
         {
@@ -266,7 +320,28 @@ public class WindowsTests
             {
                 afterRight,
                 afterLeft = Describe(form)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  afterRight: {
+                    title: Source,
+                    tabs: [
+                      Projects,
+                      Docs,
+                      Source
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.CloseTabsToTheLeftAndRight\Projects\Source
+                  },
+                  afterLeft: {
+                    title: Source,
+                    tabs: [
+                      Source
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.CloseTabsToTheLeftAndRight\Projects\Source
+                  }
+                }
+                """);
     }
 
     // Two folders with the same name are told apart by the folder each is in when they are tabs
@@ -306,7 +381,60 @@ public class WindowsTests
                 movedBack,
                 navigatedAway,
                 oneTab = Describe(first)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  twoTabs: {
+                    title: Docs\Deep,
+                    tabs: [
+                      Source\Deep,
+                      Docs\Deep
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
+                  },
+                  twoWindows: {
+                    first: {
+                      title: Deep,
+                      tabs: [
+                        Deep
+                      ],
+                      active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Source\Deep
+                    },
+                    second: {
+                      title: Deep,
+                      tabs: [
+                        Projects,
+                        Deep
+                      ],
+                      active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
+                    }
+                  },
+                  movedBack: {
+                    title: Docs\Deep,
+                    tabs: [
+                      Source\Deep,
+                      Docs\Deep
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs\Deep
+                  },
+                  navigatedAway: {
+                    title: Docs,
+                    tabs: [
+                      Deep,
+                      Docs
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Docs
+                  },
+                  oneTab: {
+                    title: Deep,
+                    tabs: [
+                      Deep
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.FoldersWithTheSameNameAreToldApart\Projects\Source\Deep
+                  }
+                }
+                """);
     }
 
     // Most recently closed first, each at the folder it was showing.
@@ -331,7 +459,37 @@ public class WindowsTests
                 reopenedOnce,
                 reopenedTwice = Describe(form),
                 nothingLeft = !form.CanReopenClosedTab
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  afterClose: {
+                    title: Projects,
+                    tabs: [
+                      Projects
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ReopenClosedTabs\Projects
+                  },
+                  reopenedOnce: {
+                    title: Source,
+                    tabs: [
+                      Projects,
+                      Source
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ReopenClosedTabs\Projects\Source
+                  },
+                  reopenedTwice: {
+                    title: Docs,
+                    tabs: [
+                      Projects,
+                      Source,
+                      Docs
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ReopenClosedTabs\Projects\Docs
+                  },
+                  nothingLeft: true
+                }
+                """);
     }
 
     // One whose folder has gone since, with the folder it was in, opens at the nearest folder
@@ -406,7 +564,47 @@ public class WindowsTests
                     on,
                     reopened,
                     archiveToo = Describe(form)
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      off: {
+                        title: Source,
+                        tabs: [
+                          Projects,
+                          Docs,
+                          Source,
+                          Archive
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.TabsNotLookedAtCloseAfterTheHoursGiven\Projects\Source
+                      },
+                      on: {
+                        title: Source,
+                        tabs: [
+                          Source,
+                          Archive
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.TabsNotLookedAtCloseAfterTheHoursGiven\Projects\Source
+                      },
+                      reopened: {
+                        title: Docs,
+                        tabs: [
+                          Source,
+                          Archive,
+                          Docs
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.TabsNotLookedAtCloseAfterTheHoursGiven\Projects\Docs
+                      },
+                      archiveToo: {
+                        title: Docs,
+                        tabs: [
+                          Source,
+                          Docs
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.TabsNotLookedAtCloseAfterTheHoursGiven\Projects\Docs
+                      }
+                    }
+                    """);
         }
         finally
         {
@@ -448,7 +646,24 @@ public class WindowsTests
                     saved = settings.Tabs
                         .Select(Path.GetFileName)
                         .Zip(settings.TabsLastShown, (tab, shown) => $"{tab} {shown:HH:mm}")
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      restored: {
+                        title: Source,
+                        tabs: [
+                          Docs,
+                          Source
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.RestoredTabsAreAsUnusedAsTheyWere\Projects\Source
+                      },
+                      saved: [
+                        Docs 05:00,
+                        Source 10:00
+                      ]
+                    }
+                    """);
         }
         finally
         {
@@ -482,7 +697,30 @@ public class WindowsTests
                 front = front == recent ? "recent" : "older",
                 recent = Describe(recent),
                 older = Describe(older)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  front: recent,
+                  recent: {
+                    title: Deep,
+                    tabs: [
+                      Archive,
+                      Deep
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.LaunchedFoldersOpenAsTabs\Projects\Source\Deep
+                  },
+                  older: {
+                    title: Docs,
+                    tabs: [
+                      Projects,
+                      Docs,
+                      Source
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.LaunchedFoldersOpenAsTabs\Projects\Docs
+                  }
+                }
+                """);
     }
 
     // A file opens in the tab already showing its folder, with the file selected, without a
@@ -505,7 +743,32 @@ public class WindowsTests
                 older = Describe(older),
                 selected = older.ActiveView!.SelectedEntries().Select(_ => _.Name).ToList(),
                 canGoBack = older.ActiveView.CanGoBack
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  front: older,
+                  recent: {
+                    title: Archive,
+                    tabs: [
+                      Archive
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ALaunchedFileIsSelectedInTheTabShowingItsFolder\Projects\Archive
+                  },
+                  older: {
+                    title: Source,
+                    tabs: [
+                      Source,
+                      Projects
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ALaunchedFileIsSelectedInTheTabShowingItsFolder\Projects\Source
+                  },
+                  selected: [
+                    main.aleph
+                  ],
+                  canGoBack: false
+                }
+                """);
     }
 
     // Only the tab showing reads its folder. The rest, the tabs a window opens with and those
@@ -608,7 +871,62 @@ public class WindowsTests
             {
                 nothingSelected,
                 fileSelected = form.DescribeActions().ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  nothingSelected: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Cut (disabled),
+                    Copy (disabled),
+                    Paste,
+                    Rename (disabled),
+                    Delete (disabled),
+                    ----,
+                    Edit (disabled),
+                    Open with (disabled),
+                    Terminal,
+                    Terminal (admin),
+                    AI,
+                    ----,
+                    Compress to ZIP file (disabled),
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git (disabled),
+                    ----,
+                    See more
+                  ],
+                  fileSelected: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Cut,
+                    Copy,
+                    Paste,
+                    Rename,
+                    Delete,
+                    ----,
+                    Edit (disabled),
+                    Open with,
+                    Terminal,
+                    Terminal (admin),
+                    AI,
+                    ----,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git (disabled),
+                    ----,
+                    See more
+                  ]
+                }
+                """);
     }
 
     // On a display above 100% the form scales its controls after building them. The boxes in
@@ -629,7 +947,22 @@ public class WindowsTests
             {
                 filter = Placement((TextBox)form.Controls.Find("filter", true)[0]),
                 address = Placement(address)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  filter: {
+                    insideFrame: true,
+                    gapAbove: 3,
+                    gapBelow: 4
+                  },
+                  address: {
+                    insideFrame: true,
+                    gapAbove: 3,
+                    gapBelow: 4
+                  }
+                }
+                """);
     }
 
     static object Placement(TextBox box)
@@ -669,7 +1002,42 @@ public class WindowsTests
             {
                 buttons,
                 tabs = form.Views.Select(_ => ((TabPage)_.Parent!).Text).ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  buttons: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Copy,
+                    Paste,
+                    Rename,
+                    Delete,
+                    ----,
+                    Open in new tab,
+                    Edit (disabled),
+                    Terminal,
+                    Terminal (admin),
+                    AI,
+                    ----,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git (disabled),
+                    ----,
+                    Show more options,
+                    ----,
+                    See more
+                  ],
+                  tabs: [
+                    Projects,
+                    Docs
+                  ]
+                }
+                """);
     }
 
     // Buttons nested under a parent share its drop-down, which stands where the first of them
@@ -695,7 +1063,40 @@ public class WindowsTests
             {
                 buttons = form.DescribeActions().ToList(),
                 clipboard = form.ParentEntries("Clipboard").Select(DescribeCommand).ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  buttons: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Clipboard,
+                    Paste,
+                    Rename,
+                    Delete,
+                    ----,
+                    Edit (disabled),
+                    Open with (disabled),
+                    Terminal,
+                    Terminal (admin),
+                    AI,
+                    ----,
+                    Compress to ZIP file,
+                    Properties,
+                    ----,
+                    Git (disabled),
+                    ----,
+                    See more
+                  ],
+                  clipboard: [
+                    Cut,
+                    Copy,
+                    Copy as path
+                  ]
+                }
+                """);
     }
 
     // The git actions, nested on the bar, share one Git drop-down, which calls them what the
@@ -723,7 +1124,46 @@ public class WindowsTests
             {
                 buttons = form.DescribeActions().ToList(),
                 git = form.ParentEntries("Git").Select(DescribeCommand).ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  buttons: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Cut,
+                    Copy,
+                    Paste,
+                    Rename,
+                    Delete,
+                    ----,
+                    Edit (disabled),
+                    Open with (disabled),
+                    Terminal,
+                    Terminal (admin),
+                    AI,
+                    ----,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git,
+                    ----,
+                    See more
+                  ],
+                  git: [
+                    Fetch,
+                    Pull,
+                    Sync fork,
+                    Switch to default branch,
+                    Push…,
+                    Discard…,
+                    Purge…
+                  ]
+                }
+                """);
     }
 
     // See more, at the end of the bar, lists the actions that are not buttons, greyed where
@@ -736,7 +1176,25 @@ public class WindowsTests
         form.ActiveView!.Reveal(fixture.At("notes.aleph"));
         await Pump.Loaded(form.ActiveView);
 
-        await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand));
+        await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand))
+            .Snapshot(
+                """
+                [
+                  Open,
+                  Open in new tab (disabled),
+                  Run (disabled),
+                  ----,
+                  Pin to Quick access (disabled),
+                  Create shortcut,
+                  Extract All (disabled),
+                  Extract here (disabled),
+                  ----,
+                  Update NuGets (disabled),
+                  Update NuGets and build (disabled),
+                  ----,
+                  Show more options
+                ]
+                """);
     }
 
     // In a window too narrow for every button, those that don't fit go under See more, from the
@@ -764,7 +1222,57 @@ public class WindowsTests
             {
                 buttons,
                 seeMore
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  buttons: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Cut,
+                    Copy,
+                    Paste,
+                    Rename,
+                    Delete,
+                    ----,
+                    Edit (disabled),
+                    ----,
+                    See more
+                  ],
+                  seeMore: [
+                    Open,
+                    Open in new tab (disabled),
+                    Run (disabled),
+                    Open with,
+                    Terminal,
+                    Terminal (admin),
+                    Open in Claude,
+                    Coding agent,
+                    ----,
+                    Pin to Quick access (disabled),
+                    Create shortcut,
+                    Compress to ZIP file,
+                    Extract All (disabled),
+                    Extract here (disabled),
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git fetch (disabled),
+                    Git pull (disabled),
+                    Git sync fork (disabled),
+                    Git switch to default branch (disabled),
+                    Git push (disabled),
+                    Git discard (disabled),
+                    Git purge (disabled),
+                    Update NuGets (disabled),
+                    Update NuGets and build (disabled),
+                    ----,
+                    Show more options
+                  ]
+                }
+                """);
     }
 
     // Without the Claude desktop app or a coding agent, neither See more nor the palette offers
@@ -842,7 +1350,24 @@ public class WindowsTests
                 {
                     folder,
                     file
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      folder: [
+                        terminal Projects/Docs,
+                        admin terminal Projects/Docs,
+                        claude://code/new?folder={Root}%5CDocs,
+                        terminal Projects/Docs C:\Tools\agent.exe
+                      ],
+                      file: [
+                        terminal Projects,
+                        admin terminal Projects,
+                        claude://code/new?folder={Root},
+                        terminal Projects C:\Tools\agent.exe
+                      ]
+                    }
+                    """);
         }
         finally
         {
@@ -860,7 +1385,27 @@ public class WindowsTests
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, fixture.Root);
 
-        await Verify(form.WindowCommands().Select(DescribeCommand));
+        await Verify(form.WindowCommands().Select(DescribeCommand))
+            .Snapshot(
+                """
+                [
+                  New tab,
+                  New window,
+                  Reopen closed tab (disabled),
+                  Command palette,
+                  Find in files,
+                  Clone a repository…,
+                  ----,
+                  Show hidden items,
+                  Show system files,
+                  Unpin this folder from Quick access,
+                  ----,
+                  Options…,
+                  About Lode,
+                  ----,
+                  Exit Lode
+                ]
+                """);
     }
 
     static string DescribeCommand(QuickMenu.Command? command)
@@ -892,7 +1437,36 @@ public class WindowsTests
             {
                 pinned = DescribeMenu(form.TabMenu(pages[0])),
                 notPinned = DescribeMenu(form.TabMenu(pages[1]))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  pinned: [
+                    Duplicate tab,
+                    Unpin from Quick access,
+                    ----,
+                    Close tab,
+                    Close other tabs,
+                    Close tabs to the left (disabled),
+                    Close tabs to the right,
+                    Close all tabs,
+                    ----,
+                    Reopen closed tab (disabled)
+                  ],
+                  notPinned: [
+                    Duplicate tab,
+                    Pin to Quick access,
+                    ----,
+                    Close tab,
+                    Close other tabs,
+                    Close tabs to the left,
+                    Close tabs to the right (disabled),
+                    Close all tabs,
+                    ----,
+                    Reopen closed tab (disabled)
+                  ]
+                }
+                """);
     }
 
     static List<string> DescribeMenu(ToolStripDropDown menu)
@@ -929,7 +1503,41 @@ public class WindowsTests
         var commands = form.PaletteCommands()
             .Where(_ => !_.Name.StartsWith("New: ") || _.Name == "New: Folder")
             .Select(_ => _.Shortcut.Length == 0 ? _.Name : $"{_.Name} ({_.Shortcut})");
-        await Verify(commands);
+        await Verify(commands)
+            .Snapshot(
+                """
+                [
+                  Up (Alt+Up),
+                  Refresh (F5),
+                  Go to address (Ctrl+L),
+                  Search this folder (Ctrl+F),
+                  New tab (Ctrl+T),
+                  New window (Ctrl+N),
+                  Find in files (Ctrl+Shift+F),
+                  Clone a repository… (Ctrl+Shift+O),
+                  Duplicate tab,
+                  Close tab (Ctrl+W),
+                  Close other tabs,
+                  Close tabs to the left,
+                  Close all tabs,
+                  Next tab (Ctrl+Tab),
+                  Previous tab (Ctrl+Shift+Tab),
+                  Hide hidden items (Ctrl+H),
+                  Show system files,
+                  Terminal,
+                  Terminal (admin),
+                  Open in Claude,
+                  Coding agent: Claude Code,
+                  Coding agent: Codex CLI,
+                  Pin this folder to Quick access,
+                  New: Folder (Ctrl+Shift+N),
+                  Copy as path,
+                  Properties (Alt+Enter),
+                  Options…,
+                  About Lode,
+                  Exit Lode
+                ]
+                """);
     }
 
     // The tabs from last time, less one whose folder has gone since. The tab that was active
@@ -1140,7 +1748,26 @@ public class WindowsTests
             {
                 before,
                 after = Describe(form)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    title: Docs,
+                    tabs: [
+                      Docs
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ATabWhoseFolderIsDeletedGoesUp\Projects\Docs
+                  },
+                  after: {
+                    title: Projects,
+                    tabs: [
+                      Projects
+                    ],
+                    active: {TempPath}LodeTests\WindowsTests.ATabWhoseFolderIsDeletedGoesUp\Projects
+                  }
+                }
+                """);
     }
 
     // As in Explorer: the folder a tab shows renamed, the tab follows it, and the tab and the
@@ -1155,7 +1782,17 @@ public class WindowsTests
         await Pump.Until(() => form.ActiveView!.CurrentPath == fixture.At("Documents"));
         await Pump.Loaded(form.ActiveView!);
 
-        await Verify(Describe(form));
+        await Verify(Describe(form))
+            .Snapshot(
+                """
+                {
+                  title: Documents,
+                  tabs: [
+                    Documents
+                  ],
+                  active: {TempPath}LodeTests\WindowsTests.ATabWhoseFolderIsRenamedFollowsIt\Projects\Documents
+                }
+                """);
     }
 
     // The buttons that show only an icon, a glyph a screen reader can't say, are named, by what

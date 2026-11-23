@@ -1,6 +1,0 @@
-﻿{
-  before: {
-    shown: Same as Windows
-  },
-  after: Dark
-}

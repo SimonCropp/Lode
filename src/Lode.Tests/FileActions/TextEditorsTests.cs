@@ -7,7 +7,13 @@ public class TextEditorsTests
 
     [Test]
     public Task NothingInstalledLeavesNotepad() =>
-        Verify(Find([], []));
+        Verify(Find([], []))
+            .Snapshot(
+                """
+                [
+                  Notepad
+                ]
+                """);
 
     [Test]
     public Task FindsEditorsFromTheirUninstallKeys() =>
@@ -34,7 +40,15 @@ public class TextEditorsTests
                 [
                     @"C:\Users\me\AppData\Local\Programs\Microsoft VS Code\Code.exe",
                     @"C:\Program Files\Notepad++\notepad++.exe"
-                ]));
+                ]))
+                .Snapshot(
+                    """
+                    [
+                      Visual Studio Code: C:\Users\me\AppData\Local\Programs\Microsoft VS Code\Code.exe,
+                      Notepad++: C:\Program Files\Notepad++\notepad++.exe,
+                      Notepad
+                    ]
+                    """);
 
     // Another product reusing a key, or a key left behind after uninstalling, is not the editor.
     [Test]
@@ -57,7 +71,13 @@ public class TextEditorsTests
                             ["InstallLocation"] = @"C:\Program Files\Sublime Text"
                         })
                 ],
-                [@"C:\Code\Code.exe"]));
+                [@"C:\Code\Code.exe"]))
+                .Snapshot(
+                    """
+                    [
+                      Notepad
+                    ]
+                    """);
 
     [Test]
     public Task WhichFilesAreText()
@@ -77,7 +97,19 @@ public class TextEditorsTests
         return Verify(
             paths.ToDictionary(
                 _ => _,
-                _ => TextEditors.IsText(_, extension => extension == ".custom" ? "text" : null)));
+                _ => TextEditors.IsText(_, extension => extension == ".custom" ? "text" : null)))
+                .Snapshot(
+                    """
+                    {
+                      C:\Makefile: false,
+                      C:\notes.txt: true,
+                      C:\photo.jpg: false,
+                      C:\Program.CS: true,
+                      C:\readme.custom: true,
+                      C:\settings.json: true,
+                      C:\setup.exe: false
+                    }
+                    """);
     }
 
     static List<string> Find(
@@ -109,7 +141,20 @@ public class TextEditorsTests
                     @"C:\Windows\notepad.exe",
                     @"C:\Tools\Other.exe"
                 }
-                .ToDictionary(_ => Path.GetFileName(_), _ => string.Join(" ", TextEditors.AtLine(_, @"C:\Code\App.cs", 12, 5))));
+                .ToDictionary(_ => Path.GetFileName(_), _ => string.Join(" ", TextEditors.AtLine(_, @"C:\Code\App.cs", 12, 5))))
+                .Snapshot(
+                    """
+                    {
+                      Code - Insiders.exe: -g C:\Code\App.cs:12:5,
+                      Code.exe: -g C:\Code\App.cs:12:5,
+                      Cursor.exe: -g C:\Code\App.cs:12:5,
+                      notepad++.exe: -n12 -c5 C:\Code\App.cs,
+                      notepad.exe: C:\Code\App.cs,
+                      Other.exe: C:\Code\App.cs,
+                      subl.exe: C:\Code\App.cs:12:5,
+                      Zed.exe: C:\Code\App.cs:12:5
+                    }
+                    """);
 
     // VS Code and those made from it show two files' changes side by side; the rest can't.
     [Test]

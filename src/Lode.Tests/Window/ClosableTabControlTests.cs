@@ -225,7 +225,16 @@ public class ClosableTabControlTests
             {
                 closed,
                 selected = tabs.SelectedTab!.Text
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  closed: [
+                    Second
+                  ],
+                  selected: First
+                }
+                """);
     }
 
     // Closing one tab after another by clicking where the cross is, each tab coming under the
@@ -257,7 +266,13 @@ public class ClosableTabControlTests
             {
                 closed,
                 selected = tabs.SelectedTab!.Text
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  selected: Second
+                }
+                """);
     }
 
     static ClosableTabControl Create(out List<string> closed)

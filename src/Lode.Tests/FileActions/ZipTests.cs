@@ -34,7 +34,20 @@ public class ZipTests
                 outcome.Succeeded,
                 outcome.Summary,
                 entries = Entries(zip)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  Summary: Compressed 3 files into Source.zip,
+                  entries: [
+                    Source/Deep/leaf.aleph (40 bytes),
+                    Source/Empty/ (0 bytes),
+                    Source/main.aleph (5,000 bytes),
+                    notes.aleph (12 bytes)
+                  ]
+                }
+                """);
     }
 
     // Named for the first item, as Explorer names it: a file without its extension, a folder by
@@ -210,7 +223,26 @@ public class ZipTests
                 outcome.Summary,
                 topLevel = topLevel.Select(fixture.Relative),
                 tree = fixture.Tree().Where(_ => _.StartsWith("Projects/Bundle", StringComparison.Ordinal))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  Summary: Extracted Bundle.zip,
+                  topLevel: [
+                    Projects/Bundle (2)
+                  ],
+                  tree: [
+                    Projects/Bundle (2)/,
+                    Projects/Bundle (2)/Empty/,
+                    Projects/Bundle (2)/Inner/,
+                    Projects/Bundle (2)/Inner/deep.txt (4 bytes),
+                    Projects/Bundle (2)/top.txt (3 bytes),
+                    Projects/Bundle.zip (327 bytes),
+                    Projects/Bundle/
+                  ]
+                }
+                """);
     }
 
     // Extracted here, into a folder already holding something of the same name, nothing is
@@ -348,7 +380,28 @@ public class ZipTests
                     _ => _.Value.Values
                         .Select(item => $"{item.Name}{(item.IsFolder ? "/" : $" ({item.Size} bytes)")}")
                         .Order(StringComparer.Ordinal)
-                        .ToList()));
+                        .ToList()))
+                        .Snapshot(
+                            """
+                            {
+                              : [
+                                Both/,
+                                Empty/,
+                                Inner/,
+                                top.txt (3 bytes)
+                              ],
+                              Both: [
+                                in.txt (2 bytes)
+                              ],
+                              Inner: [
+                                Deeper/,
+                                deep.txt (4 bytes)
+                              ],
+                              Inner\Deeper: [
+                                leaf.txt (4 bytes)
+                              ]
+                            }
+                            """);
     }
 
     // Opened, copied or dragged, an item in a zip is extracted to the temp folder, a folder with

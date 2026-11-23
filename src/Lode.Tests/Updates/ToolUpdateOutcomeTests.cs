@@ -24,7 +24,32 @@ public class ToolUpdateOutcomeTests
                 windowsLineEndings = Describe(ToolUpdateOutcome.Parse("failed\r\nTool 'lode' failed to update.\r\nIt did not work.\r\n")),
                 noStatusLine = Describe(ToolUpdateOutcome.Parse("Tool 'lode' failed to update due to the following:\nIt did not work.\n")),
                 saidNothing = Describe(ToolUpdateOutcome.Parse("failed\n\n"))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  succeeded: {
+                    Succeeded: true,
+                    Reason: Tool 'lode' was successfully updated from version '0.1.0' to version '0.1.1'.
+                  },
+                  failed: {
+                    Succeeded: false,
+                    Reason: Failed to uninstall tool package 'lode': Access to the path 'C:\Users\me\.dotnet\tools\.store\lode\0.1.0' is denied.
+                  },
+                  windowsLineEndings: {
+                    Succeeded: false,
+                    Reason: It did not work.
+                  },
+                  noStatusLine: {
+                    Succeeded: false,
+                    Reason: It did not work.
+                  },
+                  saidNothing: {
+                    Succeeded: false,
+                    Reason: dotnet tool update failed without saying why.
+                  }
+                }
+                """);
 
     [Test]
     public async Task TakenOnceThenRemoved()
@@ -43,7 +68,18 @@ public class ToolUpdateOutcomeTests
                     taken = Describe(taken),
                     removed = !File.Exists(path),
                     noneAgain = ToolUpdateOutcome.Take(path) == null
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      taken: {
+                        Succeeded: false,
+                        Reason: Failed to uninstall tool package 'lode': Access to the path 'C:\Users\me\.dotnet\tools\.store\lode\0.1.0' is denied.
+                      },
+                      removed: true,
+                      noneAgain: true
+                    }
+                    """);
         }
         finally
         {

@@ -14,7 +14,19 @@ public class OpenWithTests
                 ["program"] = Extension(@"C:\setup.exe"),
                 ["script"] = Extension(@"C:\build.cmd"),
                 ["shortcut"] = Extension(@"C:\Notepad.lnk")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  different types: no Open with,
+                  no extension: "",
+                  one file: ".png",
+                  program: no Open with,
+                  same type, any case: ".png",
+                  script: no Open with,
+                  shortcut: no Open with
+                }
+                """);
 
     // Quoted, so no extension shows as "" rather than nothing.
     static string Extension(params string[] paths)

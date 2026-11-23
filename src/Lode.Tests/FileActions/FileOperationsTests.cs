@@ -58,7 +58,32 @@ public class FileOperationsTests
 
         await FileOperations.Transfer(IntPtr.Zero, sources, fixture.At("Archive"), move: false);
 
-        await Verify(fixture.Tree());
+        await Verify(fixture.Tree())
+            .Snapshot(
+                """
+                [
+                  Projects/Archive/,
+                  Projects/Archive/Source/,
+                  Projects/Archive/Source/Deep/,
+                  Projects/Archive/Source/Deep/leaf.aleph (40 bytes),
+                  Projects/Archive/Source/main.aleph (5,000 bytes),
+                  Projects/Archive/notes.aleph (12 bytes),
+                  Projects/Archive/report2.beta (2,048 bytes),
+                  Projects/Cache/,
+                  Projects/Docs/,
+                  Projects/Docs/guide.aleph (900 bytes),
+                  Projects/Report1.beta (1,500,000 bytes),
+                  Projects/Source/,
+                  Projects/Source/Deep/,
+                  Projects/Source/Deep/leaf.aleph (40 bytes),
+                  Projects/Source/main.aleph (5,000 bytes),
+                  Projects/hidden.aleph (64 bytes),
+                  Projects/notes.aleph (12 bytes),
+                  Projects/report10.beta (300,000 bytes),
+                  Projects/report2.beta (2,048 bytes),
+                  Projects/summary.gamma (0 bytes)
+                ]
+                """);
     }
 
     // Windows reports a folder copied and then each thing in it. What was done, for undoing it,
@@ -106,7 +131,21 @@ public class FileOperationsTests
                 outcome.Succeeded,
                 changes = outcome.Changes.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}"),
                 merged = outcome.Merged.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  changes: [
+                    Projects/Source/main.aleph -> Projects/Archive/Source/main.aleph,
+                    Projects/Source/Deep/leaf.aleph -> Projects/Archive/Source/Deep/leaf.aleph
+                  ],
+                  merged: [
+                    Projects/Source -> Projects/Archive/Source,
+                    Projects/Source/Deep -> Projects/Archive/Source/Deep
+                  ]
+                }
+                """);
     }
 
     // A folder renamed to the name of one beside it merges into it, which Windows does as a
@@ -127,7 +166,36 @@ public class FileOperationsTests
                 changes = outcome.Changes.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}"),
                 merged = outcome.Merged.Select(_ => $"{fixture.Relative(_.Source)} -> {fixture.Relative(_.Result!)}"),
                 tree = fixture.Tree()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  changes: [
+                    Projects/Docs/guide.aleph -> Projects/Archive/guide.aleph
+                  ],
+                  merged: [
+                    Projects/Docs -> Projects/Archive,
+                    Projects/Docs/Deep -> Projects/Archive/Deep
+                  ],
+                  tree: [
+                    Projects/Archive/,
+                    Projects/Archive/Deep/,
+                    Projects/Archive/guide.aleph (900 bytes),
+                    Projects/Cache/,
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/Source/,
+                    Projects/Source/Deep/,
+                    Projects/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Source/main.aleph (5,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ]
+                }
+                """);
     }
 
     // Asked for something that is not there, Windows does none of it. One gone since it was
@@ -184,7 +252,33 @@ public class FileOperationsTests
                 drive = FileOperations.MissingMessage(ShellFileOperation.Kind.Copy, [@"Z:\"]),
                 two = FileOperations.MissingMessage(ShellFileOperation.Kind.Delete, [@"C:\Work\a.txt", @"C:\Work\Folder"]),
                 many = FileOperations.MissingMessage(ShellFileOperation.Kind.Copy, Enumerable.Range(1, 12).Select(_ => $@"C:\Work\{_}.txt").ToList())
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  one: Lode can't find 'a.txt', so it wasn't moved.,
+                  drive: Lode can't find 'Z:\', so it wasn't copied.,
+                  two:
+                Lode can't find these 2 items, so they weren't deleted:
+
+                  a.txt
+                  Folder,
+                  many:
+                Lode can't find these 12 items, so they weren't copied:
+
+                  1.txt
+                  2.txt
+                  3.txt
+                  4.txt
+                  5.txt
+                  6.txt
+                  7.txt
+                  8.txt
+                  9.txt
+                  10.txt
+                  and 2 more
+                }
+                """);
 
     // A file picked beside the folder it is in, as from a search, is copied twice: with the
     // folder, and by itself, which is a change of its own.
@@ -212,7 +306,27 @@ public class FileOperationsTests
 
         await FileOperations.Transfer(IntPtr.Zero, [fixture.At("notes.aleph")], fixture.Root, move: false);
 
-        await Verify(fixture.Tree());
+        await Verify(fixture.Tree())
+            .Snapshot(
+                """
+                [
+                  Projects/Archive/,
+                  Projects/Cache/,
+                  Projects/Docs/,
+                  Projects/Docs/guide.aleph (900 bytes),
+                  Projects/Report1.beta (1,500,000 bytes),
+                  Projects/Source/,
+                  Projects/Source/Deep/,
+                  Projects/Source/Deep/leaf.aleph (40 bytes),
+                  Projects/Source/main.aleph (5,000 bytes),
+                  Projects/hidden.aleph (64 bytes),
+                  Projects/notes - Copy.aleph (12 bytes),
+                  Projects/notes.aleph (12 bytes),
+                  Projects/report10.beta (300,000 bytes),
+                  Projects/report2.beta (2,048 bytes),
+                  Projects/summary.gamma (0 bytes)
+                ]
+                """);
     }
 
     // Pasted with a copy of one already in the folder, items from elsewhere, a search say, keep
@@ -247,7 +361,26 @@ public class FileOperationsTests
 
         await FileOperations.Transfer(IntPtr.Zero, sources, fixture.At("Archive"), move: true);
 
-        await Verify(fixture.Tree());
+        await Verify(fixture.Tree())
+            .Snapshot(
+                """
+                [
+                  Projects/Archive/,
+                  Projects/Archive/Docs/,
+                  Projects/Archive/Docs/guide.aleph (900 bytes),
+                  Projects/Archive/notes.aleph (12 bytes),
+                  Projects/Cache/,
+                  Projects/Report1.beta (1,500,000 bytes),
+                  Projects/Source/,
+                  Projects/Source/Deep/,
+                  Projects/Source/Deep/leaf.aleph (40 bytes),
+                  Projects/Source/main.aleph (5,000 bytes),
+                  Projects/hidden.aleph (64 bytes),
+                  Projects/report10.beta (300,000 bytes),
+                  Projects/report2.beta (2,048 bytes),
+                  Projects/summary.gamma (0 bytes)
+                ]
+                """);
     }
 
     // Windows won't move or rename a folder while anything beneath it is watched, as a tab
@@ -277,7 +410,36 @@ public class FileOperationsTests
                     inDrafts = inDrafts.IsWatching
                 },
                 tree = fixture.Tree()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  moved: true,
+                  renamed: true,
+                  stillWatching: {
+                    inSource: false,
+                    inDocs: false,
+                    inDrafts: false
+                  },
+                  tree: [
+                    Projects/Archive/,
+                    Projects/Archive/Source/,
+                    Projects/Archive/Source/Deep/,
+                    Projects/Archive/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Archive/Source/main.aleph (5,000 bytes),
+                    Projects/Cache/,
+                    Projects/Documents/,
+                    Projects/Documents/Drafts/,
+                    Projects/Documents/guide.aleph (900 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -287,7 +449,26 @@ public class FileOperationsTests
 
         await FileOperations.Transfer(IntPtr.Zero, [fixture.At("notes.aleph")], fixture.Root, move: true);
 
-        await Verify(fixture.Tree());
+        await Verify(fixture.Tree())
+            .Snapshot(
+                """
+                [
+                  Projects/Archive/,
+                  Projects/Cache/,
+                  Projects/Docs/,
+                  Projects/Docs/guide.aleph (900 bytes),
+                  Projects/Report1.beta (1,500,000 bytes),
+                  Projects/Source/,
+                  Projects/Source/Deep/,
+                  Projects/Source/Deep/leaf.aleph (40 bytes),
+                  Projects/Source/main.aleph (5,000 bytes),
+                  Projects/hidden.aleph (64 bytes),
+                  Projects/notes.aleph (12 bytes),
+                  Projects/report10.beta (300,000 bytes),
+                  Projects/report2.beta (2,048 bytes),
+                  Projects/summary.gamma (0 bytes)
+                ]
+                """);
     }
 
     // Delete has no test: recycling would leave files in the Recycle Bin of whoever ran the
@@ -309,7 +490,31 @@ public class FileOperationsTests
                 caseOnly,
                 folder,
                 tree = fixture.Tree()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  file: true,
+                  caseOnly: true,
+                  folder: true,
+                  tree: [
+                    Projects/Archive/,
+                    Projects/Cache/,
+                    Projects/Documents/,
+                    Projects/Documents/guide.aleph (900 bytes),
+                    Projects/REPORT2.BETA (2,048 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/Source/,
+                    Projects/Source/Deep/,
+                    Projects/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Source/main.aleph (5,000 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/renamed.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -324,7 +529,15 @@ public class FileOperationsTests
             FileOperations.CreateFolder(fixture.Root)
         ];
 
-        await Verify(created.Select(fixture.Relative));
+        await Verify(created.Select(fixture.Relative))
+            .Snapshot(
+                """
+                [
+                  Projects/New folder,
+                  Projects/New folder (2),
+                  Projects/New folder (3)
+                ]
+                """);
     }
 
     [Test]
@@ -345,7 +558,24 @@ public class FileOperationsTests
         {
             path = fixture.Relative(_),
             content = File.ReadAllText(_)
-        }));
+        }))
+        .Snapshot(
+            """
+            [
+              {
+                path: Projects/New Text Document.txt,
+                content: 
+              },
+              {
+                path: Projects/New Text Document (2).txt,
+                content: 
+              },
+              {
+                path: Projects/New Rich Text Document.rtf,
+                content: {\rtf1}
+              }
+            ]
+            """);
     }
 
     [Test]
@@ -364,7 +594,24 @@ public class FileOperationsTests
         {
             path = fixture.Relative(_),
             written = new FileInfo(_).Length > 0
-        }));
+        }))
+        .Snapshot(
+            """
+            [
+              {
+                path: Projects/notes - Shortcut.lnk,
+                written: true
+              },
+              {
+                path: Projects/notes - Shortcut (2).lnk,
+                written: true
+              },
+              {
+                path: Projects/Docs - Shortcut.lnk,
+                written: true
+              }
+            ]
+            """);
     }
 
     // Past the old 260 character limit, which SHFileOperation could not go beyond.
@@ -398,6 +645,19 @@ public class FileOperationsTests
                 moved,
                 source = Directory.GetFileSystemEntries(source).Select(Path.GetFileName),
                 target = Directory.GetFileSystemEntries(target).Select(Path.GetFileName).Order()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  pathLength: true,
+                  copied: true,
+                  renamed: true,
+                  moved: true,
+                  target: [
+                    file.txt,
+                    renamed.txt
+                  ]
+                }
+                """);
     }
 }

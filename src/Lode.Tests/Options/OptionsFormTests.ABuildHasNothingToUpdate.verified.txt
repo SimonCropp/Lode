@@ -1,5 +1,0 @@
-﻿{
-  status: This is Lode 0.3.0, run from a build rather than installed as a dotnet tool, so it has nothing to update.,
-  updateEnabled: false,
-  checkEnabled: false
-}

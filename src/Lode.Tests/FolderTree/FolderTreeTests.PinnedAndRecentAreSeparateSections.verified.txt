@@ -1,6 +1,0 @@
-﻿- Pinned
-    Docs
-- Recent
-    Source
-- This PC
-  + FolderTreeTests.PinnedAndRecentAreSeparateSections

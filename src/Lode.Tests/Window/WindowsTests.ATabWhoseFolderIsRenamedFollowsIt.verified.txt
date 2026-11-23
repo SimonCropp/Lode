@@ -1,7 +1,0 @@
-﻿{
-  title: Documents,
-  tabs: [
-    Documents
-  ],
-  active: {TempPath}LodeTests\WindowsTests.ATabWhoseFolderIsRenamedFollowsIt\Projects\Documents
-}

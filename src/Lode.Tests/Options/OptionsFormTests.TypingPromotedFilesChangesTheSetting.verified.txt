@@ -1,9 +1,0 @@
-﻿{
-  patterns: [
-    *.slnx,
-    Directory.*.props
-  ],
-  changes: [
-    Listing
-  ]
-}

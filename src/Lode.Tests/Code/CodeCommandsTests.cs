@@ -787,7 +787,15 @@ public class CodeCommandsTests
                 startingTheOnlySolution = CodeCommands.NugetProgress(new(@"C:\Code\Lode\src\Lode.slnx", 1, 1, null, 0, 0)),
                 checkingAPackage = CodeCommands.NugetProgress(new(@"C:\Code\Lode\src\Lode.slnx", 1, 1, "Serilog", 4, 21)),
                 oneOfSeveral = CodeCommands.NugetProgress(new(@"C:\Code\Lode\.config\dotnet-tools.json", 2, 3, "dotnet-ef", 1, 1))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  startingTheOnlySolution: Lode.slnx,
+                  checkingAPackage: Lode.slnx: Serilog, 4 of 21,
+                  oneOfSeveral: dotnet-tools.json (2 of 3): dotnet-ef, 1 of 1
+                }
+                """);
 
     // Git reports from a worker thread.
     sealed class Recorder : IProgress<string>
@@ -821,7 +829,21 @@ public class CodeCommandsTests
                 [
                     new(@"C:\Code\Good", true, "Already up to date."),
                     new(@"C:\Code\Bad", false, "\nfatal: unable to access 'https://example.com/': Could not resolve host\nmore")
-                ]));
+                ]))
+                .Snapshot(
+                    """
+                    {
+                      Succeeded: false,
+                      Summary: 1 of 2 failed,
+                      Details:
+                    Bad: FAILED
+                      fatal: unable to access 'https://example.com/': Could not resolve host
+                      more
+
+                    Good: done
+                      Already up to date.
+                    }
+                    """);
 
     [Test]
     public Task OutcomeWhenAllSucceed() =>
@@ -830,11 +852,32 @@ public class CodeCommandsTests
                 [
                     new(@"C:\Code\One", true, "Already up to date."),
                     new(@"C:\Code\Two", true, "Fast-forward")
-                ]));
+                ]))
+                .Snapshot(
+                    """
+                    {
+                      Succeeded: true,
+                      Summary: 2 repositories done,
+                      Details:
+                    One: done
+                      Already up to date.
+
+                    Two: done
+                      Fast-forward
+                    }
+                    """);
 
     [Test]
     public Task OutcomeWithNoRepos() =>
-        Verify(CodeCommands.GitOutcome([]));
+        Verify(CodeCommands.GitOutcome([]))
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  Summary: No git repositories,
+                  Details: 
+                }
+                """);
 
     // Each package changed is listed under its file, then the problems. A solution that could
     // not be updated makes it a failure.
@@ -857,7 +900,26 @@ public class CodeCommandsTests
                 [
                     new(UpdateProblemKind.AlternativeNotFound, @"C:\Code\CountryData\src\Directory.Packages.props", "Package Old.Thing is deprecated with alternative New.Thing, but alternative not found in sources"),
                     new(UpdateProblemKind.NotCentralPackages, @"C:\Code\CountryData\Old\Old.sln", "Only central packages supported. Skipped")
-                ]));
+                ]))
+                .Snapshot(
+                    """
+                    {
+                      Succeeded: false,
+                      Summary: 5 packages updated, 2 problems,
+                      Details:
+                    src\Directory.Packages.props
+                      MarkdownSnippets.MsBuild: 28.5.1 -> 29.0.0
+                      xunit.v3: 4.0.2 -> 4.0.3
+                      Microsoft.Azure.Storage.Blob 11.2.3 -> Azure.Storage.Blobs 12.24.0
+                    src\Tests\Tests.csproj
+                      NUnit VersionOverride: 3.13.0 -> 4.3.2
+                    .config\dotnet-tools.json
+                      dotnet-ef: 9.0.0 -> 10.0.0
+
+                    src\Directory.Packages.props: Package Old.Thing is deprecated with alternative New.Thing, but alternative not found in sources
+                    Old\Old.sln: Only central packages supported. Skipped
+                    }
+                    """);
 
     // A warning is listed, but everything that could be updated was.
     [Test]
@@ -877,7 +939,15 @@ public class CodeCommandsTests
 
     [Test]
     public Task NugetOutcomeWithNothingToDo() =>
-        Verify(CodeCommands.NugetOutcome(@"C:\Code\CountryData", [], []));
+        Verify(CodeCommands.NugetOutcome(@"C:\Code\CountryData", [], []))
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  Summary: Nothing to update,
+                  Details: 
+                }
+                """);
 
     static PackageChange Change(PackageChangeKind kind, string file, string package, string from, string to) =>
         new(kind, Path.Combine(@"C:\Code\CountryData", file), package, NuGetVersion.Parse(from), NuGetVersion.Parse(to));
@@ -890,7 +960,15 @@ public class CodeCommandsTests
                 one = CodeMenu.Describe([@"C:\Code\Lode"]),
                 few = CodeMenu.Describe([@"C:\Code\A", @"C:\Code\B"]),
                 many = CodeMenu.Describe(Enumerable.Range(1, 10).Select(_ => $@"C:\Code\R{_}").ToList())
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  one: Lode,
+                  few: 2 repositories (A, B),
+                  many: 10 repositories (R1, R2, R3, R4, R5, R6, R7, R8, and 2 more)
+                }
+                """);
 
     // No solutions, so nothing to fetch: only checks the plumbing around PackageUpdateLib.
     [Test]

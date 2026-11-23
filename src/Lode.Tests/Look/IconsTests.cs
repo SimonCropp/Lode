@@ -8,5 +8,12 @@ public class IconsTests
             {
                 windows11 = Icons.FontName(["Segoe UI", "Segoe Fluent Icons", "Segoe MDL2 Assets"]),
                 windows10 = Icons.FontName(["Segoe UI", "Segoe MDL2 Assets"])
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  windows11: Segoe Fluent Icons,
+                  windows10: Segoe MDL2 Assets
+                }
+                """);
 }

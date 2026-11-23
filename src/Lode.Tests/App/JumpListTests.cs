@@ -7,7 +7,50 @@ public class JumpListTests
     // told apart across the sections.
     [Test]
     public Task Plan() =>
-        Verify(JumpList.Plan(pinned, frequent, [], slots: 10));
+        Verify(JumpList.Plan(pinned, frequent, [], slots: 10))
+            .Snapshot(
+                """
+                [
+                  {
+                    Name: Pinned,
+                    Items: [
+                      {
+                        Title: Desktop,
+                        Folder: C:\Users\Simon\Desktop
+                      },
+                      {
+                        Title: Code,
+                        Folder: D:\Code
+                      },
+                      {
+                        Title: Other\src,
+                        Folder: D:\Other\src
+                      },
+                      {
+                        Title: video (\\server),
+                        Folder: \\server\video
+                      }
+                    ]
+                  },
+                  {
+                    Name: Frequent,
+                    Items: [
+                      {
+                        Title: Lode\src,
+                        Folder: D:\Code\Lode\src
+                      },
+                      {
+                        Title: Downloads,
+                        Folder: D:\Downloads
+                      },
+                      {
+                        Title: Films (\\server),
+                        Folder: \\server\video\Films
+                      }
+                    ]
+                  }
+                ]
+                """);
 
     // The pinned ones take the first slots, and Frequent gets what is left. With none left, it
     // isn't there.
@@ -18,7 +61,63 @@ public class JumpListTests
             {
                 five = JumpList.Plan(pinned, frequent, [], slots: 5),
                 three = JumpList.Plan(pinned, frequent, [], slots: 3)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  five: [
+                    {
+                      Name: Pinned,
+                      Items: [
+                        {
+                          Title: Desktop,
+                          Folder: C:\Users\Simon\Desktop
+                        },
+                        {
+                          Title: Code,
+                          Folder: D:\Code
+                        },
+                        {
+                          Title: Other\src,
+                          Folder: D:\Other\src
+                        },
+                        {
+                          Title: video (\\server),
+                          Folder: \\server\video
+                        }
+                      ]
+                    },
+                    {
+                      Name: Frequent,
+                      Items: [
+                        {
+                          Title: Lode\src,
+                          Folder: D:\Code\Lode\src
+                        }
+                      ]
+                    }
+                  ],
+                  three: [
+                    {
+                      Name: Pinned,
+                      Items: [
+                        {
+                          Title: Desktop,
+                          Folder: C:\Users\Simon\Desktop
+                        },
+                        {
+                          Title: Code,
+                          Folder: D:\Code
+                        },
+                        {
+                          Title: src,
+                          Folder: D:\Other\src
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
 
     // A folder removed from the list leaves its slot to the next one, and a section with all
     // of its folders removed isn't there. Removed ones are matched ignoring case.
@@ -29,7 +128,63 @@ public class JumpListTests
             {
                 some = JumpList.Plan(pinned, frequent, [@"d:\code", @"D:\Downloads"], slots: 5),
                 allPinned = JumpList.Plan(pinned, frequent, pinned, slots: 10)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  some: [
+                    {
+                      Name: Pinned,
+                      Items: [
+                        {
+                          Title: Desktop,
+                          Folder: C:\Users\Simon\Desktop
+                        },
+                        {
+                          Title: Other\src,
+                          Folder: D:\Other\src
+                        },
+                        {
+                          Title: video (\\server),
+                          Folder: \\server\video
+                        }
+                      ]
+                    },
+                    {
+                      Name: Frequent,
+                      Items: [
+                        {
+                          Title: Lode\src,
+                          Folder: D:\Code\Lode\src
+                        },
+                        {
+                          Title: Films (\\server),
+                          Folder: \\server\video\Films
+                        }
+                      ]
+                    }
+                  ],
+                  allPinned: [
+                    {
+                      Name: Frequent,
+                      Items: [
+                        {
+                          Title: src,
+                          Folder: D:\Code\Lode\src
+                        },
+                        {
+                          Title: Downloads,
+                          Folder: D:\Downloads
+                        },
+                        {
+                          Title: Films (\\server),
+                          Folder: \\server\video\Films
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
 
     // Removed folders are kept while Quick access has them, and forgotten once it hasn't.
     [Test]
@@ -40,7 +195,23 @@ public class JumpListTests
                 newlyRemoved = JumpList.StillRemoved([], [@"D:\Code", @"D:\Downloads"], pinned, frequent),
                 removedBeforeAndSince = JumpList.StillRemoved([@"D:\Code"], [@"d:\code", @"D:\Downloads"], pinned, frequent),
                 leftQuickAccess = JumpList.StillRemoved([@"D:\Code", @"D:\Gone"], [@"D:\Unpinned"], pinned, frequent)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  newlyRemoved: [
+                    D:\Code,
+                    D:\Downloads
+                  ],
+                  removedBeforeAndSince: [
+                    D:\Code,
+                    D:\Downloads
+                  ],
+                  leftQuickAccess: [
+                    D:\Code
+                  ]
+                }
+                """);
 
     // A drive's root keeps its backslash: unescaped, it would quote the closing quote.
     [Test]

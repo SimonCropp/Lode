@@ -20,7 +20,26 @@ public class PromotedFilesTests
             ("*Build*", "Directory.Build.props"),
             ("", "Lode.slnx")
         ];
-        return Verify(cases.Select(_ => $"'{_.Pattern}' {_.Name}: {PromotedFiles.Parse([_.Pattern]).Matches(_.Name)}"));
+        return Verify(cases.Select(_ => $"'{_.Pattern}' {_.Name}: {PromotedFiles.Parse([_.Pattern]).Matches(_.Name)}"))
+            .Snapshot(
+                """
+                [
+                  '*.slnx' Lode.slnx: True,
+                  '*.slnx' Lode.sln: False,
+                  '*.slnx' LODE.SLNX: True,
+                  'Directory.*' Directory.Build.props: True,
+                  'Directory.*' Directory: False,
+                  'Directory.*.props' Directory.Packages.props: True,
+                  'Directory.*.props' Directory.props: False,
+                  'Directory.*.props' Directory.Build.targets: False,
+                  'Directory.Build.props' directory.build.props: True,
+                  'Directory.Build.props' Directory.Build.props.user: False,
+                  '  *.slnx  ' Lode.slnx: True,
+                  '*' anything: True,
+                  '*Build*' Directory.Build.props: False,
+                  '' Lode.slnx: False
+                ]
+                """);
     }
 
     [Test]
@@ -50,6 +69,19 @@ public class PromotedFilesTests
             {
                 fromAFolder = paths.Select(_ => $"{_}: {patterns.Promotes(@"C:\Code\Lode", _)}"),
                 fromADrive = patterns.Promotes(@"D:\", @"D:\src\Lode.slnx")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  fromAFolder: [
+                    {SolutionDirectory}Lode.slnx: True,
+                    {SolutionDirectory}Lode.csproj: False,
+                    C:\Code\Lode\Lode.slnx: False,
+                    {SolutionDirectory}Lode\Lode.slnx: False,
+                    C:\Code\Other\src\Lode.slnx: False
+                  ],
+                  fromADrive: true
+                }
+                """);
     }
 }

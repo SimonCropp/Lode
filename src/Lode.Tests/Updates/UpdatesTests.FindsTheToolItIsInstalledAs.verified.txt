@@ -1,4 +1,0 @@
-﻿{
-  ToolPath: C:\Users\Someone\.dotnet\tools,
-  outcomeBesideTheSettings: true
-}

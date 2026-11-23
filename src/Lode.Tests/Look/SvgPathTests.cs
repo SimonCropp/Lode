@@ -12,7 +12,21 @@ public class SvgPathTests
         await Verify(
             path.PathPoints.Zip(
                 path.PathTypes,
-                (point, type) => $"{point.X} {point.Y} {(PathPointType)(type & (byte)PathPointType.PathTypeMask)}"));
+                (point, type) => $"{point.X} {point.Y} {(PathPointType)(type & (byte)PathPointType.PathTypeMask)}"))
+                .Snapshot(
+                    """
+                    [
+                      10 10 Start,
+                      15 9.5 Line,
+                      15.5 10 Line,
+                      14.5 10 Line,
+                      14.5 12 Line,
+                      15.5 13 Bezier,
+                      16.5 14 Bezier,
+                      17.5 15 Bezier,
+                      20 20 Line
+                    ]
+                    """);
     }
 
     [Test]

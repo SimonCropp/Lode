@@ -14,7 +14,15 @@ public class ToolUpdateTests
                 ridSpecific = ToolUpdate.ShimFor(@"C:\Users\Someone\.dotnet\tools\.store\lode\1.0.0\lode.win-x64\1.0.0\tools\net11.0\win-x64\Lode.dll"),
                 portable = ToolUpdate.ShimFor(@"C:\Users\Someone\.dotnet\tools\.store\lode\1.0.0\lode\1.0.0\tools\net11.0\any\Lode.dll"),
                 buildHasNone = ToolUpdate.ShimFor(@"C:\Code\Lode\src\Lode\bin\Release\net11.0\Lode.dll") == null
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  ridSpecific: C:\Users\Someone\.dotnet\tools\lode.exe,
+                  portable: C:\Users\Someone\.dotnet\tools\lode.exe,
+                  buildHasNone: true
+                }
+                """);
 
     // Hidden, from anywhere but the store, whose folders the update deletes, and Windows will not
     // delete one that a running process is sitting in. The script goes encoded, so no quoting of
@@ -35,7 +43,23 @@ public class ToolUpdateTests
                 info.CreateNoWindow,
                 info.UseShellExecute,
                 inTemp = info.WorkingDirectory == Path.GetTempPath()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  FileName: powershell.exe,
+                  arguments: [
+                    -NoProfile,
+                    -ExecutionPolicy,
+                    Unrestricted,
+                    -EncodedCommand
+                  ],
+                  scriptEncoded: true,
+                  CreateNoWindow: true,
+                  UseShellExecute: false,
+                  inTemp: true
+                }
+                """);
     }
 
     // Under a user name with a quote in it, so the quoting is pinned as well, along with the tool
@@ -48,7 +72,8 @@ public class ToolUpdateTests
             Dotnet = @"C:\Program Files\dotnet\dotnet.exe"
         };
 
-        return Verify(update.Script(4242));
+        return Verify(update.Script(4242))
+            .Snapshot("Wait-Process -Id 4242 -Timeout 30 -ErrorAction SilentlyContinue; $locking = @(Get-Process | Where-Object { $_.Path -and ($_.Path -eq 'C:\\Users\\O''Brien\\.dotnet\\tools\\lode.exe' -or $_.Path.StartsWith('C:\\Users\\O''Brien\\.dotnet\\tools\\.store\\Lode\\', 'OrdinalIgnoreCase')) }); $locking | Stop-Process -Force -ErrorAction SilentlyContinue; $locking | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue; $output = & 'C:\\Program Files\\dotnet\\dotnet.exe' tool update Lode --tool-path 'C:\\Users\\O''Brien\\.dotnet\\tools' --prerelease 2>&1 | ForEach-Object { \"$_\" }; $status = if ($LASTEXITCODE -eq 0) { 'ok' } else { 'failed' }; Set-Content -LiteralPath 'C:\\Users\\O''Brien\\AppData\\Roaming\\Lode\\update-outcome.log' -Value (@($status) + $output) -Encoding UTF8; & 'C:\\Users\\O''Brien\\.dotnet\\tools\\lode.exe'");
     }
 
     /// <summary>

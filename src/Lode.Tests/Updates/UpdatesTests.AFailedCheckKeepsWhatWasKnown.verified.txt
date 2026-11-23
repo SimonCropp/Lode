@@ -1,7 +1,0 @@
-﻿{
-  available: 0.4.0,
-  Error: No such host is known. (api.nuget.org:443),
-  Checking: false,
-  lastCheckedUnchanged: true,
-  stillDue: true
-}

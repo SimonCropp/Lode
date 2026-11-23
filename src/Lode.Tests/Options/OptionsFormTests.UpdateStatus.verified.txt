@@ -1,7 +1,0 @@
-﻿{
-  build: This is Lode 0.3.0, run from a build rather than installed as a dotnet tool, so it has nothing to update.,
-  notCheckedYet: This is Lode 0.3.0. It hasn't checked for a newer version yet.,
-  upToDate: Lode 0.3.0 is the newest version. Last checked 11/15/2026 6:30 AM.,
-  available: Lode 0.4.0 is available. This is 0.3.0.,
-  failed: Couldn't check for a newer version: No such host is known. (api.nuget.org:443)
-}

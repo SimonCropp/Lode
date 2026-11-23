@@ -1,4 +1,0 @@
-﻿- Pinned
-    Projects   <- selected
-- This PC
-  + FolderTreeTests.SelectPathFallsBackToThePinnedEntry

@@ -13,7 +13,39 @@ public class BreadcrumbTests
                 server = Describe(@"\\server"),
                 // A drive Windows has a name for, as the address bar asks for them.
                 named = Describe(@"D:\Projects", _ => "Data (D:)")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  folder: [
+                    This PC => This PC,
+                    D:\ => D:,
+                    D:\Projects => Projects,
+                    D:\Projects\Lode => Lode,
+                    D:\Projects\Lode\src => src
+                  ],
+                  drive: [
+                    This PC => This PC,
+                    D:\ => D:
+                  ],
+                  thisPC: [
+                    This PC => This PC
+                  ],
+                  share: [
+                    \\server => server,
+                    \\server\share => share,
+                    \\server\share\folder => folder
+                  ],
+                  server: [
+                    \\server => server
+                  ],
+                  named: [
+                    This PC => This PC,
+                    D:\ => Data (D:),
+                    D:\Projects => Projects
+                  ]
+                }
+                """);
 
     static IEnumerable<string> Describe(string location, Func<string, string>? driveName = null) =>
         Breadcrumb.Segments(location, driveName).Select(_ => $"{_.Path} => {_.Name}");

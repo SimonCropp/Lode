@@ -87,7 +87,29 @@ public class GitPurgeTests
                 src = Names(GitPurge.Find(Path.Combine(repo, "src"))),
                 // A folder git ignores: what is in it, not the folder itself.
                 bin = Names(GitPurge.Find(Path.Combine(repo, "bin")))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  repo: [
+                    Empty/,
+                    bin/,
+                    src/Untracked.cs,
+                    src/build.log,
+                    src/obj/,
+                    src/ünï cödé.txt
+                  ],
+                  src: [
+                    Untracked.cs,
+                    build.log,
+                    obj/,
+                    ünï cödé.txt
+                  ],
+                  bin: [
+                    Debug
+                  ]
+                }
+                """);
     }
 
     static List<string> Names(GitPurge.Found found) =>
@@ -111,7 +133,32 @@ public class GitPurgeTests
             {
                 outcome,
                 left = Left(repo)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  outcome: {
+                    Succeeded: true,
+                    Summary: 6 items deleted,
+                    Details:
+                Repo: 6 items
+                  Empty/
+                  bin/
+                  src/Untracked.cs
+                  src/build.log
+                  src/obj/
+                  src/ünï cödé.txt
+                  },
+                  left: [
+                    .gitignore,
+                    Nested,
+                    Nested/Untracked.txt,
+                    src,
+                    src/Tracked.cs,
+                    tracked.txt
+                  ]
+                }
+                """);
     }
 
     // Below the top of a repository, only what is in that folder goes.
@@ -128,7 +175,34 @@ public class GitPurgeTests
             {
                 outcome,
                 left = Left(repo)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  outcome: {
+                    Succeeded: true,
+                    Summary: 4 items deleted,
+                    Details:
+                src: 4 items
+                  Untracked.cs
+                  build.log
+                  obj/
+                  ünï cödé.txt
+                  },
+                  left: [
+                    .gitignore,
+                    Empty,
+                    Nested,
+                    Nested/Untracked.txt,
+                    bin,
+                    bin/Debug,
+                    bin/Debug/Repo.dll,
+                    src,
+                    src/Tracked.cs,
+                    tracked.txt
+                  ]
+                }
+                """);
     }
 
     // Every repository's at once, in one go to the Recycle Bin: here a stand-in, which turns one
@@ -156,7 +230,48 @@ public class GitPurgeTests
             {
                 calls,
                 outcome
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  calls: [
+                    [
+                      One/Empty,
+                      One/bin,
+                      One/src/Untracked.cs,
+                      One/src/build.log,
+                      One/src/obj,
+                      One/src/ünï cödé.txt,
+                      Two/Empty,
+                      Two/bin,
+                      Two/src/Untracked.cs,
+                      Two/src/build.log,
+                      Two/src/obj,
+                      Two/src/ünï cödé.txt
+                    ]
+                  ],
+                  outcome: {
+                    Succeeded: false,
+                    Summary: 11 items moved to the Recycle Bin, 1 couldn't be,
+                    Details:
+                Two: 1 of 6 items couldn't be moved to the Recycle Bin
+                  src/build.log: The file is in use.
+                  Empty/
+                  bin/
+                  src/Untracked.cs
+                  src/obj/
+                  src/ünï cödé.txt
+
+                One: 6 items
+                  Empty/
+                  bin/
+                  src/Untracked.cs
+                  src/build.log
+                  src/obj/
+                  src/ünï cödé.txt
+                  }
+                }
+                """);
     }
 
     // It asks once the dry run has found what will go, saying how many items, how big, the first
@@ -185,7 +300,29 @@ public class GitPurgeTests
             {
                 questions,
                 outcome
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  questions: [
+                    Delete 6 items, 34 bytes, that git doesn't track, ignored ones included, in Repo?
+
+                    Empty/
+                    bin/
+                    src/Untracked.cs
+                    src/build.log
+                    src/obj/
+                    src/ünï cödé.txt
+
+                They are deleted permanently, as set in Options. This cannot be undone.
+                  ],
+                  outcome: {
+                    Succeeded: false,
+                    Summary: Cancelled,
+                    Details: 
+                  }
+                }
+                """);
     }
 
     // Of several repositories, each entry is named with the one it is in, and what doesn't fit
@@ -219,7 +356,63 @@ public class GitPurgeTests
                 questions,
                 removed,
                 outcome
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  questions: [
+                    Delete 12 items, 68 bytes, that git doesn't track, ignored ones included, in 2 repositories (One, Two)?
+
+                    One/Empty/
+                    One/bin/
+                    One/src/Untracked.cs
+                    One/src/build.log
+                    One/src/obj/
+                    One/src/ünï cödé.txt
+                    Two/Empty/
+                    Two/bin/
+                    Two/src/Untracked.cs
+                    Two/src/build.log
+                    and 2 more
+
+                They go to the Recycle Bin.
+                  ],
+                  removed: [
+                    One/Empty,
+                    One/bin,
+                    One/src/Untracked.cs,
+                    One/src/build.log,
+                    One/src/obj,
+                    One/src/ünï cödé.txt,
+                    Two/Empty,
+                    Two/bin,
+                    Two/src/Untracked.cs,
+                    Two/src/build.log,
+                    Two/src/obj,
+                    Two/src/ünï cödé.txt
+                  ],
+                  outcome: {
+                    Succeeded: true,
+                    Summary: 12 items moved to the Recycle Bin,
+                    Details:
+                One: 6 items
+                  Empty/
+                  bin/
+                  src/Untracked.cs
+                  src/build.log
+                  src/obj/
+                  src/ünï cödé.txt
+
+                Two: 6 items
+                  Empty/
+                  bin/
+                  src/Untracked.cs
+                  src/build.log
+                  src/obj/
+                  src/ünï cödé.txt
+                  }
+                }
+                """);
     }
 
     // With nothing to purge, there is nothing to ask.
@@ -267,7 +460,20 @@ public class GitPurgeTests
 
         var outcome = await GitPurge.Run([notARepo, repo], permanent: true, IntPtr.Zero);
 
-        await Verify(outcome);
+        await Verify(outcome)
+            .Snapshot(
+                """
+                {
+                  Succeeded: false,
+                  Summary: 1 item deleted, git failed in 1 folder,
+                  Details:
+                NotARepo: FAILED
+                  fatal: not a git repository (or any of the parent directories): .git
+
+                Repo: 1 item
+                  Untracked.txt
+                }
+                """);
     }
 
     // A repository with something of each kind: tracked, untracked, ignored, read-only, an empty

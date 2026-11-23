@@ -23,7 +23,27 @@ public class OptionsFormTests
                 replaced,
                 restored = Describe(form),
                 registry = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    status: Currently File Explorer opens them.,
+                    replaceEnabled: true,
+                    restoreEnabled: false
+                  },
+                  replaced: {
+                    status: Currently Lode opens them.,
+                    replaceEnabled: false,
+                    restoreEnabled: true
+                  },
+                  restored: {
+                    status: Currently File Explorer opens them.,
+                    replaceEnabled: true,
+                    restoreEnabled: false
+                  }
+                }
+                """);
     }
 
     // Each kind of repository link is taken over, and reverted, on its own.
@@ -52,7 +72,90 @@ public class OptionsFormTests
                 registry,
                 reverted = DescribeLinks(form),
                 registryReverted = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: [
+                    {
+                      status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them.,
+                      takeEnabled: true,
+                      revertEnabled: false
+                    },
+                    {
+                      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+                      takeEnabled: true,
+                      revertEnabled: false
+                    }
+                  ],
+                  gitHubDesktop: [
+                    {
+                      status: GitHub's Open with GitHub Desktop: Lode opens them.,
+                      takeEnabled: false,
+                      revertEnabled: true
+                    },
+                    {
+                      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+                      takeEnabled: true,
+                      revertEnabled: false
+                    }
+                  ],
+                  both: [
+                    {
+                      status: GitHub's Open with GitHub Desktop: Lode opens them.,
+                      takeEnabled: false,
+                      revertEnabled: true
+                    },
+                    {
+                      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Lode opens them.,
+                      takeEnabled: false,
+                      revertEnabled: true
+                    }
+                  ],
+                  registry: {
+                    git-client\: {
+                      (default): URL:git-client,
+                      CreatedBy: Lode,
+                      shell\: {
+                        open\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            LodeForwardCommand: "C:\Apps\Visual Studio.exe" "%1"
+                          }
+                        }
+                      },
+                      TakenBy: Lode,
+                      URL Protocol: 
+                    },
+                    x-github-client\: {
+                      (default): URL:x-github-client,
+                      CreatedBy: Lode,
+                      shell\: {
+                        open\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            LodeForwardCommand: "C:\Apps\GitHub Desktop.exe" "%1"
+                          }
+                        }
+                      },
+                      TakenBy: Lode,
+                      URL Protocol: 
+                    }
+                  },
+                  reverted: [
+                    {
+                      status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them.,
+                      takeEnabled: true,
+                      revertEnabled: false
+                    },
+                    {
+                      status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+                      takeEnabled: true,
+                      revertEnabled: false
+                    }
+                  ]
+                }
+                """);
     }
 
     static object DescribeLinks(Form form) =>
@@ -85,7 +188,22 @@ public class OptionsFormTests
             {
                 before,
                 replaced = Describe(form)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    status: Currently another copy of Lode opens them: "D:\Old\Lode.exe",
+                    replaceEnabled: true,
+                    restoreEnabled: true
+                  },
+                  replaced: {
+                    status: Currently Lode opens them.,
+                    replaceEnabled: false,
+                    restoreEnabled: true
+                  }
+                }
+                """);
     }
 
     // Folders point at this copy, but from a Lode that did not yet add the explore verb.
@@ -106,7 +224,22 @@ public class OptionsFormTests
             {
                 before,
                 replaced = Describe(form)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    status: Currently Lode opens them, except from apps that ask for File Explorer itself, such as GitHub Desktop. Replace again to cover those.,
+                    replaceEnabled: true,
+                    restoreEnabled: true
+                  },
+                  replaced: {
+                    status: Currently Lode opens them.,
+                    replaceEnabled: false,
+                    restoreEnabled: true
+                  }
+                }
+                """);
     }
 
     // Each action has a tick for the actions bar and one for the right-click menus.
@@ -139,7 +272,25 @@ public class OptionsFormTests
                     cutButton = settings.ShowsAsButton("cut")
                 },
                 changes
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    openButton: false,
+                    cutMenu: true
+                  },
+                  after: {
+                    openButton: true,
+                    cutMenu: false,
+                    cutButton: true
+                  },
+                  changes: [
+                    Actions,
+                    Actions
+                  ]
+                }
+                """);
     }
 
     // A Nested box nests the action under its parent there. It is greyed out while the action
@@ -175,7 +326,24 @@ public class OptionsFormTests
                     terminalAdminMenuNested = settings.NestsInMenu("terminalAdmin")
                 },
                 newHasNestedBoxes = form.Controls.Find("buttonNested.new", true).Length > 0
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    cutButtonNested: false,
+                    terminalMenuNested: true,
+                    openButtonNestedEnabled: false
+                  },
+                  after: {
+                    cutButtonNested: true,
+                    cutButtonNestedEnabled: false,
+                    terminalMenuNested: false,
+                    terminalAdminMenuNested: true
+                  },
+                  newHasNestedBoxes: false
+                }
+                """);
     }
 
     // The actions scroll under their column headings, which stay put above them, each over its
@@ -253,7 +421,20 @@ public class OptionsFormTests
                 enabledWithoutFolder,
                 enabledWithFolder,
                 events
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  enabledWithoutFolder: false,
+                  enabledWithFolder: true,
+                  events: [
+                    asked about D:\Code,
+                    asked about D:\Code,
+                    excluded D:\Code,
+                    reported D:\Code: removed D:\Code\Lode, D:\Code\Lode\bin
+                  ]
+                }
+                """);
     }
 
     // Off, then on again, each asking first and only once said yes to, the buttons following
@@ -299,7 +480,36 @@ public class OptionsFormTests
                 off,
                 on = DescribeWindowsSearch(form),
                 events
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    status: Windows Search is running, and starts shortly after Windows does.,
+                    turnOffEnabled: true,
+                    turnOnEnabled: false
+                  },
+                  off: {
+                    status: Windows Search is off.,
+                    turnOffEnabled: false,
+                    turnOnEnabled: true
+                  },
+                  on: {
+                    status: Windows Search is running, and starts shortly after Windows does.,
+                    turnOffEnabled: true,
+                    turnOnEnabled: false
+                  },
+                  events: [
+                    asked to turn off,
+                    asked to turn off,
+                    turned off,
+                    reported turning off: True,
+                    asked to turn on,
+                    turned on,
+                    reported turning on: True
+                  ]
+                }
+                """);
     }
 
     static object DescribeWindowsSearch(Form form) =>
@@ -328,7 +538,17 @@ public class OptionsFormTests
                 before,
                 after = settings.ShowRecent,
                 changes
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: true,
+                  after: false,
+                  changes: [
+                    Places
+                  ]
+                }
+                """);
     }
 
     // On by default, unlike Explorer's Expand to open folder.
@@ -350,7 +570,17 @@ public class OptionsFormTests
                 before,
                 after = settings.ExpandToOpenFolder,
                 changes
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: true,
+                  after: false,
+                  changes: [
+                    TreeSelection
+                  ]
+                }
+                """);
     }
 
     // Off by default, so purged files go to the Recycle Bin.
@@ -369,7 +599,14 @@ public class OptionsFormTests
             {
                 before,
                 after = settings.PurgePermanently
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: false,
+                  after: true
+                }
+                """);
     }
 
     // Off by default, with the hours greyed out until it is ticked.
@@ -401,7 +638,22 @@ public class OptionsFormTests
                     settings.UnusedTabHours,
                     hoursEnabled = hours.Enabled
                 }
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    CloseUnusedTabs: false,
+                    UnusedTabHours: 24,
+                    hoursEnabled: false
+                  },
+                  after: {
+                    CloseUnusedTabs: true,
+                    UnusedTabHours: 8,
+                    hoursEnabled: true
+                  }
+                }
+                """);
     }
 
     // Same as Windows by default. Picking another is kept for the next start, which is when it
@@ -426,7 +678,16 @@ public class OptionsFormTests
             {
                 before,
                 after = settings.Theme
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    shown: Same as Windows
+                  },
+                  after: Dark
+                }
+                """);
     }
 
     // The setting changes as each key is typed, one pattern a line, blank lines left out, but
@@ -452,7 +713,19 @@ public class OptionsFormTests
             {
                 patterns = settings.PromotedFiles,
                 changes
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  patterns: [
+                    *.slnx,
+                    Directory.*.props
+                  ],
+                  changes: [
+                    Listing
+                  ]
+                }
+                """);
     }
 
     // Opened again, the box has the patterns, and closing without a change reads nothing again.
@@ -492,7 +765,14 @@ public class OptionsFormTests
                 {
                     savedWhileOpen,
                     reloaded = Settings.Load(path).ShowHidden
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      savedWhileOpen: false,
+                      reloaded: false
+                    }
+                    """);
         }
         finally
         {
@@ -518,7 +798,17 @@ public class OptionsFormTests
                 before,
                 after = settings.ShowHidden,
                 changes
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: true,
+                  after: false,
+                  changes: [
+                    Listing
+                  ]
+                }
+                """);
     }
 
 #if DEBUG
@@ -623,7 +913,28 @@ public class OptionsFormTests
                 next,
                 wrapped,
                 back = Shown(form)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  pages: [
+                    General,
+                    View,
+                    Actions,
+                    Search,
+                    Code,
+                    Promoted files,
+                    File Explorer,
+                    Links,
+                    Updates
+                  ],
+                  opened: General,
+                  picked: Links,
+                  next: Updates,
+                  wrapped: General,
+                  back: Updates
+                }
+                """);
     }
 
     // What shows: the code folder box is on the Code page, the tick for hidden items on View.
@@ -682,7 +993,18 @@ public class OptionsFormTests
             {
                 before,
                 setting = settings.TextEditor
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: [
+                    Visual Studio Code   <- selected,
+                    Notepad,
+                    Browse…
+                  ],
+                  setting: C:\Windows\notepad.exe
+                }
+                """);
     }
 
     [Test]
@@ -700,7 +1022,19 @@ public class OptionsFormTests
             {
                 after = Editors(form),
                 setting = settings.TextEditor
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  after: [
+                    Visual Studio Code,
+                    Notepad,
+                    MyEditor   <- selected,
+                    Browse…
+                  ],
+                  setting: C:\Tools\MyEditor.exe
+                }
+                """);
     }
 
     [Test]
@@ -718,7 +1052,18 @@ public class OptionsFormTests
             {
                 after = Editors(form),
                 setting = settings.TextEditor
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  after: [
+                    Visual Studio Code,
+                    Notepad   <- selected,
+                    Browse…
+                  ],
+                  setting: C:\Windows\notepad.exe
+                }
+                """);
     }
 
     [Test]
@@ -764,7 +1109,24 @@ public class OptionsFormTests
                     setting = settings.CodeDirectory,
                     clearEnabled = form.Controls.Find("clearCodeDirectory", true)[0].Enabled
                 }
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  asked: [
+                    C:\Code,
+                    C:\Code
+                  ],
+                  chosen: {
+                    setting: C:\Code,
+                    shown: C:\Code,
+                    clearEnabled: true
+                  },
+                  cleared: {
+                    clearEnabled: false
+                  }
+                }
+                """);
     }
 
     // What the Updates page says, as things stand.
@@ -784,7 +1146,17 @@ public class OptionsFormTests
                 upToDate = OptionsForm.UpdateStatus(TestUpdates.Installed(new() {LastUpdateCheck = TestUpdates.Now.AddHours(-3)})),
                 available = OptionsForm.UpdateStatus(TestUpdates.Installed(new() {AvailableUpdate = "0.4.0"})),
                 failed = OptionsForm.UpdateStatus(failed)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  build: This is Lode 0.3.0, run from a build rather than installed as a dotnet tool, so it has nothing to update.,
+                  notCheckedYet: This is Lode 0.3.0. It hasn't checked for a newer version yet.,
+                  upToDate: Lode 0.3.0 is the newest version. Last checked 11/15/2026 6:30 AM.,
+                  available: Lode 0.4.0 is available. This is 0.3.0.,
+                  failed: Couldn't check for a newer version: No such host is known. (api.nuget.org:443)
+                }
+                """);
     }
 
     // Check now asks straight away, and nothing can be clicked again until NuGet answers.
@@ -810,7 +1182,27 @@ public class OptionsFormTests
                 before,
                 checking,
                 answered = DescribeUpdates(form)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    status: This is Lode 0.3.0. It hasn't checked for a newer version yet.,
+                    updateEnabled: false,
+                    checkEnabled: true
+                  },
+                  checking: {
+                    status: Checking for a newer version…,
+                    updateEnabled: false,
+                    checkEnabled: false
+                  },
+                  answered: {
+                    status: Lode 0.4.0 is available. This is 0.3.0.,
+                    updateEnabled: true,
+                    checkEnabled: true
+                  }
+                }
+                """);
     }
 
     // Update starts the update and closes Options, for the window to exit Lode, which the update
@@ -838,7 +1230,20 @@ public class OptionsFormTests
                 form.UpdatesStarted,
                 form.UpdateStarted,
                 closed = !form.Visible
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    status: Lode 0.4.0 is available. This is 0.3.0.,
+                    updateEnabled: true,
+                    checkEnabled: true
+                  },
+                  UpdatesStarted: 1,
+                  UpdateStarted: true,
+                  closed: true
+                }
+                """);
     }
 
     // Updating has Lode exit, which would stop an action running part way, so it waits for the
@@ -870,7 +1275,22 @@ public class OptionsFormTests
                 {
                     whileRunning,
                     finished = DescribeUpdates(form)
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      whileRunning: {
+                        status: Lode 0.4.0 is available. This is 0.3.0. It can be installed once the actions running have finished.,
+                        updateEnabled: false,
+                        checkEnabled: true
+                      },
+                      finished: {
+                        status: Lode 0.4.0 is available. This is 0.3.0.,
+                        updateEnabled: true,
+                        checkEnabled: true
+                      }
+                    }
+                    """);
         }
         finally
         {
@@ -913,7 +1333,15 @@ public class OptionsFormTests
                 }));
         form.ShowPage("Updates");
 
-        await Verify(DescribeUpdates(form));
+        await Verify(DescribeUpdates(form))
+            .Snapshot(
+                """
+                {
+                  status: This is Lode 0.3.0, run from a build rather than installed as a dotnet tool, so it has nothing to update.,
+                  updateEnabled: false,
+                  checkEnabled: false
+                }
+                """);
     }
 
     static object DescribeUpdates(Form form) =>

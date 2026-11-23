@@ -1,6 +1,0 @@
-﻿{
-  newer: 0.4.0,
-  nowRunning: none,
-  unreadable: none,
-  build: none
-}

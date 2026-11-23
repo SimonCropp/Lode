@@ -9,7 +9,75 @@ public class ExplorerReplacementTests
 
         scratch.Replacement().Replace();
 
-        await Verify(scratch.Dump());
+        await Verify(scratch.Dump())
+            .Snapshot(
+                """
+                {
+                  CLSID\: {
+                    {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                      shell\: {
+                        opennewwindow\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode
+                        }
+                      }
+                    }
+                  },
+                  Directory\: {
+                    shell\: {
+                      (default): Lode,
+                      explore\: {
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1",
+                          DelegateExecute: 
+                        },
+                        CreatedBy: Lode,
+                        ProgrammaticAccessOnly: 
+                      },
+                      Lode\: {
+                        (default): Open in Lode,
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1"
+                        }
+                      }
+                    }
+                  },
+                  Drive\: {
+                    shell\: {
+                      (default): Lode,
+                      explore\: {
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1",
+                          DelegateExecute: 
+                        },
+                        CreatedBy: Lode,
+                        ProgrammaticAccessOnly: 
+                      },
+                      Lode\: {
+                        (default): Open in Lode,
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1"
+                        }
+                      }
+                    }
+                  },
+                  Folder\: {
+                    shell\: {
+                      explore\: {
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1",
+                          DelegateExecute: 
+                        },
+                        CreatedBy: Lode,
+                        ProgrammaticAccessOnly: 
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     [Test]
@@ -21,7 +89,8 @@ public class ExplorerReplacementTests
 
         replacement.Restore();
 
-        await Verify(scratch.Dump());
+        await Verify(scratch.Dump())
+            .Snapshot("{}");
     }
 
     // Another tool had made itself the default for folders; restoring hands folders back to it.
@@ -41,7 +110,95 @@ public class ExplorerReplacementTests
             {
                 replaced,
                 restored = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  replaced: {
+                    CLSID\: {
+                      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                        shell\: {
+                          opennewwindow\: {
+                            command\: {
+                              (default): "C:\Tools\lode.exe",
+                              DelegateExecute: 
+                            },
+                            CreatedBy: Lode
+                          }
+                        }
+                      }
+                    },
+                    Directory\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          },
+                          LodePreviousDefault: openinother
+                        },
+                        openinother\: {
+                          command\: {
+                            (default): "C:\Other\other.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Drive\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Folder\: {
+                      shell\: {
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        }
+                      }
+                    }
+                  },
+                  restored: {
+                    Directory\: {
+                      shell\: {
+                        (default): openinother,
+                        openinother\: {
+                          command\: {
+                            (default): "C:\Other\other.exe" "%1"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     // A second Replace, say from a copy installed elsewhere, points folders at that copy and
@@ -66,7 +223,95 @@ public class ExplorerReplacementTests
             {
                 replacedAgain,
                 restored = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  replacedAgain: {
+                    CLSID\: {
+                      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                        shell\: {
+                          opennewwindow\: {
+                            command\: {
+                              (default): "D:\Other\Lode.exe",
+                              DelegateExecute: 
+                            },
+                            CreatedBy: Lode
+                          }
+                        }
+                      }
+                    },
+                    Directory\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "D:\Other\Lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "D:\Other\Lode.exe" "%1"
+                          },
+                          LodePreviousDefault: openinother
+                        },
+                        openinother\: {
+                          command\: {
+                            (default): "C:\Other\other.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Drive\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "D:\Other\Lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "D:\Other\Lode.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Folder\: {
+                      shell\: {
+                        explore\: {
+                          command\: {
+                            (default): "D:\Other\Lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        }
+                      }
+                    }
+                  },
+                  restored: {
+                    Directory\: {
+                      shell\: {
+                        (default): openinother,
+                        openinother\: {
+                          command\: {
+                            (default): "C:\Other\other.exe" "%1"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     [Test]
@@ -82,7 +327,23 @@ public class ExplorerReplacementTests
 
         scratch.Replacement().Restore();
 
-        await Verify(scratch.Dump());
+        await Verify(scratch.Dump())
+            .Snapshot(
+                """
+                {
+                  CLSID\: {
+                    {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                      shell\: {
+                        opennewwindow\: {
+                          command\: {
+                            (default): "C:\Other\other.exe"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     // Another file manager has Win+E. Replace takes it, keeping what it had, and Restore gives
@@ -109,7 +370,107 @@ public class ExplorerReplacementTests
                 before,
                 replaced,
                 restored = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    CLSID\: {
+                      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                        shell\: {
+                          opennewwindow\: {
+                            command\: {
+                              (default): "C:\Other\other.exe",
+                              DelegateExecute: 
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  replaced: {
+                    CLSID\: {
+                      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                        shell\: {
+                          opennewwindow\: {
+                            command\: {
+                              (default): "C:\Tools\lode.exe",
+                              DelegateExecute: ,
+                              LodePreviousCommand: "C:\Other\other.exe",
+                              LodePreviousDelegateExecute: 
+                            },
+                            CreatedBy: Lode
+                          }
+                        }
+                      }
+                    },
+                    Directory\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Drive\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Folder\: {
+                      shell\: {
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        }
+                      }
+                    }
+                  },
+                  restored: {
+                    CLSID\: {
+                      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                        shell\: {
+                          opennewwindow\: {
+                            command\: {
+                              (default): "C:\Other\other.exe",
+                              DelegateExecute: 
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     // Another file manager already answers the explore verb; Replace takes the default verb but
@@ -137,7 +498,86 @@ public class ExplorerReplacementTests
                 replaced,
                 complete,
                 restored = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  replaced: {
+                    CLSID\: {
+                      {52205fd8-5dfb-447d-801a-d0b52f2e83e1}\: {
+                        shell\: {
+                          opennewwindow\: {
+                            command\: {
+                              (default): "C:\Tools\lode.exe",
+                              DelegateExecute: 
+                            },
+                            CreatedBy: Lode
+                          }
+                        }
+                      }
+                    },
+                    Directory\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "C:\Other\other.exe" "%1"
+                          }
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Drive\: {
+                      shell\: {
+                        (default): Lode,
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        },
+                        Lode\: {
+                          (default): Open in Lode,
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          }
+                        }
+                      }
+                    },
+                    Folder\: {
+                      shell\: {
+                        explore\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1",
+                            DelegateExecute: 
+                          },
+                          CreatedBy: Lode,
+                          ProgrammaticAccessOnly: 
+                        }
+                      }
+                    }
+                  },
+                  complete: true,
+                  restored: {
+                    Directory\: {
+                      shell\: {
+                        explore\: {
+                          command\: {
+                            (default): "C:\Other\other.exe" "%1"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     // A Replace by a Lode from before the explore verb: replacing again adds it, and Restore
@@ -160,7 +600,24 @@ public class ExplorerReplacementTests
                 older,
                 replaced,
                 restored = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  older: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: false,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  replaced: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: true,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  }
+                }
+                """);
     }
 
     // A Replace by a Lode that added the explore verb to Directory and Drive but not to Folder,
@@ -185,7 +642,36 @@ public class ExplorerReplacementTests
                 replaced,
                 folder,
                 restored = scratch.Dump()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  older: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: false,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  replaced: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: true,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  folder: {
+                    shell\: {
+                      explore\: {
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1",
+                          DelegateExecute: 
+                        },
+                        CreatedBy: Lode,
+                        ProgrammaticAccessOnly: 
+                      }
+                    }
+                  }
+                }
+                """);
     }
 
     // Some tools leave a copy of Explorer's explore verb on Folder in the user's classes, which
@@ -227,7 +713,53 @@ public class ExplorerReplacementTests
                 // Unexpanded, as Dump would show it expanded.
                 driveCommand,
                 driveCommandKind
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  older: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: false,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  replaced: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: true,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  folder: {
+                    shell\: {
+                      explore\: {
+                        command\: {
+                          (default): "C:\Tools\lode.exe" "%1",
+                          DelegateExecute: ,
+                          LodePreviousDelegateExecute: Guid_1
+                        },
+                        CreatedBy: Lode,
+                        LaunchExplorerFlags: 24,
+                        MultiSelectModel: Document,
+                        ProgrammaticAccessOnly: 
+                      }
+                    }
+                  },
+                  restoredFolder: {
+                    shell\: {
+                      explore\: {
+                        command\: {
+                          DelegateExecute: Guid_1
+                        },
+                        LaunchExplorerFlags: 24,
+                        MultiSelectModel: Document,
+                        ProgrammaticAccessOnly: 
+                      }
+                    }
+                  },
+                  driveCommand: %SystemRoot%\Explorer.exe,
+                  driveCommandKind: ExpandString
+                }
+                """);
     }
 
     static object Explore(Dictionary<string, object> dump, string folderClass)
@@ -276,7 +808,36 @@ public class ExplorerReplacementTests
                 replaced,
                 seenFromAnotherCopy,
                 restored
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    IsActive: false,
+                    IsActiveHere: false,
+                    IsComplete: false,
+                    RegisteredCommand: (none)
+                  },
+                  replaced: {
+                    IsActive: true,
+                    IsActiveHere: true,
+                    IsComplete: true,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  seenFromAnotherCopy: {
+                    IsActive: true,
+                    IsActiveHere: false,
+                    IsComplete: false,
+                    RegisteredCommand: "C:\Tools\lode.exe"
+                  },
+                  restored: {
+                    IsActive: false,
+                    IsActiveHere: false,
+                    IsComplete: false,
+                    RegisteredCommand: (none)
+                  }
+                }
+                """);
     }
 
     static object Describe(ExplorerReplacement replacement) =>

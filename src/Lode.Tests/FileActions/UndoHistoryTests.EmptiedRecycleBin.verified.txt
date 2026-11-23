@@ -1,5 +1,0 @@
-﻿{
-  failure: 1 of 1 items are no longer in the Recycle Bin, so can't be restored.,
-  undo: Undo rename,
-  canRedo: false
-}

@@ -39,7 +39,15 @@ public class ShellExtensionGuardTests
                 stuck = ShellExtensionGuard.IsRefused(stuck),
                 earlier = ShellExtensionGuard.IsRefused(earlier),
                 untouched = ShellExtensionGuard.IsRefused(untouched)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  stuck: true,
+                  earlier: false,
+                  untouched: false
+                }
+                """);
     }
 
     // Past the timeout with no call waiting, a first menu slow to build, say, or one held up

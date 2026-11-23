@@ -1,7 +1,0 @@
-﻿{
-  before: true,
-  after: false,
-  changes: [
-    Listing
-  ]
-}

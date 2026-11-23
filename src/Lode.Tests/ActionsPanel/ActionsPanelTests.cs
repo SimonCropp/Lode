@@ -156,7 +156,29 @@ public class ActionsPanelTests
                 onlyFinished,
                 one,
                 many = ActionLog.RunningMessage()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  one:
+                This is still running:
+
+                  Git purge – Lode
+
+                Exiting now stops it part way, which can leave files half written or half deleted.,
+                  many:
+                These 6 are still running:
+
+                  Git purge – Lode
+                  Update NuGets – Verify
+                  Update NuGets – Polyfill
+                  Update NuGets – Argon
+                  Update NuGets – Delta
+                  and 1 more
+
+                Exiting now stops them part way, which can leave files half written or half deleted.
+                }
+                """);
     }
 
     [Test]
@@ -174,7 +196,26 @@ public class ActionsPanelTests
             {
                 running,
                 finished = Describe()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  running: [
+                    {
+                      line: Git pull – Lode: Running…,
+                      state: Running,
+                      Details: 
+                    }
+                  ],
+                  finished: [
+                    {
+                      line: Git pull – Lode: 1 of 2 failed,
+                      state: Failed,
+                      Details: Bad: FAILED
+                    }
+                  ]
+                }
+                """);
     }
 
     // What the work reports is the summary while it runs; the outcome replaces it, and a
@@ -207,7 +248,26 @@ public class ActionsPanelTests
             {
                 running,
                 finished = Describe()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  running: [
+                    {
+                      line: Git pull – Code: 2 of 12: Lode,
+                      state: Running,
+                      Details: 
+                    }
+                  ],
+                  finished: [
+                    {
+                      line: Git pull – Code: 12 repositories done,
+                      state: Succeeded,
+                      Details: 
+                    }
+                  ]
+                }
+                """);
     }
 
     // Work that throws still ends as a failed entry, rather than taking Lode down.
@@ -216,7 +276,17 @@ public class ActionsPanelTests
     {
         await ActionLog.Run("Update NuGets", @"C:\Code\Lode", () => throw new InvalidOperationException("No network"));
 
-        await Verify(Describe());
+        await Verify(Describe())
+            .Snapshot(
+                """
+                [
+                  {
+                    line: Update NuGets – Lode: Failed,
+                    state: Failed,
+                    Details: No network
+                  }
+                ]
+                """);
     }
 
     [Test]
@@ -228,7 +298,17 @@ public class ActionsPanelTests
 
         ActionLog.ClearFinished();
 
-        await Verify(Describe());
+        await Verify(Describe())
+            .Snapshot(
+                """
+                [
+                  {
+                    line: Update NuGets – Busy: Running…,
+                    state: Running,
+                    Details: 
+                  }
+                ]
+                """);
         finish.SetResult(new(true, "Done", ""));
     }
 
@@ -266,7 +346,27 @@ public class ActionsPanelTests
                 whileRunning,
                 finished,
                 afterClear = panel.Visible
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  empty: false,
+                  whileRunning: {
+                    Visible: true,
+                    clearEnabled: false,
+                    Spinning: true
+                  },
+                  finished: {
+                    Visible: true,
+                    clearEnabled: true,
+                    Spinning: false,
+                    lines: [
+                      Update NuGets – Busy: 5 packages updated
+                    ]
+                  },
+                  afterClear: false
+                }
+                """);
     }
 
     // Visible means "would be shown", so the panel sits on a form that is shown, off screen.

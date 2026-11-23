@@ -1,8 +1,0 @@
-﻿{
-  whileLetGo: false,
-  driveBackWhileLetGo: false,
-  reportedWhileLetGo: false,
-  releasedWhileDriveGoing: false,
-  after: true,
-  reportedAfter: true
-}

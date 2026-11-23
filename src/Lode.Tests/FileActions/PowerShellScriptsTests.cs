@@ -16,7 +16,34 @@ public class PowerShellScriptsTests
                 Shell = _.Command[0],
                 Arguments = _.Command.Skip(1).SkipLast(1),
                 Command = Encoding.Unicode.GetString(Convert.FromBase64String(_.Command[^1]))
-            }));
+            }))
+            .Snapshot(
+                """
+                [
+                  {
+                    Directory: C:\Code\Lode,
+                    Shell: C:\Program Files\PowerShell\7\pwsh.exe,
+                    Arguments: [
+                      -NoExit,
+                      -EncodedCommand
+                    ],
+                    Command:
+                if ((Get-ExecutionPolicy) -ne 'AllSigned') { try { Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction Stop } catch { } }
+                & 'C:\Code\Lode\build.ps1'
+                  },
+                  {
+                    Directory: C:\Two Words,
+                    Shell: C:\Program Files\PowerShell\7\pwsh.exe,
+                    Arguments: [
+                      -NoExit,
+                      -EncodedCommand
+                    ],
+                    Command:
+                if ((Get-ExecutionPolicy) -ne 'AllSigned') { try { Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction Stop } catch { } }
+                & 'C:\Two Words\it''s; done.ps1'
+                  }
+                ]
+                """);
     }
 
     [Test]

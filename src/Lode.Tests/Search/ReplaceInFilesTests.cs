@@ -29,7 +29,17 @@ public class ReplaceInFilesTests
                 latin = Convert.ToHexString(await File.ReadAllBytesAsync(latin)),
                 mixed = (await File.ReadAllTextAsync(mixed)).Replace("\r", "\\r").Replace("\n", "\\n"),
                 outcome.Failed
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Replaced: 7,
+                  marked: EFBBBF6F6D6567610D0A62657461206F6D6567610D0A,
+                  wide: FFFE770069006400650020006F006D006500670061000A00,
+                  latin: 636166E9206F6D656761,
+                  mixed: omega\nomega\r\nomega
+                }
+                """);
     }
 
     // Lines ended as Windows ends them: $ is still each line's end, and . stops before it, so
@@ -95,7 +105,25 @@ public class ReplaceInFilesTests
                 afterUndo,
                 redone,
                 afterRedo = new[] {await File.ReadAllTextAsync(first), await File.ReadAllTextAsync(second)}
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  Name: replace in 2 files,
+                  replaced: [
+                    omega,
+                    beta omega
+                  ],
+                  afterUndo: [
+                    alpha,
+                    beta alpha
+                  ],
+                  afterRedo: [
+                    omega,
+                    beta omega
+                  ]
+                }
+                """);
     }
 
     // A file changed after Replace is left as it is by Undo, which says so; the rest is undone.
@@ -119,7 +147,17 @@ public class ReplaceInFilesTests
                 failure = undone.Failure?.Replace(scratch.Root, "{root}"),
                 kept = await File.ReadAllTextAsync(kept),
                 edited = await File.ReadAllTextAsync(edited)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  failure:
+                Left as they are:
+                {root}\edited.txt has changed since,
+                  kept: alpha,
+                  edited: edited since
+                }
+                """);
     }
 
     [Test]
@@ -140,7 +178,17 @@ public class ReplaceInFilesTests
                     failed = outcome.Failed.Select(_ => $"{Path.GetFileName(_.Path)}: {_.Error}"),
                     undo = outcome.Undo != null,
                     file = await File.ReadAllTextAsync(file)
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      failed: [
+                        locked.txt: It is read-only.
+                      ],
+                      undo: false,
+                      file: alpha
+                    }
+                    """);
         }
         finally
         {
@@ -163,7 +211,18 @@ public class ReplaceInFilesTests
                 ["regex groups"] = Replaced("name = value", new(@"(\w+) = (\w+)", "", Regex: true), "$2 = $1"),
                 ["named group"] = Replaced("v1.2", new(@"v(?<major>\d+)", "", Regex: true), "version ${major}"),
                 ["regex, preserve case"] = Replaced("Alpha ALPHA", new("alpha", "", Regex: true), "omega", true)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  named group: version 1.2,
+                  preserve case: bar Bar BAR bar,
+                  regex groups: value = name,
+                  regex, preserve case: Omega OMEGA,
+                  text: bar bar bar bard,
+                  whole word: bar food
+                }
+                """);
     }
 
     [Test]
@@ -176,7 +235,17 @@ public class ReplaceInFilesTests
                 ["FOO"] = ReplaceInFiles.InCaseOf("FOO", "barBaz"),
                 ["fOo"] = ReplaceInFiles.InCaseOf("fOo", "barBaz"),
                 ["123"] = ReplaceInFiles.InCaseOf("123", "barBaz")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  123: barBaz,
+                  foo: barbaz,
+                  Foo: BarBaz,
+                  FOO: BARBAZ,
+                  fOo: barBaz
+                }
+                """);
 
     static ReplaceInFiles.Outcome Replace(IReadOnlyList<string> files, FindQuery query, string replacement) =>
         ReplaceInFiles.Run(files, Matcher.Create(query, out _)!, replacement, false, 0, null, Cancel.None);

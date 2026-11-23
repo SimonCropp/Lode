@@ -30,7 +30,18 @@ public class FolderViewTests
         return Verify(entries.ToDictionary(
             _ => $"{_.Name} (directory: {_.IsDirectory})",
             _ => FolderView.DisplayName(
-                new(_.Name, $@"C:\{_.Name}", _.IsDirectory, 0, default, _.IsDirectory ? FileAttributes.Directory : FileAttributes.Normal))));
+                new(_.Name, $@"C:\{_.Name}", _.IsDirectory, 0, default, _.IsDirectory ? FileAttributes.Directory : FileAttributes.Normal))))
+                .Snapshot(
+                    """
+                    {
+                      .lnk (directory: False): .lnk,
+                      DbToMermaid.slnx.lnk (directory: False): DbToMermaid.slnx,
+                      Folder.lnk (directory: True): Folder.lnk,
+                      notes.txt (directory: False): notes.txt,
+                      Site.url (directory: False): Site,
+                      UPPER.LNK (directory: False): UPPER
+                    }
+                    """);
     }
 
     // As in Explorer: what the shortcut points at, with the shell's arrow over it.
@@ -62,7 +73,28 @@ public class FolderViewTests
         await File.WriteAllBytesAsync(fixture.At("Cache", "cached.aleph"), new byte[5]);
         using var view = await Open(fixture.Root, Promoting("*.aleph"));
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 10 items,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    guide.aleph  900 bytes  (promoted)  in Docs,
+                    file    main.aleph  5,000 bytes  (promoted)  in Source,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -121,7 +153,19 @@ public class FolderViewTests
         view.Filter = "main";
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 1 item found,
+                  filter: main,
+                  rows: [
+                    file    main.aleph  5,000 bytes  in Source
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // It is a shortcut to the file: deleting or renaming it from the root does nothing, nor
@@ -171,7 +215,26 @@ public class FolderViewTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -183,7 +246,26 @@ public class FolderViewTests
         view.SortBy(sizeColumn);
         view.SortBy(sizeColumn);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items,
+                  filter: ,
+                  rows: [
+                    folder  Source,
+                    folder  Docs,
+                    folder  Archive,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    notes.aleph  12 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // A folder of very many items is sorted by another column off the UI thread, the rows
@@ -225,7 +307,26 @@ public class FolderViewTests
 
         view.SortBy(typeColumn);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -236,7 +337,26 @@ public class FolderViewTests
 
         view.SortBy(dateColumn);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    notes.aleph  12 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -248,7 +368,21 @@ public class FolderViewTests
         view.Filter = "REPORT";
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 3 items found,
+                  filter: REPORT,
+                  rows: [
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // Everything beneath the folder is searched, all the way down, but for hidden folders.
@@ -262,7 +396,22 @@ public class FolderViewTests
         view.Filter = "*.aleph";
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 4 items found,
+                  filter: *.aleph,
+                  rows: [
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    leaf.aleph  40 bytes  in Source\Deep,
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    notes.aleph  12 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -275,7 +424,24 @@ public class FolderViewTests
         view.Filter = "*.aleph";
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 6 items found,
+                  filter: *.aleph,
+                  rows: [
+                    file    cached.aleph  0 bytes  in Cache,
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    hidden.aleph  64 bytes  (hidden),
+                    file    leaf.aleph  40 bytes  in Source\Deep,
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    notes.aleph  12 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // In a repository, the search box leaves out what git ignores, as Find in Files does, and
@@ -344,7 +510,44 @@ public class FolderViewTests
                 sorted,
                 descending,
                 cleared = view.ColumnTitles
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  searched: [
+                    Name,
+                    Folder,
+                    Date modified,
+                    Type,
+                    Size
+                  ],
+                  firstRow: [
+                    leaf.aleph,
+                    Source\Deep,
+                    23/03/2025 10:26am,
+                    aleph File,
+                    1 KB
+                  ],
+                  sorted: [
+                    file    notes.aleph  12 bytes,
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    leaf.aleph  40 bytes  in Source\Deep
+                  ],
+                  descending: [
+                    file    leaf.aleph  40 bytes  in Source\Deep,
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    notes.aleph  12 bytes
+                  ],
+                  cleared: [
+                    Name,
+                    Date modified,
+                    Type,
+                    Size
+                  ]
+                }
+                """);
     }
 
     // A search doesn't go through a junction, which here leads back up to the folder searched.
@@ -373,7 +576,19 @@ public class FolderViewTests
             {
                 linked = Directory.Exists(Path.Combine(link, "Docs")),
                 rows = view.Entries.Select(_ => Row(_, view.CurrentPath))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  linked: true,
+                  rows: [
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    leaf.aleph  40 bytes  in Source\Deep,
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    notes.aleph  12 bytes
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -396,7 +611,18 @@ public class FolderViewTests
                 searching,
                 status = view.StatusText,
                 emptyText = view.EmptyText
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  searching: {
+                    status: 0 items found so far, searching subfolders,
+                    emptyText: Searching subfolders...
+                  },
+                  status: 0 items found,
+                  emptyText: No items match your search. [Search inside the files]
+                }
+                """);
     }
 
     // What a filter that matched no names searches for inside the files.
@@ -404,7 +630,18 @@ public class FolderViewTests
     public Task TextAFilterSearchesFor() =>
         Verify(
             new[] {"11.0", "\"11.0", "*.csproj", "*version*", "v?.*", "a*b"}
-                .ToDictionary(_ => _, _ => FolderView.TextFor(_).ToString()));
+                .ToDictionary(_ => _, _ => FolderView.TextFor(_).ToString()))
+                .Snapshot(
+                    """
+                    {
+                      "11.0: ("11.0, False),
+                      *.csproj: (.csproj, False),
+                      *version*: (version, False),
+                      11.0: (11.0, False),
+                      a*b: (a.*b, True),
+                      v?.*: (v.\., True)
+                    }
+                    """);
 
     // A search stops once it has found the most it may in the subfolders, and says so. The
     // folder's own matches are shown whatever.
@@ -418,7 +655,21 @@ public class FolderViewTests
         view.Filter = "*.aleph";
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 3 items found, only the first 2 in subfolders,
+                  filter: *.aleph,
+                  rows: [
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    notes.aleph  12 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // What is selected among what a search found stays selected as the list is given its rows
@@ -469,7 +720,22 @@ public class FolderViewTests
         view.SortBy(sizeColumn);
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 4 items found,
+                  filter: *.aleph,
+                  rows: [
+                    file    main.aleph  5,000 bytes  in Source,
+                    file    guide.aleph  900 bytes  in Docs,
+                    file    leaf.aleph  40 bytes  in Source\Deep,
+                    file    notes.aleph  12 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // On This PC the box narrows the drives, rather than searching every one of them.
@@ -490,7 +756,20 @@ public class FolderViewTests
                 narrowed = view.StatusText.StartsWith("0 items (filtered from "),
                 emptyText = view.EmptyText,
                 columns = view.ColumnTitles
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  narrowed: true,
+                  emptyText: No items match your search.,
+                  columns: [
+                    Name,
+                    Free space,
+                    Type,
+                    Total size
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -503,7 +782,20 @@ public class FolderViewTests
         view.Navigate(fixture.At("Source"));
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects/Source,
+                  status: 2 items,
+                  filter: ,
+                  rows: [
+                    folder  Deep,
+                    file    main.aleph  5,000 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -512,7 +804,28 @@ public class FolderViewTests
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root, new() {ShowHidden = true});
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 10 items,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Cache  (hidden),
+                    folder  Docs,
+                    folder  Source,
+                    file    hidden.aleph  64 bytes  (hidden),
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     [Test]
@@ -549,7 +862,72 @@ public class FolderViewTests
         await Step("forward at the end does nothing", view.GoForward);
         await Step("up", view.GoUp);
 
-        await Verify(steps);
+        await Verify(steps)
+            .Snapshot(
+                """
+                [
+                  {
+                    step: start,
+                    path: Projects,
+                    CanGoBack: false,
+                    CanGoForward: false
+                  },
+                  {
+                    step: open Source,
+                    path: Projects/Source,
+                    CanGoBack: true,
+                    CanGoForward: false
+                  },
+                  {
+                    step: open Deep,
+                    path: Projects/Source/Deep,
+                    CanGoBack: true,
+                    CanGoForward: false
+                  },
+                  {
+                    step: back,
+                    path: Projects/Source,
+                    CanGoBack: true,
+                    CanGoForward: true
+                  },
+                  {
+                    step: back,
+                    path: Projects,
+                    CanGoBack: false,
+                    CanGoForward: true
+                  },
+                  {
+                    step: back at the start does nothing,
+                    path: Projects,
+                    CanGoBack: false,
+                    CanGoForward: true
+                  },
+                  {
+                    step: forward,
+                    path: Projects/Source,
+                    CanGoBack: true,
+                    CanGoForward: true
+                  },
+                  {
+                    step: open Docs drops the forward history,
+                    path: Projects/Docs,
+                    CanGoBack: true,
+                    CanGoForward: false
+                  },
+                  {
+                    step: forward at the end does nothing,
+                    path: Projects/Docs,
+                    CanGoBack: true,
+                    CanGoForward: false
+                  },
+                  {
+                    step: up,
+                    path: Projects,
+                    CanGoBack: true,
+                    CanGoForward: false
+                  }
+                ]
+                """);
     }
 
     // Going to the folder already shown, by its button in the breadcrumb or Enter in the address
@@ -667,7 +1045,28 @@ public class FolderViewTests
         view.GoUp();
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items    1 item selected,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: [
+                    Source
+                  ]
+                }
+                """);
     }
 
     // A Reveal overtaken while its folder is still being asked after selects nothing where the
@@ -698,7 +1097,28 @@ public class FolderViewTests
         view.Navigate(fixture.Root);
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items    1 item selected,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: [
+                    Source
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -712,7 +1132,22 @@ public class FolderViewTests
         view.GoBack();
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects/Source,
+                  status: 2 items    1 item selected,
+                  filter: ,
+                  rows: [
+                    folder  Deep,
+                    file    main.aleph  5,000 bytes
+                  ],
+                  selected: [
+                    Deep
+                  ]
+                }
+                """);
     }
 
     // A drive refusing to say how big it is, or gone meanwhile, is listed in This PC without
@@ -886,7 +1321,28 @@ public class FolderViewTests
         view.Reveal(fixture.At("report10.beta"));
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items    1 item selected  293 KB,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    summary.gamma  0 bytes
+                  ],
+                  selected: [
+                    report10.beta
+                  ]
+                }
+                """);
     }
 
     [Test]
@@ -899,7 +1355,26 @@ public class FolderViewTests
         File.Delete(fixture.At("summary.gamma"));
         await Pump.Until(() => view.Entries.Any(_ => _.Name == "arrived.aleph") && view.Entries.All(_ => _.Name != "summary.gamma"));
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items,
+                  filter: ,
+                  rows: [
+                    folder  Archive,
+                    folder  Docs,
+                    folder  Source,
+                    file    arrived.aleph  3,000 bytes,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // As in Explorer: the folder deleted from under the view, from Lode or from anywhere else,
@@ -980,7 +1455,21 @@ public class FolderViewTests
         await Pump.Until(() => view.CurrentPath == fixture.At("Documents"));
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects/Documents,
+                  status: 1 item    1 item selected  900 bytes,
+                  filter: ,
+                  rows: [
+                    file    guide.aleph  900 bytes
+                  ],
+                  selected: [
+                    guide.aleph
+                  ]
+                }
+                """);
 
         view.GoBack();
         await Pump.Loaded(view);
@@ -1820,7 +2309,22 @@ public class FolderViewTests
         view.CreateFolder();
         await Pump.Loaded(view);
 
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects/Archive,
+                  status: 2 items    1 item selected,
+                  filter: ,
+                  rows: [
+                    folder  New folder,
+                    folder  New folder (2)
+                  ],
+                  selected: [
+                    New folder (2)
+                  ]
+                }
+                """);
     }
 
     static string MakeZip(Fixture fixture, string name, params string[] entries)
@@ -1854,7 +2358,21 @@ public class FolderViewTests
         using var view = await Open(zip);
 
         await Assert.That(view.InArchive).IsTrue();
-        await Verify(Describe(view, fixture));
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects/Bundle.zip,
+                  status: 3 items,
+                  filter: ,
+                  rows: [
+                    folder  Docs,
+                    file    readme.aleph  12 bytes,
+                    file    tool.exe  8 bytes
+                  ],
+                  selected: []
+                }
+                """);
     }
 
     // Opened, a zip is gone into, as in Explorer, and so is a folder in it. Up from inside comes
@@ -2073,7 +2591,22 @@ public class FolderViewTests
                 dragged,
                 toggled,
                 clicked = Selected(view)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  dragged: [
+                    Docs,
+                    Source,
+                    notes.aleph
+                  ],
+                  toggled: [
+                    Docs,
+                    Source,
+                    Report1.beta
+                  ]
+                }
+                """);
     }
 
     // The horizontal scrollbar runs from the left edge of the view, across the margin, as
@@ -2151,7 +2684,51 @@ public class FolderViewTests
                     firstRow = view.FirstRowCells.ToList(),
                     setting = settings.HiddenColumns.ToList()
                 }
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  hidden: {
+                    columns: [
+                      Name,
+                      Date modified,
+                      Size
+                    ],
+                    firstRow: [
+                      Archive,
+                      14/03/2025 09:26am,
+                      
+                    ],
+                    rows: [
+                      Archive,
+                      Docs,
+                      Source,
+                      notes.aleph,
+                      Report1.beta,
+                      report2.beta,
+                      report10.beta,
+                      summary.gamma
+                    ],
+                    setting: [
+                      Type
+                    ]
+                  },
+                  shownAgain: {
+                    columns: [
+                      Name,
+                      Date modified,
+                      Type,
+                      Size
+                    ],
+                    firstRow: [
+                      Archive,
+                      14/03/2025 09:26am,
+                      File folder,
+                      
+                    ]
+                  }
+                }
+                """);
     }
 
     // Name stays ticked and cannot be unticked.
@@ -2168,7 +2745,26 @@ public class FolderViewTests
             {
                 columns = view.ColumnTitles.ToList(),
                 menu = menu.Items.Cast<ToolStripItem>().Select(DescribeMenuItem).ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  columns: [
+                    Name,
+                    Date modified,
+                    Type
+                  ],
+                  menu: [
+                    Size column to fit,
+                    Size all columns to fit,
+                    ----,
+                    [x] Name (disabled),
+                    [x] Date modified,
+                    [x] Type,
+                    Size
+                  ]
+                }
+                """);
     }
 
     // The code folder's repositories each say where they are in a Git column: the branch, then
@@ -3149,7 +3745,37 @@ public class FolderViewTests
             {
                 withoutSystem,
                 withSystem = view.Entries.Select(_ => _.Name).ToList()
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  withoutSystem: [
+                    Archive,
+                    Cache,
+                    Docs,
+                    Source,
+                    hidden.aleph,
+                    notes.aleph,
+                    Report1.beta,
+                    report2.beta,
+                    report10.beta,
+                    summary.gamma
+                  ],
+                  withSystem: [
+                    Archive,
+                    Cache,
+                    Docs,
+                    Protected,
+                    Source,
+                    hidden.aleph,
+                    notes.aleph,
+                    Report1.beta,
+                    report2.beta,
+                    report10.beta,
+                    summary.gamma
+                  ]
+                }
+                """);
     }
 
     static List<string> Selected(FolderView view) =>

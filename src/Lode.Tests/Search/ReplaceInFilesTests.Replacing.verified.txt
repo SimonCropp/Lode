@@ -1,8 +1,0 @@
-﻿{
-  named group: version 1.2,
-  preserve case: bar Bar BAR bar,
-  regex groups: value = name,
-  regex, preserve case: Omega OMEGA,
-  text: bar bar bar bard,
-  whole word: bar food
-}

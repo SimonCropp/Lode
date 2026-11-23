@@ -5,6 +5,8 @@ public static class ModuleInitializer
     {
         VerifyWinForms.Initialize();
 
+        VerifierSettings.Inline();
+
         // Effectively "the same pixels", rather than Verify's looser default. The window is
         // mostly flat background, so a loose threshold would let real changes through.
         VerifierSettings.UseSsimForPng(0.9999);

@@ -20,7 +20,34 @@ public class CommandPaletteTests
                 closeRight = Names("close right"),
                 caseIgnored = Names("NEW"),
                 nothing = Names("zzz")
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  empty: [
+                    Back,
+                    New tab,
+                    Close tab,
+                    Close tabs to the right,
+                    Stable build,
+                    Reopen closed tab
+                  ],
+                  tab: [
+                    New tab,
+                    Close tab,
+                    Close tabs to the right,
+                    Reopen closed tab,
+                    Stable build
+                  ],
+                  closeRight: [
+                    Close tabs to the right
+                  ],
+                  caseIgnored: [
+                    New tab
+                  ],
+                  nothing: []
+                }
+                """);
 
     static IEnumerable<string> Names(string search) =>
         CommandPalette.Match(commands, search).Select(_ => _.Name);

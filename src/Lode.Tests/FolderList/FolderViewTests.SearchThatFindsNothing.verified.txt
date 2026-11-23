@@ -1,8 +1,0 @@
-﻿{
-  searching: {
-    status: 0 items found so far, searching subfolders,
-    emptyText: Searching subfolders...
-  },
-  status: 0 items found,
-  emptyText: No items match your search. [Search inside the files]
-}

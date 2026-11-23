@@ -14,7 +14,18 @@ public class UpdatesTests
                 aDayAgo = Updates.IsDue(now.AddDays(-1), now),
                 aWeekAgo = Updates.IsDue(now.AddDays(-7), now),
                 inTheFuture = Updates.IsDue(now.AddHours(1), now)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  neverChecked: true,
+                  anHourAgo: false,
+                  justUnderADayAgo: false,
+                  aDayAgo: true,
+                  aWeekAgo: true,
+                  inTheFuture: true
+                }
+                """);
 
     // The update is by the tool path above the store, and says how it went beside the settings,
     // outside the store it replaces. ToolUpdateTests has the shim, and a build's output having
@@ -28,7 +39,14 @@ public class UpdatesTests
             {
                 update.ToolPath,
                 outcomeBesideTheSettings = update.Outcome == Updates.OutcomePath
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  ToolPath: C:\Users\Someone\.dotnet\tools,
+                  outcomeBesideTheSettings: true
+                }
+                """);
     }
 
     [Test]
@@ -51,7 +69,17 @@ public class UpdatesTests
                 settings.AvailableUpdate,
                 // As it starts and as it ends.
                 changes
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  available: 0.4.0-beta.1,
+                  Checking: false,
+                  LastUpdateCheck: DateTimeOffset_1,
+                  AvailableUpdate: 0.4.0-beta.1,
+                  changes: 2
+                }
+                """);
     }
 
     [Test]
@@ -67,7 +95,20 @@ public class UpdatesTests
             {
                 same = Describe(same),
                 older = Describe(older)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  same: {
+                    checkedAt: DateTimeOffset_1,
+                    available: none
+                  },
+                  older: {
+                    checkedAt: DateTimeOffset_1,
+                    available: none
+                  }
+                }
+                """);
     }
 
     // Offline, say: what the last check found still shows, and the check stays due, so the next
@@ -95,7 +136,17 @@ public class UpdatesTests
                 updates.Checking,
                 lastCheckedUnchanged = settings.LastUpdateCheck == lastChecked,
                 stillDue = Updates.IsDue(settings.LastUpdateCheck, now)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  available: 0.4.0,
+                  Error: No such host is known. (api.nuget.org:443),
+                  Checking: false,
+                  lastCheckedUnchanged: true,
+                  stillDue: true
+                }
+                """);
     }
 
     // A pending update shows from the start, rather than a day later. Not once it is the version
@@ -128,7 +179,16 @@ public class UpdatesTests
                         {
                             AvailableUpdate = "0.4.0"
                         }))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  newer: 0.4.0,
+                  nowRunning: none,
+                  unreadable: none,
+                  build: none
+                }
+                """);
 
     [Test]
     public async Task ChecksOnceADay()
@@ -164,7 +224,15 @@ public class UpdatesTests
                 twoHoursOn = twoHoursOn > 0,
                 aDayOn = aDayOn > twoHoursOn,
                 anHourAfterThat = asked > aDayOn
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  twoHoursOn: false,
+                  aDayOn: true,
+                  anHourAfterThat: false
+                }
+                """);
     }
 
     // The Lode the update starts says how it went, once. A success says the version rather than
@@ -192,7 +260,24 @@ public class UpdatesTests
                     succeeded,
                     noneAgain,
                     failed
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      none: true,
+                      succeeded: {
+                        Title: Lode updated,
+                        Message: Now running 0.3.0.,
+                        Icon: Info
+                      },
+                      noneAgain: true,
+                      failed: {
+                        Title: Lode did not update,
+                        Message: Unhandled exception: Access to the path 'lode.dll' is denied.,
+                        Icon: Warning
+                      }
+                    }
+                    """);
         }
         finally
         {
@@ -221,7 +306,14 @@ public class UpdatesTests
                 {
                     saysNothing = notice == null,
                     left = File.Exists(outcome)
-                });
+                })
+                .Snapshot(
+                    """
+                    {
+                      saysNothing: true,
+                      left: true
+                    }
+                    """);
         }
         finally
         {

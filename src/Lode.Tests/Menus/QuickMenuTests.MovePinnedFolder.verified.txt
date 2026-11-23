@@ -1,6 +1,0 @@
-﻿[
-  [
-    Projects/Archive,
-    Projects/Docs
-  ]
-]

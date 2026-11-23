@@ -1,6 +1,0 @@
-﻿{
-  closed: [
-    Second
-  ],
-  selected: First
-}

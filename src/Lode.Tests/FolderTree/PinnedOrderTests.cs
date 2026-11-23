@@ -11,7 +11,36 @@ public class PinnedOrderTests
                 aToLast = PinnedOrder.Move(pinned, @"C:\A", 3),
                 bAfterC = PinnedOrder.Move(pinned, @"C:\B", 2),
                 pastTheEnd = PinnedOrder.Move(pinned, @"C:\A", 10)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  cToFirst: [
+                    C:\C,
+                    C:\A,
+                    C:\B,
+                    C:\D
+                  ],
+                  aToLast: [
+                    C:\B,
+                    C:\C,
+                    C:\D,
+                    C:\A
+                  ],
+                  bAfterC: [
+                    C:\A,
+                    C:\C,
+                    C:\B,
+                    C:\D
+                  ],
+                  pastTheEnd: [
+                    C:\B,
+                    C:\C,
+                    C:\D,
+                    C:\A
+                  ]
+                }
+                """);
 
     // The folders moved to the end in turn, each unpinned and pinned again. Those already in
     // order at the start stay put.
@@ -25,7 +54,31 @@ public class PinnedOrderTests
                 dToSecond = MovedFor(PinnedOrder.Move(pinned, @"C:\D", 1)),
                 aToLast = MovedFor(PinnedOrder.Move(pinned, @"C:\A", 3)),
                 bDownOne = MovedFor(PinnedOrder.Move(pinned, @"C:\B", 2))
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  cToFirst: [
+                    C:\A,
+                    C:\B,
+                    C:\D
+                  ],
+                  dUpOne: [
+                    C:\C
+                  ],
+                  dToSecond: [
+                    C:\B,
+                    C:\C
+                  ],
+                  aToLast: [
+                    C:\A
+                  ],
+                  bDownOne: [
+                    C:\B,
+                    C:\D
+                  ]
+                }
+                """);
 
     [Test]
     public async Task NothingToMoveWhenUnchanged() =>

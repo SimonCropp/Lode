@@ -53,7 +53,23 @@ public class ShellIconsTests
         ];
         return Verify(items.ToDictionary(
             _ => $"{_.Name} (directory: {_.IsDirectory})",
-            _ => Describe(ShellIcons.GetOverlay($@"C:\{_.Name}", _.IsDirectory))));
+            _ => Describe(ShellIcons.GetOverlay($@"C:\{_.Name}", _.IsDirectory))))
+            .Snapshot(
+                """
+                {
+                  DbToMermaid.slnx.lnk (directory: False): shortcut arrow,
+                  Documents.library-ms (directory: False): none,
+                  Folder.lnk (directory: True): none,
+                  notes.aleph (directory: False): none,
+                  notes.txt (directory: False): none,
+                  Program.pif (directory: False): shortcut arrow,
+                  README (directory: False): none,
+                  setup.exe (directory: False): none,
+                  Site.url (directory: False): shortcut arrow,
+                  Tool.appref-ms (directory: False): shortcut arrow,
+                  UPPER.LNK (directory: False): shortcut arrow
+                }
+                """);
     }
 
     static string Describe(int overlay)

@@ -1,9 +1,0 @@
-﻿{
-  linked: true,
-  rows: [
-    file    guide.aleph  900 bytes  in Docs,
-    file    leaf.aleph  40 bytes  in Source\Deep,
-    file    main.aleph  5,000 bytes  in Source,
-    file    notes.aleph  12 bytes
-  ]
-}

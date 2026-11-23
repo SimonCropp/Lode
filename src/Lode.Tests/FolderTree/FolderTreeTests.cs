@@ -14,7 +14,16 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"), fixture.Root);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Docs
+                    Projects
+                - This PC
+                  + FolderTreeTests.PinnedFoldersHaveNoChildren
+
+                """);
     }
 
     [Test]
@@ -27,7 +36,18 @@ public class FolderTreeTests
         await Expand(tree, projects);
         await Expand(tree, projects.Nodes[2]);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.ExpandingLoadsSubfolders
+                    - Projects
+                        Archive
+                        Docs
+                      - Source
+                          Deep
+
+                """);
     }
 
     // A drive that can't be read, a mapped drive off the network say, keeps its expander, and
@@ -137,7 +157,18 @@ public class FolderTreeTests
 
         await Expand(tree, await Projects(tree));
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.HiddenFoldersWhenShown
+                    - Projects
+                        Archive
+                        Cache
+                        Docs
+                      + Source
+
+                """);
     }
 
     [Test]
@@ -149,7 +180,18 @@ public class FolderTreeTests
         tree.SelectPath(fixture.At("Source", "Deep"));
         await Pump.Loaded(tree);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.SelectPathExpandsDownToTheFolder
+                    - Projects
+                        Archive
+                        Docs
+                      - Source
+                          Deep   <- selected
+
+                """);
     }
 
     // A pinned folder is a shortcut: the selection goes to the folder under This PC, and the
@@ -163,7 +205,22 @@ public class FolderTreeTests
         tree.SelectPath(fixture.At("Source"));
         await Pump.Loaded(tree);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Source   <- selected
+                - Recent
+                    Source   <- selected
+                    Docs
+                - This PC
+                  - FolderTreeTests.SelectPathOfAPinnedFolderSelectsItUnderThisPC
+                    - Projects
+                        Archive
+                        Docs
+                      + Source   <- selected
+
+                """);
     }
 
     // Moving on to another folder takes the selected look off the pinned entry.
@@ -178,7 +235,19 @@ public class FolderTreeTests
         tree.SelectPath(fixture.At("Docs"));
         await Pump.Loaded(tree);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Source
+                - This PC
+                  - FolderTreeTests.SelectingAnotherFolderUnselectsThePinnedEntry
+                    - Projects
+                        Archive
+                        Docs   <- selected
+                      + Source
+
+                """);
     }
 
     // Picked by the user, a pinned folder hands the selection on to the tree below.
@@ -198,7 +267,25 @@ public class FolderTreeTests
             {
                 selected = selected.Select(fixture.Relative),
                 tree = Dump(tree)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  selected: [
+                    Projects/Source
+                  ],
+                  tree:
+                - Pinned
+                    Source   <- selected
+                - This PC
+                  - FolderTreeTests.PickingAPinnedFolderMovesToItUnderThisPC
+                    - Projects
+                        Archive
+                        Docs
+                      + Source   <- selected
+
+                }
+                """);
     }
 
     // Outside every drive (a network share, say) the pinned entry itself is selected.
@@ -212,7 +299,15 @@ public class FolderTreeTests
         tree.SelectPath(other.Root);
         await Pump.Loaded(tree);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Projects   <- selected
+                - This PC
+                  + FolderTreeTests.SelectPathFallsBackToThePinnedEntry
+
+                """);
     }
 
     [Test]
@@ -224,7 +319,17 @@ public class FolderTreeTests
         tree.SelectPath(fixture.At("Cache"));
         await Pump.Loaded(tree);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.SelectPathSettlesForTheParentOfAHiddenFolder
+                    + Projects   <- selected
+                        Archive
+                        Docs
+                      + Source
+
+                """);
     }
 
     // The folder above one that is not there is read on the way, and selected instead. Watched
@@ -438,7 +543,32 @@ public class FolderTreeTests
             {
                 picked,
                 thenAShare = Dump(tree)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  picked:
+                - Pinned
+                    Source   <- selected
+                - This PC
+                  - FolderTreeTests.GoingToAShareInNoDriveUnselectsThePinnedEntry
+                    - Projects
+                        Archive
+                        Docs
+                      + Source   <- selected
+                ,
+                  thenAShare:
+                - Pinned
+                    Source
+                - This PC
+                  - FolderTreeTests.GoingToAShareInNoDriveUnselectsThePinnedEntry
+                    - Projects
+                        Archive
+                        Docs
+                      + Source
+
+                }
+                """);
     }
 
     // With Expand to open folder off, as Explorer's tree is by default, nothing is read or
@@ -468,7 +598,32 @@ public class FolderTreeTests
                 notShowing,
                 showing,
                 thenOneNotShowing = Dump(tree)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  notShowing:
+                - This PC
+                  + FolderTreeTests.WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected
+                ,
+                  showing:
+                - This PC
+                  - FolderTreeTests.WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected
+                    - Projects
+                        Archive
+                        Docs   <- selected
+                      + Source
+                ,
+                  thenOneNotShowing:
+                - This PC
+                  - FolderTreeTests.WithoutExpandingToTheOpenFolderOnlyAFolderShowingIsSelected
+                    - Projects
+                        Archive
+                        Docs
+                      + Source
+
+                }
+                """);
     }
 
     // Picked where it is pinned, a folder stays selected there, rather than handing on to the
@@ -496,7 +651,27 @@ public class FolderTreeTests
                 selected = selected.Select(fixture.Relative),
                 picked,
                 thenOneNotShowing = Dump(tree)
-            });
+            })
+            .Snapshot(
+                """
+                {
+                  selected: [
+                    Projects/Source
+                  ],
+                  picked:
+                - Pinned
+                    Source   <- selected
+                - This PC
+                  + FolderTreeTests.WithoutExpandingToTheOpenFolderAPickedPinnedFolderStaysSelected
+                ,
+                  thenOneNotShowing:
+                - Pinned
+                    Source
+                - This PC
+                  + FolderTreeTests.WithoutExpandingToTheOpenFolderAPickedPinnedFolderStaysSelected
+
+                }
+                """);
     }
 
     [Test]
@@ -505,7 +680,17 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = CreateWithRecent(fixture, new() { ShowHidden = false }, [fixture.At("Docs")], [fixture.At("Source")]);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Docs
+                - Recent
+                    Source
+                - This PC
+                  + FolderTreeTests.PinnedAndRecentAreSeparateSections
+
+                """);
     }
 
     // Pinned and recent folders with the same name, in one section or across the two, are told
@@ -522,7 +707,19 @@ public class FolderTreeTests
             [fixture.At("Source", "Deep"), fixture.At("Docs", "Deep"), fixture.At("Docs")],
             [fixture.At("Archive", "Deep")]);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Source\Deep
+                    Docs\Deep
+                    Docs
+                - Recent
+                    Archive\Deep
+                - This PC
+                  + FolderTreeTests.FoldersWithTheSameNameAreToldApart
+
+                """);
     }
 
     [Test]
@@ -531,7 +728,15 @@ public class FolderTreeTests
         using var fixture = Fixture.Create();
         using var tree = CreateWithRecent(fixture, new() { ShowHidden = false, ShowRecent = false }, [fixture.At("Docs")], [fixture.At("Source")]);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - Pinned
+                    Docs
+                - This PC
+                  + FolderTreeTests.RecentHiddenWhenTurnedOff
+
+                """);
     }
 
     [Test]
@@ -568,7 +773,17 @@ public class FolderTreeTests
             [fixture.At("Docs")],
             [fixture.At("Source")]);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                + Pinned
+                    Docs
+                - Recent
+                    Source
+                - This PC
+                  + FolderTreeTests.CollapsedSectionsStartCollapsed
+
+                """);
     }
 
     // Asked for a folder it has not caught up with, one just made or renamed, the tree settles
@@ -604,7 +819,18 @@ public class FolderTreeTests
         Directory.CreateDirectory(fixture.At("Build"));
         await Pump.Until(() => Names(projects).Contains("Build") && !Names(projects).Contains("Docs"));
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.PicksUpFoldersAddedAndRemovedOnDisk
+                    - Projects   <- selected
+                        Archive
+                        Build
+                      - Source
+                          Deep
+
+                """);
     }
 
     [Test]
@@ -619,7 +845,16 @@ public class FolderTreeTests
         Directory.Delete(fixture.At("Archive"), true);
         await Expand(tree, projects);
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.ExpandingAgainPicksUpChangesMadeWhileCollapsed
+                    - Projects
+                        Docs
+                      + Source
+
+                """);
     }
 
     // A collapsed folder is not watched, so a folder made in it, by git clone say, is not seen
@@ -767,7 +1002,18 @@ public class FolderTreeTests
         Directory.CreateDirectory(fixture.At("Build"));
         await Pump.Until(() => Names(projects).Contains("Build"));
 
-        await Verify(Dump(tree));
+        await Verify(Dump(tree))
+            .Snapshot(
+                """
+                - This PC
+                  - FolderTreeTests.ReadingAFolderAgainUpdatesTheExpandersInIt
+                    - Projects
+                      + Archive
+                        Build
+                        Docs
+                        Source
+
+                """);
     }
 
     // Painted through a buffer, as Explorer's own tree is, so dragging the splitter, which has
