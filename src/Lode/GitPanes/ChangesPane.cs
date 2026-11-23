@@ -54,16 +54,9 @@ sealed class ChangesPane : UserControl
     int version;
     bool loadingDraft;
 
-    // What is typed, and what is left unticked, in each repository, while Lode runs.
-    sealed class Draft
-    {
-        public HashSet<string> Unticked { get; } = new(StringComparer.Ordinal);
-        public string Summary { get; set; } = "";
-        public string Description { get; set; } = "";
-    }
-
-    static Dictionary<string, Draft> drafts = new(StringComparer.OrdinalIgnoreCase);
-    Draft draft = new();
+    // What is typed, what is left unticked, and the lines picked, in the repository, kept for
+    // each while Lode runs, and shared with the diff.
+    CommitDrafts.Draft draft = new();
 
     /// <summary>
     /// Reads what is uncommitted. Tests answer for git.
@@ -77,6 +70,16 @@ sealed class ChangesPane : UserControl
     /// A commit or discard finished, for the window to read the repository's state again.
     /// </summary>
     public event Action? Committed;
+
+    /// <summary>
+    /// A file picked, or several, or none, or one asked to be shown: for the diff to show it.
+    /// </summary>
+    public event Action<DiffRequest>? DiffRequested;
+
+    /// <summary>
+    /// What is uncommitted was read again, for a diff of one of its files to be read again too.
+    /// </summary>
+    public event Action<string>? ChangesRead;
 
     public PaneHeader Header => header;
 
@@ -136,7 +139,10 @@ sealed class ChangesPane : UserControl
         list.MouseDown += OnListMouseDown;
         list.MouseUp += OnListMouseUp;
         list.KeyDown += OnListKeyDown;
-        list.ItemActivate += (_, _) => OpenDiff(list.FocusedItem?.Index ?? -1);
+        list.ItemActivate += (_, _) => Activate(list.FocusedItem?.Index ?? -1);
+        list.SelectedIndexChanged += (_, _) => PickedChanged();
+        list.VirtualItemsSelectionRangeChanged += (_, _) => PickedChanged();
+        CommitDrafts.PicksChanged += OnPicksChanged;
         rowTip = new(list, _ => ChangeRows.TipAt(list, _, shown));
         list.ShowItemToolTips = false;
         list.GotFocus += (_, _) => list.Invalidate();
@@ -414,6 +420,7 @@ sealed class ChangesPane : UserControl
         ShowDescription(draft.Description.Length > 0, focus: false);
         filterFrame.Box.Text = "";
         ShowRows();
+        PickedChanged();
         stale = true;
         if (showing)
         {
@@ -432,20 +439,20 @@ sealed class ChangesPane : UserControl
         return Locations.Same(first, second);
     }
 
-    static Draft DraftOf(string? repo)
+    static CommitDrafts.Draft DraftOf(string? repo) =>
+        CommitDrafts.Of(repo);
+
+    // Lines picked in the diff: the file's tick, and how many the commit takes, follow.
+    void OnPicksChanged(string pickedIn, string path)
     {
-        if (repo == null)
+        if (!SameRepo(repo, pickedIn))
         {
-            return new();
+            return;
         }
 
-        if (!drafts.TryGetValue(repo, out var found))
-        {
-            found = new();
-            drafts[repo] = found;
-        }
-
-        return found;
+        list.Invalidate();
+        tickRow.Invalidate();
+        ShowCommitButton();
     }
 
     void KeepDraft()
@@ -542,8 +549,9 @@ sealed class ChangesPane : UserControl
             changes = read ?? GitChanges.Empty;
 
             // Unticked files no longer changed are forgotten: changed again, they start ticked.
-            draft.Unticked.IntersectWith(changes.Files.Select(_ => _.Path));
+            draft.Keep(changes.Files.Select(_ => _.Path));
             ShowRows();
+            ChangesRead?.Invoke(reading);
         }
         finally
         {
@@ -597,9 +605,23 @@ sealed class ChangesPane : UserControl
         ShowCommitButton();
     }
 
+    // Whether any of the file goes in the commit: all of it, or the lines picked.
     bool IsTicked(Change change) =>
         changes.Merging ||
         !draft.Unticked.Contains(change.Path);
+
+    /// <summary>
+    /// How a file's tick shows: ticked, not, or, with only some of its lines picked, partly.
+    /// </summary>
+    bool? TickOf(Change change)
+    {
+        if (changes.Merging)
+        {
+            return true;
+        }
+
+        return draft.TickOf(change.Path);
+    }
 
     IReadOnlyList<Change> Ticked() =>
         changes.Files
@@ -607,17 +629,18 @@ sealed class ChangesPane : UserControl
             .ToList();
 
     /// <summary>
-    /// Whether every file showing is ticked, none is, or some are, for the tick above the list.
+    /// Whether every file showing is ticked whole, none is ticked at all, or some, for the tick
+    /// above the list.
     /// </summary>
     bool? AllTicked()
     {
-        var ticked = shown.Count(IsTicked);
-        if (ticked == 0)
+        var ticks = shown.Select(TickOf).ToList();
+        if (ticks.All(_ => _ == false))
         {
             return false;
         }
 
-        if (ticked == shown.Count)
+        if (ticks.All(_ => _ == true))
         {
             return true;
         }
@@ -644,15 +667,14 @@ sealed class ChangesPane : UserControl
         ShowCommitButton();
     }
 
+    // Ticked whole, or not at all, the lines picked of it forgotten, the diff showing it told.
     void SetTick(Change change, bool tick)
     {
-        if (tick)
+        draft.SetTick(change.Path, tick);
+        if (repo != null)
         {
-            draft.Unticked.Remove(change.Path);
-            return;
+            CommitDrafts.Notify(repo, change.Path);
         }
-
-        draft.Unticked.Add(change.Path);
     }
 
     void Toggle(IReadOnlyList<int> rows)
@@ -663,8 +685,9 @@ sealed class ChangesPane : UserControl
             return;
         }
 
-        // As a list of checkboxes does with several selected: all as the first becomes.
-        var tick = !IsTicked(shown[rows[0]]);
+        // As a list of checkboxes does with several selected: all as the first becomes. One only
+        // partly ticked becomes ticked whole, as GitHub Desktop's does.
+        var tick = TickOf(shown[rows[0]]) != true;
         foreach (var row in rows)
         {
             SetTick(shown[row], tick);
@@ -726,7 +749,27 @@ sealed class ChangesPane : UserControl
         var committingIn = repo!;
         var ticked = Ticked();
         var merging = changes.Merging;
+        var hasCommits = changes.HasCommits;
         var message = GitChanges.Message(summaryFrame.Box.Text, descriptionFrame.Box.Text);
+
+        // Files only some of whose lines are picked go in as the patch of those lines; part way
+        // through a merge, git commits everything.
+        var picked = new List<(Change File, LinePicks Picks)>();
+        if (!merging)
+        {
+            foreach (var change in ticked)
+            {
+                if (draft.Picks.TryGetValue(change.Path, out var picks))
+                {
+                    picked.Add((change, picks));
+                }
+            }
+        }
+
+        var whole = ticked
+            .Where(_ => picked.All(partial => partial.File != _))
+            .ToList();
+        Change? changedSincePicked = null;
         committing = true;
         ShowCommitButton();
         try
@@ -736,15 +779,26 @@ sealed class ChangesPane : UserControl
                 [committingIn],
                 async (_, cancel) =>
                 {
-                    var result = await Task.Run(() => GitChanges.Commit(committingIn, ticked, merging, message, cancel), cancel);
+                    var (result, changed) = await Task.Run(() => CommitPicked(committingIn, whole, picked, hasCommits, merging, message, cancel), cancel);
+                    changedSincePicked = changed;
                     GitCache.MarkStale([committingIn]);
                     return CodeCommands.GitOutcome([result]);
                 });
+            if (changedSincePicked != null)
+            {
+                CommitDrafts.ForgetPicks(committingIn, changedSincePicked.Path);
+            }
+
             if (entry.State == ActionLog.State.Succeeded)
             {
                 var committed = DraftOf(committingIn);
                 committed.Summary = "";
                 committed.Description = "";
+                foreach (var (file, _) in picked)
+                {
+                    CommitDrafts.ForgetPicks(committingIn, file.Path);
+                }
+
                 if (SameRepo(committingIn, repo))
                 {
                     loadingDraft = true;
@@ -765,6 +819,40 @@ sealed class ChangesPane : UserControl
                 Committed?.Invoke();
             }
         }
+    }
+
+    /// <summary>
+    /// Commits the files ticked whole and the lines picked of the others, each of those read
+    /// again first: one whose diff is not what its lines were picked from any more stops the
+    /// commit, as the lines picked can't be told, and is given back to be ticked whole again.
+    /// </summary>
+    static (CodeCommands.RepoResult Result, Change? Stale) CommitPicked(
+        string repo,
+        IReadOnlyList<Change> whole,
+        IReadOnlyList<(Change File, LinePicks Picks)> picked,
+        bool hasCommits,
+        bool merging,
+        string message,
+        Cancel cancel)
+    {
+        var partial = new List<PartialChange>();
+        foreach (var (file, picks) in picked)
+        {
+            var diff = GitFileDiff.Read(new(repo, file, null, hasCommits), false, true, cancel);
+            if (diff is not TextDiff text ||
+                text.PatchHash != picks.PatchHash)
+            {
+                return (new(repo, false, $"{file.Path} changed after its lines were picked, so nothing was committed. It is ticked whole again: pick its lines again, or commit it whole."), file);
+            }
+
+            var patch = LinePatch.Format(text, picks, file.Kind == GitChange.Deleted);
+            if (patch != null)
+            {
+                partial.Add(new(file, patch));
+            }
+        }
+
+        return (GitChanges.Commit(repo, whole, merging, message, cancel, partial), null);
     }
 
     // Puts the files back as the last commit has them, having asked, the files as they are going
@@ -824,16 +912,102 @@ sealed class ChangesPane : UserControl
     static string FullPath(string repo, string path) =>
         Path.Combine(repo, path.Replace('/', '\\'));
 
-    void OpenDiff(int row)
+    // Double-clicked, or Enter: in the diff window, where that is where changes show, otherwise in
+    // the text editor or git's diff tool, as ever.
+    void Activate(int row)
     {
-        if (repo == null ||
-            row < 0 ||
+        if (row < 0 ||
             row >= shown.Count)
         {
             return;
         }
 
-        GitDiff.OfWorkingFile(this, settings, repo, shown[row]);
+        if (settings.DiffPlacement == DiffPlacement.Window)
+        {
+            ShowChanges(shown[row]);
+            return;
+        }
+
+        OpenDiff(shown[row]);
+    }
+
+    void OpenDiff(Change change)
+    {
+        if (repo != null)
+        {
+            GitDiff.OfWorkingFile(this, settings, repo, change);
+        }
+    }
+
+    // Show changes: where Options says changes show.
+    void ShowChanges(Change change)
+    {
+        if (settings.DiffPlacement == DiffPlacement.Editor)
+        {
+            OpenDiff(change);
+            return;
+        }
+
+        if (repo == null)
+        {
+            return;
+        }
+
+        lastRequest = null;
+        DiffRequested?.Invoke(new(repo, SourceOf(change), shown, null, 1, Open: true));
+    }
+
+    DiffSource SourceOf(Change change) =>
+        new(repo!, change, null, changes.HasCommits, changes.Merging);
+
+    DiffRequest? lastRequest;
+    bool pickedPending;
+
+    // What is picked changed: told once the list has finished changing it, as reading the files
+    // again picks each again, one by one.
+    void PickedChanged()
+    {
+        if (pickedPending ||
+            !IsHandleCreated)
+        {
+            return;
+        }
+
+        pickedPending = true;
+        BeginInvoke(
+            () =>
+            {
+                pickedPending = false;
+                if (!IsDisposed)
+                {
+                    RaisePicked();
+                }
+            });
+    }
+
+    /// <summary>
+    /// Tells what is picked now, unless it is what was told last.
+    /// </summary>
+    void RaisePicked()
+    {
+        var rows = list.Selected()
+            .Where(_ => _ < shown.Count)
+            .ToList();
+        DiffSource? source = null;
+        if (repo != null &&
+            rows.Count == 1)
+        {
+            source = SourceOf(shown[rows[0]]);
+        }
+
+        var request = new DiffRequest(repo, source, shown, null, rows.Count, Open: false);
+        if (request.Same(lastRequest))
+        {
+            return;
+        }
+
+        lastRequest = request;
+        DiffRequested?.Invoke(request);
     }
 
     void Open(Change change)
@@ -934,11 +1108,29 @@ sealed class ChangesPane : UserControl
             var path = FullPath(menuRepo, one.Path);
             var exists = File.Exists(path);
             commands.Add(null);
-            commands.Add(
-                new("Show changes", () => GitDiff.OfWorkingFile(this, settings, menuRepo, one))
+            var showChanges = new QuickMenu.Command("Show changes", () => ShowChanges(one));
+            if (settings.DiffPlacement is DiffPlacement.Window or DiffPlacement.Editor)
+            {
+                showChanges = showChanges with
                 {
                     Shortcut = "Enter"
-                });
+                };
+            }
+
+            commands.Add(showChanges);
+            if (settings.DiffPlacement != DiffPlacement.Editor)
+            {
+                var inEditor = new QuickMenu.Command("Show changes in editor", () => GitDiff.OfWorkingFile(this, settings, menuRepo, one));
+                if (settings.DiffPlacement != DiffPlacement.Window)
+                {
+                    inEditor = inEditor with
+                    {
+                        Shortcut = "Enter"
+                    };
+                }
+
+                commands.Add(inEditor);
+            }
             commands.Add(
                 new("Open", () => Open(one), exists)
                 {
@@ -1050,7 +1242,7 @@ sealed class ChangesPane : UserControl
         RowList.DrawRowLine(graphics, bounds);
         var tickSize = LogicalToDeviceUnits(Ticks.Size);
         var box = new Rectangle(bounds.Left + LogicalToDeviceUnits(inset), bounds.Top + (bounds.Height - tickSize) / 2, tickSize, tickSize);
-        Ticks.Draw(graphics, this, box, IsTicked(change), !changes.Merging);
+        Ticks.Draw(graphics, this, box, TickOf(change), !changes.Merging);
         var room = Rectangle.FromLTRB(box.Right + LogicalToDeviceUnits(tickGap), bounds.Top, bounds.Right, bounds.Bottom);
         ChangeRows.Draw(graphics, this, list.Font, room, change, text, secondary, onBlue);
     }
@@ -1077,6 +1269,7 @@ sealed class ChangesPane : UserControl
         if (disposing)
         {
             KeepDraft();
+            CommitDrafts.PicksChanged -= OnPicksChanged;
             tip.Dispose();
             rowTip.Dispose();
         }

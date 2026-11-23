@@ -243,6 +243,22 @@ static class ExplorerStyle
             (int) (from.G + (to.G - from.G) * amount),
             (int) (from.B + (to.B - from.B) * amount));
 
+    /// <summary>
+    /// The font code is shown in, in Find Results and in a diff: Cascadia Mono, as Windows
+    /// Terminal has it, or Consolas where it isn't installed, at <paramref name="font"/>'s size.
+    /// </summary>
+    public static Font CodeFont(Font font)
+    {
+        var cascadia = new Font("Cascadia Mono", font.SizeInPoints);
+        if (cascadia.Name == "Cascadia Mono")
+        {
+            return cascadia;
+        }
+
+        cascadia.Dispose();
+        return new("Consolas", font.SizeInPoints);
+    }
+
     public static GraphicsPath RoundedRectangle(Rectangle bounds, int radius)
     {
         var path = new GraphicsPath();

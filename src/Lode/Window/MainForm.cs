@@ -56,6 +56,10 @@ class MainForm : Form
     // The Changes and History panes, for the repository the tab showing is in, and the strip
     // down the right edge they slide out from.
     GitPanes gitPanes;
+
+    // Where the file picked in a pane shows its changes: the Diff tab, over the folder list, or
+    // the diff window.
+    DiffHost diffHost;
     ToolStripStatusLabel statusLabel = new()
     {
         TextAlign = ContentAlignment.MiddleLeft
@@ -170,9 +174,22 @@ class MainForm : Form
 
     public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
-    // Every tab but Find Results holds one.
+    // Every tab but Find Results and the Diff tab holds one.
     public IEnumerable<FolderView> Views =>
         tabs.TabPages.Cast<TabPage>().SelectMany(_ => _.Controls.OfType<FolderView>());
+
+    static bool HoldsFolder(TabPage page) =>
+        page.Controls.OfType<FolderView>().Any();
+
+    /// <summary>
+    /// Where a file picked in a pane shows its changes. For tests.
+    /// </summary>
+    internal DiffHost DiffHost => diffHost;
+
+    /// <summary>
+    /// The tabs. For tests.
+    /// </summary>
+    internal ClosableTabControl Tabs => tabs;
 
     // Find in Files: its strip along the bottom, and the tab its results are in, one a window,
     // made the first time something is searched for.
@@ -215,6 +232,9 @@ class MainForm : Form
         };
         gitPanes.ShowInFolderRequested += ShowInFolder;
         gitPanes.OpenSiteRequested += url => OpenSite(url);
+        diffHost = new(this, settings, tabs, () => ActiveView, () => ActiveView?.FocusList());
+        gitPanes.DiffRequested += diffHost.Request;
+        gitPanes.ChangesRead += diffHost.ChangesRead;
         gitPanes.PinnedChanged += ApplyPinnedInAllWindows;
         gitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
         findPanel.FindRequested += Find;
@@ -1078,6 +1098,7 @@ class MainForm : Form
         tabs.CloseRequested += CloseTab;
         tabs.TabDraggedOff += OnTabDraggedOff;
         tabs.TabDraggingOff += OnTabDraggingOff;
+        tabs.SelectedIndexChanged += (_, _) => diffHost.TabChanged();
         tabs.SelectedIndexChanged += (_, _) => SyncToActiveView();
         tabs.SelectedIndexChanged += (_, _) => SaveTabsSoon();
         tabs.ControlAdded += (_, _) => SaveTabsSoon();
@@ -1473,7 +1494,7 @@ class MainForm : Form
     // Puts the window's tabs in the settings, for the next start to open. Not those of a window
     // with no folder left in it, its last tab dragged to another window, which closes for
     // that: none would be saved, in place of the tabs last saved, until the other closed.
-    void RememberTabs()
+    internal void RememberTabs()
     {
         if (!Views.Any())
         {
@@ -1495,7 +1516,7 @@ class MainForm : Form
             .ToList();
         // Among the folders' tabs, which are all that open again: with Find Results showing, the
         // one before it.
-        settings.ActiveTab = Math.Max(0, TabPages.Take(tabs.SelectedIndex + 1).Count(_ => _ != resultsPage) - 1);
+        settings.ActiveTab = Math.Max(0, TabPages.Take(tabs.SelectedIndex + 1).Count(HoldsFolder) - 1);
     }
 
     // The window used last: the one whose tabs are saved while Lode runs, as it is the one
@@ -1651,6 +1672,7 @@ class MainForm : Form
         }
 
         RememberClosed(page);
+        diffHost.Leaving(page);
         LeaveTab(page);
         tabs.TabPages.Remove(page);
         if (page == resultsPage)
@@ -1854,6 +1876,7 @@ class MainForm : Form
     // window when it was the last.
     void RemoveTab(TabPage page)
     {
+        diffHost.Leaving(page);
         LeaveTab(page);
         tabs.TabPages.Remove(page);
         if (tabs.TabCount == 0)
@@ -1880,6 +1903,7 @@ class MainForm : Form
             return;
         }
 
+        diffHost.FolderChanged(view);
         SaveTabsSoon();
 
         if (view == ActiveView)
@@ -1998,6 +2022,21 @@ class MainForm : Form
         ShowingFolder(view != null);
         if (view == null)
         {
+            // The Diff tab keeps the panes on the repository its diff is of, so the files listed
+            // stay beside it, as in GitHub Desktop.
+            if (diffHost is { TabShowing: true, TabRepo: { } diffRepo })
+            {
+                GitState? state = null;
+                if (ChangesPane.SameRepo(gitPanes.Repo, diffRepo))
+                {
+                    state = gitPanes.State;
+                }
+
+                gitPanes.ShowRepo(diffRepo, state);
+                Text = "Diff" + TitleSuffix;
+                return;
+            }
+
             gitPanes.ShowRepo(null, null);
             if (ResultsShowing)
             {
@@ -3621,6 +3660,7 @@ class MainForm : Form
             updates.Changed -= OnUpdatesChanged;
             ActionLog.Changed -= ReadGitState;
             gitPanes.Dispose();
+            diffHost.Dispose();
             toolTip.Dispose();
             statusTip.Dispose();
             trayTimer.Dispose();

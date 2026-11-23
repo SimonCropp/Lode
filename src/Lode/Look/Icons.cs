@@ -111,6 +111,8 @@ static class Icons
     public const char Filter = '\uE71C';
     // Lines of text, for a commit's description.
     public const char Description = '\uE8E4';
+    // A cross, for putting away the diff shown over the folder list.
+    public const char Close = '\uE711';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

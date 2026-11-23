@@ -65,7 +65,7 @@ sealed class FindResultsView : UserControl
     {
         OpenAt = (path, line, column) => TextEditors.OpenAt(this, settings, path, line, column);
         BackColor = ExplorerStyle.Window;
-        codeFont = CodeFont(Font);
+        codeFont = ExplorerStyle.CodeFont(Font);
         Padding = new(LogicalToDeviceUnits(12), 0, 0, 0);
 
         list.Dock = DockStyle.Fill;
@@ -101,20 +101,6 @@ sealed class FindResultsView : UserControl
 
         taking.Tick += (_, _) => Take();
         ShowRows();
-    }
-
-    // Cascadia Mono, as Windows Terminal has it, or Consolas where it isn't installed, at the
-    // window's size.
-    static Font CodeFont(Font font)
-    {
-        var cascadia = new Font("Cascadia Mono", font.SizeInPoints);
-        if (cascadia.Name == "Cascadia Mono")
-        {
-            return cascadia;
-        }
-
-        cascadia.Dispose();
-        return new("Consolas", font.SizeInPoints);
     }
 
     void FitColumn()
