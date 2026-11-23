@@ -298,7 +298,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+H                            | Show or hide hidden items     |
 | Ctrl+N                            | New window                    |
 
-Click a tab's cross or middle-click the tab to close it. The mouse back and forward buttons work too.
+Click a tab's cross or middle-click the tab to close it. Middle-click or Ctrl+click a folder in the tree to open it in a new tab, behind the one showing. The mouse back and forward buttons work too.
 
 
 ## Icon

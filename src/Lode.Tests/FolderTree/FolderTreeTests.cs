@@ -1178,6 +1178,109 @@ public class FolderTreeTests
         await Assert.That(windows).IsEquivalentTo(new List<string> { Locations.ThisPC });
     }
 
+    // A folder clicked with Ctrl held, or with the middle button, sent to the tree's window as
+    // Windows sends the click, opens in a new tab, and the folder the tab shows stays selected.
+    // A second Ctrl+click soon after, a double click, opens another, and the middle button let
+    // go over another folder than it went down on is no click. Ctrl held on This PC's expander
+    // only closes it, Ctrl+Shift is a plain click, and a plain click still goes there.
+    [Test]
+    public async Task CtrlAndMiddleClickOpenInANewTab()
+    {
+        const int controlHeld = 0x0008;
+        const int shiftHeld = 0x0004;
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"), fixture.At("Source"));
+        // Room for every row, so each can be clicked.
+        tree.Size = new(400, 600);
+        tree.SelectPath(fixture.At("Archive"));
+        await Pump.Loaded(tree);
+        var archive = tree.SelectedNode;
+        var tabs = new List<string>();
+        var selected = new List<string>();
+        tree.NewTabRequested += tabs.Add;
+        tree.PathSelected += selected.Add;
+        var docs = tree.Nodes[0].Nodes[0];
+        var source = tree.Nodes[0].Nodes[1];
+        var thisPC = tree.Nodes.Cast<TreeNode>().Last();
+
+        Click(tree, Centre(docs), controlHeld);
+        DoubleClick(tree, Centre(docs), controlHeld);
+        Click(tree, Centre(thisPC), controlHeld);
+        MiddleClick(tree, Centre(source), Centre(source));
+        MiddleClick(tree, Centre(docs), Centre(source));
+        var whileOpening = (selected.Count, tree.SelectedNode == archive);
+        // Closing This PC moves the selection up to it, as it would however it was closed.
+        Click(tree, Expander(tree, thisPC), controlHeld);
+        var closed = (tabs.Count, thisPC.IsExpanded);
+        Click(tree, Centre(source), controlHeld | shiftHeld);
+        Click(tree, Centre(docs), 0);
+        await Pump.Loaded(tree);
+
+        await Assert.That(string.Join(" | ", tabs)).IsEqualTo(
+            string.Join(" | ", fixture.At("Docs"), fixture.At("Docs"), Locations.ThisPC, fixture.At("Source")));
+        await Assert.That(whileOpening).IsEqualTo((0, true));
+        await Assert.That(closed).IsEqualTo((4, false));
+        await Assert.That(string.Join(" | ", selected)).IsEqualTo(
+            string.Join(" | ", fixture.At("Source"), fixture.At("Docs")));
+    }
+
+    static Point Centre(TreeNode node) =>
+        new(node.Bounds.Left + node.Bounds.Width / 2, node.Bounds.Top + node.Bounds.Height / 2);
+
+    // The point on a node's row that is its expander.
+    static Point Expander(FolderTree tree, TreeNode node)
+    {
+        var y = node.Bounds.Top + node.Bounds.Height / 2;
+        for (var x = 0; x < node.Bounds.Left; x++)
+        {
+            if (tree.HitTest(x, y).Location == TreeViewHitTestLocations.PlusMinus)
+            {
+                return new(x, y);
+            }
+        }
+
+        throw new($"{node.Text} has no expander");
+    }
+
+    // A click as Windows sends one: the button up waiting in the queue, for the tree, which
+    // doesn't come back from the press until the button is up, to find.
+    static void Click(FolderTree tree, Point point, int keys)
+    {
+        const int leftButtonDown = 0x0201;
+        const int leftButtonUp = 0x0202;
+        const int leftButton = 0x0001;
+        PostMessage(tree.Handle, leftButtonUp, keys, Packed(point));
+        NativeMethods.SendMessage(tree.Handle, leftButtonDown, leftButton | keys, Packed(point));
+        Application.DoEvents();
+    }
+
+    // The second click of a double click, which comes as WM_LBUTTONDBLCLK in place of a press.
+    static void DoubleClick(FolderTree tree, Point point, int keys)
+    {
+        const int leftButtonDoubleClick = 0x0203;
+        const int leftButtonUp = 0x0202;
+        const int leftButton = 0x0001;
+        NativeMethods.SendMessage(tree.Handle, leftButtonDoubleClick, leftButton | keys, Packed(point));
+        NativeMethods.SendMessage(tree.Handle, leftButtonUp, keys, Packed(point));
+        Application.DoEvents();
+    }
+
+    static void MiddleClick(FolderTree tree, Point down, Point up)
+    {
+        const int middleButtonDown = 0x0207;
+        const int middleButtonUp = 0x0208;
+        const int middleButton = 0x0010;
+        NativeMethods.SendMessage(tree.Handle, middleButtonDown, middleButton, Packed(down));
+        NativeMethods.SendMessage(tree.Handle, middleButtonUp, 0, Packed(up));
+        Application.DoEvents();
+    }
+
+    static IntPtr Packed(Point point) =>
+        (point.Y << 16) | (point.X & 0xFFFF);
+
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
     static List<string> Names(TreeNode node) =>
         node.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
 

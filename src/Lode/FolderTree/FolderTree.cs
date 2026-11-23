@@ -535,6 +535,8 @@ sealed class FolderTree : TreeView
     protected override void OnItemDrag(ItemDragEventArgs args)
     {
         base.OnItemDrag(args);
+        // A press with Ctrl held that turns into a drag is no click, so opens no tab.
+        controlPressed = null;
         if (args.Item is TreeNode node)
         {
             DragNode(node, args.Button);
@@ -1786,6 +1788,132 @@ sealed class FolderTree : TreeView
             LodeActions.ForMenu(commands, settings),
             () => ShowShellMenu(owner, path, location, quickAccess, node),
             settings.ShowsInMenu(LodeActions.More));
+    }
+
+    // WM_LBUTTONDOWN and the other presses that open a folder in a new tab, and the MK_CONTROL
+    // and MK_SHIFT a mouse message's WPARAM has for the keys held.
+    const int leftButtonDown = 0x0201;
+    const int leftButtonDoubleClick = 0x0203;
+    const int middleButtonDown = 0x0207;
+    const int middleButtonUp = 0x0208;
+    const int middleButtonDoubleClick = 0x0209;
+    const int controlHeld = 0x0008;
+    const int shiftHeld = 0x0004;
+
+    // The row pressed with Ctrl held, while the tree works out whether the press is a click or
+    // the start of a drag. Null again once a drag starts: Ctrl held for a drag is the drag's,
+    // to copy.
+    TreeNode? controlPressed;
+
+    // The row the middle button went down on, which opens in a new tab if the button comes up
+    // over it.
+    TreeNode? middlePressed;
+
+    /// <summary>
+    /// A folder clicked with the middle button, as in Explorer's pane, or with Ctrl held, as a
+    /// link is in a browser, opens in a new tab behind the one showing, which stays where it
+    /// is. Its expander still only opens and closes it. Each click opens a tab, a second soon
+    /// after the first too, which comes as a double click.
+    /// </summary>
+    protected override void WndProc(ref Message message)
+    {
+        switch (message.Msg)
+        {
+            case leftButtonDown when ControlClicked(message) is { } row:
+                PressWithControl(ref message, row);
+                return;
+            // Kept from the tree, which would open or close the folder.
+            case leftButtonDoubleClick when ControlClicked(message) is { } row:
+                OpenInNewTab(row);
+                return;
+            case middleButtonDown or middleButtonDoubleClick:
+                middlePressed = NewTabRow(PointOf(message.LParam));
+                break;
+            case middleButtonUp:
+                base.WndProc(ref message);
+                MiddleReleased(PointOf(message.LParam));
+                return;
+        }
+
+        base.WndProc(ref message);
+    }
+
+    // The tree doesn't come back from a press until the button is up or a drag is over. A
+    // click selects the row on the way, which OnBeforeSelect turns down.
+    void PressWithControl(ref Message message, TreeNode row)
+    {
+        controlPressed = row;
+        bool clicked;
+        try
+        {
+            base.WndProc(ref message);
+        }
+        finally
+        {
+            clicked = controlPressed != null;
+            controlPressed = null;
+        }
+
+        if (clicked)
+        {
+            OpenInNewTab(row);
+        }
+    }
+
+    void MiddleReleased(Point point)
+    {
+        var pressed = middlePressed;
+        middlePressed = null;
+        if (pressed != null &&
+            NewTabRow(point) == pressed)
+        {
+            OpenInNewTab(pressed);
+        }
+    }
+
+    // The row a press with Ctrl held, and not Shift, is on, when that opens it in a new tab.
+    TreeNode? ControlClicked(Message message)
+    {
+        var keys = (int) message.WParam;
+        if ((keys & controlHeld) == 0 ||
+            (keys & shiftHeld) != 0)
+        {
+            return null;
+        }
+
+        return NewTabRow(PointOf(message.LParam));
+    }
+
+    // The folder, or This PC, at a point, which a click there with the middle button or Ctrl
+    // held opens in a new tab. None on an expander, which only opens and closes its folder, nor
+    // a section heading, which is no folder.
+    TreeNode? NewTabRow(Point point)
+    {
+        var hit = HitTest(point);
+        if (hit.Node is not {Tag: string} node ||
+            hit.Location == TreeViewHitTestLocations.PlusMinus)
+        {
+            return null;
+        }
+
+        return node;
+    }
+
+    void OpenInNewTab(TreeNode node) =>
+        NewTabRequested?.Invoke((string) node.Tag!);
+
+    static Point PointOf(IntPtr lParam) =>
+        new((short) (lParam & 0xFFFF), (short) ((lParam >> 16) & 0xFFFF));
+
+    protected override void OnBeforeSelect(TreeViewCancelEventArgs args)
+    {
+        base.OnBeforeSelect(args);
+        // Clicked with Ctrl held, the row opens in a new tab instead.
+        if (controlPressed != null &&
+            args.Action == TreeViewAction.ByMouse)
+        {
+            args.Cancel = true;
+        }
     }
 
     /// <summary>
