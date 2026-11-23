@@ -999,7 +999,7 @@ public class CodeCommandsTests
         await Assert.That(oneMissing.Details).StartsWith("Missing: ");
     }
 
-    internal sealed class Scratch : IDisposable
+    public sealed class Scratch : IDisposable
     {
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "LodeTests", $"Code.{Guid.NewGuid():N}");
 
@@ -1015,8 +1015,117 @@ public class CodeCommandsTests
         public string Origin(string name) =>
             At("origins", $"{name}.git");
 
+        // A repository and a fork, as CreateRepo and CreateFork make them, made with git once a
+        // run and copied from then on. A copy is the same, without the processes, nine for a
+        // repository and seventeen for a fork, each taking a second or more while every test
+        // around is running git too.
+        static readonly Lazy<Scratch> repoTemplate = new(() =>
+        {
+            var template = new Scratch();
+            template.MakeRepo("Repo");
+            return template;
+        });
+
+        static readonly Lazy<Scratch> forkTemplate = new(() =>
+        {
+            var template = new Scratch();
+            template.MakeFork("Repo");
+            return template;
+        });
+
+        [After(TestSession)]
+        public static void DeleteTemplates()
+        {
+            if (repoTemplate.IsValueCreated)
+            {
+                repoTemplate.Value.Dispose();
+            }
+
+            if (forkTemplate.IsValueCreated)
+            {
+                forkTemplate.Value.Dispose();
+            }
+        }
+
         // A repository with one committed file, tracking a bare origin it has pushed to.
         public string CreateRepo(string name)
+        {
+            var template = repoTemplate.Value;
+            CopyFrom(
+                (template.At("Repo"), At(name)),
+                (template.Origin("Repo"), Origin(name)));
+            return At(name);
+        }
+
+        // A fork, as GitHub Desktop clones one: the repository it was made from, NameUpstream,
+        // its bare one standing in for GitHub's, a bare origin cloned from that, the fork on
+        // GitHub, and a clone of origin, with upstream as a remote and its HEAD recorded.
+        // NameUpstream is a repository too, to commit to upstream from.
+        public string CreateFork(string name)
+        {
+            var template = forkTemplate.Value;
+            CopyFrom(
+                (template.At("RepoUpstream"), At($"{name}Upstream")),
+                (template.Origin("RepoUpstream"), Origin($"{name}Upstream")),
+                (template.Origin("Repo"), Origin(name)),
+                (template.At("Repo"), At(name)));
+            return At(name);
+        }
+
+        // Copies each folder, and points the remotes in the copies' configs at the copies.
+        static void CopyFrom(params (string From, string To)[] folders)
+        {
+            foreach (var (from, to) in folders)
+            {
+                Copy(from, to);
+            }
+
+            // Longest first, so a folder named for another, RepoUpstream for Repo, isn't taken
+            // for it.
+            var paths = folders
+                .OrderByDescending(_ => _.From.Length)
+                .ToList();
+            foreach (var (_, to) in folders)
+            {
+                var config = Path.Combine(to, ".git", "config");
+                if (!File.Exists(config))
+                {
+                    config = Path.Combine(to, "config");
+                }
+
+                var text = File.ReadAllText(config);
+                foreach (var (from, copy) in paths)
+                {
+                    // As git writes a path in its config, each backslash doubled.
+                    text = text.Replace(from.Replace(@"\", @"\\"), copy.Replace(@"\", @"\\"));
+                }
+
+                File.WriteAllText(config, text);
+            }
+        }
+
+        // Attributes and all: git marks .git hidden, and its object files read-only.
+        static void Copy(string from, string to)
+        {
+            Directory.CreateDirectory(to);
+            foreach (var file in Directory.EnumerateFiles(from))
+            {
+                File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+            }
+
+            foreach (var directory in Directory.EnumerateDirectories(from))
+            {
+                Copy(directory, Path.Combine(to, Path.GetFileName(directory)));
+            }
+
+            // Last, once what is in it is: Windows updates the entry of a folder written to in
+            // the folder above only when the folder is next opened, as this does, and otherwise
+            // when the test looks in it, which a watch on the code folder hears as a change. Git
+            // making a repository opens its folders as it goes.
+            File.SetAttributes(to, File.GetAttributes(from));
+        }
+
+        void MakeRepo(string name)
         {
             var origin = Origin(name);
             Directory.CreateDirectory(origin);
@@ -1031,14 +1140,9 @@ public class CodeCommandsTests
             Git(repo, "commit", "-m", "Initial");
             Git(repo, "remote", "add", "origin", origin);
             Git(repo, "push", "-u", "origin", "main");
-            return repo;
         }
 
-        // A fork, as GitHub Desktop clones one: the repository it was made from, NameUpstream,
-        // its bare one standing in for GitHub's, a bare origin cloned from that, the fork on
-        // GitHub, and a clone of origin, with upstream as a remote and its HEAD recorded.
-        // NameUpstream is a repository too, to commit to upstream from.
-        public string CreateFork(string name)
+        void MakeFork(string name)
         {
             CreateRepo($"{name}Upstream");
             Directory.CreateDirectory(At("origins"));
@@ -1047,7 +1151,6 @@ public class CodeCommandsTests
             Git(fork, "remote", "add", "upstream", Origin($"{name}Upstream"));
             Git(fork, "fetch", "upstream");
             Git(fork, "remote", "set-head", "upstream", "main");
-            return fork;
         }
 
         // Commits a file to the repository a fork was made from, as its owner would.

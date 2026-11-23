@@ -387,8 +387,11 @@ public class ContentSearchTests
     }
 
     // In the code folder, which Lode watches, what git lists of a repository is kept until
-    // something in it changes, so searching it again doesn't start git again.
+    // something in it changes, so searching it again doesn't start git again. The window tests
+    // of the Changes and History panes forget all GitCache knows when done, as PaneStubs does,
+    // so this takes turns with them.
     [Test]
+    [NotInParallel("windows")]
     public async Task WhatGitListsIsKeptInTheCodeFolderTillTheRepositoryChanges()
     {
         using var code = new CodeCommandsTests.Scratch();

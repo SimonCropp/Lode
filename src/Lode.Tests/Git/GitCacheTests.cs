@@ -2,6 +2,9 @@
 /// When a repository whose files are changing is read again, and what of git's own writing is
 /// no reason to. The times are given, in milliseconds, so nothing waits.
 /// </summary>
+// The window tests of the Changes and History panes forget all GitCache knows when done, as
+// PaneStubs does, so these take turns with them.
+[NotInParallel("windows")]
 public class GitCacheTests
 {
     const long start = 100_000;
