@@ -1032,6 +1032,7 @@ class MainForm : Form
         AddGitPart(status, GitState.PartKind.Changes, GitPartButton("Commit or discard them", GitState.PartKind.Changes));
         AddGitPart(status, GitState.PartKind.Ahead, GitPartButton("Push them", GitState.PartKind.Ahead));
         AddGitPart(status, GitState.PartKind.Behind, GitPartButton("Pull them", GitState.PartKind.Behind));
+        AddGitPart(status, GitState.PartKind.ForkBehind, GitPartButton("Sync the fork with upstream", GitState.PartKind.ForkBehind));
         status.Items.Add(siteLabel);
         status.Items.Add(spaceLabel);
 
@@ -1113,7 +1114,8 @@ class MainForm : Form
         return button;
     }
 
-    // The changes, ahead or behind clicked: asks what to do about them, pull say.
+    // The changes, ahead, behind or behind upstream clicked: asks what to do about them, pull
+    // say.
     void ActOnGit(GitState.PartKind kind)
     {
         if (ActiveView is { GitRepo: { } repo, GitRepoState: { } state })

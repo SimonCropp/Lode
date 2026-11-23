@@ -16,6 +16,13 @@
       menuNested: true
     },
     {
+      id: gitSyncFork,
+      button: true,
+      menu: false,
+      buttonNested: true,
+      menuNested: true
+    },
+    {
       id: gitSwitchToDefault,
       button: true,
       menu: false,

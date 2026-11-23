@@ -1,6 +1,6 @@
 /// <summary>
-/// The right-click entries for folders under the code folder: git fetch, pull, switch to the
-/// default branch, push, discard and purge across their repositories, and Update NuGets (optionally
+/// The right-click entries for folders under the code folder: git fetch, pull, sync fork, switch
+/// to the default branch, push, discard and purge across their repositories, and Update NuGets (optionally
 /// then building). With several folders selected, each command takes in all of them at once,
 /// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
@@ -14,7 +14,8 @@ static class CodeMenu
     /// code folder. Switch to default branch is left off when every repository is on it, and
     /// Push when every one has nothing to push, as <paramref name="stateOf"/> has it, which
     /// gives a repository's state where it has been read. Tag and Delete tag only when every
-    /// folder is in a repository, not for one only holding repositories.
+    /// folder is in a repository, not for one only holding repositories. Sync fork only where
+    /// there may be a fork: a repository with an upstream remote, or a folder holding repositories.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
     {
@@ -48,6 +49,18 @@ static class CodeMenu
                 NestedText = "Pull"
             }
         ];
+
+        // A folder only holding repositories may hold forks.
+        if (!allInRepos ||
+            repos.Any(_ => CodeCommands.IsFork(_!)))
+        {
+            commands.Add(
+                LodeActions.Command("gitSyncFork", () => SyncFork(folders, settings.CodeDirectory)) with
+                {
+                    NestedText = "Sync fork"
+                });
+        }
+
         if (!onDefault)
         {
             commands.Add(
@@ -124,6 +137,27 @@ static class CodeMenu
                 // Looking for repositories reads folders, so that is off the UI thread too.
                 var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
                 return CodeCommands.GitOutcome(await CodeCommands.Pull(repos, progress, cancel));
+            });
+
+    // Only the forks among the repositories, a fork being one with an upstream remote. Nothing to
+    // ask about, as Pull asks nothing: it merges and pushes only to the user's own fork, and a
+    // merge that would conflict is undone. Read again as it ends, as Fetch's are, for how far
+    // behind upstream each is.
+    static void SyncFork(IReadOnlyList<string> folders, string? codeFolder) =>
+        _ = ActionLog.Run(
+            "Git sync fork",
+            folders,
+            async (progress, cancel) =>
+            {
+                var forks = await Task.Run(
+                    () => CodeCommands
+                        .FindRepos(folders, codeFolder)
+                        .Where(CodeCommands.IsFork)
+                        .ToList(),
+                    cancel);
+                var results = await CodeCommands.SyncFork(forks, progress, cancel);
+                GitCache.MarkStale(forks);
+                return CodeCommands.GitOutcome(results, "No forks: no repository has an upstream remote");
             });
 
     // Nothing to ask about: a repository with uncommitted changes fails rather than switching,

@@ -19,6 +19,7 @@
   ----,
   Git fetch (disabled),
   Git pull (disabled),
+  Git sync fork (disabled),
   Git switch to default branch (disabled),
   Git push (disabled),
   Git tag (disabled),

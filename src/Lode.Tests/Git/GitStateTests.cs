@@ -136,6 +136,7 @@ public class GitStateTests
         await Assert.That(State("main", 1, 0, 0).Describe()).IsEqualTo("main · 1 change");
         await Assert.That(State("main", 1234, 2, 1).Describe()).IsEqualTo("main · 1,234 changes · 2 ahead · 1 behind");
         await Assert.That(State("main", 0, 0, 5).Describe()).IsEqualTo("main · 5 behind");
+        await Assert.That((State("main", 0, 1, 0) with { ForkBehind = 12 }).Describe()).IsEqualTo("main · 1 ahead · 12 behind upstream");
         await Assert.That(State(null, 2, 0, 0).Describe()).IsEqualTo("Detached at 0123456 · 2 changes");
         await Assert.That(new GitState("main", null, 0, 0, []).Describe()).IsEqualTo("main · no commits yet");
     }
@@ -145,7 +146,10 @@ public class GitStateTests
     [Test]
     public async Task Parts()
     {
-        var state = State("main", 3, 2, 1);
+        var state = State("main", 3, 2, 1) with
+        {
+            ForkBehind = 4
+        };
 
         await Assert.That(state.Parts())
             .IsEquivalentTo<IList<GitState.Part>, GitState.Part>(
@@ -153,7 +157,8 @@ public class GitStateTests
                     new(GitState.PartKind.Branch, "main"),
                     new(GitState.PartKind.Changes, "3 changes"),
                     new(GitState.PartKind.Ahead, "2 ahead"),
-                    new(GitState.PartKind.Behind, "1 behind")
+                    new(GitState.PartKind.Behind, "1 behind"),
+                    new(GitState.PartKind.ForkBehind, "4 behind upstream")
                 ],
                 TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(new GitState("main", null, 0, 0, []).Parts().Select(_ => _.Kind))
@@ -272,6 +277,36 @@ public class GitStateTests
         CodeCommandsTests.Scratch.Git(repo, "fetch");
 
         await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { Upstream = true });
+    }
+
+    // In a fork, how many commits upstream's HEAD has that the one checked out hasn't, as of the
+    // last fetch of upstream.
+    [Test]
+    public async Task ReadsHowFarBehindUpstreamAForkIs()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var fork = code.CreateFork("Repo");
+        code.CommitUpstream("Repo", "one.txt", "one");
+        code.CommitUpstream("Repo", "two.txt", "two");
+
+        await Assert.That(await Read(fork)).IsEqualTo(new GitState("main", Head(fork), 0, 0, []) with { Upstream = true });
+
+        CodeCommandsTests.Scratch.Git(fork, "fetch", "upstream");
+
+        await Assert.That(await Read(fork)).IsEqualTo(new GitState("main", Head(fork), 0, 0, []) with { Upstream = true, ForkBehind = 2 });
+    }
+
+    // An upstream added by hand, its HEAD not recorded, gives nothing to count against.
+    [Test]
+    public async Task AForkWithoutUpstreamsHeadIsBehindNothing()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var fork = code.CreateFork("Repo");
+        code.CommitUpstream("Repo", "one.txt", "one");
+        CodeCommandsTests.Scratch.Git(fork, "fetch", "upstream");
+        CodeCommandsTests.Scratch.Git(fork, "remote", "set-head", "upstream", "--delete");
+
+        await Assert.That((await Read(fork)).ForkBehind).IsEqualTo(0);
     }
 
     // Both changed the same line: the file is unmerged, mid-merge.

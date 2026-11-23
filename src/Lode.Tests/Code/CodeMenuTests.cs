@@ -105,6 +105,29 @@ public class CodeMenuTests
         await Assert.That(Offered([clone, code.Root])).IsFalse();
     }
 
+    // Sync fork for a fork, a folder in one, or several picked of which one is, and for a folder
+    // holding repositories, which may hold forks; not for a repository that isn't one.
+    [Test]
+    public async Task SyncForkOnlyWhereThereMayBeAFork()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var fork = code.CreateFork("Fork");
+        var repo = code.CreateRepo("Repo");
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var owner = new Control();
+        bool Offered(IReadOnlyList<string> folders) =>
+            CodeMenu.Commands(owner, settings, folders).Any(_ => _?.Id == "gitSyncFork");
+
+        await Assert.That(Offered([fork])).IsTrue();
+        await Assert.That(Offered([Path.Combine(fork, "sub")])).IsTrue();
+        await Assert.That(Offered([fork, repo])).IsTrue();
+        await Assert.That(Offered([code.Root])).IsTrue();
+        await Assert.That(Offered([repo])).IsFalse();
+    }
+
     static GitBranches.Branch Branch(string name, bool remote = false) =>
         new(name, remote, null, false);
 

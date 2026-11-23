@@ -47,7 +47,8 @@ static class LibGitState
             var tracking = head.TrackingDetails;
             return new(branch, head.Tip?.Sha, tracking.AheadBy ?? 0, tracking.BehindBy ?? 0, GitState.InOrder(files))
             {
-                Upstream = head.IsTracking
+                Upstream = head.IsTracking,
+                ForkBehind = ForkBehind(repository, head.Tip)
             };
         }
         // Not a repository libgit2 will take, or libgit2 itself not loaded: its native library
@@ -62,6 +63,19 @@ static class LibGitState
         {
             return null;
         }
+    }
+
+    // As GitState.FromGit counts it: the commits upstream's HEAD has that the one checked out
+    // hasn't. None without a HEAD recorded for upstream, which only a fork has.
+    static int ForkBehind(Repository repository, Commit? tip)
+    {
+        if (tip == null ||
+            repository.Refs["refs/remotes/upstream/HEAD"]?.ResolveToDirectReference()?.Target is not Commit upstream)
+        {
+            return 0;
+        }
+
+        return repository.ObjectDatabase.CalculateHistoryDivergence(tip, upstream).BehindBy ?? 0;
     }
 
     /// <summary>

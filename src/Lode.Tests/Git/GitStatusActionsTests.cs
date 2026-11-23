@@ -62,13 +62,24 @@ public class GitStatusActionsTests
                 aheadWithChanges = Ask(GitState.PartKind.Ahead, State(ahead: 3, modified: 1)),
                 divergedAhead = Ask(GitState.PartKind.Ahead, State(ahead: 2, behind: 14)),
                 changes = Ask(GitState.PartKind.Changes, State(modified: 2, untracked: 1)),
-                // Push commits with -a, which leaves files git doesn't track: nothing to commit.
+                // Push adds new files too, so there is something to commit.
                 untrackedOnly = Ask(GitState.PartKind.Changes, State(untracked: 2)),
+                trackedOnly = Ask(GitState.PartKind.Changes, State(modified: 1)),
                 // Nowhere to push from a detached HEAD.
                 detached = Ask(GitState.PartKind.Changes, State(modified: 1, branch: null)),
                 noCommits = Ask(GitState.PartKind.NoCommits, new("main", null, 0, 0, [])),
-                nothingBehind = Ask(GitState.PartKind.Behind, State())
+                nothingBehind = Ask(GitState.PartKind.Behind, State()),
+                forkBehind = AskInFork(GitState.PartKind.ForkBehind, State() with { ForkBehind = 12 }),
+                forkBehindWithChanges = AskInFork(GitState.PartKind.ForkBehind, State(modified: 1) with { ForkBehind = 1 }),
+                // No branch to bring upstream's commits into.
+                forkBehindDetached = AskInFork(GitState.PartKind.ForkBehind, State(branch: null) with { ForkBehind = 3 }),
+                // A fork's fetch learns what upstream has too.
+                behindInAFork = AskInFork(GitState.PartKind.Behind, State(behind: 2)),
+                nothingBehindUpstream = AskInFork(GitState.PartKind.ForkBehind, State())
             });
+
+    static string AskInFork(GitState.PartKind part, GitState state) =>
+        Describe(GitStatusActions.QuestionFor(part, state, "origin/main", "upstream/main"));
 
     // A screenful, then how many more.
     [Test]

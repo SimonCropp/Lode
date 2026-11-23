@@ -69,5 +69,7 @@ public class RemoteSiteTests
 
         await Assert.That(RemoteSite.OriginUrl(config)).IsEqualTo("git@github.com:octo/repo.git");
         await Assert.That(RemoteSite.OriginUrl(["[core]", "\tbare = false"])).IsNull();
+        await Assert.That(RemoteSite.RemoteUrl(config, "upstream")).IsEqualTo("https://github.com/other/repo.git");
+        await Assert.That(RemoteSite.RemoteUrl(config, "elsewhere")).IsNull();
     }
 }

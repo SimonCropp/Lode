@@ -22,6 +22,15 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     public bool Upstream { get; init; }
 
     /// <summary>
+    /// In a fork, how many commits the repository it was made from has, on its default branch,
+    /// that the commit checked out hasn't, as of the last fetch: what Sync fork would bring in.
+    /// The fork's upstream remote is that repository, its HEAD the default branch, as GitHub
+    /// Desktop records it. 0 for a repository that isn't a fork, or whose upstream has no HEAD
+    /// recorded.
+    /// </summary>
+    public int ForkBehind { get; init; }
+
+    /// <summary>
     /// Whether Git push would have nothing to do: no change, staged or not, for it to commit,
     /// new files included, which it adds, and no commit the branch it tracks hasn't got. Never
     /// without a branch tracked, as the push could be what makes it.
@@ -39,10 +48,11 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         Commit == other.Commit &&
         Ahead == other.Ahead &&
         Behind == other.Behind &&
+        ForkBehind == other.ForkBehind &&
         Files.SequenceEqual(other.Files);
 
     public override int GetHashCode() =>
-        HashCode.Combine(Branch, Commit, Ahead, Behind, Files.Count);
+        HashCode.Combine(Branch, Commit, Ahead, Behind, ForkBehind, Files.Count);
 
     /// <summary>
     /// The files in order of their paths, as each reader finds them in an order of its own.
@@ -54,8 +64,8 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
 
     /// <summary>
     /// What a part of <see cref="Describe"/> says: the branch, or the commit when detached, that
-    /// there are no commits yet, and what is to commit, push and pull. The status bar acts on
-    /// each when clicked.
+    /// there are no commits yet, and what is to commit, push and pull, and, in a fork, to bring
+    /// in from the repository it was made from. The status bar acts on each when clicked.
     /// </summary>
     public enum PartKind
     {
@@ -63,7 +73,8 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         NoCommits,
         Changes,
         Ahead,
-        Behind
+        Behind,
+        ForkBehind
     }
 
     public sealed record Part(PartKind Kind, string Text);
@@ -105,12 +116,17 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             parts.Add(new(PartKind.Behind, $"{Behind} behind"));
         }
 
+        if (ForkBehind > 0)
+        {
+            parts.Add(new(PartKind.ForkBehind, $"{ForkBehind} behind upstream"));
+        }
+
         return parts;
     }
 
     /// <summary>
     /// The state as the status bar and the Git column show it: the branch, then what is to commit,
-    /// push and pull, each only when there is any.
+    /// push and pull, and to bring in from upstream, each only when there is any.
     /// </summary>
     public string Describe() =>
         string.Join(" · ", Parts().Select(_ => _.Text));
@@ -126,9 +142,37 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     }
 
     /// <summary>
-    /// Asks the git the user has installed, with their config, in one run of git status.
+    /// Asks the git the user has installed, with their config, in one run of git status, and, in
+    /// a fork, one more, counting how far behind upstream it is.
     /// </summary>
     public static GitState? FromGit(string repo, Cancel cancel)
+    {
+        if (Status(repo, cancel) is not { } state)
+        {
+            return null;
+        }
+
+        if (state.Commit == null ||
+            !CodeCommands.IsFork(repo))
+        {
+            return state;
+        }
+
+        // Fails without a HEAD recorded for upstream, which counts as nothing behind it.
+        var count = CodeCommands.GitOutput(repo, cancel, ["--no-optional-locks", "rev-list", "--count", "HEAD..refs/remotes/upstream/HEAD"]);
+        if (!count.Succeeded ||
+            !int.TryParse(count.Output.Trim(), out var behind))
+        {
+            return state;
+        }
+
+        return state with
+        {
+            ForkBehind = behind
+        };
+    }
+
+    static GitState? Status(string repo, Cancel cancel)
     {
         // Status otherwise takes the index's lock to write back what it learned of the files,
         // and the user's own git commit, run meanwhile, would fail on that lock. Submodules count

@@ -79,6 +79,67 @@ public class RepositoryCloneTests
         await Assert.That(reported).Contains(_ => _.StartsWith("Cloning into", StringComparison.Ordinal));
     }
 
+    // A fork gets the repository it was made from as upstream, fetched, with its default branch
+    // recorded, as GitHub Desktop sets one up. GitHub is answered for, and only for this clone's
+    // origin, as other tests clone at the same time.
+    [Test]
+    [NotInParallel("forkParent")]
+    public async Task AForkGetsUpstream()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateFork("Lode");
+        var parent = code.Origin("LodeUpstream");
+        var destination = code.At("Code", "Lode");
+        Directory.CreateDirectory(code.At("Code"));
+
+        var result = WithParent(code.Origin("Lode"), new(parent, "main"), () => RepositoryClone.Clone(code.Origin("Lode"), destination, null, null, Cancel.None));
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.Output).Contains($"Added {parent} as upstream");
+        await Assert.That(CodeCommandsTests.Scratch.Git(destination, "remote", "get-url", "upstream")).IsEqualTo(parent);
+        await Assert.That(CodeCommandsTests.Scratch.Git(destination, "symbolic-ref", "refs/remotes/upstream/HEAD")).IsEqualTo("refs/remotes/upstream/main");
+    }
+
+    // An upstream that can't be fetched still leaves a clone that worked, saying so.
+    [Test]
+    [NotInParallel("forkParent")]
+    public async Task AnUpstreamThatCanNotBeFetchedLeavesTheClone()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Lode");
+        var missing = code.Origin("Missing");
+        var destination = code.At("Code", "Lode");
+        Directory.CreateDirectory(code.At("Code"));
+
+        var result = WithParent(code.Origin("Lode"), new(missing, "main"), () => RepositoryClone.Clone(code.Origin("Lode"), destination, null, null, Cancel.None));
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.Output).Contains("but couldn't fetch it");
+        await Assert.That(File.Exists(Path.Combine(destination, "tracked.txt"))).IsTrue();
+    }
+
+    static CodeCommands.RepoResult WithParent(string remote, ForkParent parent, Func<CodeCommands.RepoResult> clone)
+    {
+        var parentOf = HostedRepos.ParentOf;
+        HostedRepos.ParentOf = (asked, cancel) =>
+        {
+            if (asked == remote)
+            {
+                return parent;
+            }
+
+            return parentOf(asked, cancel);
+        };
+        try
+        {
+            return clone();
+        }
+        finally
+        {
+            HostedRepos.ParentOf = parentOf;
+        }
+    }
+
     // A pull request's from a fork: origin has no such branch, so the default branch.
     [Test]
     public async Task ABranchOriginLacksLeavesTheDefault()

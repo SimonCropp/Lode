@@ -34,6 +34,31 @@ public class CloneTests
         await Assert.That(HostedRepos.ParseLogin("""{"login": "octo", "id": 1}""")).IsEqualTo("octo");
     }
 
+    // What GitHub's /repos/{owner}/{name} says of a fork: the repository it was made from, by
+    // https or ssh, and that one's default branch. Nothing of one that isn't a fork.
+    [Test]
+    public async Task ParseParent()
+    {
+        const string fork = """
+            {
+              "full_name": "octo/AngleSharp",
+              "fork": true,
+              "default_branch": "octo-main",
+              "parent": {
+                "full_name": "AngleSharp/AngleSharp",
+                "clone_url": "https://github.com/AngleSharp/AngleSharp.git",
+                "ssh_url": "git@github.com:AngleSharp/AngleSharp.git",
+                "default_branch": "devel"
+              }
+            }
+            """;
+        const string notAFork = """{"full_name": "octo/lode", "fork": false, "default_branch": "main"}""";
+
+        await Assert.That(HostedRepos.ParseParent(fork, ssh: false)).IsEqualTo(new("https://github.com/AngleSharp/AngleSharp.git", "devel"));
+        await Assert.That(HostedRepos.ParseParent(fork, ssh: true)).IsEqualTo(new("git@github.com:AngleSharp/AngleSharp.git", "devel"));
+        await Assert.That(HostedRepos.ParseParent(notAFork, ssh: false)).IsNull();
+    }
+
     [Test]
     public async Task NextLink()
     {

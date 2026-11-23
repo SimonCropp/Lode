@@ -6,6 +6,11 @@
 sealed record HostedRepo(string Site, string Group, string Name, string CloneUrl, string WebUrl, bool Fork, bool Private);
 
 /// <summary>
+/// The repository a fork was made from: the url to fetch it from, and its default branch.
+/// </summary>
+sealed record ForkParent(string Url, string DefaultBranch);
+
+/// <summary>
 /// The repositories a site listed, and why any it couldn't list weren't: not signed in, say.
 /// </summary>
 sealed record HostedListing(IReadOnlyList<HostedRepo> Repos, IReadOnlyList<string> Problems)
@@ -90,11 +95,90 @@ static class HostedRepos
         }
     }
 
-    static Task<HttpResponseMessage> Get(string url, GitCredential credential, Cancel cancel, bool bearer = false)
+    /// <summary>
+    /// The repository a GitHub repository was forked from, for a clone of it to have as its
+    /// upstream remote, fetched by ssh where <paramref name="remote"/> is, so it signs in as
+    /// origin does, otherwise by https. Null for one that isn't a fork, one not on GitHub, or
+    /// where GitHub can't be asked. Tests answer for GitHub.
+    /// </summary>
+    internal static Func<string, Cancel, ForkParent?> ParentOf { get; set; } = (remote, cancel) => ReadParent(remote, cancel).GetAwaiter().GetResult();
+
+    // Signed in where git has a credential kept, as a private fork needs, but never asking for
+    // one: anonymously otherwise, which a public one needs no more than.
+    static async Task<ForkParent?> ReadParent(string remote, Cancel cancel)
+    {
+        const string prefix = "https://github.com/";
+        if (RemoteSite.For(remote) is not { Name: "GitHub" } site ||
+            !site.Url.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        try
+        {
+            var credential = await Task.Run(() => GitCredentials.FillQuietly("github.com", cancel), cancel);
+            using var response = await Get($"https://api.github.com/repos/{site.Url[prefix.Length..]}", credential, cancel);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var ssh = !remote.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                      !remote.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
+            return ParseParent(await response.Content.ReadAsStringAsync(cancel), ssh);
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    HttpRequestException or
+                    OperationCanceledException or
+                    JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The parent GitHub's /repos/{owner}/{name} names, the repository the fork was made from,
+    /// its url by ssh or https, and its default branch. Null for a repository that isn't a fork.
+    /// </summary>
+    internal static ForkParent? ParseParent(string json, bool ssh)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        if (!Bool(root, "fork") ||
+            !root.TryGetProperty("parent", out var parent))
+        {
+            return null;
+        }
+
+        var url = String(parent, "clone_url");
+        if (ssh)
+        {
+            url = String(parent, "ssh_url");
+        }
+
+        var branch = String(parent, "default_branch");
+        if (url.Length == 0 ||
+            branch.Length == 0)
+        {
+            return null;
+        }
+
+        return new(url, branch);
+    }
+
+    // Without a credential, anonymously.
+    static Task<HttpResponseMessage> Get(string url, GitCredential? credential, Cancel cancel, bool bearer = false)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.UserAgent.ParseAdd("Lode");
         request.Headers.Accept.ParseAdd("application/json");
+        if (credential == null)
+        {
+            return client.SendAsync(request, cancel);
+        }
+
         if (bearer)
         {
             request.Headers.Authorization = new("Bearer", credential.Password);

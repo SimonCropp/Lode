@@ -357,7 +357,46 @@ static class RepositoryClone
             CodeCommands.GitToItsEnd(destination, cancel, "switch", branch);
         }
 
-        return clone;
+        return AddUpstream(clone, remote, progress, cancel);
+    }
+
+    // A fork gets the repository it was made from as its upstream remote, with its default
+    // branch recorded, as GitHub Desktop sets one up, so Sync fork, and how far behind upstream
+    // it is, work from the first. Whatever goes wrong leaves the clone a clone that worked,
+    // saying what didn't.
+    static CodeCommands.RepoResult AddUpstream(CodeCommands.RepoResult clone, string remote, Action<string>? progress, Cancel cancel)
+    {
+        if (HostedRepos.ParentOf(remote, cancel) is not { } parent)
+        {
+            return clone;
+        }
+
+        var repo = clone.Repo;
+        var added = CodeCommands.GitToItsEnd(repo, cancel, "remote", "add", "upstream", parent.Url);
+        if (!added.Succeeded)
+        {
+            return Saying($"Couldn't add {parent.Url} as upstream:\n{added.Output}");
+        }
+
+        var fetch = CodeCommands.Git(repo, cancel, network: true, progress, ["fetch", "--progress", "upstream"]);
+        if (!fetch.Succeeded)
+        {
+            return Saying($"Added {parent.Url} as upstream, but couldn't fetch it:\n{fetch.Output}");
+        }
+
+        var head = CodeCommands.Git(repo, "remote", "set-head", "upstream", parent.DefaultBranch);
+        if (!head.Succeeded)
+        {
+            return Saying($"Added {parent.Url} as upstream, but couldn't record its default branch, {parent.DefaultBranch}:\n{head.Output}");
+        }
+
+        return Saying($"Added {parent.Url} as upstream, the repository it is a fork of");
+
+        CodeCommands.RepoResult Saying(string text) =>
+            clone with
+            {
+                Output = $"{clone.Output}\n{text}".Trim()
+            };
     }
 
     // Git takes back what it made when it fails, but not when it is stopped part way. Stopped,

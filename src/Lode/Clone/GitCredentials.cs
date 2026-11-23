@@ -28,9 +28,17 @@ static class GitCredentials
     /// Azure DevOps has its organizations, that path. Null when git has none, or can't be asked.
     /// Git Credential Manager may show its own window to sign in. Tests answer for git.
     /// </summary>
-    internal static Func<string, string?, Cancel, GitCredential?> Fill { get; set; } = Ask;
+    internal static Func<string, string?, Cancel, GitCredential?> Fill { get; set; } = (host, path, cancel) => Ask(host, path, cancel, interactive: true);
 
-    static GitCredential? Ask(string host, string? path, Cancel cancel)
+    /// <summary>
+    /// As <see cref="Fill"/>, but never with a window to sign in: null where git has no
+    /// credential kept for the host already. For what Lode asks of a site unasked, as whether a
+    /// repository just cloned is a fork, where a sign in would come from nowhere.
+    /// </summary>
+    internal static GitCredential? FillQuietly(string host, Cancel cancel) =>
+        Ask(host, null, cancel, interactive: false);
+
+    static GitCredential? Ask(string host, string? path, Cancel cancel, bool interactive)
     {
         var input = new StringBuilder();
         input.Append("protocol=https\n");
@@ -42,8 +50,17 @@ static class GitCredentials
 
         input.Append('\n');
 
+        // Git Credential Manager takes credential.interactive from git's config, which -c is
+        // part of: false, it fails rather than showing its window. Git itself never asks, as
+        // every git Lode runs is told not to.
+        string[] arguments = ["credential", "fill"];
+        if (!interactive)
+        {
+            arguments = ["-c", "credential.interactive=false", "credential", "fill"];
+        }
+
         // Anywhere outside a repository, whose own config could send it elsewhere.
-        var result = CodeCommands.GitOutput(Path.GetTempPath(), cancel, ["credential", "fill"], input.ToString());
+        var result = CodeCommands.GitOutput(Path.GetTempPath(), cancel, arguments, input.ToString());
         if (!result.Succeeded)
         {
             return null;

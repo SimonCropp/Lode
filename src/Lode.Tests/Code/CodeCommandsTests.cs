@@ -329,7 +329,7 @@ public class CodeCommandsTests
         await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 3)).IsEqualTo("Commit all changes in Lode, including 3 new files, and push to origin.");
     }
 
-    // A merge that left a file in conflict: commit -a would commit it as it is, the markers in
+    // A merge that left a file in conflict: the commit would take it as it is, the markers in
     // it, and Push send that. Nothing is committed.
     [Test]
     public async Task PushLeavesARepositoryWithFilesInConflict()
@@ -385,6 +385,190 @@ public class CodeCommandsTests
 
         await Assert.That(results.Single().Succeeded).IsTrue();
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("from elsewhere");
+    }
+
+    // A fork's Fetch learns what upstream has too, as GitHub Desktop's does.
+    [Test]
+    public async Task FetchInAForkFetchesUpstreamToo()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        var upstream = code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var results = await CodeCommands.Fetch([fork]);
+
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(fork, "rev-parse", "upstream/main")).IsEqualTo(upstream);
+    }
+
+    [Test]
+    public async Task AForkIsARepositoryWithAnUpstream()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Fork");
+        var repo = code.CreateRepo("Repo");
+
+        await Assert.That(CodeCommands.IsFork(fork)).IsTrue();
+        await Assert.That(CodeCommands.IsFork(repo)).IsFalse();
+    }
+
+    // Upstream's commits come in, and go to origin: the fork's main is upstream's.
+    [Test]
+    public async Task SyncForkBringsInUpstreamAndPushesToOrigin()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        var upstream = code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(upstream);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(upstream);
+    }
+
+    // A branch with commits of its own gets a merge, as GitHub Desktop's Update from upstream
+    // makes, and that goes to origin.
+    [Test]
+    public async Task SyncForkMergesIntoABranchWithCommitsOfItsOwn()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        await File.WriteAllTextAsync(Path.Combine(fork, "mine.txt"), "mine");
+        Scratch.Git(fork, "add", "mine.txt");
+        Scratch.Git(fork, "commit", "-m", "Mine");
+        code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(fork, "mine.txt"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(fork, "upstream.txt"))).IsTrue();
+        // The commit, then its two parents.
+        await Assert.That(Scratch.Git(fork, "rev-list", "--parents", "-1", "HEAD").Split(' ').Length).IsEqualTo(3);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(Scratch.Git(fork, "rev-parse", "HEAD"));
+    }
+
+    // Both changed the same line: the merge is undone, so the fork isn't left part way through
+    // one, and nothing goes to origin.
+    [Test]
+    public async Task SyncForkUndoesAMergeThatWouldConflict()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        await File.WriteAllTextAsync(Path.Combine(fork, "tracked.txt"), "mine");
+        Scratch.Git(fork, "commit", "-am", "Mine");
+        var mine = Scratch.Git(fork, "rev-parse", "HEAD");
+        var origin = Scratch.Git(code.Origin("Repo"), "rev-parse", "main");
+        code.CommitUpstream("Repo", "tracked.txt", "theirs");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("would conflict");
+        await Assert.That(result.Output).Contains("tracked.txt");
+        await Assert.That(File.Exists(Path.Combine(fork, ".git", "MERGE_HEAD"))).IsFalse();
+        await Assert.That(Scratch.Git(fork, "status", "--porcelain")).IsEqualTo("");
+        await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(mine);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(origin);
+    }
+
+    // Git won't merge over an uncommitted change to a file the merge changes: nothing is
+    // merged, and the change stays.
+    [Test]
+    public async Task SyncForkKeepsUncommittedChangesInTheWay()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        await File.WriteAllTextAsync(Path.Combine(fork, "tracked.txt"), "uncommitted");
+        var before = Scratch.Git(fork, "rev-parse", "HEAD");
+        code.CommitUpstream("Repo", "tracked.txt", "theirs");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("Couldn't merge upstream/main");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(fork, "tracked.txt"))).IsEqualTo("uncommitted");
+        await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(before);
+    }
+
+    // Origin has a commit the fork hasn't, from syncing on GitHub say: it comes in first, so the
+    // push isn't refused.
+    [Test]
+    public async Task SyncForkCatchesUpWithOriginFirst()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        var other = code.Clone("Repo", "Other");
+        await File.WriteAllTextAsync(Path.Combine(other, "other.txt"), "other");
+        Scratch.Git(other, "add", "other.txt");
+        Scratch.Git(other, "commit", "-m", "Other");
+        Scratch.Git(other, "push", "origin");
+        code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(fork, "other.txt"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(fork, "upstream.txt"))).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(Scratch.Git(fork, "rev-parse", "HEAD"));
+    }
+
+    // Commits both here and on origin, that the other hasn't: there is no telling how that is to
+    // be settled, so nothing is done.
+    [Test]
+    public async Task SyncForkLeavesABranchThatHasDivergedFromOrigin()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        var other = code.Clone("Repo", "Other");
+        await File.WriteAllTextAsync(Path.Combine(other, "other.txt"), "other");
+        Scratch.Git(other, "add", "other.txt");
+        Scratch.Git(other, "commit", "-m", "Other");
+        Scratch.Git(other, "push", "origin");
+        await File.WriteAllTextAsync(Path.Combine(fork, "mine.txt"), "mine");
+        Scratch.Git(fork, "add", "mine.txt");
+        Scratch.Git(fork, "commit", "-m", "Mine");
+        var mine = Scratch.Git(fork, "rev-parse", "HEAD");
+        code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("diverged from origin/main");
+        await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(mine);
+    }
+
+    // An upstream added by hand has no HEAD recorded: upstream is asked, and its answer
+    // recorded, for the state to count against from then on.
+    [Test]
+    public async Task SyncForkRecordsUpstreamsDefaultBranch()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        Scratch.Git(fork, "remote", "set-head", "upstream", "--delete");
+        var upstream = code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(fork, "symbolic-ref", "refs/remotes/upstream/HEAD")).IsEqualTo("refs/remotes/upstream/main");
+        await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(upstream);
+    }
+
+    // As Push, nothing to merge into with no branch checked out.
+    [Test]
+    public async Task SyncForkLeavesAForkWithNoBranchCheckedOut()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        Scratch.Git(fork, "switch", "--detach");
+        code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).IsEqualTo("No branch is checked out in it, so nothing was merged or pushed.");
     }
 
     // A tag goes on the commit each repository is at, and to origin. A second of the same name
@@ -784,6 +968,33 @@ public class CodeCommandsTests
             Git(repo, "remote", "add", "origin", origin);
             Git(repo, "push", "-u", "origin", "main");
             return repo;
+        }
+
+        // A fork, as GitHub Desktop clones one: the repository it was made from, NameUpstream,
+        // its bare one standing in for GitHub's, a bare origin cloned from that, the fork on
+        // GitHub, and a clone of origin, with upstream as a remote and its HEAD recorded.
+        // NameUpstream is a repository too, to commit to upstream from.
+        public string CreateFork(string name)
+        {
+            CreateRepo($"{name}Upstream");
+            Directory.CreateDirectory(At("origins"));
+            Git(Root, "clone", "--bare", Origin($"{name}Upstream"), Origin(name));
+            var fork = Clone(name, name);
+            Git(fork, "remote", "add", "upstream", Origin($"{name}Upstream"));
+            Git(fork, "fetch", "upstream");
+            Git(fork, "remote", "set-head", "upstream", "main");
+            return fork;
+        }
+
+        // Commits a file to the repository a fork was made from, as its owner would.
+        public string CommitUpstream(string name, string file, string text)
+        {
+            var upstream = At($"{name}Upstream");
+            File.WriteAllText(Path.Combine(upstream, file), text);
+            Git(upstream, "add", file);
+            Git(upstream, "commit", "-m", $"Upstream {file}");
+            Git(upstream, "push", "origin", "main");
+            return Git(upstream, "rev-parse", "HEAD");
         }
 
         public string Clone(string name, string cloneName)

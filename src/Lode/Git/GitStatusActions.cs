@@ -1,7 +1,8 @@
 /// <summary>
 /// What clicking a part of the status bar's git state offers: the commits behind, to pull or
 /// fetch; those ahead, to push, or, diverged, to pull then push; the changes, to commit and push
-/// or discard. Each asks first, saying what it would do, then runs in the Actions panel.
+/// or discard; in a fork, those behind upstream, to sync the fork or fetch. Each asks first,
+/// saying what it would do, then runs in the Actions panel.
 /// </summary>
 static class GitStatusActions
 {
@@ -12,7 +13,8 @@ static class GitStatusActions
         Fetch,
         Push,
         CommitAndPush,
-        Discard
+        Discard,
+        SyncFork
     }
 
     /// <summary>
@@ -38,16 +40,35 @@ static class GitStatusActions
     /// </summary>
     public static async void Act(Control owner, GitState.PartKind part, string repo, GitState state, string? codeFolder)
     {
-        // Named in the question, origin/main say: one more git, so off the UI thread.
-        var upstream = await Task.Run(() => UpstreamOf(repo));
+        // Named in the question, origin/main and upstream/main say: more git, so off the UI
+        // thread.
+        var (upstream, fork) = await Task.Run(() => (UpstreamOf(repo), ForkParentOf(repo)));
         if (owner.IsDisposed ||
-            QuestionFor(part, state, upstream) is not { } question ||
+            QuestionFor(part, state, upstream, fork) is not { } question ||
             Ask(owner, question) is not { } choice)
         {
             return;
         }
 
         Run(owner, choice, repo, codeFolder);
+    }
+
+    // The branch of the repository a fork was made from that Sync fork brings in, upstream/main
+    // say, or just upstream where it has no HEAD recorded. Null for a repository that isn't a
+    // fork.
+    static string? ForkParentOf(string repo)
+    {
+        if (!CodeCommands.IsFork(repo))
+        {
+            return null;
+        }
+
+        if (CodeCommands.RecordedDefaultBranch(repo, Cancel.None, "upstream") is { } branch)
+        {
+            return $"upstream/{branch}";
+        }
+
+        return "upstream";
     }
 
     static string UpstreamOf(string repo)
@@ -63,21 +84,50 @@ static class GitStatusActions
 
     /// <summary>
     /// What clicking <paramref name="part"/> asks, for a branch tracking
-    /// <paramref name="upstream"/>. Null for a part with nothing to do.
+    /// <paramref name="upstream"/>, in a fork made from <paramref name="fork"/>, upstream/main
+    /// say, where it is one. Null for a part with nothing to do.
     /// </summary>
-    internal static Question? QuestionFor(GitState.PartKind part, GitState state, string upstream)
+    internal static Question? QuestionFor(GitState.PartKind part, GitState state, string upstream, string? fork = null)
     {
         var branch = state.Branch ?? "this commit";
         return part switch
         {
-            GitState.PartKind.Behind when state.Behind > 0 => BehindQuestion(state, branch, upstream),
-            GitState.PartKind.Ahead when state.Ahead > 0 => AheadQuestion(state, branch, upstream),
+            GitState.PartKind.Behind when state.Behind > 0 => BehindQuestion(state, branch, upstream, fork),
+            GitState.PartKind.Ahead when state.Ahead > 0 => AheadQuestion(state, branch, upstream, fork),
             GitState.PartKind.Changes when state.Changes > 0 => ChangesQuestion(state, branch),
+            GitState.PartKind.ForkBehind when state.ForkBehind > 0 => ForkQuestion(state, branch, fork ?? "upstream"),
             _ => null
         };
     }
 
-    static Question BehindQuestion(GitState state, string branch, string upstream)
+    // Sync fork does what GitHub Desktop's Fetch origin, Update from upstream and Push origin do.
+    // Detached, there is no branch to bring upstream's commits into, nor to push.
+    static Question ForkQuestion(GitState state, string branch, string fork)
+    {
+        var heading = $"{branch} is {GitState.CountOf(state.ForkBehind, "commit")} behind {fork}";
+        var fetch = FetchOption(branch, "origin", fork);
+        if (state.Branch == null)
+        {
+            return new("Git sync fork", heading, "As of the last fetch. Check out a branch to bring them into it.", [fetch]);
+        }
+
+        var note = $"Fetch origin and upstream, bring {fork} into {branch}, merging where {branch} has commits of its own, and push {branch} to origin.";
+        if (state.Changes > 0)
+        {
+            note += " Uncommitted changes stay, unless git would have to overwrite any, when nothing is merged.";
+        }
+
+        return new(
+            "Git sync fork",
+            heading,
+            "As of the last fetch.",
+            [
+                new(Choice.SyncFork, "Sync fork", note),
+                fetch
+            ]);
+    }
+
+    static Question BehindQuestion(GitState state, string branch, string upstream, string? fork)
     {
         // Pull fetches first, so takes whatever origin has as it runs, not only what the last
         // fetch counted.
@@ -99,7 +149,7 @@ static class GitStatusActions
             options.Add(new(Choice.PullThenPush, "Pull, then push", $"Then send the {GitState.CountOf(state.Ahead, "commit")} here to {upstream}."));
         }
 
-        options.Add(FetchOption(branch, upstream));
+        options.Add(FetchOption(branch, upstream, fork));
         return new(
             "Git pull",
             Heading(state, branch, upstream),
@@ -107,7 +157,7 @@ static class GitStatusActions
             options);
     }
 
-    static Question AheadQuestion(GitState state, string branch, string upstream)
+    static Question AheadQuestion(GitState state, string branch, string upstream, string? fork)
     {
         var commits = GitState.CountOf(state.Ahead, "commit");
         var uncommitted = "";
@@ -127,7 +177,7 @@ static class GitStatusActions
                         Choice.PullThenPush,
                         "Pull, then push",
                         $"{upstream} would refuse the push while it has commits {branch} hasn't: bring those in first, then send the {commits}."),
-                    FetchOption(branch, upstream)
+                    FetchOption(branch, upstream, fork)
                 ]);
         }
 
@@ -143,15 +193,15 @@ static class GitStatusActions
         var untracked = state.Files.Count(_ => _.Change == GitChange.Untracked);
         var options = new List<Option>();
 
-        // Push commits with -a, which takes every change to a file git tracks and none it
-        // doesn't: with only those, there would be nothing to commit. Detached, nowhere to push.
-        if (state.Branch != null &&
-            untracked < state.Changes)
+        // Push adds every change before it commits, new files included, as the Changes pane
+        // commits them, though not what git ignores, which isn't a change at all. Detached,
+        // nowhere to push.
+        if (state.Branch != null)
         {
-            var note = "Commit every change to a file git tracks, with a message you give, and push.";
+            var note = "Commit every change, with a message you give, and push.";
             if (untracked > 0)
             {
-                note += " Files git doesn't track stay as they are.";
+                note = "Commit every change, new files included, with a message you give, and push.";
             }
 
             options.Add(new(Choice.CommitAndPush, "Commit and push…", note));
@@ -172,8 +222,14 @@ static class GitStatusActions
             FileList(state.Files));
     }
 
-    static Option FetchOption(string branch, string upstream)
+    // A fork's fetch learns what upstream has too.
+    static Option FetchOption(string branch, string upstream, string? fork)
     {
+        if (fork != null)
+        {
+            return new(Choice.Fetch, "Fetch", $"See what origin and upstream have now, without changing {branch}.");
+        }
+
         var remote = upstream;
         var slash = upstream.IndexOf('/');
         if (slash > 0)
@@ -290,6 +346,9 @@ static class GitStatusActions
                 return;
             case Choice.Discard:
                 CodeMenu.Discard(owner, [repo], codeFolder);
+                return;
+            case Choice.SyncFork:
+                Start("Git sync fork", repo, CodeCommands.SyncFork);
                 return;
         }
     }

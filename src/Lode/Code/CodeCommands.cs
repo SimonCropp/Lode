@@ -175,10 +175,173 @@ static class CodeCommands
 
     /// <summary>
     /// Learns what origin has now, its branches and their commits, changing nothing checked
-    /// out: how far ahead and behind each branch is follows.
+    /// out: how far ahead and behind each branch is follows. In a fork, what upstream has too,
+    /// as GitHub Desktop fetches it, so how far behind upstream the branch is follows as well.
     /// </summary>
     public static Task<List<RepoResult>> Fetch(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
-        ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "fetch"));
+        ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, FetchArguments(repo)));
+
+    static string[] FetchArguments(string repo)
+    {
+        if (IsFork(repo))
+        {
+            return ["fetch", "--multiple", "origin", "upstream"];
+        }
+
+        return ["fetch"];
+    }
+
+    /// <summary>
+    /// Whether the repository is a fork: one with an upstream remote, the repository it was made
+    /// from, as GitHub Desktop sets one up. Read from its config, as git would take too long for
+    /// a menu opening.
+    /// </summary>
+    internal static bool IsFork(string repo) =>
+        RemoteSite.UpstreamUrl(repo) != null;
+
+    /// <summary>
+    /// Brings each fork up to date with the repository it was made from, as GitHub Desktop's
+    /// Fetch origin, Update from upstream and Push origin do, one after another: learns what
+    /// origin and upstream have, brings in what origin has that the branch hasn't, merges
+    /// upstream's default branch into the branch checked out, then pushes the branch to origin.
+    /// A branch that has diverged from origin is left as it is, as is one whose merge would
+    /// conflict: the merge is undone, so none is left part way through one.
+    /// </summary>
+    public static Task<List<RepoResult>> SyncFork(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
+        ForEach(repos, progress, cancel, repo => SyncFork(repo, cancel));
+
+    static RepoResult SyncFork(string repo, Cancel cancel)
+    {
+        if (WhyNotChange(repo, "nothing was merged or pushed") is { } why)
+        {
+            return new(repo, false, why);
+        }
+
+        // What git said at each step, as the result's output says it all.
+        var said = new List<string>();
+        var fetch = Said(Git(repo, cancel, network: true, "fetch", "--multiple", "origin", "upstream"));
+        if (!fetch.Succeeded)
+        {
+            return fetch;
+        }
+
+        // Recorded where it had to be asked of upstream, as one added by hand has none, so the
+        // state can count how far behind it the branch is from now on.
+        var parent = RecordedDefaultBranch(repo, cancel, "upstream");
+        if (parent == null)
+        {
+            var asked = DefaultBranch(repo, cancel, "upstream");
+            if (!asked.Succeeded)
+            {
+                return Said(asked);
+            }
+
+            parent = asked.Output;
+            Git(repo, "remote", "set-head", "upstream", parent);
+        }
+
+        if (CatchUpWithOrigin(repo, cancel) is { } caughtUp)
+        {
+            var result = Said(caughtUp);
+            if (!result.Succeeded)
+            {
+                return result;
+            }
+        }
+
+        var from = $"upstream/{parent}";
+        var merge = Said(GitToItsEnd(repo, cancel, "merge", "--no-edit", from));
+        if (!merge.Succeeded)
+        {
+            return Said(UndoMerge(repo, from, merge));
+        }
+
+        return Said(Git(repo, cancel, network: true, "push", "origin"));
+
+        RepoResult Said(RepoResult result)
+        {
+            said.Add(result.Output);
+            return result with
+            {
+                Output = string.Join('\n', said).Trim()
+            };
+        }
+    }
+
+    // Brings in what the branch's own on origin has that it hasn't, as a fork synced on its
+    // site, or pushed to from another machine, has: the push after would be refused otherwise.
+    // Only a fast forward. Null with nothing to bring in, or nothing tracked. One that has
+    // diverged fails, changing nothing, as there is no telling how it is to be settled.
+    static RepoResult? CatchUpWithOrigin(string repo, Cancel cancel)
+    {
+        var tracked = Git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+        if (!tracked.Succeeded ||
+            tracked.Output.Length == 0)
+        {
+            return null;
+        }
+
+        // "ahead<tab>behind".
+        var counts = Git(repo, "rev-list", "--left-right", "--count", "HEAD...@{upstream}");
+        var parts = counts.Output.Split('\t', StringSplitOptions.TrimEntries);
+        if (!counts.Succeeded ||
+            parts.Length != 2 ||
+            !int.TryParse(parts[0], out var ahead) ||
+            !int.TryParse(parts[1], out var behind) ||
+            behind == 0)
+        {
+            return null;
+        }
+
+        if (ahead > 0)
+        {
+            return new(
+                repo,
+                false,
+                $"The branch has diverged from {tracked.Output}: {GitState.CountOf(ahead, "commit")} here aren't there, and {GitState.CountOf(behind, "commit")} there aren't here. Pull, then sync again. Nothing was merged or pushed.");
+        }
+
+        return GitToItsEnd(repo, cancel, "merge", "--ff-only", "@{upstream}");
+    }
+
+    // A merge that failed: refused before it began, uncommitted changes in the way say, which
+    // changed nothing, or stopped part way, by a conflict, which is undone, the branch and its
+    // files as they were before it.
+    static RepoResult UndoMerge(string repo, string from, RepoResult merge)
+    {
+        if (!Git(repo, "rev-parse", "--quiet", "--verify", "MERGE_HEAD").Succeeded)
+        {
+            return merge with
+            {
+                Output = $"Couldn't merge {from}, so nothing was merged or pushed."
+            };
+        }
+
+        var conflicted = Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
+        var abort = Git(repo, "merge", "--abort");
+        var undone = "The merge was undone: merge it yourself, settling the conflicts.";
+        if (!abort.Succeeded)
+        {
+            undone = $"The merge couldn't be undone: settle the conflicts, or git merge --abort.\n{abort.Output}";
+        }
+
+        // Stopped other than by a conflict, as by a commit git couldn't make, there are no files
+        // to name.
+        if (conflicted.Length == 0)
+        {
+            return merge with
+            {
+                Succeeded = false,
+                Output = $"Merging {from} stopped part way, so nothing was pushed. {undone}"
+            };
+        }
+
+        return merge with
+        {
+            Succeeded = false,
+            Output = $"Merging {from} would conflict, so nothing was pushed. {undone}\nIn conflict:\n{conflicted}"
+        };
+    }
 
     /// <summary>
     /// Pushes the commits the branch has that the one it tracks hasn't, committing nothing.
@@ -253,15 +416,17 @@ static class CodeCommands
     /// <summary>
     /// The branch origin's HEAD names, main say, as clone recorded it, without asking origin.
     /// Null without an origin, or in a repository made by init then given an origin, which has
-    /// none recorded.
+    /// none recorded. Of <paramref name="remote"/> where given, upstream say, as GitHub Desktop
+    /// records it for a fork's.
     /// </summary>
-    internal static string? RecordedDefaultBranch(string repo, Cancel cancel)
+    internal static string? RecordedDefaultBranch(string repo, Cancel cancel, string remote = "origin")
     {
-        var recorded = Git(repo, cancel, network: false, "symbolic-ref", "--quiet", originHead + "HEAD");
+        var head = $"refs/remotes/{remote}/";
+        var recorded = Git(repo, cancel, network: false, "symbolic-ref", "--quiet", head + "HEAD");
         if (recorded.Succeeded &&
-            recorded.Output.StartsWith(originHead, StringComparison.Ordinal))
+            recorded.Output.StartsWith(head, StringComparison.Ordinal))
         {
-            return recorded.Output[originHead.Length..];
+            return recorded.Output[head.Length..];
         }
 
         return null;
@@ -270,19 +435,20 @@ static class CodeCommands
     // The branch origin's HEAD names, as the output of a result that succeeded: as clone
     // recorded it, or, in a repository made by init then given an origin, which has none
     // recorded, as origin says now. Fails, saying why, without an origin, or one with no HEAD.
-    static RepoResult DefaultBranch(string repo, Cancel cancel)
+    // Of another remote where given, upstream say.
+    static RepoResult DefaultBranch(string repo, Cancel cancel, string name = "origin")
     {
-        if (RecordedDefaultBranch(repo, cancel) is { } recorded)
+        if (RecordedDefaultBranch(repo, cancel, name) is { } recorded)
         {
             return new(repo, true, recorded);
         }
 
-        var remote = Git(repo, cancel, network: true, "ls-remote", "--symref", "origin", "HEAD");
+        var remote = Git(repo, cancel, network: true, "ls-remote", "--symref", name, "HEAD");
         if (!remote.Succeeded)
         {
             return remote with
             {
-                Output = $"Couldn't ask origin for its default branch:\n{remote.Output}"
+                Output = $"Couldn't ask {name} for its default branch:\n{remote.Output}"
             };
         }
 
@@ -304,7 +470,7 @@ static class CodeCommands
         return remote with
         {
             Succeeded = false,
-            Output = "No default branch: origin's HEAD names no branch."
+            Output = $"No default branch: {name}'s HEAD names no branch."
         };
     }
 
@@ -407,7 +573,7 @@ static class CodeCommands
             cancel,
             repo =>
             {
-                if (WhyNotCommit(repo) is { } why)
+                if (WhyNotChange(repo, "nothing was committed or pushed") is { } why)
                 {
                     return new(repo, false, why);
                 }
@@ -434,12 +600,12 @@ static class CodeCommands
                 };
             });
 
-    // Why Push is not to commit in a repository, or null where it can. With files still in
-    // conflict, from a pull say, it would commit them as they are, the markers in them, as the
-    // merge settled, and send that. With no branch checked out, as part way through a rebase, or
-    // on a tag, it would make a commit no branch has, which it has nowhere to send, and the next
-    // switch leaves behind.
-    static string? WhyNotCommit(string repo)
+    // Why Push is not to commit in a repository, nor Sync fork to merge, or null where they can,
+    // ending with what was not done. With files still in conflict, from a pull say, Push would
+    // commit them as they are, the markers in them, as the merge settled, and send that. With no
+    // branch checked out, as part way through a rebase, or on a tag, either would make a commit
+    // no branch has, which there is nowhere to send, and the next switch leaves behind.
+    static string? WhyNotChange(string repo, string notDone)
     {
         var unmerged = Git(repo, "ls-files", "--unmerged");
         if (unmerged is
@@ -448,14 +614,14 @@ static class CodeCommands
                 Output.Length: > 0
             })
         {
-            return "Files in it are still in conflict, from a merge or a rebase not finished, so nothing was committed or pushed.";
+            return $"Files in it are still in conflict, from a merge or a rebase not finished, so {notDone}.";
         }
 
         // One not a repository at all is for the commit to say.
         if (!Git(repo, "symbolic-ref", "--quiet", "HEAD").Succeeded &&
             Git(repo, "rev-parse", "--verify", "--quiet", "HEAD").Succeeded)
         {
-            return "No branch is checked out in it, so nothing was committed or pushed.";
+            return $"No branch is checked out in it, so {notDone}.";
         }
 
         return null;
@@ -877,13 +1043,13 @@ static class CodeCommands
 
     /// <summary>
     /// What happened: a line saying how many repositories it worked for, then what git said in
-    /// each, failures first.
+    /// each, failures first. With none, <paramref name="none"/>: no forks, say, for Sync fork.
     /// </summary>
-    public static ActionLog.Outcome GitOutcome(IReadOnlyList<RepoResult> results)
+    public static ActionLog.Outcome GitOutcome(IReadOnlyList<RepoResult> results, string none = "No git repositories")
     {
         if (results.Count == 0)
         {
-            return new(true, "No git repositories", "");
+            return new(true, none, "");
         }
 
         var failed = results.Count(_ => !_.Succeeded);

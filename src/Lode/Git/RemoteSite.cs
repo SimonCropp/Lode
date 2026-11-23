@@ -22,15 +22,32 @@ sealed record RemoteSite(string Name, string Url)
     /// </summary>
     public static RemoteSite? OfRepo(string repo)
     {
+        if (UrlOf(repo, "origin") is not { } url)
+        {
+            return null;
+        }
+
+        return For(url);
+    }
+
+    /// <summary>
+    /// The url of the repository's upstream remote, the repository a fork was made from, as
+    /// GitHub Desktop names it, read from its config as <see cref="OfRepo"/> reads origin's. Null
+    /// for a repository that isn't a fork, or has no upstream remote to say it is one.
+    /// </summary>
+    public static string? UpstreamUrl(string repo) =>
+        UrlOf(repo, "upstream");
+
+    static string? UrlOf(string repo, string remote)
+    {
         try
         {
-            if (CodeCommands.GitDirectory(repo) is not { } git ||
-                OriginUrl(File.ReadAllLines(Path.Combine(CodeCommands.CommonDirectory(git), "config"))) is not { } url)
+            if (CodeCommands.GitDirectory(repo) is not { } git)
             {
                 return null;
             }
 
-            return For(url);
+            return RemoteUrl(File.ReadAllLines(Path.Combine(CodeCommands.CommonDirectory(git), "config")), remote);
         }
         catch (Exception exception)
             when (
@@ -46,19 +63,26 @@ sealed record RemoteSite(string Name, string Url)
     /// <summary>
     /// The url of the [remote "origin"] section of a git config, or null.
     /// </summary>
-    internal static string? OriginUrl(IEnumerable<string> config)
+    internal static string? OriginUrl(IEnumerable<string> config) =>
+        RemoteUrl(config, "origin");
+
+    /// <summary>
+    /// The url of the [remote "<paramref name="remote"/>"] section of a git config, or null.
+    /// </summary>
+    internal static string? RemoteUrl(IEnumerable<string> config, string remote)
     {
-        var inOrigin = false;
+        var section = $"[remote \"{remote}\"]";
+        var inRemote = false;
         foreach (var raw in config)
         {
             var line = raw.Trim();
             if (line.StartsWith('['))
             {
-                inOrigin = line.Equals("[remote \"origin\"]", StringComparison.OrdinalIgnoreCase);
+                inRemote = line.Equals(section, StringComparison.OrdinalIgnoreCase);
                 continue;
             }
 
-            if (!inOrigin)
+            if (!inRemote)
             {
                 continue;
             }

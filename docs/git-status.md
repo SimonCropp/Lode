@@ -34,6 +34,7 @@ flowchart TD
 - the commit, or null before the first commit
 - how many commits it is ahead of and behind the branch it tracks, as of the last fetch
 - whether it tracks a branch at all
+- in a fork, how many commits upstream's default branch has that the commit checked out hasn't, as of the last fetch (`ForkBehind`)
 - the files with changes not yet committed, each with a `GitChange`: Modified, Staged, Added, Renamed, Deleted, Untracked or Conflicted
 
 A folder git doesn't track counts as one file, as `git status` lists it. Ignored files don't count. Two states are equal only when all of this is equal, files included, which the backoff described below relies on.
@@ -76,6 +77,13 @@ flowchart TD
 - **`git status`** looks over the files on several threads, so it wins on large ones. It runs with `--no-optional-locks`, so it never takes the index lock, and a commit made at the same time doesn't fail on it. `--ignore-submodules=dirty` leaves out what is uncommitted inside a submodule.
 
 For a code folder of 91 repositories, picking per repository took 341 ms, against 590 ms for git alone and 534 ms for LibGit2Sharp alone.
+
+A fork is a repository with an `upstream` remote, as GitHub Desktop sets one up. Its upstream's default branch is `refs/remotes/upstream/HEAD`, which GitHub Desktop records, as do Lode's Clone and Sync fork. How far behind that the commit checked out is, is counted by each reader its own way:
+
+- **LibGit2Sharp**: `CalculateHistoryDivergence` between HEAD and upstream's HEAD, in the same pass.
+- **`git status`**: only in a fork, as the config says, one more run, `git rev-list --count HEAD..refs/remotes/upstream/HEAD`. Other repositories pay nothing for it.
+
+Without `upstream/HEAD` recorded, an upstream added by hand say, it counts as 0.
 
 A view reads its repositories in parallel on background threads, in the order they are listed, and shows each as it arrives.
 
@@ -287,4 +295,4 @@ dotnet run -c Release --project src/Lode.Benchmarks
 - A worktree whose main repository is outside the code folder, or one pointed at another git folder after it was first read, is not followed.
 - A single ignored file, in a folder that isn't ignored, still makes its repository stale.
 - A change to the index forgets every folder learned for that repository, so each is asked about again.
-- Ahead and behind are as of the last fetch: Lode never fetches to work them out.
+- Ahead and behind are as of the last fetch: Lode never fetches to work them out. So is how far behind upstream a fork is: Fetch, and Sync fork, fetch upstream too.

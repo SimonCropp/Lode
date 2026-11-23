@@ -58,6 +58,9 @@ static class Icons
     // A cloud with an arrow down out of it: what origin has, learned without taking it.
     public const char Fetch = '\uEBD3';
     public const char Push = '\uE898';
+    // An arrow round in a circle: a fork brought up to date with the repository it was made
+    // from. Git's own, two arrows chasing each other, is the Git submenu's.
+    public const char SyncFork = '\uE72C';
     public const char Tag = '\uE8EC';
     // Two arrows, one each way.
     public const char SwitchBranch = '\uE8AB';

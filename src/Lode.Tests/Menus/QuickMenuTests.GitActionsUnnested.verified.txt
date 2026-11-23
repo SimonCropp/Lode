@@ -23,6 +23,7 @@
   ----,
   Git fetch,
   Git pull,
+  Git sync fork,
   Git switch to default branch,
   Git push…,
   Git discard…,
