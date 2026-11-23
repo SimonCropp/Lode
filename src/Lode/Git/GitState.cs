@@ -22,15 +22,14 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     public bool Upstream { get; init; }
 
     /// <summary>
-    /// Whether Git push would have nothing to do: no change to a file git tracks, staged or not,
-    /// for it to commit, and no commit the branch it tracks hasn't got. Files git doesn't track
-    /// don't count, as the commit leaves them. Never without a branch tracked, as the push could
-    /// be what makes it.
+    /// Whether Git push would have nothing to do: no change, staged or not, for it to commit,
+    /// new files included, which it adds, and no commit the branch it tracks hasn't got. Never
+    /// without a branch tracked, as the push could be what makes it.
     /// </summary>
     public bool NothingToPush =>
         Upstream &&
         Ahead == 0 &&
-        Files.All(_ => _.Change == GitChange.Untracked);
+        Files.Count == 0;
 
     // The same files too, not just the same list.
     public bool Equals(GitState? other) =>

@@ -294,21 +294,39 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
     }
 
-    // Nor does a file git doesn't track stand in the way, though git then says there is nothing
-    // to commit in other words.
+    // New files go in too, as the Changes pane commits them, though not what git ignores, even
+    // with nothing else changed.
     [Test]
-    public async Task PushWithOnlyUntrackedFilesStillPushes()
+    public async Task PushCommitsNewFiles()
     {
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
-        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
-        Scratch.Git(repo, "commit", "-am", "Earlier");
-        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "*.log\n");
+        Scratch.Git(repo, "add", ".gitignore");
+        Scratch.Git(repo, "commit", "-m", "Ignore logs");
+        Directory.CreateDirectory(Path.Combine(repo, "Source"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "Source", "new.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, "build.log"), "ignored");
 
-        var results = await CodeCommands.Push([repo], "Unused");
+        await Assert.That(CodeCommands.NewFiles([repo])).IsEqualTo(1);
+        var results = await CodeCommands.Push([repo], "Add new");
 
         await Assert.That(results.Single().Succeeded).IsTrue();
-        await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
+        var origin = code.Origin("Repo");
+        await Assert.That(Scratch.Git(origin, "log", "-1", "--format=%s")).IsEqualTo("Add new");
+        var files = Scratch.Git(origin, "ls-tree", "-r", "--name-only", "HEAD").Split('\n');
+        await Assert.That(files).Contains("Source/new.txt");
+        await Assert.That(files).DoesNotContain("build.log");
+        await Assert.That(CodeCommands.NewFiles([repo])).IsEqualTo(0);
+    }
+
+    // What Push asks says how many new files go in, there being any.
+    [Test]
+    public async Task PushQuestionSaysHowManyNewFiles()
+    {
+        await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 0)).IsEqualTo("Commit all changes in Lode and push to origin.");
+        await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 1)).IsEqualTo("Commit all changes in Lode, including 1 new file, and push to origin.");
+        await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 3)).IsEqualTo("Commit all changes in Lode, including 3 new files, and push to origin.");
     }
 
     // A merge that left a file in conflict: commit -a would commit it as it is, the markers in
@@ -384,6 +402,24 @@ public class CodeCommandsTests
         await Assert.That(again.Succeeded).IsFalse();
         await Assert.That(Scratch.Git(repo, "rev-parse", "v1.0^{commit}")).IsEqualTo(Scratch.Git(repo, "rev-parse", "HEAD"));
         await Assert.That(Scratch.Git(code.Origin("Repo"), "tag")).IsEqualTo("v1.0");
+    }
+
+    // Given a commit, as History tags the one picked, the tag goes on that, not the one checked
+    // out, and to origin.
+    [Test]
+    public async Task TagTagsTheCommitGiven()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var first = Scratch.Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        Scratch.Git(repo, "commit", "-am", "Second");
+
+        var tagged = (await CodeCommands.Tag([repo], "v0.9", commit: first)).Single();
+
+        await Assert.That(tagged.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "v0.9^{commit}")).IsEqualTo(first);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "v0.9^{commit}")).IsEqualTo(first);
     }
 
     // Deleting a tag takes it from the repository and from origin. One never pushed goes from

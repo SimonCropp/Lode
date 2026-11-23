@@ -316,6 +316,27 @@ public class GitPanesTests
         box.Text = "";
     }
 
+    // A commit's menu offers to tag it, and, for one with tags, to delete one of them.
+    [Test]
+    public async Task CommitMenuTags()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        string Entries(int index) =>
+            string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[index]).Select(_ => _?.Text ?? "----"));
+
+        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Tag…");
+        await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Tag…, Delete tag…");
+    }
+
     // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,
     // nothing.
     [Test]

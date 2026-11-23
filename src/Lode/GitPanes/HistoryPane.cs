@@ -458,15 +458,37 @@ sealed class HistoryPane : UserControl
 
         commits.SelectedIndices.Clear();
         commits.SelectedIndices.Add(item.Index);
-        var commit = loaded[item.Index];
+        PaneMenu.Show(commits, args.Location, CommitCommands(menuRepo, loaded[item.Index]), open => MenuOpen = open);
+    }
+
+    /// <summary>
+    /// A commit's right-click menu: copy its SHA or message; tag it, or delete one of its tags,
+    /// those it has offered; and view it on the repository's site.
+    /// </summary>
+    internal List<QuickMenu.Command?> CommitCommands(string menuRepo, GitCommit commit)
+    {
         var menu = new List<QuickMenu.Command?>
         {
             new("Copy SHA", () => FolderView.SetClipboardText(commit.Sha))
             {
                 Glyph = Icons.Copy
             },
-            new("Copy message", () => CopyMessage(menuRepo, commit))
+            new("Copy message", () => CopyMessage(menuRepo, commit)),
+            null,
+            new("Tag…", () => CodeMenu.TagCommit(this, menuRepo, commit))
+            {
+                Glyph = Icons.Tag
+            }
         };
+        if (commit.Tags.Count > 0)
+        {
+            menu.Add(
+                new("Delete tag…", () => CodeMenu.DeleteCommitTag(this, menuRepo, commit))
+                {
+                    Glyph = Icons.Delete
+                });
+        }
+
         if (site is { } onSite)
         {
             menu.Add(null);
@@ -477,7 +499,7 @@ sealed class HistoryPane : UserControl
                 });
         }
 
-        PaneMenu.Show(commits, args.Location, menu, open => MenuOpen = open);
+        return menu;
     }
 
     static async void CopyMessage(string repo, GitCommit commit)
