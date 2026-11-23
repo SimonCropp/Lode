@@ -5,7 +5,7 @@ public class CloneTests
     {
         var credential = GitCredentials.Parse("protocol=https\nhost=github.com\nusername=octo\npassword=gho_secret\n");
 
-        await Assert.That(credential).IsEqualTo(new GitCredential("octo", "gho_secret"));
+        await Assert.That(credential).IsEqualTo(new("octo", "gho_secret"));
         await Assert.That(credential!.ToString()).DoesNotContain("gho_secret");
         await Assert.That(GitCredentials.Parse("protocol=https\nhost=github.com\n")).IsNull();
     }

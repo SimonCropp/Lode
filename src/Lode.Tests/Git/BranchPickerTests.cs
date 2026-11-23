@@ -82,9 +82,9 @@ public class BranchPickerTests
         var area = new Rectangle(0, 0, 1920, 1040);
         var size = new Size(380, 420);
 
-        await Assert.That(BranchPicker.Place(new(900, 1010, 150, 22), size, area)).IsEqualTo(new Point(900, 590));
-        await Assert.That(BranchPicker.Place(new(1800, 1010, 100, 22), size, area)).IsEqualTo(new Point(1540, 590));
-        await Assert.That(BranchPicker.Place(new(10, 100, 100, 22), size, area)).IsEqualTo(new Point(10, 122));
+        await Assert.That(BranchPicker.Place(new(900, 1010, 150, 22), size, area)).IsEqualTo(new(900, 590));
+        await Assert.That(BranchPicker.Place(new(1800, 1010, 100, 22), size, area)).IsEqualTo(new(1540, 590));
+        await Assert.That(BranchPicker.Place(new(10, 100, 100, 22), size, area)).IsEqualTo(new(10, 122));
     }
 
     static async Task<BranchPicker> Open(string search = "")

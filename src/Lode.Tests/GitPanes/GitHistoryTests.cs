@@ -20,7 +20,7 @@ public class GitHistoryTests
         await Assert.That(commits[0].Parents).IsEquivalentTo(["bbb", "ccc"]);
         await Assert.That(commits[0].Tags).IsEquivalentTo(["v2.0", "stable"]);
         await Assert.That(commits[0].Subject).IsEqualTo("Merge branch 'side'");
-        await Assert.That(commits[0].When).IsEqualTo(new DateTimeOffset(2025, 4, 1, 12, 0, 0, TimeSpan.Zero));
+        await Assert.That(commits[0].When).IsEqualTo(new(2025, 4, 1, 12, 0, 0, TimeSpan.Zero));
         await Assert.That(commits[1].Tags).IsEmpty();
         await Assert.That(commits[1].Author).IsEqualTo("Grace Hopper");
         await Assert.That(commits[2].Parents).IsEmpty();

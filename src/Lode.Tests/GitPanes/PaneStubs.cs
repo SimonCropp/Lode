@@ -48,11 +48,11 @@ sealed class PaneStubs : IDisposable
 
     public PaneStubs()
     {
-        FolderView.ReadGit = (_, _) => new GitState("main", History[0].Sha, 1, 0, Files.Select(_ => new GitFile(_.Path, _.Kind)).ToList())
+        FolderView.ReadGit = (_, _) => new("main", History[0].Sha, 1, 0, Files.Select(_ => new GitFile(_.Path, _.Kind)).ToList())
         {
             Upstream = true
         };
-        ChangesPane.Read = (_, _) => new GitChanges("main", true, false, Files);
+        ChangesPane.Read = (_, _) => new("main", true, false, Files);
         HistoryPane.ReadCommits = (_, skip, count, _) => History.Skip(skip).Take(count).ToList();
         HistoryPane.ReadFiles = (_, _, _) => CommitFiles;
         HistoryPane.ReadUnpushed = (_, _) => [History[0].Sha];

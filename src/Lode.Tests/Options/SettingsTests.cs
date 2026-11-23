@@ -25,7 +25,7 @@ public class SettingsTests
         settings.SetPinnedPanes(@"d:\code\lode\", true, true);
 
         await Assert.That(settings.PinnedPanes.Count).IsEqualTo(2);
-        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Lode")).IsEqualTo(new PinnedPanes(@"d:\code\lode\", true, true));
+        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Lode")).IsEqualTo(new(@"d:\code\lode\", true, true));
 
         settings.SetPinnedPanes(@"D:\Code\Other", false, false);
         await Assert.That(settings.PinnedPanesOf(@"D:\Code\Other")).IsNull();

@@ -2887,7 +2887,7 @@ public class FolderViewTests
         await Pump.Loaded(view);
         await GitRead(view);
 
-        await Assert.That(onGitHub).IsEqualTo(new RemoteSite("GitHub", "https://github.com/octo/repo"));
+        await Assert.That(onGitHub).IsEqualTo(new("GitHub", "https://github.com/octo/repo"));
         await Assert.That(view.GitSite).IsNull();
     }
 

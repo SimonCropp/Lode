@@ -35,7 +35,7 @@ public class MainFormTests
                 foreach (var (name, size) in new[] {("Docs/guide.aleph", 900), ("Source/main.aleph", 5_000), ("readme.aleph", 120), ("notes.gamma", 12)})
                 {
                     var entry = archive.CreateEntry(name);
-                    entry.LastWriteTime = new(new DateTime(2025, 3, 14, 9, 26, 0));
+                    entry.LastWriteTime = new(new(2025, 3, 14, 9, 26, 0));
                     using var stream = entry.Open();
                     stream.Write(new byte[size]);
                 }

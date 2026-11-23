@@ -514,7 +514,7 @@ sealed class CloneDialog : Form
             return null;
         }
 
-        if (Regex.IsMatch(text, @"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"))
+        if (Regex.IsMatch(text, "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"))
         {
             var name = text;
             if (name.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
