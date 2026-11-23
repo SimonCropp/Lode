@@ -208,8 +208,8 @@ public class FolderViewTests
             await Pump.Until(() => Names(view).SequenceEqual(sortedHere));
             view.SortBy(sizeColumn);
 
-            await Assert.That(atOnce).IsNotEquivalentTo(sortedHere, TUnit.Assertions.Enums.CollectionOrdering.Matching);
-            await Assert.That(Names(view)).IsEquivalentTo(turnedHere, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(atOnce).IsNotEquivalentTo(sortedHere, CollectionOrdering.Matching);
+            await Assert.That(Names(view)).IsEquivalentTo(turnedHere, CollectionOrdering.Matching);
         }
         finally
         {
@@ -313,8 +313,8 @@ public class FolderViewTests
         var leftOut = await Found(false);
         var everything = await Found(true);
 
-        await Assert.That(leftOut).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/notes.md", "Repo/src/notes.cs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(everything).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/bin/notes.dll", "Repo/notes.log", "Repo/notes.md", "Repo/src/notes.cs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(leftOut).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/notes.md", "Repo/src/notes.cs"], CollectionOrdering.Matching);
+        await Assert.That(everything).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/bin/notes.dll", "Repo/notes.log", "Repo/notes.md", "Repo/src/notes.cs"], CollectionOrdering.Matching);
     }
 
     // A search shows where each item is, beside its name, and can be sorted by it. Clearing it
@@ -651,8 +651,8 @@ public class FolderViewTests
         view.GoToHistory(view.ForwardHistory[1].Position);
         await Pump.Loaded(view);
 
-        await Assert.That(back).IsEquivalentTo(["Source", "Docs", "Projects"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(forward).IsEquivalentTo(["Docs", "Source", "Deep"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(back).IsEquivalentTo(["Source", "Docs", "Projects"], CollectionOrdering.Matching);
+        await Assert.That(forward).IsEquivalentTo(["Docs", "Source", "Deep"], CollectionOrdering.Matching);
         await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source"));
         await Assert.That(view.CanGoBack).IsTrue();
         await Assert.That(view.CanGoForward).IsTrue();
@@ -802,7 +802,7 @@ public class FolderViewTests
             view.GoToTyped("This PC");
             await Pump.Loaded(view);
 
-            await Assert.That(started).IsEquivalentTo(["code|.|True|True", "powershell||True|True"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(started).IsEquivalentTo(["code|.|True|True", "powershell||True|True"], CollectionOrdering.Matching);
             await Assert.That(stayed).IsEqualTo(fixture.At("Docs"));
             await Assert.That(folder).IsEqualTo(fixture.At("cmd"));
             await Assert.That(view.CurrentPath).IsEqualTo(Locations.ThisPC);
@@ -1423,8 +1423,8 @@ public class FolderViewTests
         other.SetColumnShown(dateColumn, true);
 
         await Assert.That(settings.ColumnWidths.OrderBy(_ => _.Key).Select(_ => (_.Key, _.Value)))
-            .IsEquivalentTo([("Date", 200), ("Name", nameWidth)], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(sized).IsEquivalentTo([view, view], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo([("Date", 200), ("Name", nameWidth)], CollectionOrdering.Matching);
+        await Assert.That(sized).IsEquivalentTo([view, view], CollectionOrdering.Matching);
         await Assert.That(opened).IsEqualTo((other.LogicalToDeviceUnits(nameWidth), other.LogicalToDeviceUnits(200)));
         await Assert.That(other.ColumnWidth(1)).IsEqualTo(other.LogicalToDeviceUnits(200));
     }
@@ -1885,7 +1885,7 @@ public class FolderViewTests
 
         await Assert.That(atTop).IsEqualTo(zip);
         await Assert.That(inDocs).IsEqualTo(Path.Combine(zip, "Docs"));
-        await Assert.That(docsNames).IsEquivalentTo(["Deep", "guide.aleph"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(docsNames).IsEquivalentTo(["Deep", "guide.aleph"], CollectionOrdering.Matching);
         await Assert.That(upToTop).IsEquivalentTo(["Docs"]);
         await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
         await Assert.That(Selected(view)).IsEquivalentTo(["Bundle.zip"]);
@@ -1941,10 +1941,10 @@ public class FolderViewTests
 
         await Assert.That(view.IsReadOnly).IsTrue();
         await Assert.That(view.CanShowShellMenu).IsFalse();
-        await Assert.That(itemCommands).IsEquivalentTo(["open", null, "copy", "copyAsPath"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(backgroundCommands).IsEquivalentTo(["undo", "redo", null, "extractAll", "copyAsPath"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(itemCommands).IsEquivalentTo(["open", null, "copy", "copyAsPath"], CollectionOrdering.Matching);
+        await Assert.That(backgroundCommands).IsEquivalentTo(["undo", "redo", null, "extractAll", "copyAsPath"], CollectionOrdering.Matching);
         await Assert.That(deleted).IsEmpty();
-        await Assert.That(Names(view)).IsEquivalentTo(["Docs", "readme.aleph", "tool.exe"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Names(view)).IsEquivalentTo(["Docs", "readme.aleph", "tool.exe"], CollectionOrdering.Matching);
     }
 
     // A zip renamed by another program, the view inside it follows it to its new name.
@@ -2181,9 +2181,9 @@ public class FolderViewTests
         await GitRead(view);
 
         await Assert.That(view.ColumnTitles)
-            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
         await Assert.That(GitCells(view))
-            .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], CollectionOrdering.Matching);
         await Assert.That(view.GitText).IsEqualTo("");
     }
 
@@ -2214,9 +2214,9 @@ public class FolderViewTests
             await GitRead(view);
 
             await Assert.That(atOnce)
-                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], CollectionOrdering.Matching);
             await Assert.That(GitCells(view))
-                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main · 1 change", "origins: ", "Plain: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main · 1 change", "origins: ", "Plain: "], CollectionOrdering.Matching);
         }
         finally
         {
@@ -2281,11 +2281,11 @@ public class FolderViewTests
             await GitRead(view);
             var refreshed = Reads();
 
-            await Assert.That(first).IsEquivalentTo(["Changed", "Clean"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(first).IsEquivalentTo(["Changed", "Clean"], CollectionOrdering.Matching);
             await Assert.That(goneBack).IsEmpty();
             await Assert.That(changed).IsEquivalentTo(["Clean"]);
             await Assert.That(committed).IsEquivalentTo(["Changed"]);
-            await Assert.That(refreshed).IsEquivalentTo(["Changed", "Clean"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(refreshed).IsEquivalentTo(["Changed", "Clean"], CollectionOrdering.Matching);
         }
         finally
         {
@@ -2589,7 +2589,7 @@ public class FolderViewTests
                     "Ignoring/src/Project: False",
                     "Ignoring/src/Project/obj: True"
                 ],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
     }
 
     // A change in a folder learned to be ignored leaves the repository fresh. What was learned
@@ -2825,7 +2825,7 @@ public class FolderViewTests
         view.SortBy(FolderView.gitColumn);
 
         await Assert.That(view.Entries.Select(_ => _.Name))
-            .IsEquivalentTo(["origins", "Plain", "Clean", "Changed"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["origins", "Plain", "Clean", "Changed"], CollectionOrdering.Matching);
     }
 
     // The column only shows once the folder has been read and its repositories found, so the
@@ -2841,7 +2841,7 @@ public class FolderViewTests
 
         await Assert.That(view.Sort).IsEqualTo((FolderView.gitColumn, false));
         await Assert.That(view.Entries.Select(_ => _.Name))
-            .IsEquivalentTo(["Changed", "Clean", "Plain", "origins"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Changed", "Clean", "Plain", "origins"], CollectionOrdering.Matching);
     }
 
     // Hidden from the header's menu, it stays so, but the status bar still says.
@@ -2947,7 +2947,7 @@ public class FolderViewTests
         await GitRead(view);
 
         await Assert.That(view.ColumnTitles)
-            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
         await Assert.That(GitCells(view))
             .IsEquivalentTo(
                 [
@@ -2959,7 +2959,7 @@ public class FolderViewTests
                     "same.txt: ",
                     "tracked.txt: Modified"
                 ],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
         await Assert.That(view.GitText).IsEqualTo("main · 6 changes · 1 ahead");
     }
 
@@ -2988,7 +2988,7 @@ public class FolderViewTests
         await GitRead(view);
 
         await Assert.That(GitCells(view))
-            .IsEquivalentTo(["Deep: 1 change", "changed.cs: Modified", "same.cs: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Deep: 1 change", "changed.cs: Modified", "same.cs: "], CollectionOrdering.Matching);
     }
 
     // A search in a repository says what has become of what it finds in the folders below.
@@ -3003,9 +3003,9 @@ public class FolderViewTests
         await Pump.Loaded(view);
 
         await Assert.That(view.ColumnTitles.Take(3))
-            .IsEquivalentTo(["Name", "Git", "Folder"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Name", "Git", "Folder"], CollectionOrdering.Matching);
         await Assert.That(GitCells(view))
-            .IsEquivalentTo(["changed.cs: Modified", "deeper.cs: Modified", "same.cs: "], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["changed.cs: Modified", "deeper.cs: Modified", "same.cs: "], CollectionOrdering.Matching);
     }
 
     // Sorted by Git in a repository, what has changed comes together, by what has become of it.
@@ -3019,7 +3019,7 @@ public class FolderViewTests
         view.SortBy(FolderView.gitColumn);
 
         await Assert.That(view.Entries.Select(_ => _.Name))
-            .IsEquivalentTo(["Unchanged", "src", "New", "same.txt", "added.txt", "tracked.txt", "loose.txt"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Unchanged", "src", "New", "same.txt", "added.txt", "tracked.txt", "loose.txt"], CollectionOrdering.Matching);
     }
 
     // A repository in the code folder with a file changed, one staged as new, one untracked, a

@@ -34,7 +34,7 @@ public class OpenWithTests
         var names = OpenWith.Find(".txt").Select(_ => _.Name).ToList();
 
         await Assert.That(names.All(_ => _.Length > 0)).IsTrue();
-        await Assert.That(names).IsEquivalentTo(names.Order(StringComparer.CurrentCultureIgnoreCase), TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(names).IsEquivalentTo(names.Order(StringComparer.CurrentCultureIgnoreCase), CollectionOrdering.Matching);
     }
 
     // The shell is asked once for each extension's apps, not on every right-click, and again

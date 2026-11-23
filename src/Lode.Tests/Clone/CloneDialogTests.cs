@@ -26,10 +26,10 @@ public class CloneDialogTests
         using var dialog = await Open(fixture);
 
         await Assert.That(dialog.Rows.Select(_ => _.Text))
-            .IsEquivalentTo(["Your repositories", "octo/AngleSharp", "octo/notes", "dotnet", "dotnet/runtime", "dotnet/winforms"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["Your repositories", "octo/AngleSharp", "octo/notes", "dotnet", "dotnet/runtime", "dotnet/winforms"], CollectionOrdering.Matching);
 
         dialog.FilterBox.Text = "win";
-        await Assert.That(dialog.Rows.Select(_ => _.Text)).IsEquivalentTo(["dotnet", "dotnet/winforms"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(dialog.Rows.Select(_ => _.Text)).IsEquivalentTo(["dotnet", "dotnet/winforms"], CollectionOrdering.Matching);
         await Assert.That(dialog.CloneButton.Enabled).IsFalse();
 
         dialog.List.SelectedIndex = 1;

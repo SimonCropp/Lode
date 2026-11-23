@@ -6,4 +6,5 @@ global using System.Runtime.InteropServices;
 global using System.Text.Json;
 global using Microsoft.Win32;
 global using NuGet.Versioning;
+global using TUnit.Assertions.Enums;
 global using TUnit.Core.Executors;

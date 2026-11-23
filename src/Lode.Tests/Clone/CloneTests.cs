@@ -131,7 +131,7 @@ public class CloneTests
         }
 
         await Assert.That(rows.Select(Line))
-            .IsEquivalentTo(["# Your repositories", "octo/alpha", "octo/zeta", "# angular", "angular/angular", "# dotnet", "dotnet/runtime"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["# Your repositories", "octo/alpha", "octo/zeta", "# angular", "angular/angular", "# dotnet", "dotnet/runtime"], CollectionOrdering.Matching);
     }
 
     // A url however written, or a GitHub repository's owner/name, with the repository's name.

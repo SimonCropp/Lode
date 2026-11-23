@@ -20,14 +20,14 @@ public class GitDiffTests
         {
             var repo = scratch.CreateRepo("Repo");
             Git(repo, "config", "core.autocrlf", "true");
-            File.WriteAllText(Path.Combine(repo, "lines.txt"), "one\ntwo\n");
+            await File.WriteAllTextAsync(Path.Combine(repo, "lines.txt"), "one\ntwo\n");
             Git(repo, "add", ".");
             Git(repo, "commit", "-m", "Lines");
 
             var version = GitDiff.Version(repo, "HEAD", "lines.txt")!;
 
             await Assert.That(Path.GetFileName(version)).IsEqualTo("lines.txt");
-            await Assert.That(File.ReadAllText(version)).IsEqualTo("one\r\ntwo\r\n");
+            await Assert.That(await File.ReadAllTextAsync(version)).IsEqualTo("one\r\ntwo\r\n");
             await Assert.That(File.GetAttributes(version).HasFlag(FileAttributes.ReadOnly)).IsTrue();
             await Assert.That(GitDiff.Version(repo, "HEAD", "lines.txt")).IsEqualTo(version);
             await Assert.That(GitDiff.Version(repo, "HEAD", "missing.txt")).IsNull();
@@ -50,13 +50,13 @@ public class GitDiffTests
         {
             var repo = scratch.CreateRepo("Repo");
             var before = GitDiff.Version(repo, "HEAD", "tracked.txt")!;
-            File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+            await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
             Git(repo, "commit", "-am", "Change");
 
             var after = GitDiff.Version(repo, "HEAD", "tracked.txt")!;
 
             await Assert.That(after).IsNotEqualTo(before);
-            await Assert.That(File.ReadAllText(after)).IsEqualTo("changed");
+            await Assert.That(await File.ReadAllTextAsync(after)).IsEqualTo("changed");
         }
         finally
         {

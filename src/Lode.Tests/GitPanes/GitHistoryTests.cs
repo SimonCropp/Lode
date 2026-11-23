@@ -36,8 +36,7 @@ public class GitHistoryTests
 
         await Assert.That(files.Select(_ => $"{_.Kind} {_.Path} {_.OldPath}".Trim()))
             .IsEquivalentTo(
-                ["Modified a.txt", "Added added.txt", "Added copy.txt src.txt", "Deleted deleted.txt", "Modified link", "Renamed new name.txt old name.txt"],
-                TUnit.Assertions.Enums.CollectionOrdering.Any);
+                ["Modified a.txt", "Added added.txt", "Added copy.txt src.txt", "Deleted deleted.txt", "Modified link", "Renamed new name.txt old name.txt"]);
     }
 
     // Read from git: newest first, a page at a time, tags, and what a merge brought in against
@@ -49,18 +48,18 @@ public class GitHistoryTests
         var repo = scratch.CreateRepo("Repo");
         Git(repo, "tag", "v1.0");
         Git(repo, "switch", "-q", "-c", "side");
-        File.WriteAllText(Path.Combine(repo, "side.txt"), "side");
+        await File.WriteAllTextAsync(Path.Combine(repo, "side.txt"), "side");
         Git(repo, "add", ".");
         Git(repo, "commit", "-m", "Side");
         Git(repo, "switch", "-q", "main");
-        File.WriteAllText(Path.Combine(repo, "main.txt"), "main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "main.txt"), "main");
         Git(repo, "add", ".");
         Git(repo, "commit", "-m", "Main");
         Git(repo, "merge", "--no-ff", "-m", "Merge side", "side");
 
         var commits = GitHistory.Read(repo, 0, GitHistory.Page, Cancel.None)!;
 
-        await Assert.That(commits.Select(_ => _.Subject)).IsEquivalentTo(["Merge side", "Main", "Side", "Initial"], TUnit.Assertions.Enums.CollectionOrdering.Any);
+        await Assert.That(commits.Select(_ => _.Subject)).IsEquivalentTo(["Merge side", "Main", "Side", "Initial"]);
         await Assert.That(commits[0].Subject).IsEqualTo("Merge side");
         await Assert.That(commits.Single(_ => _.Subject == "Initial").Tags).IsEquivalentTo(["v1.0"]);
         await Assert.That(GitHistory.Read(repo, 1, 2, Cancel.None)!.Count).IsEqualTo(2);
@@ -80,7 +79,7 @@ public class GitHistoryTests
         var repo = scratch.CreateRepo("Repo");
         await Assert.That(GitHistory.Unpushed(repo, Cancel.None)).IsEmpty();
 
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
         Git(repo, "commit", "-am", "Local");
         var head = Git(repo, "rev-parse", "HEAD");
         await Assert.That(GitHistory.Unpushed(repo, Cancel.None)).IsEquivalentTo([head]);

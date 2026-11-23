@@ -81,7 +81,7 @@ public class GitStateTests
                     new("Two Words/café.txt", GitChange.Modified),
                     new("ünïcode", GitChange.Untracked)
                 ],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
     }
 
     [Test]
@@ -160,9 +160,9 @@ public class GitStateTests
                     new(GitState.PartKind.Behind, "1 behind"),
                     new(GitState.PartKind.ForkBehind, "4 behind upstream")
                 ],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
         await Assert.That(new GitState("main", null, 0, 0, []).Parts().Select(_ => _.Kind))
-            .IsEquivalentTo([GitState.PartKind.Branch, GitState.PartKind.NoCommits], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo([GitState.PartKind.Branch, GitState.PartKind.NoCommits], CollectionOrdering.Matching);
         await Assert.That(string.Join(" · ", state.Parts().Select(_ => _.Text))).IsEqualTo(state.Describe());
     }
 
@@ -258,7 +258,7 @@ public class GitStateTests
                     new("second.txt", GitChange.Deleted),
                     new("third.txt", GitChange.Deleted)
                 ],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
     }
 
     // Ahead by its own commit, behind by one another clone pushed, as of its last fetch.

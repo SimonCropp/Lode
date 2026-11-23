@@ -38,8 +38,7 @@ public class GitChangesTests
                     "Renamed report one.beta report2.beta",
                     "Untracked Source/Deep/new.aleph",
                     "Untracked Source/Deep/other.aleph"
-                ],
-                TUnit.Assertions.Enums.CollectionOrdering.Any);
+                ]);
     }
 
     [Test]
@@ -84,22 +83,22 @@ public class GitChangesTests
     {
         using var scratch = new Scratch();
         var repo = scratch.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, "moved.txt"), "moved");
-        File.WriteAllText(Path.Combine(repo, "staged.txt"), "staged");
-        File.WriteAllText(Path.Combine(repo, "deleted.txt"), "deleted");
-        File.WriteAllText(Path.Combine(repo, "left.txt"), "left");
+        await File.WriteAllTextAsync(Path.Combine(repo, "moved.txt"), "moved");
+        await File.WriteAllTextAsync(Path.Combine(repo, "staged.txt"), "staged");
+        await File.WriteAllTextAsync(Path.Combine(repo, "deleted.txt"), "deleted");
+        await File.WriteAllTextAsync(Path.Combine(repo, "left.txt"), "left");
         Git(repo, "add", ".");
         Git(repo, "commit", "-m", "More");
 
         Git(repo, "mv", "moved.txt", "renamed.txt");
         Git(repo, "rm", "-q", "deleted.txt");
-        File.WriteAllText(Path.Combine(repo, "staged.txt"), "staged, changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "staged.txt"), "staged, changed");
         Git(repo, "add", "staged.txt");
-        File.WriteAllText(Path.Combine(repo, "left.txt"), "left, changed");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "left.txt"), "left, changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
         Directory.CreateDirectory(Path.Combine(repo, "new"));
-        File.WriteAllText(Path.Combine(repo, "new", "[x].txt"), "new");
-        File.WriteAllText(Path.Combine(repo, "-dash.txt"), "dash");
+        await File.WriteAllTextAsync(Path.Combine(repo, "new", "[x].txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, "-dash.txt"), "dash");
 
         var changes = GitChanges.Read(repo, Cancel.None)!;
         string[] ticked = ["renamed.txt", "deleted.txt", "tracked.txt", "new/[x].txt", "-dash.txt"];
@@ -107,7 +106,7 @@ public class GitChangesTests
 
         await Assert.That(result.Succeeded).IsTrue();
         await Assert.That(Git(repo, "show", "--name-status", "--format=", "HEAD").Split('\n').Order())
-            .IsEquivalentTo(["A\t-dash.txt", "A\tnew/[x].txt", "D\tdeleted.txt", "M\ttracked.txt", "R100\tmoved.txt\trenamed.txt"], TUnit.Assertions.Enums.CollectionOrdering.Any);
+            .IsEquivalentTo(["A\t-dash.txt", "A\tnew/[x].txt", "D\tdeleted.txt", "M\ttracked.txt", "R100\tmoved.txt\trenamed.txt"]);
         await Assert.That(Git(repo, "log", "-1", "--format=%B")).IsEqualTo("Some\n\n# kept");
         await Assert.That(Git(repo, "diff", "--name-only")).IsEqualTo("left.txt");
         await Assert.That(Git(repo, "diff", "--cached", "--name-only")).IsEqualTo("staged.txt");
@@ -124,8 +123,8 @@ public class GitChangesTests
         Git(repo, "config", "user.name", "Test");
         Git(repo, "config", "user.email", "test@example.com");
         Git(repo, "config", "commit.gpgsign", "false");
-        File.WriteAllText(Path.Combine(repo, "one.txt"), "one");
-        File.WriteAllText(Path.Combine(repo, "two.txt"), "two");
+        await File.WriteAllTextAsync(Path.Combine(repo, "one.txt"), "one");
+        await File.WriteAllTextAsync(Path.Combine(repo, "two.txt"), "two");
 
         var changes = GitChanges.Read(repo, Cancel.None)!;
         await Assert.That(changes.HasCommits).IsFalse();
@@ -143,15 +142,15 @@ public class GitChangesTests
         using var scratch = new Scratch();
         var repo = scratch.CreateRepo("Repo");
         Git(repo, "switch", "-q", "-c", "side");
-        File.WriteAllText(Path.Combine(repo, "side.txt"), "side");
+        await File.WriteAllTextAsync(Path.Combine(repo, "side.txt"), "side");
         Git(repo, "add", ".");
         Git(repo, "commit", "-m", "Side");
         Git(repo, "switch", "-q", "main");
-        File.WriteAllText(Path.Combine(repo, "main.txt"), "main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "main.txt"), "main");
         Git(repo, "add", ".");
         Git(repo, "commit", "-m", "Main");
         Git(repo, "merge", "--no-commit", "--no-ff", "side");
-        File.WriteAllText(Path.Combine(repo, "extra.txt"), "extra");
+        await File.WriteAllTextAsync(Path.Combine(repo, "extra.txt"), "extra");
 
         var changes = GitChanges.Read(repo, Cancel.None)!;
         await Assert.That(changes.Merging).IsTrue();
@@ -169,18 +168,18 @@ public class GitChangesTests
     {
         using var scratch = new Scratch();
         var repo = scratch.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
-        File.WriteAllText(Path.Combine(repo, "added.txt"), "added");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "added.txt"), "added");
         Git(repo, "add", "added.txt");
-        File.WriteAllText(Path.Combine(repo, "untracked.txt"), "untracked");
+        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "untracked");
 
         var changes = GitChanges.Read(repo, Cancel.None)!;
         var result = GitChanges.Restore(repo, changes.Files, changes.HasCommits, Cancel.None);
 
         await Assert.That(result.Succeeded).IsTrue();
-        await Assert.That(File.ReadAllText(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
         await Assert.That(Git(repo, "status", "--porcelain").Split('\n').Order())
-            .IsEquivalentTo(["?? untracked.txt"], TUnit.Assertions.Enums.CollectionOrdering.Any);
+            .IsEquivalentTo(["?? untracked.txt"]);
     }
 
     [Test]
@@ -188,12 +187,12 @@ public class GitChangesTests
     {
         using var scratch = new Scratch();
         var repo = scratch.CreateRepo("Repo");
-        File.WriteAllText(Path.Combine(repo, ".gitignore"), "bin/");
-        File.WriteAllText(Path.Combine(repo, "out.log"), "log");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/");
+        await File.WriteAllTextAsync(Path.Combine(repo, "out.log"), "log");
 
         GitChanges.Ignore(repo, "out.log");
 
-        await Assert.That(File.ReadAllText(Path.Combine(repo, ".gitignore"))).IsEqualTo("bin/\n/out.log\n");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, ".gitignore"))).IsEqualTo("bin/\n/out.log\n");
         await Assert.That(GitChanges.Read(repo, Cancel.None)!.Files.Select(_ => _.Path)).IsEquivalentTo([".gitignore"]);
     }
 }

@@ -45,6 +45,6 @@ public class SingleInstanceTests
         await Assert.That(took).IsLessThan(TimeSpan.FromSeconds(2));
         await Assert.That(opened.SelectMany(_ => _)).IsEquivalentTo(
             [@"C:\Code\Lode", @"D:\Two Words"],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 }
