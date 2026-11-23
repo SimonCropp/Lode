@@ -625,20 +625,6 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "tag")).IsEqualTo("");
     }
 
-    // The tags in every repository, each once, for Delete tag to offer.
-    [Test]
-    public async Task TagsOfEveryRepo()
-    {
-        using var code = new Scratch();
-        var one = code.CreateRepo("One");
-        var two = code.CreateRepo("Two");
-        Scratch.Git(one, "tag", "v1");
-        Scratch.Git(one, "tag", "shared");
-        Scratch.Git(two, "tag", "shared");
-
-        await Assert.That(CodeCommands.Tags([one, two])).IsEquivalentTo(["v1", "shared"]);
-    }
-
     // Git refuses an empty commit message, and a tag with a space in it.
     [Test]
     public async Task WhatTheGitDialogTakes()

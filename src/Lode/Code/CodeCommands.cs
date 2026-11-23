@@ -541,28 +541,6 @@ static class CodeCommands
             });
 
     /// <summary>
-    /// The tags in the repositories, the newest first, each once.
-    /// </summary>
-    public static List<string> Tags(IReadOnlyList<string> repos) =>
-        // Several at once, as the commands themselves go: one git after another across a code
-        // folder's repositories was a wait of seconds before the tags were offered.
-        InParallel(
-                repos,
-                repo =>
-                {
-                    var result = Git(repo, "tag", "--sort=-creatordate");
-                    if (!result.Succeeded)
-                    {
-                        return [];
-                    }
-
-                    return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                })
-            .SelectMany(_ => _)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-    /// <summary>
     /// Commits every change with the message, new files included, as the Changes pane commits
     /// them, though not what git ignores, then pushes to origin.
     /// </summary>

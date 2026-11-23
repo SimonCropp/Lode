@@ -23,8 +23,6 @@
     Sync fork,
     Switch to default branch,
     Push…,
-    Git tag (disabled),
-    Git delete tag (disabled),
     Discard…,
     Purge…
   ]

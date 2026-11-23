@@ -4,7 +4,7 @@
 /// tab has the pane's icon, and its name written down the strip, across under the icon, or not at
 /// all, as chosen from the strip's right-click menu. Hovering a tab slides its pane out; clicking
 /// one opens it with the focus in it. Changes says how many files have changed: in its name, or,
-/// where the name isn't written down the strip, in a badge on its icon.
+/// where the name isn't written down the strip, in a badge beside its icon.
 /// </summary>
 sealed class EdgeStrip : Control
 {
@@ -27,7 +27,7 @@ sealed class EdgeStrip : Control
     StringFormat vertical = new(StringFormatFlags.DirectionVertical | StringFormatFlags.NoWrap);
 
     // The names written across, under the icons, smaller than the window's text as JetBrains'
-    // are, and the count in the badge on Changes' icon.
+    // are, and the count in the badge beside Changes' icon.
     Font small;
     Font badgeFont;
 
@@ -64,8 +64,11 @@ sealed class EdgeStrip : Control
         (small, badgeFont) = Fonts(Font);
     }
 
-    static (Font Small, Font Badge) Fonts(Font font) =>
-        (new(font.FontFamily, Math.Max(7f, font.SizeInPoints - 1)), new(font.FontFamily, Math.Max(6f, font.SizeInPoints - 2), FontStyle.Bold));
+    static (Font Small, Font Badge) Fonts(Font font)
+    {
+        var size = Math.Max(7f, font.SizeInPoints - 1);
+        return (new(font.FontFamily, size), new(font.FontFamily, size, FontStyle.Bold));
+    }
 
     /// <summary>
     /// Shows the tab of each pane that isn't pinned.
@@ -157,7 +160,7 @@ sealed class EdgeStrip : Control
     }
 
     /// <summary>
-    /// What the badge on Changes' icon says: how many files have changed, up to 99. Null for none.
+    /// What the badge beside Changes' icon says: how many files have changed, up to 99. Null for none.
     /// </summary>
     internal static string? BadgeText(int changes)
     {
@@ -420,28 +423,28 @@ sealed class EdgeStrip : Control
     void DrawLabel(Graphics graphics, GitPane pane, Rectangle bounds, Color text)
     {
         var size = LogicalToDeviceUnits(iconSize);
-        var x = bounds.Left + (bounds.Width - size) / 2;
         var icon = Icons.Bitmap(GlyphOf(pane), size, text);
         switch (labels)
         {
             case StripLabels.Horizontal:
             {
-                var iconBounds = new Rectangle(x, bounds.Top + LogicalToDeviceUnits(8), size, size);
+                var (iconBounds, badge) = Place(graphics, pane, bounds, bounds.Top + LogicalToDeviceUnits(8));
                 graphics.DrawImageUnscaled(icon, iconBounds.Location);
                 var name = Rectangle.FromLTRB(bounds.Left, iconBounds.Bottom + LogicalToDeviceUnits(3), bounds.Right, bounds.Bottom);
                 TextRenderer.DrawText(graphics, pane.ToString(), small, name, text, acrossFlags | TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-                DrawBadge(graphics, pane, iconBounds, bounds);
+                DrawBadge(graphics, badge, iconBounds);
                 return;
             }
             case StripLabels.IconsOnly:
             {
-                var iconBounds = new Rectangle(x, bounds.Top + (bounds.Height - size) / 2, size, size);
+                var (iconBounds, badge) = Place(graphics, pane, bounds, bounds.Top + (bounds.Height - size) / 2);
                 graphics.DrawImageUnscaled(icon, iconBounds.Location);
-                DrawBadge(graphics, pane, iconBounds, bounds);
+                DrawBadge(graphics, badge, iconBounds);
                 return;
             }
             default:
             {
+                var x = bounds.Left + (bounds.Width - size) / 2;
                 var top = bounds.Top + LogicalToDeviceUnits(10);
                 graphics.DrawImageUnscaled(icon, x, top);
                 using var textBrush = new SolidBrush(text);
@@ -453,22 +456,58 @@ sealed class EdgeStrip : Control
         }
     }
 
-    // How many files have changed, in a pill over the bottom right of Changes' icon, in the
-    // accent colour, as the count on VS Code's Source Control icon.
-    void DrawBadge(Graphics graphics, GitPane pane, Rectangle icon, Rectangle tab)
+    /// <summary>
+    /// Where a tab's icon goes, at <paramref name="iconTop"/>, and, on Changes' with files
+    /// changed, the badge saying how many: beside it on the right, the pair centred across the
+    /// tab, so neither covers the other. Where the tab is too narrow for both, as with the icons
+    /// alone, the icon goes to the tab's left and the badge to its right, overlapping only by
+    /// what doesn't fit. The badge is empty where there is none.
+    /// </summary>
+    (Rectangle Icon, Rectangle Badge) Place(Graphics graphics, GitPane pane, Rectangle tab, int iconTop)
+    {
+        var size = LogicalToDeviceUnits(iconSize);
+        var badge = BadgeSize(graphics, pane);
+        if (badge.IsEmpty)
+        {
+            return (new(tab.Left + (tab.Width - size) / 2, iconTop, size, size), Rectangle.Empty);
+        }
+
+        var spacing = LogicalToDeviceUnits(2);
+        var left = Math.Max(
+            tab.Left + (tab.Width - size - spacing - badge.Width) / 2,
+            tab.Left + LogicalToDeviceUnits(2));
+        var badgeLeft = Math.Min(
+            left + size + spacing,
+            tab.Right - LogicalToDeviceUnits(1) - badge.Width);
+        var icon = new Rectangle(left, iconTop, size, size);
+        return (icon, new(badgeLeft, iconTop + (size - badge.Height) / 2, badge.Width, badge.Height));
+    }
+
+    // A pill as tall as its text, and as wide, but never narrower than it is tall. Empty for a
+    // tab without one.
+    Size BadgeSize(Graphics graphics, GitPane pane)
     {
         if (pane != GitPane.Changes ||
+            BadgeText(changes) is not { } badge)
+        {
+            return Size.Empty;
+        }
+
+        var measured = TextRenderer.MeasureText(graphics, badge, badgeFont, Size.Empty, acrossFlags);
+        return new(Math.Max(measured.Height, measured.Width + LogicalToDeviceUnits(6)), measured.Height);
+    }
+
+    // How many files have changed, in a pill in the accent colour, as the count on VS Code's
+    // Source Control icon, but beside the icon rather than over it.
+    void DrawBadge(Graphics graphics, Rectangle bounds, Rectangle icon)
+    {
+        if (bounds.IsEmpty ||
             BadgeText(changes) is not { } badge)
         {
             return;
         }
 
-        var measured = TextRenderer.MeasureText(graphics, badge, badgeFont, Size.Empty, acrossFlags);
-        var height = measured.Height + LogicalToDeviceUnits(1);
-        var width = Math.Max(height, measured.Width + LogicalToDeviceUnits(6));
-        var right = Math.Min(icon.Right + LogicalToDeviceUnits(6), tab.Right - LogicalToDeviceUnits(2));
-        var bounds = new Rectangle(right - width, icon.Bottom - height + LogicalToDeviceUnits(4), width, height);
-
+        var height = bounds.Height;
         var fill = ExplorerStyle.Accent;
         var ink = ContrastingText(fill);
         if (ExplorerStyle.HighContrast())
@@ -478,12 +517,17 @@ sealed class EdgeStrip : Control
         }
 
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var ring = new Pen(BackColor, LogicalToDeviceUnits(2)))
         using (var brush = new SolidBrush(fill))
         using (var shape = ExplorerStyle.RoundedRectangle(bounds, height / 2))
         {
-            // A ring of the strip's colour round it, so it stands off the icon under it.
-            graphics.DrawPath(ring, shape);
+            // Where the tab is too narrow for it to clear the icon, a ring of the strip's colour
+            // round it, so it stands off the icon under it.
+            if (bounds.IntersectsWith(icon))
+            {
+                using var ring = new Pen(BackColor, LogicalToDeviceUnits(2));
+                graphics.DrawPath(ring, shape);
+            }
+
             graphics.FillPath(brush, shape);
         }
 

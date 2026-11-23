@@ -11,11 +11,11 @@ static class CodeMenu
 
     /// <summary>
     /// The entries for the folders, after a separator, or none unless every one is under the
-    /// code folder. Switch to default branch is left off when every repository is on it, and
-    /// Push when every one has nothing to push, as <paramref name="stateOf"/> has it, which
-    /// gives a repository's state where it has been read. Tag and Delete tag only when every
-    /// folder is in a repository, not for one only holding repositories. Sync fork only where
-    /// there may be a fork: a repository with an upstream remote, or a folder holding repositories.
+    /// code folder. Switch to default branch is left off when every repository is on it, Push
+    /// when every one has nothing to push, and Discard when every one has nothing uncommitted,
+    /// as <paramref name="stateOf"/> has it, which gives a repository's state where it has been
+    /// read. Sync fork only where there may be a fork: a repository with an upstream remote, or a
+    /// folder holding repositories. Tagging is History's, on the commit picked.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
     {
@@ -36,6 +36,11 @@ static class CodeMenu
         var nothingToPush = allInRepos &&
                             stateOf != null &&
                             repos.All(_ => stateOf(_!) is { NothingToPush: true });
+        // Discard resets what is tracked and deletes what is new but not ignored: the files the
+        // state lists.
+        var nothingToDiscard = allInRepos &&
+                               stateOf != null &&
+                               repos.All(_ => stateOf(_!) is { Changes: 0 });
 
         List<QuickMenu.Command?> commands =
         [
@@ -79,28 +84,17 @@ static class CodeMenu
                 });
         }
 
-        // A tag names a commit of a repository: for a folder only holding repositories, it would
-        // be the same tag in every one below it, which is never what is meant.
-        if (allInRepos)
+        if (!nothingToDiscard)
         {
             commands.Add(
-                LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…") with
+                LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…") with
                 {
-                    NestedText = "Tag…"
-                });
-            commands.Add(
-                LodeActions.Command("gitDeleteTag", () => DeleteTag(owner, folders, settings.CodeDirectory), text: "Git delete tag…") with
-                {
-                    NestedText = "Delete tag…"
+                    NestedText = "Discard…"
                 });
         }
 
         commands.AddRange(
         [
-            LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…") with
-            {
-                NestedText = "Discard…"
-            },
             LodeActions.Command("gitPurge", () => Purge(owner, settings, folders), text: "Git purge…") with
             {
                 NestedText = "Purge…"
@@ -469,82 +463,6 @@ static class CodeMenu
             "Git push",
             folders,
             async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Push(repos, message, progress, cancel)));
-    }
-
-    // Asks for the tag's name, then tags the commit each repository is at and pushes the tag.
-    static async void Tag(Control owner, IReadOnlyList<string> folders, string? codeFolder)
-    {
-        var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
-        if (repos.Count == 0)
-        {
-            NoRepos("Git tag", folders);
-            return;
-        }
-
-        if (owner.IsDisposed)
-        {
-            return;
-        }
-
-        using var form = new GitTextForm(
-            "Git tag",
-            $"Tag the commit {Describe(repos)} is at, and push the tag to origin.",
-            "Tag:",
-            "",
-            "Tag",
-            [],
-            isTagName: true);
-        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
-        {
-            return;
-        }
-
-        var name = form.Value;
-        _ = ActionLog.Run(
-            "Git tag",
-            folders,
-            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Tag(repos, name, progress, cancel)));
-    }
-
-    // Asks which tag, offering those there are, newest first, then deletes it from each
-    // repository and from origin.
-    static async void DeleteTag(Control owner, IReadOnlyList<string> folders, string? codeFolder)
-    {
-        var (repos, tags) = await Task.Run(
-            () =>
-            {
-                var found = CodeCommands.FindRepos(folders, codeFolder);
-                return (found, CodeCommands.Tags(found));
-            });
-        if (repos.Count == 0)
-        {
-            NoRepos("Git delete tag", folders);
-            return;
-        }
-
-        if (owner.IsDisposed)
-        {
-            return;
-        }
-
-        using var form = new GitTextForm(
-            "Git delete tag",
-            $"Delete a tag from {Describe(repos)}, and from origin. This cannot be undone.",
-            "Tag:",
-            tags.FirstOrDefault() ?? "",
-            "Delete",
-            tags,
-            isTagName: true);
-        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
-        {
-            return;
-        }
-
-        var name = form.Value;
-        _ = ActionLog.Run(
-            "Git delete tag",
-            folders,
-            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.DeleteTag(repos, name, progress, cancel)));
     }
 
     /// <summary>

@@ -12,12 +12,12 @@ public class GitPanesCaptureTests
     public Task Strip() =>
         Capture(changes: false, history: false);
 
-    // The names across, under the icons, Changes' count in a badge on its icon.
+    // The names across, under the icons, Changes' count in a badge beside its icon.
     [Test]
     public Task StripHorizontal() =>
         Capture(changes: false, history: false, labels: StripLabels.Horizontal);
 
-    // The icons alone, Changes' count in a badge on its icon.
+    // The icons alone, Changes' count in a badge beside its icon.
     [Test]
     public Task StripIconsOnly() =>
         Capture(changes: false, history: false, labels: StripLabels.IconsOnly);

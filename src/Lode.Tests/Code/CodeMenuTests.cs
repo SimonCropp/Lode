@@ -76,10 +76,11 @@ public class CodeMenuTests
         await Assert.That(Offered([code.Root], clean)).IsEqualTo("switch, push");
     }
 
-    // Tag and Delete tag for a repository, a folder in one, or several picked, but not for a
-    // folder only holding repositories, where it would be the same tag in every one below it.
+    // Discard is left off when every repository is known to have nothing uncommitted, a new file
+    // being something, as Discard deletes it, but commits not yet pushed being nothing, as it
+    // keeps them. Not left off for a folder holding repositories, nor one whose state is unread.
     [Test]
-    public async Task TagOnlyForRepositories()
+    public async Task DiscardOnlyWhenThereIsSomethingToDiscard()
     {
         using var code = new CodeCommandsTests.Scratch();
         code.CreateRepo("Repo");
@@ -90,19 +91,38 @@ public class CodeMenuTests
             CodeDirectory = code.Root
         };
         using var owner = new Control();
-        bool Offered(IReadOnlyList<string> folders)
+        var clean = new GitState("main", "abc1234", 0, 0, [])
         {
-            var ids = CodeMenu.Commands(owner, settings, folders)
-                .Select(_ => _?.Id)
-                .ToList();
-            return ids.Contains("gitTag") && ids.Contains("gitDeleteTag");
+            Upstream = true
+        };
+        var changed = clean with
+        {
+            Files = [new("tracked.txt", GitChange.Modified)]
+        };
+        bool Offered(IReadOnlyList<string> folders, Func<string, GitState?>? stateOf) =>
+            CodeMenu.Commands(owner, settings, folders, stateOf).Any(_ => _?.Id == "gitDiscard");
+
+        GitState OtherChanged(string repo)
+        {
+            if (repo == other)
+            {
+                return changed;
+            }
+
+            return clean;
         }
 
-        await Assert.That(Offered([clone])).IsTrue();
-        await Assert.That(Offered([Path.Combine(clone, "sub")])).IsTrue();
-        await Assert.That(Offered([clone, other])).IsTrue();
-        await Assert.That(Offered([code.Root])).IsFalse();
-        await Assert.That(Offered([clone, code.Root])).IsFalse();
+        await Assert.That(Offered([clone], _ => clean)).IsFalse();
+        await Assert.That(Offered([Path.Combine(clone, "sub")], _ => clean)).IsFalse();
+        await Assert.That(Offered([clone], _ => clean with { Ahead = 1 })).IsFalse();
+        await Assert.That(Offered([clone], _ => clean with { Upstream = false })).IsFalse();
+        await Assert.That(Offered([clone], _ => changed)).IsTrue();
+        await Assert.That(Offered([clone], _ => clean with { Files = [new("new.txt", GitChange.Untracked)] })).IsTrue();
+        await Assert.That(Offered([clone, other], OtherChanged)).IsTrue();
+        await Assert.That(Offered([clone, other], _ => clean)).IsFalse();
+        await Assert.That(Offered([clone], _ => null)).IsTrue();
+        await Assert.That(Offered([clone], null)).IsTrue();
+        await Assert.That(Offered([code.Root], _ => clean)).IsTrue();
     }
 
     // Sync fork for a fork, a folder in one, or several picked of which one is, and for a folder
