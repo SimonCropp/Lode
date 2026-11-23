@@ -153,7 +153,7 @@ public class ShellContextMenuTests
 
             await Assert.That(entries).IsEquivalentTo(
                 ["Open", "TortoiseGit", "----", "7-Zip", "Tools", "----", "Properties"],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
         }
         finally
         {

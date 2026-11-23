@@ -45,6 +45,6 @@ public class CommandLineTests
 
         await Assert.That(commandLine.FullPaths()).IsEquivalentTo(
             [started, Path.Combine(started, "Source", "Deep"), @"D:\Code", Locations.ThisPC],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 }

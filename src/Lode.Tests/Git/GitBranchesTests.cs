@@ -91,8 +91,8 @@ public class GitBranchesTests
 
         var listing = GitBranches.Parse(refs, null, reflog, "");
 
-        await Assert.That(listing.Recent.Select(_ => _.Name)).IsEquivalentTo(names.Take(5), TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(listing.Other.Select(_ => _.Name)).IsEquivalentTo(names.Skip(5), TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(listing.Recent.Select(_ => _.Name)).IsEquivalentTo(names.Take(5), CollectionOrdering.Matching);
+        await Assert.That(listing.Other.Select(_ => _.Name)).IsEquivalentTo(names.Skip(5), CollectionOrdering.Matching);
     }
 
     // With no default recorded, as in a repository made by init, main or master, whichever
@@ -152,8 +152,8 @@ public class GitBranchesTests
         await Assert.That(listing.Error).IsNull();
         await Assert.That(listing.Current).IsEqualTo("untracked");
         await Assert.That(listing.Default?.Name).IsEqualTo("main");
-        await Assert.That(listing.Recent.Select(Describe)).IsEquivalentTo(["untracked", "tracked"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(listing.Other.Select(Describe)).IsEquivalentTo(["origin/gone (remote)", "origin/untracked (remote)"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(listing.Recent.Select(Describe)).IsEquivalentTo(["untracked", "tracked"], CollectionOrdering.Matching);
+        await Assert.That(listing.Other.Select(Describe)).IsEquivalentTo(["origin/gone (remote)", "origin/untracked (remote)"], CollectionOrdering.Matching);
         await Assert.That(listing.Recent[0].Committed).IsNotNull();
     }
 

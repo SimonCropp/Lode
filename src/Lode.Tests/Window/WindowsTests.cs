@@ -40,7 +40,7 @@ public class WindowsTests
 
         source.MoveTab((TabPage)source.Views.Last().Parent!, target, 1);
 
-        await Assert.That(Titles(target)).IsEquivalentTo(["Projects", "Docs", "Archive"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Titles(target)).IsEquivalentTo(["Projects", "Docs", "Archive"], CollectionOrdering.Matching);
         await Assert.That(target.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Docs"));
     }
 
@@ -72,11 +72,11 @@ public class WindowsTests
         var shown = form.ActiveView;
         form.Close();
 
-        await Assert.That(titles).IsEquivalentTo(["Source", "Projects", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(titles).IsEquivalentTo(["Source", "Projects", "Docs"], CollectionOrdering.Matching);
         await Assert.That(showing.CurrentPath).IsEqualTo(fixture.At("Source"));
         await Assert.That(shown).IsSameReferenceAs(showing);
         await Assert.That(synced).IsEmpty();
-        await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Source", "Projects", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Source", "Projects", "Docs"], CollectionOrdering.Matching);
     }
 
     // A column sized in one window is that wide in every tab of every window, the tab in the
@@ -142,9 +142,9 @@ public class WindowsTests
         Application.DoEvents();
 
         await Assert.That(fromTheOther).IsEmpty();
-        await Assert.That(fromTheOneUsedLast).IsEquivalentTo(["Projects", "Source"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(fromTheOneUsedLast).IsEquivalentTo(["Projects", "Source"], CollectionOrdering.Matching);
         await Assert.That(first.IsDisposed).IsTrue();
-        await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Projects", "Source"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Projects", "Source"], CollectionOrdering.Matching);
     }
 
     [Test]
@@ -917,7 +917,7 @@ public class WindowsTests
 
         await Assert.That(form.Views.Select(_ => _.CurrentPath)).IsEquivalentTo(
             [fixture.At("Source"), fixture.At("Docs")],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
         await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source"));
     }
 
@@ -942,7 +942,7 @@ public class WindowsTests
 
         await Assert.That(restored.Views.Select(_ => _.CurrentPath)).IsEquivalentTo(
             [zip, Path.Combine(zip, "Inner")],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
         await Assert.That(launched.ActiveView!.CurrentPath).IsEqualTo(fixture.Root);
     }
 

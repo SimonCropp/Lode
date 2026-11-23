@@ -127,7 +127,7 @@ public class ContentSearchTests
                 .Select(_ => _.Key)
                 .Order(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            await Assert.That(found.Order(StringComparer.OrdinalIgnoreCase)).IsEquivalentTo(expected, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(found.Order(StringComparer.OrdinalIgnoreCase)).IsEquivalentTo(expected, CollectionOrdering.Matching);
         }
     }
 
@@ -438,7 +438,7 @@ public class ContentSearchTests
         var innerFirst = await Find(new("alpha", $@"src\obj\Gen.cs, src, {scratch.Root}"), scratch.Root);
 
         await Assert.That(Paths(outerFirst, scratch.Root)).IsEquivalentTo(["Top.cs", @"src\App.cs", @"src\obj\Gen.cs"]);
-        await Assert.That(Paths(innerFirst, scratch.Root)).IsEquivalentTo([@"src\obj\Gen.cs", @"src\App.cs", "Top.cs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Paths(innerFirst, scratch.Root)).IsEquivalentTo([@"src\obj\Gen.cs", @"src\App.cs", "Top.cs"], CollectionOrdering.Matching);
     }
 
     [Test]

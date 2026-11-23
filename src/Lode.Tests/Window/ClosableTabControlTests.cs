@@ -90,11 +90,11 @@ public class ClosableTabControlTests
         Send(tabs, mouseMove, 2, middle);
         Send(tabs, leftButtonUp, 2, middle);
 
-        await Assert.That(past).IsEquivalentTo(["First", "Third", "Second"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(Texts(tabs)).IsEquivalentTo(["Third", "First", "Second"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(past).IsEquivalentTo(["First", "Third", "Second"], CollectionOrdering.Matching);
+        await Assert.That(Texts(tabs)).IsEquivalentTo(["Third", "First", "Second"], CollectionOrdering.Matching);
         await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("Third");
         await Assert.That(selectionChanges).IsEqualTo(0);
-        await Assert.That(tabs.TabPages.Cast<TabPage>().Select(tabs.IconOf)).IsEquivalentTo(new int?[] { 3, 1, 2 }, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(tabs.TabPages.Cast<TabPage>().Select(tabs.IconOf)).IsEquivalentTo(new int?[] { 3, 1, 2 }, CollectionOrdering.Matching);
     }
 
     // Escape gives up on the drag, and the tab goes back where it was.
@@ -113,8 +113,8 @@ public class ClosableTabControlTests
         NativeMethods.SendMessage(tabs.Handle, keyDown, escape, IntPtr.Zero);
         Send(tabs, leftButtonUp, tabs.GetTabRect(2).Left + 10, middle);
 
-        await Assert.That(dragged).IsEquivalentTo(["Second", "Third", "First"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(Texts(tabs)).IsEquivalentTo(["First", "Second", "Third"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(dragged).IsEquivalentTo(["Second", "Third", "First"], CollectionOrdering.Matching);
+        await Assert.That(Texts(tabs)).IsEquivalentTo(["First", "Second", "Third"], CollectionOrdering.Matching);
         await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("First");
     }
 
@@ -182,7 +182,7 @@ public class ClosableTabControlTests
 
         tabs.MoveTab(tabs.TabPages[0], 2);
 
-        await Assert.That(Texts(tabs)).IsEquivalentTo(["Second", "Third", "First"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Texts(tabs)).IsEquivalentTo(["Second", "Third", "First"], CollectionOrdering.Matching);
         await Assert.That(tabs.SelectedTab!.Text).IsEqualTo("Second");
     }
 

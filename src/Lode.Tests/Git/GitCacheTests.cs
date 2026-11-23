@@ -53,7 +53,7 @@ public class GitCacheTests
         var reads = Churn(known, 300_000, _ => Clean());
 
         await Assert.That(reads)
-            .IsEquivalentTo([3L, 6, 12, 24, 48, 96, 156, 216, 276], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo([3L, 6, 12, 24, 48, 96, 156, 216, 276], CollectionOrdering.Matching);
     }
 
     // Something new found, at 24 seconds here, the next read is as soon after as the first was.
@@ -77,7 +77,7 @@ public class GitCacheTests
             });
 
         await Assert.That(reads)
-            .IsEquivalentTo([3L, 6, 12, 24, 27, 30, 36], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo([3L, 6, 12, 24, 27, 30, 36], CollectionOrdering.Matching);
     }
 
     // Held, it counts as fresh, so nothing reads it: not the views told, nor one gone to, nor

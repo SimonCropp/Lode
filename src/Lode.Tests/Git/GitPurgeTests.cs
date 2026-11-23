@@ -66,7 +66,7 @@ public class GitPurgeTests
             ],
             code.Root);
 
-        await Assert.That(folders.Select(code.Relative)).IsEquivalentTo(["Group/One", "Group/Two", "Repo", "Repo/Nested"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(folders.Select(code.Relative)).IsEquivalentTo(["Group/One", "Group/Two", "Repo", "Repo/Nested"], CollectionOrdering.Matching);
     }
 
     static List<string> Folders(CodeCommandsTests.Scratch code, params string[] parts) =>

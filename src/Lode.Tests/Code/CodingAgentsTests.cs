@@ -63,5 +63,5 @@ public class CodingAgentsTests
         await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\Lode", [@"C:\Agents\claude.exe"]), new(@"C:\Code\Two Words", [@"C:\Agents\claude.exe"])]))
             .IsEquivalentTo(
                 ["-d", @"C:\Code\Lode", @"C:\Agents\claude.exe", ";", "new-tab", "-d", @"C:\Code\Two Words", @"C:\Agents\claude.exe"],
-                TUnit.Assertions.Enums.CollectionOrdering.Matching);
+                CollectionOrdering.Matching);
 }

@@ -66,9 +66,9 @@ public class ReplaceInFilesTests
         var notHeld = Replace([latin], new("caf", ""), "€");
 
         await Assert.That(held.Failed).IsEmpty();
-        await Assert.That(afterHeld).IsEquivalentTo(new byte[] {0x63, 0x61, 0x66, 0xE9, 0x20, 0xE9}, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(afterHeld).IsEquivalentTo(new byte[] {0x63, 0x61, 0x66, 0xE9, 0x20, 0xE9}, CollectionOrdering.Matching);
         await Assert.That(notHeld.Failed.Single().Error).IsEqualTo("What replaces it has characters the file's encoding has none for.");
-        await Assert.That(await File.ReadAllBytesAsync(latin)).IsEquivalentTo(afterHeld, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(await File.ReadAllBytesAsync(latin)).IsEquivalentTo(afterHeld, CollectionOrdering.Matching);
     }
 
     [Test]

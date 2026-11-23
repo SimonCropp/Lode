@@ -68,8 +68,8 @@ public class ActionsPanelTests
             clock.Now += TimeSpan.FromSeconds(1);
             ActionLog.AgeOut();
 
-            await Assert.That(before).IsEquivalentTo(["Done", "Failed", "Cancelled", "Running", "Since"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-            await Assert.That(Names()).IsEquivalentTo(["Failed", "Running", "Since"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(before).IsEquivalentTo(["Done", "Failed", "Cancelled", "Running", "Since"], CollectionOrdering.Matching);
+            await Assert.That(Names()).IsEquivalentTo(["Failed", "Running", "Since"], CollectionOrdering.Matching);
         }
         finally
         {

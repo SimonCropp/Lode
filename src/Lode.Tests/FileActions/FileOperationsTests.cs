@@ -4,9 +4,9 @@ public class FileOperationsTests
     [Test]
     public async Task TerminalArguments()
     {
-        await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\Lode", [])])).IsEquivalentTo(["-d", @"C:\Code\Lode"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\Lode", [])])).IsEquivalentTo(["-d", @"C:\Code\Lode"], CollectionOrdering.Matching);
         await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\Lode", []), new(@"C:\Code\Two Words", [])]))
-            .IsEquivalentTo(["-d", @"C:\Code\Lode", ";", "new-tab", "-d", @"C:\Code\Two Words"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["-d", @"C:\Code\Lode", ";", "new-tab", "-d", @"C:\Code\Two Words"], CollectionOrdering.Matching);
     }
 
     // Windows Terminal would take a semicolon in a folder's name, or a command's, as the start
@@ -14,7 +14,7 @@ public class FileOperationsTests
     [Test]
     public async Task TerminalArgumentsEscapeSemicolons() =>
         await Assert.That(FileOperations.TerminalArguments([new(@"C:\Code\A;B", [@"C:\Tools;\run.exe", "-x"])]))
-            .IsEquivalentTo(["-d", @"C:\Code\A\;B", @"C:\Tools\;\run.exe", "-x"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["-d", @"C:\Code\A\;B", @"C:\Tools\;\run.exe", "-x"], CollectionOrdering.Matching);
 
     // Without Windows Terminal, a command prompt reads the line itself, where an & in a folder's
     // name would end the cd there and run the rest as a command.
@@ -77,7 +77,7 @@ public class FileOperationsTests
                 new(fixture.At("Source"), fixture.At("Archive", "Source")),
                 new(fixture.At("notes.aleph"), fixture.At("Archive", "notes.aleph"))
             ],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
         await Assert.That(File.Exists(fixture.At("Archive", "Source", "Deep", "leaf.aleph"))).IsTrue();
     }
 
@@ -142,10 +142,10 @@ public class FileOperationsTests
             () => ShellFileOperation.Run(IntPtr.Zero, ShellFileOperation.Kind.Copy, sources, fixture.At("Archive"), 0));
 
         await Assert.That(outcome.Succeeded).IsTrue();
-        await Assert.That(outcome.Missing).IsEquivalentTo([fixture.At("gone.aleph"), fixture.At("Gone")], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(outcome.Missing).IsEquivalentTo([fixture.At("gone.aleph"), fixture.At("Gone")], CollectionOrdering.Matching);
         await Assert.That(outcome.Changes).IsEquivalentTo<IReadOnlyList<ShellFileOperation.Change>, ShellFileOperation.Change>(
             [new(fixture.At("notes.aleph"), fixture.At("Archive", "notes.aleph"))],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 
     [Test]
@@ -202,7 +202,7 @@ public class FileOperationsTests
                 new(fixture.At("Source"), fixture.At("Archive", "Source")),
                 new(fixture.At("Source", "main.aleph"), fixture.At("Archive", "main.aleph"))
             ],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 
     [Test]
@@ -233,10 +233,10 @@ public class FileOperationsTests
                 (@"C:\Work\a.txt", true),
                 (@"D:\Elsewhere\b.txt, C:\Work\Deep\c.txt", false)
             ],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
         await Assert.That(moved).IsEquivalentTo(
             [(@"D:\Elsewhere\b.txt, C:\Work\Deep\c.txt", false)],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 
     [Test]

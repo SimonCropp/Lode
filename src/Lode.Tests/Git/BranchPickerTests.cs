@@ -211,7 +211,7 @@ public class BranchPickerTests
 
         await Assert.That(picker.MenuAt(heading)).IsEmpty();
         var menu = picker.MenuAt(cleanup);
-        await Assert.That(menu.Select(_ => _?.Text)).IsEquivalentTo(["Rename…", null, "Delete…"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(menu.Select(_ => _?.Text)).IsEquivalentTo(["Rename…", null, "Delete…"], CollectionOrdering.Matching);
 
         menu[0]!.Action();
 

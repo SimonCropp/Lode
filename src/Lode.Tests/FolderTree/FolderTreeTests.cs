@@ -642,7 +642,7 @@ public class FolderTreeTests
         tree.SelectPath(fixture.At("Source", "New"));
         await Pump.Until(() => tree.SelectedNode?.Tag as string == fixture.At("Source", "New"));
 
-        await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], CollectionOrdering.Matching);
     }
 
     // The folder open stays watched when it is collapsed in the tree, being the one selected:
@@ -663,7 +663,7 @@ public class FolderTreeTests
         tree.SelectPath(fixture.At("Source", "New"));
         await Pump.Until(() => tree.SelectedNode?.Tag as string == fixture.At("Source", "New"));
 
-        await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Names(source)).IsEquivalentTo(["Deep", "New"], CollectionOrdering.Matching);
     }
 
     // The window selects the folder open again straight after a rebuild, which is no reason to
@@ -1043,7 +1043,7 @@ public class FolderTreeTests
 
         await Assert.That(drags.Take(beforeDrive)).IsEquivalentTo(
             ["pinned: Move", "Docs: Copy, Move, Link", $"{Path.GetFileName(fixture.Root)}: Copy, Move, Link"],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
         await Assert.That(drags.Skip(beforeDrive).Single()).EndsWith(": Link");
     }
 
@@ -1071,7 +1071,7 @@ public class FolderTreeTests
             await Assert.That(before).DoesNotContain("Network");
             await Assert.That(network.Text).IsEqualTo("Network");
             await Assert.That(machine.Text).IsEqualTo("lodetest");
-            await Assert.That(machine.Nodes.Cast<TreeNode>().Select(_ => _.Text)).IsEquivalentTo(["Archive", "Docs"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(machine.Nodes.Cast<TreeNode>().Select(_ => _.Text)).IsEquivalentTo(["Archive", "Docs"], CollectionOrdering.Matching);
             await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(@"\\lodetest\Docs");
         }
         finally

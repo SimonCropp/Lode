@@ -1,9 +1,9 @@
 ﻿{
   fromAFolder: [
-    C:\Code\Lode\src\Lode.slnx: True,
-    C:\Code\Lode\src\Lode.csproj: False,
+    {SolutionDirectory}Lode.slnx: True,
+    {SolutionDirectory}Lode.csproj: False,
     C:\Code\Lode\Lode.slnx: False,
-    C:\Code\Lode\src\Lode\Lode.slnx: False,
+    {SolutionDirectory}Lode\Lode.slnx: False,
     C:\Code\Other\src\Lode.slnx: False
   ],
   fromADrive: true

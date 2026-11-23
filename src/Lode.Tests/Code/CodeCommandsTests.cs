@@ -63,7 +63,7 @@ public class CodeCommandsTests
 
         var repos = CodeCommands.FindRepos([code.At("One"), code.At("Group"), code.At("Group", "Two")]);
 
-        await Assert.That(repos.Select(code.Relative)).IsEquivalentTo(["Group/Three", "Group/Two", "One"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(repos.Select(code.Relative)).IsEquivalentTo(["Group/Three", "Group/Two", "One"], CollectionOrdering.Matching);
     }
 
     [Test]
@@ -71,7 +71,7 @@ public class CodeCommandsTests
     {
         var folders = CodeCommands.Outermost([@"C:\Code\Lode", @"C:\Code\Lode\src", @"C:\Code\Lodestar", @"C:\Code\lode"]);
 
-        await Assert.That(folders).IsEquivalentTo([@"C:\Code\Lode", @"C:\Code\Lodestar"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(folders).IsEquivalentTo([@"C:\Code\Lode", @"C:\Code\Lodestar"], CollectionOrdering.Matching);
     }
 
     [Test]
@@ -220,7 +220,7 @@ public class CodeCommandsTests
                 "Receiving objects: 100% (2/2), done.",
                 "fatal: the last line"
             ],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 
     // Cancels as soon as progress is reported, on the thread reporting it.
@@ -759,7 +759,7 @@ public class CodeCommandsTests
                 return item;
             });
 
-        await Assert.That(results).IsEquivalentTo(items, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(results).IsEquivalentTo(items, CollectionOrdering.Matching);
         await Assert.That(most).IsGreaterThan(1);
         await Assert.That(most).IsLessThanOrEqualTo(CodeCommands.AtOnce);
     }

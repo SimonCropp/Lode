@@ -239,7 +239,7 @@ public class RepositoryCloneTests
                 "LodeTests/Lode isn't cloned in the code folder",
                 "Cloning LodeTests/Lode"
             ],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
     }
 
     // Through the dialog, a clone that fails says why, offers the app the link was for, and
@@ -285,7 +285,7 @@ public class RepositoryCloneTests
                 "Cloning LodeTests/Missing",
                 "Couldn't clone LodeTests/Missing"
             ],
-            TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            CollectionOrdering.Matching);
         await Assert.That(reason).StartsWith("fatal:");
         await Assert.That(buttons).IsEquivalentTo(["Open the link in GitHub Desktop"]);
         await Assert.That(Directory.EnumerateFileSystemEntries(codeFolder)).IsEmpty();

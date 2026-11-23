@@ -528,7 +528,7 @@ public class QuickMenuTests
         var into = tree.PinIfOverPinned(At(archive.Bounds.Top + archive.Bounds.Height / 2), fixture.At("Source"));
 
         await Assert.That((before, after, into)).IsEqualTo((true, true, false));
-        await Assert.That(pinned.Select(fixture.Relative)).IsEquivalentTo(["Projects/Source", "Projects/Cache"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(pinned.Select(fixture.Relative)).IsEquivalentTo(["Projects/Source", "Projects/Cache"], CollectionOrdering.Matching);
         await Assert.That(movedBefore.Select(fixture.Relative)).IsEquivalentTo(["Projects/Archive"]);
         await Assert.That(moved).IsEmpty();
     }
@@ -637,7 +637,7 @@ public class QuickMenuTests
 
         var section = tree.Nodes.Cast<TreeNode>().Single(_ => _.Text == "Pinned");
         var order = section.Nodes.Cast<TreeNode>().Select(_ => (string) _.Tag!).ToList();
-        await Assert.That(order).IsEquivalentTo([pinned[2], pinned[0], pinned[1]], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(order).IsEquivalentTo([pinned[2], pinned[0], pinned[1]], CollectionOrdering.Matching);
         await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(fixture.At("Source"));
     }
 

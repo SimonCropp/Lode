@@ -34,6 +34,6 @@ public class PowerShellTests
         await process.WaitForExitAsync();
 
         await Assert.That(output.Split(["\r\n"], StringSplitOptions.RemoveEmptyEntries))
-            .IsEquivalentTo(values, TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(values, CollectionOrdering.Matching);
     }
 }

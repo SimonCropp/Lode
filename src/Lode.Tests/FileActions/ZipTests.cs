@@ -49,7 +49,7 @@ public class ZipTests
         var folder = await Zip.CompressInBackground([fixture.At("Docs")], fixture.Root);
 
         await Assert.That(new[] { first, second, folder }.Select(_ => Path.GetFileName(_!)))
-            .IsEquivalentTo(["notes.zip", "notes (2).zip", "Docs.zip"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            .IsEquivalentTo(["notes.zip", "notes (2).zip", "Docs.zip"], CollectionOrdering.Matching);
     }
 
     // A zip of the folder it is made in leaves itself out.
@@ -239,7 +239,7 @@ public class ZipTests
 
         var extraction = Zip.Extract(zip, fixture.Root, null, Cancel.None);
 
-        await Assert.That(extraction.TopLevel.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Docs", "New"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(extraction.TopLevel.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Docs", "New"], CollectionOrdering.Matching);
         await Assert.That(extraction.Created.Select(fixture.Relative)).IsEquivalentTo(["Projects/Docs/more.txt", "Projects/New"]);
         await Assert.That(File.Exists(fixture.At("Docs", "guide.aleph"))).IsTrue();
     }
@@ -271,7 +271,7 @@ public class ZipTests
     [Test]
     public async Task Segments()
     {
-        await Assert.That(Zip.Segments("a/b\\c.txt")).IsEquivalentTo(["a", "b", "c.txt"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(Zip.Segments("a/b\\c.txt")).IsEquivalentTo(["a", "b", "c.txt"], CollectionOrdering.Matching);
         await Assert.That(Zip.Segments("folder/")).IsEquivalentTo(["folder"]);
         await Assert.That(Zip.Segments("a/../b")).IsNull();
         await Assert.That(Zip.Segments("a/./b")).IsNull();
@@ -364,7 +364,7 @@ public class ZipTests
 
         try
         {
-            await Assert.That(extracted.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["top.txt", "Inner"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+            await Assert.That(extracted.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["top.txt", "Inner"], CollectionOrdering.Matching);
             await Assert.That(extracted.All(_ => _.StartsWith(Zip.TempRoot, StringComparison.OrdinalIgnoreCase))).IsTrue();
             await Assert.That(await File.ReadAllTextAsync(extracted[0])).IsEqualTo("top");
             await Assert.That(await File.ReadAllTextAsync(Path.Combine(extracted[1], "deep.txt"))).IsEqualTo("deep");

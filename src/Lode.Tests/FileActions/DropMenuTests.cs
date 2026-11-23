@@ -59,10 +59,10 @@ public class DropMenuTests
         var ontoItself = Drop(Drag(sources, every), fixture.At("Docs"));
 
         await Assert.That(drag.Effect).IsEqualTo(DragDropEffects.None);
-        await Assert.That(intoArchive).IsEquivalentTo(["Copy here", "Move here*", "Create shortcuts here", "-", "Cancel"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(onlyCopy).IsEquivalentTo(["Copy here*", "-", "Cancel"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(withControl).IsEquivalentTo(["Copy here*", "Move here", "Create shortcuts here", "-", "Cancel"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
-        await Assert.That(whereTheyAre).IsEquivalentTo(["Copy here", "Create shortcuts here", "-", "Cancel"], TUnit.Assertions.Enums.CollectionOrdering.Matching);
+        await Assert.That(intoArchive).IsEquivalentTo(["Copy here", "Move here*", "Create shortcuts here", "-", "Cancel"], CollectionOrdering.Matching);
+        await Assert.That(onlyCopy).IsEquivalentTo(["Copy here*", "-", "Cancel"], CollectionOrdering.Matching);
+        await Assert.That(withControl).IsEquivalentTo(["Copy here*", "Move here", "Create shortcuts here", "-", "Cancel"], CollectionOrdering.Matching);
+        await Assert.That(whereTheyAre).IsEquivalentTo(["Copy here", "Create shortcuts here", "-", "Cancel"], CollectionOrdering.Matching);
         await Assert.That(ontoItself).IsNull();
     }
 
