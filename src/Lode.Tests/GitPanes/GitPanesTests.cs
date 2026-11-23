@@ -226,6 +226,96 @@ public class GitPanesTests
         await Assert.That(ChangeRows.TipAt(list, new(4, list.ClientSize.Height - 2), shown)).IsNull();
     }
 
+    // The filter is hidden until its button shows it, with the focus in it; hidden again, by the
+    // button or Escape, it filters nothing, every file listed again.
+    [Test]
+    public async Task FilterHiddenUntilAskedFor()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        await Assert.That(pane.Filtering).IsFalse();
+        await Assert.That(pane.FilterBox.Visible).IsFalse();
+
+        pane.FilterButton.PerformClick();
+        await Assert.That(pane.Filtering).IsTrue();
+        await Assert.That(pane.FilterButton.Checked).IsTrue();
+        await Assert.That(pane.FilterBox.Visible).IsTrue();
+        await Assert.That(pane.FilterBox.Focused).IsTrue();
+
+        pane.FilterBox.Text = "Deep";
+        await Assert.That(pane.List.VirtualListSize).IsEqualTo(2);
+
+        pane.FilterButton.PerformClick();
+        await Assert.That(pane.Filtering).IsFalse();
+        await Assert.That(pane.FilterBox.Text).IsEqualTo("");
+        await Assert.That(pane.List.VirtualListSize).IsEqualTo(PaneStubs.Files.Count);
+
+        pane.FilterButton.PerformClick();
+        pane.FilterBox.Text = "Deep";
+
+        // Escape as the box gets it, through the keys of each control it is in.
+        var escape = Message.Create(pane.FilterBox.Handle, 0x0100, (IntPtr) Keys.Escape, IntPtr.Zero);
+        pane.FilterBox.PreProcessMessage(ref escape);
+        await Assert.That(pane.Filtering).IsFalse();
+        await Assert.That(pane.List.VirtualListSize).IsEqualTo(PaneStubs.Files.Count);
+        await Assert.That(pane.List.Focused).IsTrue();
+    }
+
+    // The description is hidden until its button shows it, with the focus in it. Holding something
+    // it stays, the button only putting the focus there, so nothing goes into the commit unseen;
+    // empty, the button or Escape puts it away. Filled from elsewhere, a draft say, it shows.
+    [Test]
+    public async Task DescriptionHiddenUntilAskedFor()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var box = pane.DescriptionBox;
+        await Assert.That(pane.Describing).IsFalse();
+        await Assert.That(box.Visible).IsFalse();
+
+        pane.DescribeButton.PerformClick();
+        await Assert.That(pane.Describing).IsTrue();
+        await Assert.That(pane.DescribeButton.Checked).IsTrue();
+        await Assert.That(box.Focused).IsTrue();
+
+        box.Text = "Why";
+        pane.SummaryBox.Focus();
+        pane.DescribeButton.PerformClick();
+        await Assert.That(pane.Describing).IsTrue();
+        await Assert.That(box.Focused).IsTrue();
+        await Assert.That(box.Text).IsEqualTo("Why");
+
+        box.Text = "";
+        pane.DescribeButton.PerformClick();
+        await Assert.That(pane.Describing).IsFalse();
+        await Assert.That(pane.SummaryBox.Focused).IsTrue();
+
+        pane.DescribeButton.PerformClick();
+        var escape = Message.Create(box.Handle, 0x0100, (IntPtr) Keys.Escape, IntPtr.Zero);
+        box.PreProcessMessage(ref escape);
+        await Assert.That(pane.Describing).IsFalse();
+
+        box.Text = "From a draft";
+        await Assert.That(pane.Describing).IsTrue();
+        box.Text = "";
+    }
+
     // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,
     // nothing.
     [Test]

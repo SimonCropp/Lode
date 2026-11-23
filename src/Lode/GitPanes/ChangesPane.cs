@@ -20,6 +20,24 @@ sealed class ChangesPane : UserControl
     Panel commitArea = new();
     FramedTextBox summaryFrame = new();
     FramedArea descriptionFrame = new();
+
+    // The summary, and at its right the button that shows the description, which is hidden until
+    // asked for or holding something.
+    Panel summaryRow = new()
+    {
+        Dock = DockStyle.Top
+    };
+
+    GlyphButton describeButton = new()
+    {
+        Dock = DockStyle.Right,
+        Width = 28,
+        TabStop = false,
+        Text = Icons.Description.ToString()
+    };
+
+    Panel descriptionSpacer = Spacer();
+    bool describing;
     AccentButton commitButton = new();
     ToolTip tip = new();
     RowTip rowTip;
@@ -95,20 +113,23 @@ sealed class ChangesPane : UserControl
 
         filterFrame.Dock = DockStyle.Top;
         filterFrame.Desktop = true;
-        filterFrame.Glyph = Icons.Search;
         filterFrame.Box.PlaceholderText = "Filter";
         filterFrame.Box.AccessibleName = "Filter changed files";
         filterFrame.Box.TextChanged += (_, _) => ShowRows();
         // The filter and the tick for every file in one grey block above the files, as
-        // Desktop's header over its list is.
+        // Desktop's header over its list is. Hidden until the button beside how many files
+        // have changed shows it.
         filterRow = new()
         {
             Dock = DockStyle.Top,
             Padding = new(inset, 7, inset, 2),
             Height = filterFrame.Height + 9,
-            BackColor = DesktopStyle.AltBackground
+            BackColor = DesktopStyle.AltBackground,
+            Visible = false
         };
         filterRow.Controls.Add(filterFrame);
+        tickRow.FilterButton.Click += (_, _) => ShowFilter(!filtering);
+        ShowFilterTip();
 
         list.AccessibleName = "Changed files";
         list.DrawRow += DrawRow;
@@ -121,17 +142,34 @@ sealed class ChangesPane : UserControl
         list.GotFocus += (_, _) => list.Invalidate();
         list.LostFocus += (_, _) => list.Invalidate();
 
-        summaryFrame.Dock = DockStyle.Top;
+        summaryFrame.Dock = DockStyle.Fill;
         summaryFrame.Desktop = true;
         summaryFrame.Box.PlaceholderText = "Summary (required)";
         summaryFrame.Box.AccessibleName = "Summary";
         summaryFrame.Box.TextChanged += (_, _) => OnTyped();
+        summaryRow.Height = summaryFrame.Height;
+
+        // Docked from the last added: the button at the right, a gap, and the summary across
+        // what is left.
+        summaryRow.Controls.Add(summaryFrame);
+        summaryRow.Controls.Add(
+            new Panel
+            {
+                Dock = DockStyle.Right,
+                Width = 4
+            });
+        summaryRow.Controls.Add(describeButton);
+        describeButton.Click += (_, _) => ToggleDescription();
+
         descriptionFrame.Dock = DockStyle.Top;
         descriptionFrame.Desktop = true;
         descriptionFrame.Height = 84;
+        descriptionFrame.Visible = false;
+        descriptionSpacer.Visible = false;
         descriptionFrame.Box.PlaceholderText = "Description";
         descriptionFrame.Box.AccessibleName = "Description";
-        descriptionFrame.Box.TextChanged += (_, _) => OnTyped();
+        descriptionFrame.Box.TextChanged += (_, _) => OnDescriptionTyped();
+        ShowDescriptionTip();
         commitButton.Dock = DockStyle.Top;
         commitButton.Height = 28;
         commitButton.Click += (_, _) => Commit();
@@ -150,8 +188,8 @@ sealed class ChangesPane : UserControl
         commitArea.Controls.Add(commitButton);
         commitArea.Controls.Add(Spacer());
         commitArea.Controls.Add(descriptionFrame);
-        commitArea.Controls.Add(Spacer());
-        commitArea.Controls.Add(summaryFrame);
+        commitArea.Controls.Add(descriptionSpacer);
+        commitArea.Controls.Add(summaryRow);
 
         // The list fills what the rest leave.
         Controls.Add(list);
@@ -160,6 +198,147 @@ sealed class ChangesPane : UserControl
         Controls.Add(filterRow);
         Controls.Add(header);
         ShowCommitButton();
+    }
+
+    bool filtering;
+
+    /// <summary>
+    /// Whether the filter shows. For tests.
+    /// </summary>
+    internal bool Filtering => filtering;
+
+    internal TextBox FilterBox => filterFrame.Box;
+
+    internal GlyphButton FilterButton => tickRow.FilterButton;
+
+    /// <summary>
+    /// Shows the filter, with the focus in it, or hides it again. Hidden, it filters nothing: what
+    /// was typed is cleared, every file listed again, and the focus, if it was in it, goes to them.
+    /// </summary>
+    internal void ShowFilter(bool show)
+    {
+        if (filtering == show)
+        {
+            if (show)
+            {
+                filterFrame.Box.Focus();
+            }
+
+            return;
+        }
+
+        var focused = filterFrame.ContainsFocus;
+        filtering = show;
+        filterRow.Visible = show;
+        tickRow.FilterButton.Checked = show;
+        ShowFilterTip();
+        if (show)
+        {
+            filterFrame.Box.Focus();
+            return;
+        }
+
+        filterFrame.Box.Text = "";
+        if (focused)
+        {
+            list.Focus();
+        }
+    }
+
+    void ShowFilterTip()
+    {
+        var button = tickRow.FilterButton;
+        button.AccessibleName = "Filter changed files";
+        button.AccessibleDescription = "Filter the files by name";
+        if (filtering)
+        {
+            button.AccessibleName = "Hide the filter";
+            button.AccessibleDescription = "Hide the filter (Esc), and list every file again";
+        }
+
+        tip.SetToolTip(button, button.AccessibleDescription);
+    }
+
+    /// <summary>
+    /// Whether the description shows. For tests.
+    /// </summary>
+    internal bool Describing => describing;
+
+    internal GlyphButton DescribeButton => describeButton;
+
+    // The button beside the summary: the description shown, with the focus in it, or, shown and
+    // empty, put away again. Shown with something in it, the button only puts the focus there:
+    // hidden, what is in it would go into the commit unseen.
+    void ToggleDescription()
+    {
+        if (describing &&
+            descriptionFrame.Box.TextLength == 0)
+        {
+            ShowDescription(false);
+            return;
+        }
+
+        ShowDescription(true);
+    }
+
+    /// <summary>
+    /// Shows the description, the focus going into it when <paramref name="focus"/>, or hides it,
+    /// the focus going to the summary if it was in it.
+    /// </summary>
+    internal void ShowDescription(bool show, bool focus = true)
+    {
+        if (describing != show)
+        {
+            var focused = descriptionFrame.ContainsFocus;
+            describing = show;
+            descriptionFrame.Visible = show;
+            descriptionSpacer.Visible = show;
+            describeButton.Checked = show;
+            ShowDescriptionTip();
+            PerformLayout();
+            if (!show &&
+                focused)
+            {
+                summaryFrame.Box.Focus();
+            }
+        }
+
+        if (show &&
+            focus)
+        {
+            descriptionFrame.Box.Focus();
+        }
+    }
+
+    // Typed into, or filled from the draft: shown whenever it holds something.
+    void OnDescriptionTyped()
+    {
+        if (descriptionFrame.Box.TextLength > 0)
+        {
+            ShowDescription(true, focus: false);
+        }
+
+        ShowDescriptionTip();
+        OnTyped();
+    }
+
+    void ShowDescriptionTip()
+    {
+        describeButton.AccessibleName = "Add a description";
+        describeButton.AccessibleDescription = "Add a description";
+        if (describing &&
+            descriptionFrame.Box.TextLength == 0)
+        {
+            describeButton.AccessibleName = "Hide the description";
+            describeButton.AccessibleDescription = "Hide the description (Esc)";
+        }
+        else if (describing)
+        {
+            describeButton.AccessibleName = "Description";
+            describeButton.AccessibleDescription = "The description goes in the commit: clear it to hide it";
+        }
+
+        tip.SetToolTip(describeButton, describeButton.AccessibleDescription);
     }
 
     static Panel Spacer() =>
@@ -179,20 +358,30 @@ sealed class ChangesPane : UserControl
         var height = commitArea.Padding.Vertical;
         foreach (Control control in commitArea.Controls)
         {
-            if (control != descriptionFrame)
+            if (control != descriptionFrame &&
+                (control != descriptionSpacer || describing))
             {
                 height += control.Height;
             }
         }
 
-        var room = Height - header.Height - filterRow.Height - tickRow.Height - height - RowHeight(Font) * 3;
-        var description = Math.Clamp(room, LogicalToDeviceUnits(36), LogicalToDeviceUnits(84));
-        if (descriptionFrame.Height != description)
+        var filterHeight = 0;
+        if (filtering)
         {
-            descriptionFrame.Height = description;
+            filterHeight = filterRow.Height;
         }
 
-        height += description;
+        if (describing)
+        {
+            var room = Height - header.Height - filterHeight - tickRow.Height - height - RowHeight(Font) * 3;
+            var description = Math.Clamp(room, LogicalToDeviceUnits(36), LogicalToDeviceUnits(84));
+            if (descriptionFrame.Height != description)
+            {
+                descriptionFrame.Height = description;
+            }
+
+            height += description;
+        }
 
         if (commitArea.Height != height)
         {
@@ -222,6 +411,7 @@ sealed class ChangesPane : UserControl
         summaryFrame.Box.Text = draft.Summary;
         descriptionFrame.Box.Text = draft.Description;
         loadingDraft = false;
+        ShowDescription(draft.Description.Length > 0, focus: false);
         filterFrame.Box.Text = "";
         ShowRows();
         stale = true;
@@ -561,6 +751,7 @@ sealed class ChangesPane : UserControl
                     summaryFrame.Box.Text = "";
                     descriptionFrame.Box.Text = "";
                     loadingDraft = false;
+                    ShowDescription(false);
                 }
             }
         }
@@ -820,6 +1011,21 @@ sealed class ChangesPane : UserControl
 
         if (keyData == Keys.Escape)
         {
+            // In the filter, Escape puts it away first, and so in the description, empty.
+            if (filtering &&
+                filterFrame.ContainsFocus)
+            {
+                ShowFilter(false);
+                return true;
+            }
+
+            if (describing &&
+                descriptionFrame is { ContainsFocus: true, Box.TextLength: 0 })
+            {
+                ShowDescription(false);
+                return true;
+            }
+
             EscapePressed?.Invoke();
             return true;
         }
@@ -878,10 +1084,19 @@ sealed class ChangesPane : UserControl
         base.Dispose(disposing);
     }
 
-    // The tick for every file showing, and how many have changed.
+    // The tick for every file showing, how many have changed, and at the right the button that
+    // shows the filter.
     sealed class TickRow : Control
     {
         ChangesPane pane;
+
+        public GlyphButton FilterButton { get; } = new()
+        {
+            Dock = DockStyle.Right,
+            Width = 28,
+            TabStop = false,
+            Text = Icons.Filter.ToString()
+        };
 
         public TickRow(ChangesPane pane)
         {
@@ -893,6 +1108,25 @@ sealed class ChangesPane : UserControl
             ForeColor = DesktopStyle.Text;
             AccessibleRole = AccessibleRole.CheckButton;
             Cursor = Cursors.Default;
+
+            // The button inset from the edge and the line along the foot, as the pin is.
+            Padding = new(0, 2, 4, 3);
+            Controls.Add(FilterButton);
+        }
+
+        // The button docked inside the padding. A Control, unlike a Panel, docks its children over
+        // all of itself, so the button ran to the foot of the row, over its line.
+        public override Rectangle DisplayRectangle
+        {
+            get
+            {
+                var bounds = ClientRectangle;
+                return Rectangle.FromLTRB(
+                    bounds.Left + Padding.Left,
+                    bounds.Top + Padding.Top,
+                    Math.Max(bounds.Left + Padding.Left, bounds.Right - Padding.Right),
+                    Math.Max(bounds.Top + Padding.Top, bounds.Bottom - Padding.Bottom));
+            }
         }
 
         string Caption()
@@ -927,7 +1161,7 @@ sealed class ChangesPane : UserControl
                 Ticks.Draw(graphics, this, box, pane.AllTicked(), !pane.changes.Merging);
             }
 
-            var textBounds = Rectangle.FromLTRB(box.Right + LogicalToDeviceUnits(tickGap), 0, Width - left, Height);
+            var textBounds = Rectangle.FromLTRB(box.Right + LogicalToDeviceUnits(tickGap), 0, FilterButton.Left - LogicalToDeviceUnits(4), Height);
             TextRenderer.DrawText(
                 graphics,
                 Caption(),

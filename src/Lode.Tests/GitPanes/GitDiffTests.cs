@@ -1,6 +1,10 @@
 using static CodeCommandsTests;
 using static CodeCommandsTests.Scratch;
 
+// One at a time: each test points GitDiff.Folder, which is shared, at a scratch folder of its
+// own and puts it back after. Run together, one wrote its versions into the other's folder, or
+// put the folder back under it, and VersionIsAsCheckedOut failed now and then.
+[NotInParallel("GitDiff.Folder")]
 public class GitDiffTests
 {
     // A version written as git would check it out: with autocrlf, the line endings the working

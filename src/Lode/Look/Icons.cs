@@ -104,6 +104,10 @@ static class Icons
     public const char Clone = '\uE753';
     // An arrow to the right, as Forward has: between a renamed file's old name and its new one.
     public const char ArrowRight = '\uE72A';
+    // A funnel, for narrowing a list to what matches.
+    public const char Filter = '\uE71C';
+    // Lines of text, for a commit's description.
+    public const char Description = '\uE8E4';
 
     const string fluentIcons = "Segoe Fluent Icons";
     const string mdl2Assets = "Segoe MDL2 Assets";

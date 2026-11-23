@@ -22,6 +22,22 @@ public class GitPanesCaptureTests
     public Task StripIconsOnly() =>
         Capture(changes: false, history: false, labels: StripLabels.IconsOnly);
 
+    // The filter shown, from the button beside how many files have changed, which shows it on.
+    [Test]
+    public Task ChangesFilter() =>
+        Capture(
+            changes: true,
+            history: false,
+            form => form.GitPanes.ChangesPane.ShowFilter(true));
+
+    // The description shown, from the button beside the summary, which shows it on.
+    [Test]
+    public Task ChangesDescription() =>
+        Capture(
+            changes: true,
+            history: false,
+            form => form.GitPanes.ChangesPane.ShowDescription(true, focus: false));
+
     [Test]
     public Task ChangesPinned() =>
         Capture(changes: true, history: false);
