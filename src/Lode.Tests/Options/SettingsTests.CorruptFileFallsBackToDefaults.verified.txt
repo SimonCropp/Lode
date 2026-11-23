@@ -3,6 +3,8 @@
   ShowSystem: false,
   ShowRecent: true,
   ExpandToOpenFolder: true,
+  DiffSplit: false,
+  DiffHideWhitespace: false,
   PurgePermanently: false,
   FindRegex: false,
   FindCaseSensitive: false,

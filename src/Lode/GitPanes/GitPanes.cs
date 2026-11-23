@@ -69,6 +69,16 @@ sealed class GitPanes : IDisposable
     public event Action<string>? OpenSiteRequested;
 
     /// <summary>
+    /// A file picked in either pane, or asked to be shown: for the diff to show it.
+    /// </summary>
+    public event Action<DiffRequest>? DiffRequested;
+
+    /// <summary>
+    /// What is uncommitted in a repository was read again, for its diff to be read again too.
+    /// </summary>
+    public event Action<string>? ChangesRead;
+
+    /// <summary>
     /// A pane was pinned or unpinned for a repository, for other windows in it to follow.
     /// </summary>
     public event Action<string>? PinnedChanged;
@@ -92,6 +102,11 @@ sealed class GitPanes : IDisposable
     /// The repository the panes are about, null outside one.
     /// </summary>
     public string? Repo => repo;
+
+    /// <summary>
+    /// The repository's state as last read, which the strip says how many files have changed of.
+    /// </summary>
+    public GitState? State => state;
 
     public GitPanes(Form window, Settings settings)
     {
@@ -117,6 +132,9 @@ sealed class GitPanes : IDisposable
 
         // A commit is in History straight away, not once the watch hears of it.
         changes.Committed += history.Reload;
+        changes.DiffRequested += _ => DiffRequested?.Invoke(_);
+        history.DiffRequested += _ => DiffRequested?.Invoke(_);
+        changes.ChangesRead += _ => ChangesRead?.Invoke(_);
 
         Strip.TabEntered += OnTabEntered;
         Strip.TabLeft += OnTabLeft;

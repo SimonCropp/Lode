@@ -736,19 +736,24 @@ static class CodeCommands
     /// changed. What it gives is what git did, cancelled meanwhile or not: it is the step after
     /// that isn't started.
     /// </summary>
-    internal static RepoResult GitToItsEnd(string repo, Cancel cancel, params string[] arguments)
+    internal static RepoResult GitToItsEnd(string repo, Cancel cancel, params string[] arguments) =>
+        GitToItsEnd(repo, cancel, null, arguments);
+
+    /// <param name="environment">Variables git is run with, GIT_INDEX_FILE say, for a commit
+    /// made from an index of its own.</param>
+    internal static RepoResult GitToItsEnd(string repo, Cancel cancel, IReadOnlyDictionary<string, string>? environment, params string[] arguments)
     {
         if (cancel.IsCancellationRequested)
         {
             return new(repo, false, cancelled);
         }
 
-        return Git(repo, Cancel.None, network: false, arguments);
+        return Git(repo, Cancel.None, network: false, null, arguments, environment);
     }
 
     /// <param name="progress">Each line git writes as it goes, clone's "Receiving objects:  45%"
     /// with --progress say, as it writes it.</param>
-    internal static RepoResult Git(string repo, Cancel cancel, bool network, Action<string>? progress, string[] arguments)
+    internal static RepoResult Git(string repo, Cancel cancel, bool network, Action<string>? progress, string[] arguments, IReadOnlyDictionary<string, string>? environment = null)
     {
         if (cancel.IsCancellationRequested)
         {
@@ -757,7 +762,7 @@ static class CodeCommands
 
         try
         {
-            var startInfo = StartInfo(repo, network, arguments);
+            var startInfo = StartInfo(repo, network, arguments, environment);
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
             // Cancel.None, not the token: cancelled, git is stopped, which ends its output, and
@@ -792,7 +797,7 @@ static class CodeCommands
 
     // How every git is started: in a hidden window, its output read as UTF-8, as git writes file
     // names whatever the console's code page.
-    static ProcessStartInfo StartInfo(string repo, bool network, IEnumerable<string> arguments)
+    static ProcessStartInfo StartInfo(string repo, bool network, IEnumerable<string> arguments, IReadOnlyDictionary<string, string>? environment = null)
     {
         var startInfo = new ProcessStartInfo("git")
         {
@@ -823,6 +828,14 @@ static class CodeCommands
             startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
         }
 
+        if (environment != null)
+        {
+            foreach (var (name, value) in environment)
+            {
+                startInfo.Environment[name] = value;
+            }
+        }
+
         return startInfo;
     }
 
@@ -830,7 +843,9 @@ static class CodeCommands
     /// What git wrote to its output, kept apart from what it wrote to its error stream, for a
     /// command whose output is parsed: a warning there would read as more of the output.
     /// </summary>
-    internal sealed record GitRead(bool Succeeded, string Output, string Error);
+    /// <param name="ExitCode">What git ended with: 1 from diff --no-index when the files differ,
+    /// which is what it was asked to find out rather than a failure.</param>
+    internal sealed record GitRead(bool Succeeded, string Output, string Error, int ExitCode = 0);
 
     /// <summary>
     /// Runs git reading its output alone, as <see cref="GitRead"/> has it. <paramref name="input"/>,
@@ -865,10 +880,10 @@ static class CodeCommands
             process.WaitForExit();
             if (cancel.IsCancellationRequested)
             {
-                return new(false, output, cancelled);
+                return new(false, output, cancelled, process.ExitCode);
             }
 
-            return new(process.ExitCode == 0, output, error.Result.Trim());
+            return new(process.ExitCode == 0, output, error.Result.Trim(), process.ExitCode);
         }
         catch (Exception exception)
         {

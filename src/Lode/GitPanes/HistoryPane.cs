@@ -65,6 +65,12 @@ sealed class HistoryPane : UserControl
     public event Action<string>? OpenSiteRequested;
     public event Action? EscapePressed;
 
+    /// <summary>
+    /// A file of the picked commit picked, or several, or none, or one asked to be shown: for the
+    /// diff to show it.
+    /// </summary>
+    public event Action<DiffRequest>? DiffRequested;
+
     public PaneHeader Header => header;
 
     public bool MenuOpen { get; private set; }
@@ -120,7 +126,9 @@ sealed class HistoryPane : UserControl
             AccessibleName = "Files changed"
         };
         files.DrawRow += DrawFile;
-        files.ItemActivate += (_, _) => OpenDiff(files.FocusedItem?.Index ?? -1);
+        files.ItemActivate += (_, _) => Activate(files.FocusedItem?.Index ?? -1);
+        files.SelectedIndexChanged += (_, _) => PickedChanged();
+        files.VirtualItemsSelectionRangeChanged += (_, _) => PickedChanged();
         files.MouseUp += OnFilesMouseUp;
         files.GotFocus += (_, _) => files.Invalidate();
         files.LostFocus += (_, _) => files.Invalidate();
@@ -181,6 +189,7 @@ sealed class HistoryPane : UserControl
         changed = [];
         commits.SetRows(0);
         files.SetRows(0);
+        PickedChanged();
         heading.Invalidate();
         stale = true;
         if (showing)
@@ -359,6 +368,7 @@ sealed class HistoryPane : UserControl
             changed = [];
             files.SetRows(0);
             heading.Invalidate();
+            PickedChanged();
         }
 
         if (top > 0 &&
@@ -407,6 +417,7 @@ sealed class HistoryPane : UserControl
         changed = [];
         files.SetRows(0);
         heading.Invalidate();
+        PickedChanged();
     }
 
     async Task ReadFilesAsync(GitCommit commit)
@@ -431,19 +442,104 @@ sealed class HistoryPane : UserControl
 
         // How many files it changed, which said none until they were read.
         heading.Invalidate();
+        PickedChanged();
     }
 
-    void OpenDiff(int row)
+    // Double-clicked, or Enter: in the diff window, where that is where changes show, otherwise in
+    // the text editor or git's diff tool, as ever.
+    void Activate(int row)
     {
-        if (repo == null ||
-            selected == null ||
-            row < 0 ||
+        if (row < 0 ||
             row >= changed.Count)
         {
             return;
         }
 
-        GitDiff.OfCommit(this, settings, repo, selected, changed[row]);
+        if (settings.DiffPlacement == DiffPlacement.Window)
+        {
+            ShowChanges(changed[row]);
+            return;
+        }
+
+        OpenDiff(changed[row]);
+    }
+
+    void OpenDiff(Change change)
+    {
+        if (repo != null &&
+            selected != null)
+        {
+            GitDiff.OfCommit(this, settings, repo, selected, change);
+        }
+    }
+
+    // Show changes: where Options says changes show.
+    void ShowChanges(Change change)
+    {
+        if (settings.DiffPlacement == DiffPlacement.Editor)
+        {
+            OpenDiff(change);
+            return;
+        }
+
+        if (repo == null ||
+            selected == null)
+        {
+            return;
+        }
+
+        lastRequest = null;
+        DiffRequested?.Invoke(new(repo, new(repo, change, selected), changed, selected, 1, Open: true));
+    }
+
+    DiffRequest? lastRequest;
+    bool pickedPending;
+
+    // What is picked changed: told once the list has finished changing it.
+    void PickedChanged()
+    {
+        if (pickedPending ||
+            !IsHandleCreated)
+        {
+            return;
+        }
+
+        pickedPending = true;
+        BeginInvoke(
+            () =>
+            {
+                pickedPending = false;
+                if (!IsDisposed)
+                {
+                    RaisePicked();
+                }
+            });
+    }
+
+    /// <summary>
+    /// Tells what is picked now, unless it is what was told last.
+    /// </summary>
+    void RaisePicked()
+    {
+        var rows = files.Selected()
+            .Where(_ => _ < changed.Count)
+            .ToList();
+        DiffSource? source = null;
+        if (repo != null &&
+            selected != null &&
+            rows.Count == 1)
+        {
+            source = new(repo, changed[rows[0]], selected);
+        }
+
+        var request = new DiffRequest(repo, source, changed, selected, rows.Count, Open: false);
+        if (request.Same(lastRequest))
+        {
+            return;
+        }
+
+        lastRequest = request;
+        DiffRequested?.Invoke(request);
     }
 
     void OnCommitsMouseUp(object? sender, MouseEventArgs args)
@@ -526,21 +622,41 @@ sealed class HistoryPane : UserControl
 
         var change = changed[item.Index];
         var path = Path.Combine(menuRepo, change.Path.Replace('/', '\\'));
-        var menu = new List<QuickMenu.Command?>
+        var menu = new List<QuickMenu.Command?>();
+        var showChanges = new QuickMenu.Command("Show changes", () => ShowChanges(change));
+        if (settings.DiffPlacement is DiffPlacement.Window or DiffPlacement.Editor)
         {
-            new("Show changes", () => OpenDiff(item.Index))
+            showChanges = showChanges with
             {
                 Shortcut = "Enter"
-            },
+            };
+        }
+
+        menu.Add(showChanges);
+        if (settings.DiffPlacement != DiffPlacement.Editor)
+        {
+            var inEditor = new QuickMenu.Command("Show changes in editor", () => OpenDiff(change));
+            if (settings.DiffPlacement != DiffPlacement.Window)
+            {
+                inEditor = inEditor with
+                {
+                    Shortcut = "Enter"
+                };
+            }
+
+            menu.Add(inEditor);
+        }
+
+        menu.Add(
             new("Show in folder", () => ShowInFolderRequested?.Invoke(path), File.Exists(path))
             {
                 Glyph = Icons.Folder
-            },
+            });
+        menu.Add(
             new("Copy path", () => FolderView.SetClipboardText(path))
             {
                 Glyph = Icons.CopyAsPath
-            }
-        };
+            });
         PaneMenu.Show(files, args.Location, menu, open => MenuOpen = open);
     }
 

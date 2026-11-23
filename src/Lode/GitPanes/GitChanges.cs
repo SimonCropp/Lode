@@ -21,6 +21,12 @@ sealed record Change(string Path, string? OldPath, GitChange Kind)
 }
 
 /// <summary>
+/// A file only some of whose changed lines are to be committed, with the patch of those lines
+/// against the last commit, as <see cref="LinePatch"/> writes it.
+/// </summary>
+sealed record PartialChange(Change File, string Patch);
+
+/// <summary>
 /// What is uncommitted in a repository, file by file, for the Changes pane: each file git doesn't
 /// track on its own, not the folder it is in, as each is ticked to commit on its own. With the
 /// branch, null when detached, whether there is a commit yet, and whether a merge, cherry pick or
@@ -199,7 +205,9 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// nothing, so then it is everything. Each step is let finish once started, as one stopped
     /// part way leaves the index locked.
     /// </summary>
-    public static CodeCommands.RepoResult Commit(string repo, IReadOnlyList<Change> ticked, bool merging, string message, Cancel cancel)
+    /// <param name="partial">Files only some of whose lines go in, each with the patch of those
+    /// lines against the last commit.</param>
+    public static CodeCommands.RepoResult Commit(string repo, IReadOnlyList<Change> ticked, bool merging, string message, Cancel cancel, IReadOnlyList<PartialChange>? partial = null)
     {
         var folder = Path.Combine(Path.GetTempPath(), "Lode", "Commits", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
@@ -217,6 +225,11 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
                 }
 
                 return CodeCommands.GitToItsEnd(repo, cancel, "commit", "-F", messageFile);
+            }
+
+            if (partial is { Count: > 0 })
+            {
+                return CommitSomeLines(repo, folder, messageFile, ticked, partial, cancel);
             }
 
             // Git has to know of a file before a commit of only some paths can take it in. A
@@ -267,6 +280,91 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             {
             }
         }
+    }
+
+    /// <summary>
+    /// A commit of whole files and of only some lines of others, as commit --only makes one of
+    /// whole files: from an index of its own, the last commit's, with the whole files added to it
+    /// and the patches of the lines applied. The real index then takes the commit's version of
+    /// each path committed, so what of those files wasn't committed shows as changed still, and
+    /// whatever else was staged stays staged. Git's hooks run on the commit as on any. Should the
+    /// commit fail, the real index is as it was.
+    /// </summary>
+    static CodeCommands.RepoResult CommitSomeLines(string repo, string folder, string messageFile, IReadOnlyList<Change> whole, IReadOnlyList<PartialChange> partial, Cancel cancel)
+    {
+        var environment = new Dictionary<string, string>
+        {
+            ["GIT_INDEX_FILE"] = Path.Combine(folder, "index")
+        };
+        var head = CodeCommands.GitOutput(repo, cancel, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+        string[] readTree = ["read-tree", "--empty"];
+        if (head.Succeeded)
+        {
+            readTree = ["read-tree", "HEAD"];
+        }
+
+        var read = CodeCommands.GitToItsEnd(repo, cancel, environment, readTree);
+        if (!read.Succeeded)
+        {
+            return read;
+        }
+
+        if (whole.Count > 0)
+        {
+            // Untracked, deleted and renamed alike: add -A takes each as it is on disk, gone or not.
+            var wholeFile = PathsFile(folder, "whole", [.. whole.SelectMany(_ => _.Paths())]);
+            var added = CodeCommands.GitToItsEnd(
+                repo,
+                cancel,
+                environment,
+                "--literal-pathspecs",
+                "add",
+                "-A",
+                $"--pathspec-from-file={wholeFile}",
+                "--pathspec-file-nul");
+            if (!added.Succeeded)
+            {
+                return added;
+            }
+        }
+
+        var patchFile = Path.Combine(folder, "lines.patch");
+        File.WriteAllText(patchFile, string.Concat(partial.Select(_ => _.Patch)), new UTF8Encoding(false));
+        var applied = CodeCommands.GitToItsEnd(repo, cancel, environment, "apply", "--cached", "--unidiff-zero", "--whitespace=nowarn", patchFile);
+        if (!applied.Succeeded)
+        {
+            return applied;
+        }
+
+        var committed = CodeCommands.GitToItsEnd(repo, cancel, environment, "commit", "-F", messageFile);
+        if (!committed.Succeeded)
+        {
+            return committed;
+        }
+
+        // Not cancelled from here: the commit is made, and the real index has to know of it.
+        var pathsFile = PathsFile(
+            folder,
+            "committed",
+            [
+                .. whole
+                    .SelectMany(_ => _.Paths()),
+                .. partial.Select(_ => _.File.Path)
+            ]);
+        var reset = CodeCommands.GitToItsEnd(
+            repo,
+            Cancel.None,
+            "--literal-pathspecs",
+            "reset",
+            "-q",
+            $"--pathspec-from-file={pathsFile}",
+            "--pathspec-file-nul");
+        if (!reset.Succeeded)
+        {
+            return reset;
+        }
+
+        return committed;
     }
 
     // A file of paths, each ended by a NUL, for git's --pathspec-from-file.

@@ -334,6 +334,21 @@ class OptionsForm : Form
         }
     };
 
+    // In the order of DiffPlacement's values.
+    ComboBox diffPlacement = new()
+    {
+        Name = "diffPlacement",
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 300,
+        Items =
+        {
+            "A Diff tab, beside the folders' tabs",
+            "A window of their own",
+            "Over the folder list",
+            "The text editor, or git's diff tool"
+        }
+    };
+
     ComboBox textEditor = new()
     {
         Name = "textEditor",
@@ -461,6 +476,8 @@ class OptionsForm : Form
         {
             settings.Theme = (Theme) theme.SelectedIndex;
         };
+        diffPlacement.SelectedIndex = (int) settings.DiffPlacement;
+        diffPlacement.SelectedIndexChanged += (_, _) => settings.DiffPlacement = (DiffPlacement) diffPlacement.SelectedIndex;
         expandToOpenFolder.Checked = settings.ExpandToOpenFolder;
         expandToOpenFolder.CheckedChanged += (_, _) =>
         {
@@ -745,6 +762,11 @@ class OptionsForm : Form
             "Text editor",
             "Edit, on the right-click menu of a text file, opens it in this editor.",
             textEditor),
+        Section(
+            "Changes",
+            "Where a file picked in the Changes or History pane shows its changes, drawn as " +
+            "GitHub Desktop draws them.",
+            diffPlacement),
         Section(
             "Tabs",
             "Other apps opening folders in Lode leave a tab for each. Lode can close those you " +

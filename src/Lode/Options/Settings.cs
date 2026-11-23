@@ -203,6 +203,16 @@ sealed class Settings
     // strip's right-click menu. See EdgeStrip.
     public StripLabels StripLabels { get; set; }
 
+    // Where a file's changes show, picked in the Changes or History pane: in the Diff tab, in a
+    // window of their own, over the folder list, or in the text editor or git's diff tool. See
+    // DiffHost.
+    public DiffPlacement DiffPlacement { get; set; }
+
+    // How a diff is shown, as GitHub Desktop's diff options set it: the old file beside the new
+    // rather than one above the other, and whitespace changes left out.
+    public bool DiffSplit { get; set; }
+    public bool DiffHideWhitespace { get; set; }
+
     // The Azure DevOps organizations added in Clone, to list the repositories of beside those of
     // the organizations the code folder has clones from.
     public List<string> AzureDevOpsOrganizations { get; set; } = [];
@@ -552,6 +562,25 @@ sealed class Settings
 /// How a folder is sorted: by which of the file list's columns, by its key, and which way.
 /// </summary>
 sealed record FolderSort(string Folder, string Column, bool Ascending);
+
+/// <summary>
+/// Where a file's changes show when picked in the Changes or History pane.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<DiffPlacement>))]
+enum DiffPlacement
+{
+    // A tab of their own beside the folders' tabs, the panes staying beside it.
+    Tab,
+
+    // A window of their own, with the files changed down its left.
+    Window,
+
+    // Over the folder list of the tab showing, till the file is no longer picked.
+    Folder,
+
+    // The text editor, VS Code say, or git's diff tool.
+    Editor
+}
 
 /// <summary>
 /// Which of the Changes and History panes are pinned for a repository.

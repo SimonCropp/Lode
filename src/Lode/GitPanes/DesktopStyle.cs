@@ -126,10 +126,10 @@ static class DesktopStyle
         TextRenderer.DrawText(graphics, text, font, bounds, ink, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
 
-    static Color Rgb(int rgb) =>
+    internal static Color Rgb(int rgb) =>
         Color.FromArgb(rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF);
 
-    static Color Pick(Color light, Color dark, Color system)
+    internal static Color Pick(Color light, Color dark, Color system)
     {
         if (ExplorerStyle.HighContrast())
         {
