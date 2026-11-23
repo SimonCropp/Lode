@@ -1836,7 +1836,13 @@ public class WindowsTests
         {
             ShowInTaskbar = false,
             StartPosition = FormStartPosition.Manual,
-            Location = new(-20000, -20000)
+            Location = new(-20000, -20000),
+            // WinForms keeps a window no wider than the screen unless it has a maximum size of
+            // its own, and CI's screen is 1024 wide, where the actions bar would fit fewer
+            // buttons. So the window is given one, then the size it opens at again, which it was
+            // kept from: as wide on every machine.
+            MaximumSize = new(10_000, 10_000),
+            ClientSize = new(1200, 760)
         };
         form.Show();
         foreach (var view in form.Views)

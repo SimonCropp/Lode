@@ -51,7 +51,8 @@ public class PromotedFilesTests
     }
 
     // Only a file in a folder of the root's own, that a pattern names, is a change to what the
-    // root promotes.
+    // root promotes. The paths are written as they are: where the tests are checked out at
+    // C:\Code\Lode, Verify would write some as {SolutionDirectory}, and elsewhere not.
     [Test]
     public Task Promotes()
     {
@@ -70,14 +71,15 @@ public class PromotedFilesTests
                 fromAFolder = paths.Select(_ => $"{_}: {patterns.Promotes(@"C:\Code\Lode", _)}"),
                 fromADrive = patterns.Promotes(@"D:\", @"D:\src\Lode.slnx")
             })
+            .DisableScrubbers()
             .Snapshot(
                 """
                 {
                   fromAFolder: [
-                    {SolutionDirectory}Lode.slnx: True,
-                    {SolutionDirectory}Lode.csproj: False,
+                    C:\Code\Lode\src\Lode.slnx: True,
+                    C:\Code\Lode\src\Lode.csproj: False,
                     C:\Code\Lode\Lode.slnx: False,
-                    {SolutionDirectory}Lode\Lode.slnx: False,
+                    C:\Code\Lode\src\Lode\Lode.slnx: False,
                     C:\Code\Other\src\Lode.slnx: False
                   ],
                   fromADrive: true
