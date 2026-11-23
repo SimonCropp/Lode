@@ -13,7 +13,8 @@ static class CodeMenu
     /// The entries for the folders, after a separator, or none unless every one is under the
     /// code folder. Switch to default branch is left off when every repository is on it, and
     /// Push when every one has nothing to push, as <paramref name="stateOf"/> has it, which
-    /// gives a repository's state where it has been read.
+    /// gives a repository's state where it has been read. Tag and Delete tag only when every
+    /// folder is in a repository, not for one only holding repositories.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
     {
@@ -65,16 +66,21 @@ static class CodeMenu
                 });
         }
 
-        commands.Add(
-            LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…") with
-            {
-                NestedText = "Tag…"
-            });
-        commands.Add(
-            LodeActions.Command("gitDeleteTag", () => DeleteTag(owner, folders, settings.CodeDirectory), text: "Git delete tag…") with
-            {
-                NestedText = "Delete tag…"
-            });
+        // A tag names a commit of a repository: for a folder only holding repositories, it would
+        // be the same tag in every one below it, which is never what is meant.
+        if (allInRepos)
+        {
+            commands.Add(
+                LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…") with
+                {
+                    NestedText = "Tag…"
+                });
+            commands.Add(
+                LodeActions.Command("gitDeleteTag", () => DeleteTag(owner, folders, settings.CodeDirectory), text: "Git delete tag…") with
+                {
+                    NestedText = "Delete tag…"
+                });
+        }
 
         commands.AddRange(
         [

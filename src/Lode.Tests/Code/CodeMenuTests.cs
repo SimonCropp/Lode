@@ -75,6 +75,35 @@ public class CodeMenuTests
         await Assert.That(Offered([code.Root], clean)).IsEqualTo("switch, push");
     }
 
+    // Tag and Delete tag for a repository, a folder in one, or several picked, but not for a
+    // folder only holding repositories, where it would be the same tag in every one below it.
+    [Test]
+    public async Task TagOnlyForRepositories()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Repo");
+        var clone = code.Clone("Repo", "Clone");
+        var other = code.Clone("Repo", "Other");
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var owner = new Control();
+        bool Offered(IReadOnlyList<string> folders)
+        {
+            var ids = CodeMenu.Commands(owner, settings, folders)
+                .Select(_ => _?.Id)
+                .ToList();
+            return ids.Contains("gitTag") && ids.Contains("gitDeleteTag");
+        }
+
+        await Assert.That(Offered([clone])).IsTrue();
+        await Assert.That(Offered([Path.Combine(clone, "sub")])).IsTrue();
+        await Assert.That(Offered([clone, other])).IsTrue();
+        await Assert.That(Offered([code.Root])).IsFalse();
+        await Assert.That(Offered([clone, code.Root])).IsFalse();
+    }
+
     static GitBranches.Branch Branch(string name, bool remote = false) =>
         new(name, remote, null, false);
 
