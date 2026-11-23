@@ -652,6 +652,8 @@ public class WindowsTests
         var settings = new Settings();
         settings.SetPlacement("openInNewTab", button: true, menu: true);
         settings.SetPlacement("cut", button: false, menu: true);
+        // Room for the two buttons added, so neither goes under See more.
+        settings.SetPlacement("openWith", button: false, menu: true);
         settings.SetPlacement(LodeActions.More, button: true, menu: true);
         using var form = await Show(fixture, settings, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("Docs"));
@@ -735,6 +737,34 @@ public class WindowsTests
         await Pump.Loaded(form.ActiveView);
 
         await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand));
+    }
+
+    // In a window too narrow for every button, those that don't fit go under See more, from the
+    // end of the bar, in their places among the actions that aren't buttons, and come back as
+    // the window widens.
+    [Test]
+    public async Task ButtonsThatDontFitAreUnderSeeMore()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("notes.aleph"));
+        await Pump.Loaded(form.ActiveView);
+        form.UpdateActions();
+        var wide = form.DescribeActions().ToList();
+        var width = form.Width;
+
+        form.Width = 700;
+        var buttons = form.DescribeActions().ToList();
+        var seeMore = form.OverflowCommands(Point.Empty).Select(DescribeCommand).ToList();
+        form.Width = width;
+
+        await Assert.That(form.DescribeActions().ToList()).IsEquivalentTo(wide);
+        await Verify(
+            new
+            {
+                buttons,
+                seeMore
+            });
     }
 
     // Without the Claude desktop app or a coding agent, neither See more nor the palette offers

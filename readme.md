@@ -122,7 +122,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 ## Features
 
  * **Address bar**: each folder up the path is a button, as in Explorer. Click the empty space after it, or press Ctrl+L, to type: a path, full or from the folder open (`src`, `..`); a shell name, `shell:downloads`; or a command, `cmd`, `wt` or `code .`, run in the folder open.
- * **Actions bar**: a button for any of the right-click menus' actions, enabled when it applies to the selection. On the **Actions** page of Options, choose which actions are buttons, which are in the right-click menus, and which are nested under their parent (Clipboard, File, Open, Terminal, AI, Git, Packages): a submenu, or a drop-down button. The rest are under **See more** (⋯).
+ * **Actions bar**: a button for any of the right-click menus' actions, enabled when it applies to the selection. On the **Actions** page of Options, choose which actions are buttons, which are in the right-click menus, and which are nested under their parent (Clipboard, File, Open, Terminal, AI, Git, Packages): a submenu, or a drop-down button. The rest are under **See more** (⋯), as are the buttons a narrow window has no room for.
 
    **See more**, with the actions that aren't buttons:
 

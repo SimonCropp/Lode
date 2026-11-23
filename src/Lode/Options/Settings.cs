@@ -73,7 +73,7 @@ sealed class Settings
             return nested;
         }
 
-        return false;
+        return LodeActions.Find(id)?.ButtonNested ?? false;
     }
 
     // Whether an action in the right-click menus is in its parent's submenu, rather than an

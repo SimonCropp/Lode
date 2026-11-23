@@ -117,7 +117,8 @@ public class MainFormTests
     public Task Selection() =>
         Capture((form, fixture) => form.ActiveView!.Reveal(fixture.At("report10.beta")));
 
-    // Too narrow for every column: the address bar gives way and the list scrolls.
+    // Too narrow for every column or every button: the address bar gives way, the list scrolls,
+    // and the buttons that don't fit go under See more.
     [Test]
     public Task Narrow() =>
         Capture(width: 700);

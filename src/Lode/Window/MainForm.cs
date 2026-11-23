@@ -32,6 +32,18 @@ class MainForm : Form
     // The actions bar's drop-downs for parents that Options nests buttons under, each with the
     // actions in it, in LodeActions' order.
     Dictionary<LodeActions.Parent, (ToolStripItem Button, List<LodeActions.Definition> Members)> parentButtons = [];
+
+    // The bar's buttons, drop-downs and the separators between their groups, in its order: all
+    // but See more and the separator before it.
+    List<ToolStripItem> barItems = [];
+    ToolStripSeparator? seeMoreSeparator;
+    ToolStripItem? seeMore;
+
+    // Whether any action is not a button, so is under See more however wide the bar is.
+    bool otherActions;
+
+    // The actions whose buttons don't fit on the bar, so are under See more.
+    HashSet<string> collapsedActions = [];
     FramedTextBox filterFrame = new();
     TextBox filterBox;
     PaneSplitContainer split = new();
@@ -410,12 +422,16 @@ class MainForm : Form
         actionsBar.Renderer = new ExplorerRenderer();
         // Roomy, and as tall as Explorer's command bar.
         actionsBar.Padding = new(0, LogicalToDeviceUnits(6), 0, LogicalToDeviceUnits(6));
+        // Buttons that don't fit go under See more rather than a chevron of the strip's own.
+        actionsBar.CanOverflow = false;
+        actionsBar.SizeChanged += (_, _) => FitActionsBar();
         RebuildActionsBar();
         return actionsBar;
     }
 
     // The buttons Options asks for, in LodeActions' order, with a separator between groups, then
-    // See more, as Explorer's command bar ends, for the actions that are not buttons.
+    // See more, as Explorer's command bar ends, for the actions that are not buttons and those
+    // whose buttons don't fit.
     void RebuildActionsBar()
     {
         actionsBar.SuspendLayout();
@@ -427,6 +443,7 @@ class MainForm : Form
         actionsBar.Items.Clear();
         actionButtons.Clear();
         parentButtons.Clear();
+        barItems.Clear();
         // Explorer's size for its command bar's icons.
         var iconSize = LogicalToDeviceUnits(16);
         actionsBar.ImageScalingSize = new(iconSize, iconSize);
@@ -446,7 +463,7 @@ class MainForm : Form
             if (group != null &&
                 group != action.Group)
             {
-                actionsBar.Items.Add(ActionsSeparator());
+                barItems.Add(ActionsSeparator());
             }
 
             group = action.Group;
@@ -455,31 +472,102 @@ class MainForm : Form
                 List<LodeActions.Definition> members = [action];
                 var dropDown = CreateDropDown(parent.Text, parent.Glyph, parent.Text, iconSize, () => ParentEntries(members));
                 parentButtons[parent] = (dropDown, members);
-                actionsBar.Items.Add(dropDown);
+                barItems.Add(dropDown);
                 continue;
             }
 
             var button = CreateActionButton(action, iconSize);
             actionButtons[action.Id] = button;
-            actionsBar.Items.Add(button);
+            barItems.Add(button);
         }
 
-        if (LodeActions.Offered().Any(_ => !settings.ShowsAsButton(_.Id)))
+        foreach (var item in barItems)
         {
-            if (actionsBar.Items.Count > 0)
-            {
-                actionsBar.Items.Add(ActionsSeparator());
-            }
-
-            // Larger than the rest: at their size the dots are smaller than Explorer's.
-            actionsBar.Items.Add(CreateOverflowButton(LogicalToDeviceUnits(20)));
+            actionsBar.Items.Add(item);
         }
 
-        actionsBar.Visible = actionsBar.Items.Count > 0;
+        otherActions = LodeActions.Offered().Any(_ => !settings.ShowsAsButton(_.Id));
+        seeMoreSeparator = ActionsSeparator();
+        actionsBar.Items.Add(seeMoreSeparator);
+        // Larger than the rest: at their size the dots are smaller than Explorer's.
+        seeMore = CreateOverflowButton(LogicalToDeviceUnits(20));
+        actionsBar.Items.Add(seeMore);
+        actionsBar.Visible = barItems.Count > 0 || otherActions;
 
         actionsBar.ResumeLayout();
+        FitActionsBar();
         UpdateActions();
     }
+
+    // As in Explorer's command bar, the buttons that don't fit go under See more, from the end of
+    // the bar, and See more shows while there is anything under it.
+    void FitActionsBar()
+    {
+        if (seeMore == null ||
+            seeMoreSeparator == null)
+        {
+            return;
+        }
+
+        var available = actionsBar.DisplayRectangle.Width;
+        var seeMoreWidth = BarWidth(seeMoreSeparator) + BarWidth(seeMore);
+        var needed = barItems.Sum(BarWidth);
+        if (otherActions)
+        {
+            needed += seeMoreWidth;
+        }
+
+        var shown = barItems.Count;
+        if (needed > available)
+        {
+            shown = 0;
+            var used = seeMoreWidth;
+            while (shown < barItems.Count &&
+                   used + BarWidth(barItems[shown]) <= available)
+            {
+                used += BarWidth(barItems[shown]);
+                shown++;
+            }
+
+            // Never a group's separator with none of the group after it.
+            while (shown > 0 &&
+                   barItems[shown - 1] is ToolStripSeparator)
+            {
+                shown--;
+            }
+        }
+
+        actionsBar.SuspendLayout();
+        for (var index = 0; index < barItems.Count; index++)
+        {
+            barItems[index].Available = index < shown;
+        }
+
+        seeMore.Available = otherActions || shown < barItems.Count;
+        seeMoreSeparator.Available = seeMore.Available && shown > 0;
+        actionsBar.ResumeLayout();
+
+        collapsedActions.Clear();
+        foreach (var (id, button) in actionButtons)
+        {
+            if (!button.Available)
+            {
+                collapsedActions.Add(id);
+            }
+        }
+
+        foreach (var (button, members) in parentButtons.Values)
+        {
+            if (!button.Available)
+            {
+                collapsedActions.UnionWith(members.Select(_ => _.Id));
+            }
+        }
+    }
+
+    // The room an item takes on the bar, its margins included.
+    static int BarWidth(ToolStripItem item) =>
+        item.GetPreferredSize(Size.Empty).Width + item.Margin.Horizontal;
 
     // Explorer's See more: the actions not shown as buttons, in a list of their own.
     ToolStripDropDownButton CreateOverflowButton(int iconSize)
@@ -518,17 +606,17 @@ class MainForm : Form
     }
 
     /// <summary>
-    /// What See more lists: each action not shown as a button, in LodeActions' order with a
-    /// separator between groups, as the right-click menu would offer it now, or greyed out where
-    /// it does not apply. Show more options opens the full Windows menu at
-    /// <paramref name="location"/>, on the screen.
+    /// What See more lists: each action not shown as a button, or whose button doesn't fit on the
+    /// bar, in LodeActions' order with a separator between groups, as the right-click menu would
+    /// offer it now, or greyed out where it does not apply. Show more options opens the full
+    /// Windows menu at <paramref name="location"/>, on the screen.
     /// </summary>
     internal List<QuickMenu.Command?> OverflowCommands(Point location)
     {
         var commands = ContextCommands();
         var result = new List<QuickMenu.Command?>();
         int? group = null;
-        foreach (var action in LodeActions.Offered().Where(_ => !settings.ShowsAsButton(_.Id)))
+        foreach (var action in LodeActions.Offered().Where(_ => !settings.ShowsAsButton(_.Id) || collapsedActions.Contains(_.Id)))
         {
             if (group != null &&
                 group != action.Group)
@@ -955,11 +1043,12 @@ class MainForm : Form
          command.Children.Any(_ => _ is { Enabled: true }));
 
     /// <summary>
-    /// The actions bar's buttons and whether each is enabled, for tests.
+    /// The actions bar's buttons that fit on it and whether each is enabled, for tests.
     /// </summary>
     internal IEnumerable<string> DescribeActions() =>
         actionsBar.Items
             .OfType<ToolStripItem>()
+            .Where(_ => _.Available)
             .Select(DescribeAction);
 
     static string DescribeAction(ToolStripItem item)

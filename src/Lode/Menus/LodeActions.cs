@@ -10,7 +10,9 @@ static class LodeActions
     /// <param name="Submenu">Opens a list of its own (New, Open with, Coding agent): a drop-down on the bar.</param>
     /// <param name="Parent">What it can be nested under, in the right-click menus and on the bar.</param>
     /// <param name="MenuNested">Whether it is nested under its parent in the right-click menus
-    /// unless Options says otherwise. On the bar, nothing is nested unless Options says so.</param>
+    /// unless Options says otherwise.</param>
+    /// <param name="ButtonNested">Whether it is in its parent's drop-down on the bar, rather than
+    /// a button of its own, unless Options says otherwise.</param>
     public sealed record Definition(
         string Id,
         string Text,
@@ -21,7 +23,8 @@ static class LodeActions
         string Shortcut = "",
         bool Submenu = false,
         Parent? Parent = null,
-        bool MenuNested = false);
+        bool MenuNested = false,
+        bool ButtonNested = false);
 
     /// <summary>
     /// A submenu in the right-click menus, and a drop-down on the bar, that actions can be nested
@@ -56,8 +59,8 @@ static class LodeActions
     public static IReadOnlyList<Definition> All { get; } =
     [
         new("new", "New", Icons.New, 0, Button: true, Menu: true, Submenu: true),
-        new("undo", "Undo", Icons.Undo, 1, Button: false, Menu: true, "Ctrl+Z", Parent: undoAndRedo),
-        new("redo", "Redo", Icons.Redo, 1, Button: false, Menu: true, "Ctrl+Y", Parent: undoAndRedo),
+        new("undo", "Undo", Icons.Undo, 1, Button: true, Menu: true, "Ctrl+Z", Parent: undoAndRedo),
+        new("redo", "Redo", Icons.Redo, 1, Button: true, Menu: true, "Ctrl+Y", Parent: undoAndRedo),
         new("cut", "Cut", Icons.Cut, 1, Button: true, Menu: true, "Ctrl+X", Parent: clipboard),
         new("copy", "Copy", Icons.Copy, 1, Button: true, Menu: true, "Ctrl+C", Parent: clipboard),
         new("paste", "Paste", Icons.Paste, 1, Button: true, Menu: true, "Ctrl+V", Parent: clipboard),
@@ -66,26 +69,26 @@ static class LodeActions
         new("open", "Open", Icons.Open, 2, Button: false, Menu: true, Parent: open),
         new("openInNewTab", "Open in new tab", Icons.OpenInNewTab, 2, Button: false, Menu: true, Parent: open),
         new("run", "Run", Icons.Run, 2, Button: false, Menu: true, Parent: open),
-        new("edit", "Edit", Icons.Edit, 2, Button: false, Menu: true, Parent: open),
-        new("openWith", "Open with", Icons.OpenWith, 2, Button: false, Menu: true, Submenu: true, Parent: open),
+        new("edit", "Edit", Icons.Edit, 2, Button: true, Menu: true, Parent: open),
+        new("openWith", "Open with", Icons.OpenWith, 2, Button: true, Menu: true, Submenu: true, Parent: open),
         new("terminal", "Terminal", Icons.Terminal, 2, Button: true, Menu: true, Parent: terminal, MenuNested: true),
         new("terminalAdmin", "Terminal (admin)", Icons.AdminTerminal, 2, Button: true, Menu: true, Parent: terminal, MenuNested: true),
-        new("claude", "Open in Claude", Icons.Claude, 2, Button: false, Menu: true, Parent: ai, MenuNested: true),
-        new("agent", "Coding agent", Icons.Agent, 2, Button: false, Menu: true, Submenu: true, Parent: ai, MenuNested: true),
+        new("claude", "Open in Claude", Icons.Claude, 2, Button: true, Menu: true, Parent: ai, MenuNested: true, ButtonNested: true),
+        new("agent", "Coding agent", Icons.Agent, 2, Button: true, Menu: true, Submenu: true, Parent: ai, MenuNested: true, ButtonNested: true),
         new("pin", "Pin to Quick access", Icons.Pin, 3, Button: false, Menu: true, Parent: file),
         new("createShortcut", "Create shortcut", Icons.Shortcut, 3, Button: false, Menu: true, Parent: file),
-        new("compress", "Compress to ZIP file", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
+        new("compress", "Compress to ZIP file", Icons.Zip, 3, Button: true, Menu: true, Parent: file),
         new("extractAll", "Extract All", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
         new("extractHere", "Extract here", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
-        new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: false, Menu: true, "Ctrl+Shift+C", Parent: clipboard),
+        new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: true, Menu: true, "Ctrl+Shift+C", Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
-        new("gitFetch", "Git fetch", Icons.Fetch, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
-        new("gitPull", "Git pull", Icons.Pull, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
-        new("gitSyncFork", "Git sync fork", Icons.SyncFork, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
-        new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
-        new("gitPush", "Git push", Icons.Push, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
-        new("gitDiscard", "Git discard", Icons.Discard, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
-        new("gitPurge", "Git purge", Icons.Purge, 4, Button: false, Menu: true, Parent: git, MenuNested: true),
+        new("gitFetch", "Git fetch", Icons.Fetch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitPull", "Git pull", Icons.Pull, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitSyncFork", "Git sync fork", Icons.SyncFork, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitPush", "Git push", Icons.Push, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitDiscard", "Git discard", Icons.Discard, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitPurge", "Git purge", Icons.Purge, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
         new("updateNugets", "Update NuGets", Icons.Package, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new(More, "Show more options", Icons.MoreOptions, 5, Button: false, Menu: true)
