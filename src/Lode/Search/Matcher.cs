@@ -39,7 +39,7 @@ sealed class Matcher
         {
             asciiFind = Encoding.ASCII.GetBytes(find);
             var first = (byte) find[0];
-            asciiFirst = SearchValues.Create([(byte) char.ToLowerInvariant((char) first), (byte) char.ToUpperInvariant((char) first)]);
+            asciiFirst = SearchValues.Create((byte) char.ToLowerInvariant((char) first), (byte) char.ToUpperInvariant((char) first));
             hasIOrS = find.AsSpan().IndexOfAny("iIsS") >= 0;
         }
     }

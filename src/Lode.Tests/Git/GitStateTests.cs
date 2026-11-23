@@ -148,12 +148,12 @@ public class GitStateTests
         var state = State("main", 3, 2, 1);
 
         await Assert.That(state.Parts())
-            .IsEquivalentTo(
+            .IsEquivalentTo<IList<GitState.Part>, GitState.Part>(
                 [
-                    new GitState.Part(GitState.PartKind.Branch, "main"),
-                    new GitState.Part(GitState.PartKind.Changes, "3 changes"),
-                    new GitState.Part(GitState.PartKind.Ahead, "2 ahead"),
-                    new GitState.Part(GitState.PartKind.Behind, "1 behind")
+                    new(GitState.PartKind.Branch, "main"),
+                    new(GitState.PartKind.Changes, "3 changes"),
+                    new(GitState.PartKind.Ahead, "2 ahead"),
+                    new(GitState.PartKind.Behind, "1 behind")
                 ],
                 TUnit.Assertions.Enums.CollectionOrdering.Matching);
         await Assert.That(new GitState("main", null, 0, 0, []).Parts().Select(_ => _.Kind))

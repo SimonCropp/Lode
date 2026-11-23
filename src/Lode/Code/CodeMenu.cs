@@ -13,7 +13,8 @@ static class CodeMenu
     /// The entries for the folders, after a separator, or none unless every one is under the
     /// code folder. Switch to default branch is left off when every repository is on it, and
     /// Push when every one has nothing to push, as <paramref name="stateOf"/> has it, which
-    /// gives a repository's state where it has been read.
+    /// gives a repository's state where it has been read. Tag and Delete tag only when every
+    /// folder is in a repository, not for one only holding repositories.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
     {
@@ -65,16 +66,21 @@ static class CodeMenu
                 });
         }
 
-        commands.Add(
-            LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…") with
-            {
-                NestedText = "Tag…"
-            });
-        commands.Add(
-            LodeActions.Command("gitDeleteTag", () => DeleteTag(owner, folders, settings.CodeDirectory), text: "Git delete tag…") with
-            {
-                NestedText = "Delete tag…"
-            });
+        // A tag names a commit of a repository: for a folder only holding repositories, it would
+        // be the same tag in every one below it, which is never what is meant.
+        if (allInRepos)
+        {
+            commands.Add(
+                LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…") with
+                {
+                    NestedText = "Tag…"
+                });
+            commands.Add(
+                LodeActions.Command("gitDeleteTag", () => DeleteTag(owner, folders, settings.CodeDirectory), text: "Git delete tag…") with
+                {
+                    NestedText = "Delete tag…"
+                });
+        }
 
         commands.AddRange(
         [
@@ -402,7 +408,12 @@ static class CodeMenu
     // Pull's is, and Discard's. Then it asks for the commit message.
     internal static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
+        var (repos, newFiles) = await Task.Run(
+            () =>
+            {
+                var found = CodeCommands.FindRepos(folders, codeFolder);
+                return (found, CodeCommands.NewFiles(found));
+            });
         if (repos.Count == 0)
         {
             NoRepos("Git push", folders);
@@ -414,7 +425,7 @@ static class CodeMenu
             return;
         }
 
-        var message = AskCommitMessage(owner, repos);
+        var message = AskCommitMessage(owner, repos, newFiles);
         if (message == null)
         {
             return;
@@ -500,6 +511,75 @@ static class CodeMenu
             "Git delete tag",
             folders,
             async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.DeleteTag(repos, name, progress, cancel)));
+    }
+
+    /// <summary>
+    /// History's Tag: asks for the tag's name, then tags the commit picked, rather than the one
+    /// checked out, and pushes the tag. The repository is read again once it is done, for History
+    /// to show the tag.
+    /// </summary>
+    internal static async void TagCommit(Control owner, string repo, GitCommit commit)
+    {
+        using var form = new GitTextForm(
+            "Git tag",
+            $"Tag {commit.ShortSha} in {Path.GetFileName(repo)}, and push the tag to origin.",
+            "Tag:",
+            "",
+            "Tag",
+            [],
+            isTagName: true);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var name = form.Value;
+        _ = ActionLog.Run(
+            "Git tag",
+            [repo],
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.Tag([repo], name, progress, cancel, commit: commit.Sha);
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome(results);
+            });
+    }
+
+    /// <summary>
+    /// History's Delete tag: asks which of the commit's tags, then deletes it from the repository
+    /// and from origin, and reads the repository again.
+    /// </summary>
+    internal static async void DeleteCommitTag(Control owner, string repo, GitCommit commit)
+    {
+        var first = "";
+        if (commit.Tags.Count > 0)
+        {
+            first = commit.Tags[0];
+        }
+
+        using var form = new GitTextForm(
+            "Git delete tag",
+            $"Delete a tag of {commit.ShortSha} from {Path.GetFileName(repo)}, and from origin. This cannot be undone.",
+            "Tag:",
+            first,
+            "Delete",
+            commit.Tags,
+            isTagName: true);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var name = form.Value;
+        _ = ActionLog.Run(
+            "Git delete tag",
+            [repo],
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.DeleteTag([repo], name, progress, cancel);
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome(results);
+            });
     }
 
     internal static async void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
@@ -599,11 +679,11 @@ static class CodeMenu
     }
 
     // Asks for the commit message, which doubles as the confirmation. Null when cancelled.
-    static string? AskCommitMessage(Control owner, IReadOnlyList<string> repos)
+    static string? AskCommitMessage(Control owner, IReadOnlyList<string> repos, int newFiles)
     {
         using var form = new GitTextForm(
             "Git push",
-            $"Commit all changes in {Describe(repos)} and push to origin.",
+            PushQuestion(repos, newFiles),
             "Commit message:",
             defaultCommitMessage,
             "Push",
@@ -614,6 +694,20 @@ static class CodeMenu
         }
 
         return form.Value;
+    }
+
+    /// <summary>
+    /// What Push asks: what it commits, and how many new files go in with it, as git doesn't
+    /// track them yet and a stray one, not ignored, would go in too.
+    /// </summary>
+    internal static string PushQuestion(IReadOnlyList<string> repos, int newFiles)
+    {
+        if (newFiles == 0)
+        {
+            return $"Commit all changes in {Describe(repos)} and push to origin.";
+        }
+
+        return $"Commit all changes in {Describe(repos)}, including {GitState.CountOf(newFiles, "new file")}, and push to origin.";
     }
 
     /// <summary>

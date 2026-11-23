@@ -4,6 +4,7 @@
   Reopen closed tab (disabled),
   Command palette,
   Find in files,
+  Clone a repository…,
   ----,
   Show hidden items,
   Show system files,

@@ -40,6 +40,10 @@ class MainForm : Form
     FolderTree tree;
     ActionsPanel actionsPanel = new();
     ClosableTabControl tabs = new();
+
+    // The Changes and History panes, for the repository the tab showing is in, and the strip
+    // down the right edge they slide out from.
+    GitPanes gitPanes;
     ToolStripStatusLabel statusLabel = new()
     {
         TextAlign = ContentAlignment.MiddleLeft
@@ -193,7 +197,15 @@ class MainForm : Form
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
         findPanel = new(settings);
-        findPanel.FindRequested += () => Find();
+        gitPanes = new(this, settings)
+        {
+            FocusList = () => ActiveView?.FocusList()
+        };
+        gitPanes.ShowInFolderRequested += ShowInFolder;
+        gitPanes.OpenSiteRequested += url => OpenSite(url);
+        gitPanes.PinnedChanged += ApplyPinnedInAllWindows;
+        gitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
+        findPanel.FindRequested += Find;
         findPanel.ReplaceRequested += () => _ = Replace();
         findPanel.StopRequested += () => resultsView?.Stop();
         findPanel.Searching = () => resultsView?.IsSearching == true;
@@ -258,6 +270,10 @@ class MainForm : Form
         upButton = CreateButton(upGlyph, "Up (Alt+Up)", () => ActiveView?.GoUp());
 
         Controls.Add(BuildContent());
+
+        // Straight after the content, so it docks after the bars, the find strip and the status
+        // bar have taken their edges: down the right between the command bar and the find strip.
+        Controls.Add(gitPanes.Strip);
         Controls.Add(BuildActionsBar());
         Controls.Add(BuildNavigationBar());
 
@@ -613,6 +629,11 @@ class MainForm : Form
                 Glyph = Icons.Search,
                 Shortcut = "Ctrl+Shift+F"
             },
+            new("Clone a repository…", ShowClone)
+            {
+                Glyph = Icons.Clone,
+                Shortcut = "Ctrl+Shift+O"
+            },
             null,
             new("Show hidden items", ToggleHidden)
             {
@@ -626,6 +647,34 @@ class MainForm : Form
                 Checked = settings.ShowSystem
             }
         };
+        if (gitPanes.Repo != null)
+        {
+            var changesPinned = gitPanes.IsPinned(GitPane.Changes);
+            var historyPinned = gitPanes.IsPinned(GitPane.History);
+            commands.AddRange(
+            [
+                null,
+                new("Changes", () => gitPanes.Toggle(GitPane.Changes))
+                {
+                    Glyph = Icons.Changes,
+                    Shortcut = "Ctrl+Shift+G"
+                },
+                new("History", () => gitPanes.Toggle(GitPane.History))
+                {
+                    Glyph = Icons.History,
+                    Shortcut = "Ctrl+Shift+H"
+                },
+                new("Pin changes", () => gitPanes.SetPinned(GitPane.Changes, !changesPinned))
+                {
+                    Checked = changesPinned
+                },
+                new("Pin history", () => gitPanes.SetPinned(GitPane.History, !historyPinned))
+                {
+                    Checked = historyPinned
+                }
+            ]);
+        }
+
         if (PinnablePath() is { } path)
         {
             var pinned = IsPinned(path);
@@ -951,7 +1000,7 @@ class MainForm : Form
         // Added after the tree so it is docked first, and the tree fills what is left above it.
         split.Panel1.Controls.Add(tree);
         split.Panel1.Controls.Add(actionsPanel);
-        split.Panel2.Controls.Add(tabs);
+        gitPanes.Attach(split.Panel2, tabs);
         return split;
     }
 
@@ -1858,6 +1907,7 @@ class MainForm : Form
         ShowingFolder(view != null);
         if (view == null)
         {
+            gitPanes.ShowRepo(null, null);
             if (ResultsShowing)
             {
                 Text = "Find Results" + TitleSuffix;
@@ -1908,6 +1958,96 @@ class MainForm : Form
         }
 
         spaceLabel.Text = view.FreeSpaceText;
+        ShowPanes(view);
+    }
+
+    // The Changes and History panes follow the repository the tab showing is in. While the tab
+    // reads its folder, the repository it was in stays: going between folders of one, or to a
+    // tab not read yet, doesn't take the panes away to bring them back a moment later.
+    void ShowPanes(FolderView view)
+    {
+        if (!view.Loading.IsCompleted)
+        {
+            return;
+        }
+
+        var repo = view.Repo;
+        GitState? state = null;
+        if (repo != null &&
+            Locations.Same(view.GitRepo, repo))
+        {
+            state = view.GitRepoState;
+        }
+
+        gitPanes.ShowRepo(repo, state);
+    }
+
+    /// <summary>
+    /// Asks what to clone, and where to, then clones it in the Actions panel, opening a tab on
+    /// the clone once it is there. Tests answer for the user.
+    /// </summary>
+    internal Func<CloneDialog, DialogResult> ShowCloneDialog = dialog => dialog.ShowDialog(dialog.Owner);
+
+    void ShowClone()
+    {
+        // Into the code folder, or, without one, the folder open.
+        var parent = settings.CodeDirectory;
+        if (parent == null ||
+            !Directory.Exists(parent))
+        {
+            parent = PinnablePath() ?? Locations.Home;
+        }
+
+        using var dialog = new CloneDialog(settings, parent)
+        {
+            Owner = this
+        };
+        if (ShowCloneDialog(dialog) != DialogResult.OK)
+        {
+            return;
+        }
+
+        Clone(dialog.Remote, dialog.Destination);
+    }
+
+    async void Clone(string remote, string destination)
+    {
+        var entry = await ActionLog.Run(
+            "Git clone",
+            [destination],
+            async (progress, cancel) =>
+            {
+                var result = await Task.Run(() => RepositoryClone.Clone(remote, destination, null, progress.Report, cancel), cancel);
+                return CodeCommands.GitOutcome([result]);
+            });
+        if (entry.State == ActionLog.State.Succeeded &&
+            !IsDisposed)
+        {
+            AddTab(destination, true);
+        }
+    }
+
+    /// <summary>
+    /// The Changes and History panes. For tests.
+    /// </summary>
+    internal GitPanes GitPanes => gitPanes;
+
+    // Pinned or unpinned in one window, for a repository, in every window showing it.
+    static void ApplyPinnedInAllWindows(string repo)
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            window.gitPanes.ApplyPinned(repo);
+        }
+    }
+
+    // The strip's tabs labelled another way in one window, in every window.
+    static void ApplyStripLabelsInAllWindows()
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            window.gitPanes.ApplyStripLabels();
+        }
     }
 
     /// <summary>
@@ -2128,6 +2268,7 @@ class MainForm : Form
         ShellIcons.ForgetDrives();
         TextEditors.ForgetTypes();
         tree.RefreshDrives();
+        gitPanes.Reload();
         if (ResultsShowing)
         {
             resultsView?.SearchAgain();
@@ -2585,6 +2726,15 @@ class MainForm : Form
         Add("New tab", NewTab, "Ctrl+T");
         Add("New window", NewWindow, "Ctrl+N");
         Add("Find in files", OpenFind, "Ctrl+Shift+F");
+        Add("Clone a repository…", ShowClone, "Ctrl+Shift+O");
+        if (gitPanes.Repo != null)
+        {
+            Add("Changes", () => gitPanes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
+            Add("History", () => gitPanes.Toggle(GitPane.History), "Ctrl+Shift+H");
+            Add(gitPanes.IsPinned(GitPane.Changes) ? "Unpin changes" : "Pin changes", () => gitPanes.SetPinned(GitPane.Changes, !gitPanes.IsPinned(GitPane.Changes)));
+            Add(gitPanes.IsPinned(GitPane.History) ? "Unpin history" : "Pin history", () => gitPanes.SetPinned(GitPane.History, !gitPanes.IsPinned(GitPane.History)));
+        }
+
         if (page != null)
         {
             if (view != null)
@@ -3244,6 +3394,15 @@ class MainForm : Form
             case Keys.Control | Keys.B:
                 ShowBranches();
                 return true;
+            case Keys.Control | Keys.Shift | Keys.G:
+                gitPanes.Toggle(GitPane.Changes);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.H:
+                gitPanes.Toggle(GitPane.History);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.O:
+                ShowClone();
+                return true;
         }
 
         return base.ProcessCmdKey(ref message, keyData);
@@ -3370,6 +3529,7 @@ class MainForm : Form
             UndoHistory.Instance.Changed -= OnUndoChanged;
             updates.Changed -= OnUpdatesChanged;
             ActionLog.Changed -= ReadGitState;
+            gitPanes.Dispose();
             toolTip.Dispose();
             statusTip.Dispose();
             trayTimer.Dispose();

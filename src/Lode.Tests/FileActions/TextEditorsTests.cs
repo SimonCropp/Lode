@@ -110,4 +110,14 @@ public class TextEditorsTests
                     @"C:\Tools\Other.exe"
                 }
                 .ToDictionary(_ => Path.GetFileName(_), _ => string.Join(" ", TextEditors.AtLine(_, @"C:\Code\App.cs", 12, 5))));
+
+    // VS Code and those made from it show two files' changes side by side; the rest can't.
+    [Test]
+    public async Task Diff()
+    {
+        await Assert.That(TextEditors.Diff(@"C:\Programs\VS Code\Code.exe", "a.txt", "b.txt")).IsEquivalentTo(["--diff", "a.txt", "b.txt"]);
+        await Assert.That(TextEditors.Diff(@"C:\Programs\Cursor\Cursor.exe", "a.txt", "b.txt")).IsNotNull();
+        await Assert.That(TextEditors.Diff(@"C:\Windows\notepad.exe", "a.txt", "b.txt")).IsNull();
+        await Assert.That(TextEditors.Diff(@"C:\Program Files\Sublime Text\subl.exe", "a.txt", "b.txt")).IsNull();
+    }
 }

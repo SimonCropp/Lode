@@ -1151,6 +1151,10 @@ public class WindowsTests
             "Refresh | Refresh (F5)",
             "New tab | New tab (Ctrl+T)",
             "Menu | Menu",
+            "Pin Changes | Pin: keep beside the list",
+            "Filter changed files | Filter the files by name",
+            "Add a description | Add a description",
+            "Pin History | Pin: keep beside the list",
             "Close | Close (Esc)"
         ]);
     }

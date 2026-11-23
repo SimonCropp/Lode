@@ -14,6 +14,32 @@ public class SettingsTests
         await Assert.That(new Settings {CodeDirectory = @"\\NotAServer\Share\Code"}.MissingCodeDirectory()).IsNull();
     }
 
+    // Which panes are pinned, for each repository, however its path is written; neither pinned
+    // isn't kept.
+    [Test]
+    public async Task PinnedPanesForEachRepository()
+    {
+        var settings = new Settings();
+        settings.SetPinnedPanes(@"D:\Code\Lode", true, false);
+        settings.SetPinnedPanes(@"D:\Code\Other", false, true);
+        settings.SetPinnedPanes(@"d:\code\lode\", true, true);
+
+        await Assert.That(settings.PinnedPanes.Count).IsEqualTo(2);
+        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Lode")).IsEqualTo(new(@"d:\code\lode\", true, true));
+
+        settings.SetPinnedPanes(@"D:\Code\Other", false, false);
+        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Other")).IsNull();
+
+        for (var index = 0; index < 600; index++)
+        {
+            settings.SetPinnedPanes($@"D:\Code\Repo{index}", true, false);
+        }
+
+        await Assert.That(settings.PinnedPanes.Count).IsEqualTo(500);
+        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Repo599")).IsNotNull();
+        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Lode")).IsNull();
+    }
+
     [Test]
     public async Task SaveWritesJson()
     {

@@ -1,0 +1,846 @@
+/// <summary>
+/// The two panes on the window's right edge.
+/// </summary>
+enum GitPane
+{
+    Changes,
+    History
+}
+
+/// <summary>
+/// How the tabs on the strip down the window's right edge are labelled.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<StripLabels>))]
+enum StripLabels
+{
+    // The pane's icon, and its name written down the strip, as Visual Studio has them.
+    Vertical,
+
+    // The pane's icon, and its name across under it, as JetBrains' IDEs have them.
+    Horizontal,
+
+    // The pane's icon alone.
+    IconsOnly
+}
+
+/// <summary>
+/// The top of a pane, drawn as the tab chosen on GitHub Desktop's tab bar: the pane's icon and
+/// name, for Changes how many files have changed in a grey pill, as Desktop's tab has, and
+/// Desktop's blue line under them. So each pane says which it is at a glance, and where History
+/// starts under Changes with both pinned. At the right, the pin that keeps it beside the list, or
+/// lets it slide away again.
+/// </summary>
+sealed class PaneHeader : Panel
+{
+    // Pixels at 100% scale.
+    const int iconSize = 16;
+
+    GlyphButton pin = new()
+    {
+        Dock = DockStyle.Right,
+        Width = 32,
+        TabStop = false
+    };
+
+    ToolTip tip = new();
+    Font bold;
+    Font counter;
+    string title;
+    char glyph;
+    int count;
+
+    public event Action? PinClicked;
+
+    public PaneHeader(string title, char glyph)
+    {
+        this.title = title;
+        this.glyph = glyph;
+        (bold, counter) = Fonts(Font);
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
+        BackColor = ExplorerStyle.Window;
+        Dock = DockStyle.Top;
+        Height = 34;
+        Padding = new(0, 3, 4, 6);
+        pin.Click += (_, _) => PinClicked?.Invoke();
+        Controls.Add(pin);
+        Pinned = false;
+    }
+
+    // The name semibold, and the count in Desktop's 9 pixel semibold.
+    static (Font Bold, Font Counter) Fonts(Font font) =>
+        (DesktopStyle.Semibold(font, font.SizeInPoints), DesktopStyle.Semibold(font, Math.Max(6f, font.SizeInPoints * 0.75f)));
+
+    protected override void OnFontChanged(EventArgs args)
+    {
+        base.OnFontChanged(args);
+        bold.Dispose();
+        counter.Dispose();
+        (bold, counter) = Fonts(Font);
+        Invalidate();
+    }
+
+    /// <summary>
+    /// The count in the pill after the name, none when 0: how many files have changed.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int Count
+    {
+        get => count;
+        set
+        {
+            if (count == value)
+            {
+                return;
+            }
+
+            count = value;
+            Invalidate();
+        }
+    }
+
+    /// <summary>
+    /// Whether the pane is pinned: the pin then offers to unpin it.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Pinned
+    {
+        get;
+        set
+        {
+            field = value;
+            if (value)
+            {
+                pin.Text = Icons.Unpin.ToString();
+                pin.AccessibleName = $"Unpin {title}";
+                pin.AccessibleDescription = "Unpin: slide away when not in use";
+                tip.SetToolTip(pin, pin.AccessibleDescription);
+                return;
+            }
+
+            pin.Text = Icons.Pin.ToString();
+            pin.AccessibleName = $"Pin {title}";
+            pin.AccessibleDescription = "Pin: keep beside the list";
+            tip.SetToolTip(pin, pin.AccessibleDescription);
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs args)
+    {
+        base.OnPaint(args);
+        var graphics = args.Graphics;
+        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        var inset = LogicalToDeviceUnits(DesktopStyle.Inset);
+        var bar = LogicalToDeviceUnits(3);
+
+        // What is drawn sits in the room above the line under it.
+        var middle = (Height - bar) / 2;
+        var size = LogicalToDeviceUnits(iconSize);
+        var text = DesktopStyle.Text;
+        graphics.DrawImageUnscaled(Icons.Bitmap(glyph, size, text), inset, middle - size / 2);
+
+        var left = inset + size + LogicalToDeviceUnits(6);
+        var room = Math.Max(0, pin.Left - left);
+        var measured = TextRenderer.MeasureText(graphics, title, bold, Size.Empty, flags);
+        var titleWidth = Math.Min(measured.Width, room);
+        TextRenderer.DrawText(graphics, title, bold, new Rectangle(left, middle - measured.Height / 2, titleWidth, measured.Height), text, flags | TextFormatFlags.EndEllipsis);
+        var right = left + titleWidth;
+
+        if (count > 0)
+        {
+            var number = count.ToString("N0", CultureInfo.CurrentCulture);
+            var numberSize = TextRenderer.MeasureText(graphics, number, counter, Size.Empty, flags);
+            var pill = new Rectangle(
+                right + LogicalToDeviceUnits(5),
+                middle - numberSize.Height / 2 - LogicalToDeviceUnits(2),
+                numberSize.Width + LogicalToDeviceUnits(10),
+                numberSize.Height + LogicalToDeviceUnits(4));
+            if (pill.Right < pin.Left)
+            {
+                DesktopStyle.DrawPill(graphics, pill, pill.Height / 2, DesktopStyle.Pill, number, counter, DesktopStyle.PillText);
+                right = pill.Right;
+            }
+        }
+
+        // The line along the foot, and the blue line of the tab chosen under the icon and name.
+        using (var pen = new Pen(DesktopStyle.Border))
+        {
+            graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+        }
+
+        using var blue = new SolidBrush(DesktopStyle.Blue);
+        graphics.FillRectangle(blue, 0, Height - bar, right + inset, bar);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            bold.Dispose();
+            counter.Dispose();
+            tip.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// A button filled with GitHub Desktop's blue, as its Commit is, its text white, in two parts, the
+/// second bold: "Commit 2 files to " and the branch. A shade lighter under the pointer, and faded
+/// while it does nothing, as Desktop has it.
+/// </summary>
+sealed class AccentButton : Button
+{
+    bool hovered;
+    Font bold;
+
+    public AccentButton()
+    {
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
+        bold = new(Font, FontStyle.Bold);
+    }
+
+    /// <summary>
+    /// The bold part, after <see cref="Control.Text"/>.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string Bold { get; set; } = "";
+
+    protected override void OnMouseEnter(EventArgs args)
+    {
+        base.OnMouseEnter(args);
+        hovered = true;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs args)
+    {
+        base.OnMouseLeave(args);
+        hovered = false;
+        Invalidate();
+    }
+
+    protected override void OnEnabledChanged(EventArgs args)
+    {
+        base.OnEnabledChanged(args);
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs args)
+    {
+        var graphics = args.Graphics;
+        var behind = Parent?.BackColor ?? ExplorerStyle.Window;
+        graphics.Clear(behind);
+        var fill = DesktopStyle.Blue;
+        if (hovered &&
+            Enabled)
+        {
+            fill = DesktopStyle.BlueHover;
+        }
+
+        var text = DesktopStyle.OnBlue;
+
+        // Desktop's opacity of 0.6: the button, and its text, part way to what is behind it.
+        if (!Enabled)
+        {
+            fill = ExplorerStyle.Blend(fill, behind, 0.4f);
+            text = ExplorerStyle.Blend(text, behind, 0.4f);
+        }
+
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var brush = new SolidBrush(fill))
+        using (var shape = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(0, 0, Width - 1, Height - 1), LogicalToDeviceUnits(DesktopStyle.Radius)))
+        {
+            graphics.FillPath(brush, shape);
+        }
+
+        graphics.SmoothingMode = SmoothingMode.Default;
+        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
+        var plain = TextRenderer.MeasureText(graphics, Text, Font, Size.Empty, flags);
+        var strong = TextRenderer.MeasureText(graphics, Bold, bold, Size.Empty, flags);
+        var width = Math.Min(plain.Width + strong.Width, Width - LogicalToDeviceUnits(16));
+        var x = (Width - width) / 2;
+        var y = (Height - plain.Height) / 2;
+        TextRenderer.DrawText(graphics, Text, Font, new Point(x, y), text, flags);
+        var boldBounds = Rectangle.FromLTRB(x + plain.Width, y, Width - LogicalToDeviceUnits(8), y + strong.Height);
+        TextRenderer.DrawText(graphics, Bold, bold, boldBounds, text, flags | TextFormatFlags.EndEllipsis);
+
+        if (Focused &&
+            ShowFocusCues)
+        {
+            ControlPaint.DrawFocusRectangle(graphics, Rectangle.Inflate(ClientRectangle, -3, -3), text, fill);
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            bold.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// A list of rows drawn by its owner, holding none itself: it is told how many there are and
+/// draws each as it shows, as Find Results' list does. Through a buffer, so a refresh doesn't
+/// flicker.
+/// </summary>
+sealed class RowList : ListView
+{
+    public RowList(int rowHeight)
+    {
+        DoubleBuffered = true;
+        View = View.Details;
+        HeaderStyle = ColumnHeaderStyle.None;
+        FullRowSelect = true;
+        HideSelection = false;
+        BorderStyle = BorderStyle.None;
+        BackColor = ExplorerStyle.Window;
+        VirtualMode = true;
+        OwnerDraw = true;
+        Dock = DockStyle.Fill;
+        Columns.Add("", 100);
+
+        // A row as tall as asked: a list view's rows are as tall as its small icons.
+        SmallImageList = new()
+        {
+            ImageSize = new(1, rowHeight)
+        };
+        RetrieveVirtualItem += (_, args) => args.Item = new("");
+        DrawColumnHeader += (_, args) => args.DrawDefault = true;
+
+        // Drawn as the row's one cell, not as the row: the theme fills a selected row with its
+        // own shade after the row is drawn, and before its cells are.
+        DrawItem += (_, _) => { };
+        DrawSubItem += (_, args) => DrawRow?.Invoke(args.Graphics, args.Bounds, args.ItemIndex);
+        Resize += (_, _) => FitColumn();
+        HandleCreated += (_, _) =>
+        {
+            _ = SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
+            FitColumn();
+        };
+    }
+
+    /// <summary>
+    /// Draws a row, in the bounds given, by its index.
+    /// </summary>
+    public event Action<Graphics, Rectangle, int>? DrawRow;
+
+    /// <summary>
+    /// How many rows there are, the column fitted to them.
+    /// </summary>
+    public void SetRows(int count)
+    {
+        VirtualListSize = count;
+        FitColumn();
+    }
+
+    // The one column across the list, less a scrollbar's room when the rows run past the
+    // bottom: as wide as the list, a scrollbar coming would bring one along the bottom too.
+    void FitColumn()
+    {
+        if (Columns.Count == 0)
+        {
+            return;
+        }
+
+        // From the list's own height, not its client area's, which a scrollbar along the bottom
+        // takes from: the width set here would bring that scrollbar and take it away again,
+        // round and round.
+        var width = Width;
+        var rowHeight = SmallImageList?.ImageSize.Height ?? 1;
+        if (IsHandleCreated &&
+            VirtualListSize > 0)
+        {
+            rowHeight = Math.Max(rowHeight, GetItemRect(0).Height);
+        }
+
+        if (VirtualListSize * rowHeight > Height)
+        {
+            width -= SystemInformation.VerticalScrollBarWidth;
+        }
+
+        width = Math.Max(1, width);
+        if (Columns[0].Width != width)
+        {
+            Columns[0].Width = width;
+        }
+    }
+
+    /// <summary>
+    /// The rows selected, in order.
+    /// </summary>
+    public List<int> Selected()
+    {
+        var rows = new List<int>(SelectedIndices.Count);
+        foreach (int index in SelectedIndices)
+        {
+            rows.Add(index);
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Whether the row under the pointer is shaded, as Desktop's lists of files shade it. Its list
+    /// of commits doesn't.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool ShadesHovered { get; set; } = true;
+
+    int hovered = -1;
+
+    /// <summary>
+    /// The row under the pointer, -1 for none.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal int Hovered
+    {
+        get => hovered;
+        set
+        {
+            if (hovered == value)
+            {
+                return;
+            }
+
+            InvalidateRow(hovered);
+            hovered = value;
+            InvalidateRow(hovered);
+        }
+    }
+
+    void InvalidateRow(int index)
+    {
+        if (index >= 0 &&
+            index < VirtualListSize &&
+            IsHandleCreated)
+        {
+            Invalidate(GetItemRect(index));
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs args)
+    {
+        base.OnMouseMove(args);
+        if (ShadesHovered)
+        {
+            Hovered = HitTest(args.Location).Item?.Index ?? -1;
+        }
+    }
+
+    protected override void OnMouseLeave(EventArgs args)
+    {
+        base.OnMouseLeave(args);
+        Hovered = -1;
+    }
+
+    const int leftButtonDown = 0x0201;
+    const int leftButtonUp = 0x0202;
+
+    /// <summary>
+    /// Whether a click on the row already picked, the only one, picks none, as in History, where
+    /// that puts the commit's files away. Not with Ctrl or Shift held, which pick as they always do.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool DeselectsOnClick { get; set; }
+
+    /// <summary>
+    /// A click on the row already picked picked none. See <see cref="DeselectsOnClick"/>.
+    /// </summary>
+    public event Action? Deselected;
+
+    const int leftButtonDoubleClick = 0x0203;
+    const int timerMessage = 0x0113;
+
+    // The list's own timer, comctl32's IDT_NAMEEDIT, set by a click on the row already picked:
+    // once the double-click time has passed with no second click, it picks that row again, and
+    // starts renaming it where rows can be renamed. Left to run, it picked the commit again a
+    // moment after the click had picked none.
+    const int clickedPickedTimer = 42;
+
+    // The row pressed while it was the one picked, to pick none once the button comes up on it.
+    int pressedPicked = -1;
+
+    // A click picked none, and the list's timer is yet to pick the row again.
+    bool unpicked;
+
+    protected override void WndProc(ref Message message)
+    {
+        if (!DeselectsOnClick)
+        {
+            base.WndProc(ref message);
+            return;
+        }
+
+        if (message.Msg == timerMessage &&
+            unpicked &&
+            message.WParam == clickedPickedTimer)
+        {
+            unpicked = false;
+            KillTimer(Handle, clickedPickedTimer);
+            return;
+        }
+
+        if (message.Msg == leftButtonDoubleClick)
+        {
+            unpicked = false;
+        }
+
+        if (message.Msg != leftButtonDown &&
+            message.Msg != leftButtonUp)
+        {
+            base.WndProc(ref message);
+            return;
+        }
+
+        var point = PointOf(message.LParam);
+        if (message.Msg == leftButtonUp)
+        {
+            base.WndProc(ref message);
+            ReleasedOn(point);
+            return;
+        }
+
+        pressedPicked = -1;
+        unpicked = false;
+        if (ModifierKeys == Keys.None &&
+            HitTest(point).Item is { } item &&
+            SelectedIndices.Count == 1 &&
+            SelectedIndices.Contains(item.Index))
+        {
+            pressedPicked = item.Index;
+        }
+
+        // The list doesn't come back from a press until the button is up, or a drag starts.
+        base.WndProc(ref message);
+        if ((MouseButtons & MouseButtons.Left) == 0)
+        {
+            ReleasedOn(point);
+        }
+    }
+
+    void ReleasedOn(Point point)
+    {
+        var pressed = pressedPicked;
+        pressedPicked = -1;
+        if (pressed < 0 ||
+            HitTest(point).Item?.Index != pressed ||
+            !SelectedIndices.Contains(pressed))
+        {
+            return;
+        }
+
+        SelectedIndices.Clear();
+        unpicked = true;
+        Deselected?.Invoke();
+    }
+
+    static Point PointOf(IntPtr lParam) =>
+        new((short) (lParam & 0xFFFF), (short) ((lParam >> 16) & 0xFFFF));
+
+    /// <summary>
+    /// A row's background, as Desktop draws it: blue when picked in a list with the focus, a grey
+    /// when picked in one without, the folder no longer dimmed, and a lighter grey under the
+    /// pointer. The system's highlight when picked with high contrast on. The colours for text on
+    /// it follow, and whether it is drawn as text on the blue is, for icons drawn in the text's
+    /// colour rather than their own.
+    /// </summary>
+    public (Color Background, Color Text, Color Secondary, bool OnBlue) Colours(int index)
+    {
+        var selected = SelectedIndices.Contains(index);
+        if (selected &&
+            (Focused || SystemInformation.HighContrast))
+        {
+            return (DesktopStyle.Blue, DesktopStyle.OnBlue, DesktopStyle.OnBlue, true);
+        }
+
+        if (index == hovered &&
+            ShadesHovered)
+        {
+            return (DesktopStyle.Hover, DesktopStyle.Text, DesktopStyle.SecondaryText, false);
+        }
+
+        if (selected)
+        {
+            return (DesktopStyle.SelectedUnfocused, DesktopStyle.Text, DesktopStyle.Text, false);
+        }
+
+        return (DesktopStyle.Background, DesktopStyle.Text, DesktopStyle.SecondaryText, false);
+    }
+
+    /// <summary>
+    /// The line along the foot of every row, as Desktop has between them.
+    /// </summary>
+    public static void DrawRowLine(Graphics graphics, Rectangle bounds)
+    {
+        using var pen = new Pen(DesktopStyle.Border);
+        graphics.DrawLine(pen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            SmallImageList?.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// A list's tooltip that follows the pointer from row to row, and from part to part of a row,
+/// each shown once the pointer rests on it. A tooltip set on the list as a whole, its text changed
+/// as the pointer goes from row to row, showed only now and then: Windows takes the list for one
+/// thing, whose tip it shows once the pointer comes onto it, and not again until it leaves.
+/// </summary>
+sealed class RowTip : IDisposable
+{
+    ToolTip tip = new();
+    Timer wait = new();
+    Control list;
+    Func<Point, string?> textAt;
+    string? pending;
+    bool visible;
+
+    /// <param name="textAt">The tip at a point of the list, null for none.</param>
+    public RowTip(Control list, Func<Point, string?> textAt)
+    {
+        this.list = list;
+        this.textAt = textAt;
+        wait.Tick += (_, _) => Show();
+        list.MouseMove += (_, args) => Moved(args.Location);
+        list.MouseLeave += (_, _) => Hide();
+        list.MouseDown += (_, _) => Hide();
+        list.MouseWheel += (_, _) => Hide();
+        list.KeyDown += (_, _) => Hide();
+    }
+
+    /// <summary>
+    /// The tip waiting to show, or showing. For tests.
+    /// </summary>
+    internal string? Pending => pending;
+
+    internal void Moved(Point point)
+    {
+        var text = textAt(point);
+        if (text == pending)
+        {
+            return;
+        }
+
+        Hide();
+        pending = text;
+        if (text == null)
+        {
+            return;
+        }
+
+        wait.Interval = Math.Max(1, tip.InitialDelay);
+        wait.Start();
+    }
+
+    void Show()
+    {
+        wait.Stop();
+        if (pending == null ||
+            !list.IsHandleCreated ||
+            !list.ClientRectangle.Contains(list.PointToClient(Cursor.Position)))
+        {
+            return;
+        }
+
+        // Below the pointer, as Windows puts a tooltip, so it is never under it.
+        var at = list.PointToClient(Cursor.Position);
+        at.Y += list.LogicalToDeviceUnits(20);
+        tip.Show(pending, list, at, tip.AutoPopDelay);
+        visible = true;
+    }
+
+    void Hide()
+    {
+        wait.Stop();
+        pending = null;
+        if (visible)
+        {
+            tip.Hide(list);
+            visible = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        wait.Dispose();
+        tip.Dispose();
+    }
+}
+
+/// <summary>
+/// A pane's right-click menu, as QuickMenu builds it, what is picked running once it has closed.
+/// The pane is told while it is open, so it doesn't slide away from under it.
+/// </summary>
+static class PaneMenu
+{
+    public static void Show(Control owner, Point location, IReadOnlyList<QuickMenu.Command?> commands, Action<bool> open)
+    {
+        if (commands.Count == 0)
+        {
+            return;
+        }
+
+        Action? chosen = null;
+        var strip = QuickMenu.Build(commands, null, _ => chosen = _);
+        open(true);
+        strip.Closed += (_, _) => strip.BeginInvoke(
+            () =>
+            {
+                strip.Dispose();
+                open(false);
+                chosen?.Invoke();
+            });
+        strip.Show(owner, location);
+    }
+}
+
+/// <summary>
+/// A text box of several lines drawn as the address bar is: the rounded background, and the
+/// accent line along the bottom while it has the focus.
+/// </summary>
+sealed class FramedArea : Control
+{
+    public FrameTextBox Box { get; } = new()
+    {
+        BorderStyle = BorderStyle.None,
+        Multiline = true,
+        AcceptsReturn = true,
+        Dock = DockStyle.Fill
+    };
+
+    public FramedArea()
+    {
+        SetStyle(
+            ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.ResizeRedraw |
+            ControlStyles.UserPaint,
+            true);
+        Padding = new(6, 5, 4, 5);
+        Box.BackColor = ExplorerStyle.Window;
+        Box.Enter += (_, _) => Invalidate();
+        Box.Leave += (_, _) => Invalidate();
+        Controls.Add(Box);
+    }
+
+    /// <summary>
+    /// Whether it is drawn as GitHub Desktop draws its text boxes: see
+    /// <see cref="TextFrame.DrawDesktop"/>.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Desktop
+    {
+        get => desktop;
+        set
+        {
+            desktop = value;
+
+            // Desktop's 5 pixels round the text, and one for the border and one for the ring.
+            Padding = value ? new(7, 6, 6, 6) : new(6, 5, 4, 5);
+            Invalidate();
+        }
+    }
+
+    bool desktop;
+
+    // The box docked inside the padding. A Control, unlike a Panel, docks its children over all
+    // of itself, padding or not, so the box covered the frame, its border and its rounded corners,
+    // and its text ran from the very edge.
+    public override Rectangle DisplayRectangle
+    {
+        get
+        {
+            var bounds = ClientRectangle;
+            return Rectangle.FromLTRB(
+                bounds.Left + Padding.Left,
+                bounds.Top + Padding.Top,
+                Math.Max(bounds.Left + Padding.Left, bounds.Right - Padding.Right),
+                Math.Max(bounds.Top + Padding.Top, bounds.Bottom - Padding.Bottom));
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs args)
+    {
+        if (desktop)
+        {
+            TextFrame.DrawDesktop(args.Graphics, this, Box.Focused);
+            return;
+        }
+
+        TextFrame.Draw(args.Graphics, this, Box.Focused);
+    }
+}
+
+/// <summary>
+/// Where a tick is drawn, and how: an accent box with a tick in it, an empty box, or, for some of
+/// several, a dash.
+/// </summary>
+static class Ticks
+{
+    // Pixels at 100% scale: near Desktop's 13 pixel tick boxes.
+    public const int Size = 14;
+
+    public static void Draw(Graphics graphics, Control control, Rectangle box, bool? ticked, bool enabled)
+    {
+        var radius = control.LogicalToDeviceUnits(3);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var accent = DesktopStyle.Tick;
+        var mark = Color.White;
+        if (SystemInformation.HighContrast)
+        {
+            accent = SystemColors.Highlight;
+            mark = SystemColors.HighlightText;
+        }
+
+        if (!enabled)
+        {
+            accent = ExplorerStyle.Blend(accent, ExplorerStyle.Window, 0.55f);
+        }
+
+        if (ticked == false)
+        {
+            using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(box.Left, box.Top, box.Right - 1, box.Bottom - 1), radius);
+            using (var inside = new SolidBrush(DesktopStyle.Background))
+            {
+                // White inside on the blue of a row picked, as a tick box is.
+                graphics.FillPath(inside, outline);
+            }
+
+            using var pen = new Pen(DesktopStyle.BoxBorder);
+            graphics.DrawPath(pen, outline);
+            graphics.SmoothingMode = SmoothingMode.Default;
+            return;
+        }
+
+        using (var shape = ExplorerStyle.RoundedRectangle(box, radius))
+        using (var brush = new SolidBrush(accent))
+        {
+            graphics.FillPath(brush, shape);
+        }
+
+        graphics.SmoothingMode = SmoothingMode.Default;
+        if (ticked == true)
+        {
+            var size = box.Width - control.LogicalToDeviceUnits(4);
+            graphics.DrawImage(Icons.Bitmap(Icons.CheckMark, size, mark), box.Left + (box.Width - size) / 2, box.Top + (box.Height - size) / 2, size, size);
+            return;
+        }
+
+        using var dash = new SolidBrush(mark);
+        var thickness = Math.Max(2, control.LogicalToDeviceUnits(2));
+        var inset = control.LogicalToDeviceUnits(4);
+        graphics.FillRectangle(dash, box.Left + inset, box.Top + (box.Height - thickness) / 2, box.Width - inset * 2, thickness);
+    }
+}

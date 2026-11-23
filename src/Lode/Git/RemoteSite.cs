@@ -5,6 +5,18 @@
 sealed record RemoteSite(string Name, string Url)
 {
     /// <summary>
+    /// A commit's page on the site, for History's View on: GitLab's under /-/, Bitbucket's
+    /// under /commits/.
+    /// </summary>
+    public string CommitUrl(string sha) =>
+        Name switch
+        {
+            "GitLab" => $"{Url}/-/commit/{sha}",
+            "Bitbucket" => $"{Url}/commits/{sha}",
+            _ => $"{Url}/commit/{sha}"
+        };
+
+    /// <summary>
     /// The site origin is on, read from the repository's config, as git would take too long for
     /// every folder gone into. Null without an origin, or one on a site Lode doesn't know.
     /// </summary>

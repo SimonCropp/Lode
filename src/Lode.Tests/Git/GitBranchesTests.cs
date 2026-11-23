@@ -106,7 +106,7 @@ public class GitBranchesTests
 
         await Assert.That(master.Default?.Name).IsEqualTo("master");
         await Assert.That(none.Default).IsNull();
-        await Assert.That(remote.Default).IsEqualTo(new GitBranches.Branch("origin/trunk", true, DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), false));
+        await Assert.That(remote.Default).IsEqualTo(new("origin/trunk", true, DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), false));
         await Assert.That(remote.Other.Select(_ => _.Name)).IsEquivalentTo(["feature"]);
     }
 

@@ -78,6 +78,30 @@ public class PaneSplitContainerTests
         await Assert.That(painted).IsEqualTo(distance + 60);
     }
 
+    // Told once a drag ends, for the size to be kept, and not for a click that moved nothing.
+    [Test]
+    public async Task DraggedOnceADragEnds()
+    {
+        using var form = Create(out var split, out _);
+        var dragged = 0;
+        split.Dragged += () => dragged++;
+        var grip = Grip(split);
+
+        Send(split, leftButtonDown, grip);
+        Send(split, leftButtonUp, grip);
+        await Assert.That(dragged).IsEqualTo(0);
+
+        var moved = grip with
+        {
+            X = grip.X + 40
+        };
+        Send(split, leftButtonDown, grip);
+        Send(split, mouseMove, moved);
+        await Assert.That(dragged).IsEqualTo(0);
+        Send(split, leftButtonUp, moved);
+        await Assert.That(dragged).IsEqualTo(1);
+    }
+
     // Past where a pane stops shrinking, the splitter stays at the limit.
     [Test]
     public async Task DraggingPastThePaneMinimumStopsAtIt()

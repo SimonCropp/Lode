@@ -24,13 +24,13 @@ sealed class FramedTextBox : Control
         Box.Enter += (_, _) => Invalidate();
         Box.Leave += (_, _) => Invalidate();
         Controls.Add(Box);
-        Height = TextFrame.Height(Font);
+        Height = FrameHeight();
     }
 
     protected override void OnFontChanged(EventArgs args)
     {
         base.OnFontChanged(args);
-        Height = TextFrame.Height(Font);
+        Height = FrameHeight();
         PlaceBox();
     }
 
@@ -53,7 +53,7 @@ sealed class FramedTextBox : Control
     protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
     {
         base.ScaleControl(factor, specified);
-        Height = TextFrame.Height(Font);
+        Height = FrameHeight();
         PlaceBox();
     }
 
@@ -108,9 +108,60 @@ sealed class FramedTextBox : Control
             Box.PreferredHeight);
     }
 
+    /// <summary>
+    /// Whether a faint border shows without the focus too: for a box on a white background, where
+    /// the box's own white would not show where it is.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Outlined { get; set; }
+
+    /// <summary>
+    /// Whether it is drawn as GitHub Desktop draws its text boxes: see
+    /// <see cref="TextFrame.DrawDesktop"/>.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Desktop
+    {
+        get => desktop;
+        set
+        {
+            desktop = value;
+            Height = FrameHeight();
+            PlaceBox();
+            Invalidate();
+        }
+    }
+
+    bool desktop;
+
+    int FrameHeight()
+    {
+        if (desktop)
+        {
+            return TextFrame.DesktopHeight(this, Font);
+        }
+
+        return TextFrame.Height(Font);
+    }
+
     protected override void OnPaint(PaintEventArgs args)
     {
-        TextFrame.Draw(args.Graphics, this, Box.Focused);
+        if (desktop)
+        {
+            TextFrame.DrawDesktop(args.Graphics, this, Box.Focused);
+        }
+        else
+        {
+            TextFrame.Draw(args.Graphics, this, Box.Focused);
+        }
+
+        if (!desktop &&
+            Outlined &&
+            !Box.Focused)
+        {
+            TextFrame.Outline(args.Graphics, this);
+        }
+
         if (glyph is { } icon)
         {
             args.Graphics.DrawImage(Icons.Bitmap(icon, GlyphSize, ExplorerStyle.SecondaryText), GlyphBounds);
@@ -196,6 +247,75 @@ static class TextFrame
             graphics.ResetClip();
         }
 
+        graphics.SmoothingMode = SmoothingMode.Default;
+    }
+
+    /// <summary>
+    /// The box as GitHub Desktop draws its text boxes: white, its corners more rounded, with a
+    /// grey border always, dark enough to see on the grey behind it, which the focus turns blue,
+    /// with a faint blue ring outside it. A pixel is left all round for the ring. With high
+    /// contrast on, a text box's own border.
+    /// </summary>
+    public static void DrawDesktop(Graphics graphics, Control control, bool focused)
+    {
+        var bounds = control.ClientRectangle;
+        if (SystemInformation.HighContrast ||
+            !Application.RenderWithVisualStyles)
+        {
+            graphics.Clear(SystemColors.Window);
+            DrawSystemBorder(graphics, bounds, focused);
+            return;
+        }
+
+        graphics.Clear(control.Parent?.BackColor ?? SystemColors.Control);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var radius = control.LogicalToDeviceUnits(DesktopStyle.Radius);
+        using var shape = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left + 1, bounds.Top + 1, bounds.Right - 2, bounds.Bottom - 2), radius);
+        using (var window = new SolidBrush(ExplorerStyle.Window))
+        {
+            graphics.FillPath(window, shape);
+        }
+
+        var border = DesktopStyle.BoxBorder;
+        if (focused)
+        {
+            border = DesktopStyle.Blue;
+            using var ring = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), radius + 1);
+            using var ringPen = new Pen(Color.FromArgb(64, border));
+            graphics.DrawPath(ringPen, ring);
+        }
+
+        using (var pen = new Pen(border))
+        {
+            graphics.DrawPath(pen, shape);
+        }
+
+        graphics.SmoothingMode = SmoothingMode.Default;
+    }
+
+    /// <summary>
+    /// How tall a box drawn as Desktop's is: Desktop's 25 pixels, or a text box's height for a
+    /// larger font, and the pixel either side for the focus ring.
+    /// </summary>
+    public static int DesktopHeight(Control control, Font font) =>
+        Math.Max(Height(font), control.LogicalToDeviceUnits(DesktopStyle.BoxHeight)) + 2;
+
+    /// <summary>
+    /// The faint border the box has with the focus, without the accent line along the bottom.
+    /// </summary>
+    public static void Outline(Graphics graphics, Control control)
+    {
+        if (SystemInformation.HighContrast ||
+            !Application.RenderWithVisualStyles)
+        {
+            return;
+        }
+
+        var bounds = control.ClientRectangle;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), control.LogicalToDeviceUnits(4));
+        using var pen = new Pen(ExplorerStyle.TabBorder);
+        graphics.DrawPath(pen, outline);
         graphics.SmoothingMode = SmoothingMode.Default;
     }
 

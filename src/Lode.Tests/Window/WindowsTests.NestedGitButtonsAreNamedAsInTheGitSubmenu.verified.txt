@@ -22,8 +22,8 @@
     Pull,
     Switch to default branch,
     Push…,
-    Tag…,
-    Delete tag…,
+    Git tag (disabled),
+    Git delete tag (disabled),
     Discard…,
     Purge…
   ]

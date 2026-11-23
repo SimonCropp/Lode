@@ -309,17 +309,24 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// Tags the commit each repository is at with <paramref name="name"/>, then pushes the tag to
-    /// origin. One that has a tag of that name already fails, and keeps the tag it has.
+    /// Tags the commit each repository is at with <paramref name="name"/>, or
+    /// <paramref name="commit"/> where given, as History tags the commit picked, then pushes the
+    /// tag to origin. One that has a tag of that name already fails, and keeps the tag it has.
     /// </summary>
-    public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default) =>
+    public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default, string? commit = null) =>
         ForEach(
             repos,
             progress,
             cancel,
             repo =>
             {
-                var tag = GitToItsEnd(repo, cancel, "tag", name);
+                string[] arguments = ["tag", name];
+                if (commit != null)
+                {
+                    arguments = ["tag", name, commit];
+                }
+
+                var tag = GitToItsEnd(repo, cancel, arguments);
                 if (!tag.Succeeded)
                 {
                     return tag;
@@ -390,7 +397,8 @@ static class CodeCommands
             .ToList();
 
     /// <summary>
-    /// Commits every tracked change with the message, then pushes to origin.
+    /// Commits every change with the message, new files included, as the Changes pane commits
+    /// them, though not what git ignores, then pushes to origin.
     /// </summary>
     public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
@@ -404,7 +412,13 @@ static class CodeCommands
                     return new(repo, false, why);
                 }
 
-                var commit = GitToItsEnd(repo, cancel, "commit", "-am", message);
+                var add = GitToItsEnd(repo, cancel, "add", "--all");
+                if (!add.Succeeded)
+                {
+                    return add;
+                }
+
+                var commit = GitToItsEnd(repo, cancel, "commit", "-m", message);
 
                 // Nothing to commit is fine: there may still be commits to push.
                 if (!commit.Succeeded &&
@@ -420,11 +434,11 @@ static class CodeCommands
                 };
             });
 
-    // Why commit -a is not to be run in a repository, or null where it can be. With files still
-    // in conflict, from a pull say, it would commit them as they are, the markers in them, as
-    // the merge settled, and Push would send that. With no branch checked out, as part way
-    // through a rebase, or on a tag, it would make a commit no branch has, which Push has
-    // nowhere to send, and the next switch leaves behind.
+    // Why Push is not to commit in a repository, or null where it can. With files still in
+    // conflict, from a pull say, it would commit them as they are, the markers in them, as the
+    // merge settled, and send that. With no branch checked out, as part way through a rebase, or
+    // on a tag, it would make a commit no branch has, which it has nowhere to send, and the next
+    // switch leaves behind.
     static string? WhyNotCommit(string repo)
     {
         var unmerged = Git(repo, "ls-files", "--unmerged");
@@ -447,10 +461,11 @@ static class CodeCommands
         return null;
     }
 
-    // Whether commit -a had nothing to commit: no tracked file changed, staged or not. Asked of
-    // git, rather than read from what the commit said, which it words one way for a clean
-    // folder and another for one with files it doesn't track. Those don't count, as commit -a
-    // leaves them, and nor do changes inside a submodule, which it leaves too.
+    // Whether the commit had nothing to commit: everything added, nothing staged. Asked of git,
+    // rather than read from what the commit said, which it words one way for a clean folder and
+    // another for one with files it doesn't track, which add leaves where it can't add them, a
+    // repository of its own inside say. Nor do changes inside a submodule count, which add
+    // leaves too.
     static bool NothingToCommit(string repo)
     {
         var status = Git(repo, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty");
@@ -460,6 +475,22 @@ static class CodeCommands
             Output.Length: 0
         };
     }
+
+    /// <summary>
+    /// How many files the repositories have that git doesn't track yet, nor ignores: the new
+    /// files Push adds, for its question to say. A folder of them counts each file in it.
+    /// </summary>
+    public static int NewFiles(IReadOnlyList<string> repos) =>
+        repos.Sum(_ =>
+        {
+            var result = Git(_, "ls-files", "--others", "--exclude-standard", "-z");
+            if (!result.Succeeded)
+            {
+                return 0;
+            }
+
+            return result.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries).Length;
+        });
 
     /// <summary>
     /// Throws away every uncommitted change, staged or not, and deletes what git doesn't track,
@@ -582,36 +613,7 @@ static class CodeCommands
 
         try
         {
-            // Git writes file names as UTF-8, whatever the console's code page.
-            var startInfo = new ProcessStartInfo("git")
-            {
-                WorkingDirectory = repo,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
-            };
-            foreach (var argument in arguments)
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            // Nobody can answer a prompt in a hidden window; fail instead of waiting forever.
-            // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
-            // agent holding it, or a host whose key is not known yet.
-            startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-
-            // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
-            // File names still come as UTF-8.
-            startInfo.Environment["LC_ALL"] = "C";
-            if (network &&
-                NoSshCommandSet(repo, startInfo))
-            {
-                startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
-            }
-
+            var startInfo = StartInfo(repo, network, arguments);
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
             // Cancel.None, not the token: cancelled, git is stopped, which ends its output, and
@@ -643,6 +645,131 @@ static class CodeCommands
     }
 
     const string cancelled = "Cancelled";
+
+    // How every git is started: in a hidden window, its output read as UTF-8, as git writes file
+    // names whatever the console's code page.
+    static ProcessStartInfo StartInfo(string repo, bool network, IEnumerable<string> arguments)
+    {
+        var startInfo = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = repo,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        // Nobody can answer a prompt in a hidden window; fail instead of waiting forever.
+        // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
+        // agent holding it, or a host whose key is not known yet.
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+        // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
+        // File names still come as UTF-8.
+        startInfo.Environment["LC_ALL"] = "C";
+        if (network &&
+            NoSshCommandSet(repo, startInfo))
+        {
+            startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
+        }
+
+        return startInfo;
+    }
+
+    /// <summary>
+    /// What git wrote to its output, kept apart from what it wrote to its error stream, for a
+    /// command whose output is parsed: a warning there would read as more of the output.
+    /// </summary>
+    internal sealed record GitRead(bool Succeeded, string Output, string Error);
+
+    /// <summary>
+    /// Runs git reading its output alone, as <see cref="GitRead"/> has it. <paramref name="input"/>,
+    /// when given, is written to git, as git credential fill reads what it is asked for.
+    /// </summary>
+    internal static GitRead GitOutput(string repo, Cancel cancel, string[] arguments, string? input = null)
+    {
+        if (cancel.IsCancellationRequested)
+        {
+            return new(false, "", cancelled);
+        }
+
+        try
+        {
+            var startInfo = StartInfo(repo, network: false, arguments);
+            if (input != null)
+            {
+                startInfo.RedirectStandardInput = true;
+                startInfo.StandardInputEncoding = new UTF8Encoding(false);
+            }
+
+            using var process = Process.Start(startInfo)!;
+            using var stopping = cancel.Register(() => Stop(process));
+            var error = process.StandardError.ReadToEndAsync(Cancel.None);
+            if (input != null)
+            {
+                process.StandardInput.Write(input);
+                process.StandardInput.Close();
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            if (cancel.IsCancellationRequested)
+            {
+                return new(false, output, cancelled);
+            }
+
+            return new(process.ExitCode == 0, output, error.Result.Trim());
+        }
+        catch (Exception exception)
+        {
+            return new(false, "", exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Runs git writing what it outputs, byte for byte, to <paramref name="path"/>: a file as a
+    /// commit had it, which may not be text. False when git failed, or was cancelled.
+    /// </summary>
+    internal static bool GitToFile(string repo, string path, Cancel cancel, params string[] arguments)
+    {
+        if (cancel.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        try
+        {
+            var startInfo = StartInfo(repo, network: false, arguments);
+            using var process = Process.Start(startInfo)!;
+            using var stopping = cancel.Register(() => Stop(process));
+            var error = process.StandardError.ReadToEndAsync(Cancel.None);
+            using (var file = File.Create(path))
+            {
+                process.StandardOutput.BaseStream.CopyTo(file);
+            }
+
+            process.WaitForExit();
+            _ = error.Result;
+            return process.ExitCode == 0 &&
+                   !cancel.IsCancellationRequested;
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    Win32Exception or
+                    InvalidOperationException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// What git wrote, as a terminal would show it, giving <paramref name="progress"/> each line

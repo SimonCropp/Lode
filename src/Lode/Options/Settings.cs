@@ -162,6 +162,51 @@ sealed class Settings
         }
     }
 
+    // Which of the Changes and History panes are pinned beside the list, for each repository
+    // either was pinned in. Neither pinned is the default, and isn't noted. The most recently
+    // changed last, as FolderSorts are.
+    public List<PinnedPanes> PinnedPanes { get; set; } = [];
+
+    const int maximumPinnedPanes = 500;
+
+    public PinnedPanes? PinnedPanesOf(string repo) =>
+        PinnedPanes.FindLast(_ => Locations.Same(_.Repo, repo));
+
+    /// <summary>
+    /// Notes which panes are pinned for a repository, or forgets it when neither is.
+    /// </summary>
+    public void SetPinnedPanes(string repo, bool changes, bool history)
+    {
+        PinnedPanes.RemoveAll(_ => Locations.Same(_.Repo, repo));
+        if (!changes &&
+            !history)
+        {
+            return;
+        }
+
+        PinnedPanes.Add(new(repo, changes, history));
+        if (PinnedPanes.Count > maximumPinnedPanes)
+        {
+            PinnedPanes.RemoveRange(0, PinnedPanes.Count - maximumPinnedPanes);
+        }
+    }
+
+    // How wide the Changes and History panes are, at 100% scale, pinned or slid out. 0 for the
+    // width they start at.
+    public int PaneWidth { get; set; }
+
+    // How much of the column Changes takes when both panes are pinned, from 0 to 1. 0 for half.
+    public double PaneSplit { get; set; }
+
+    // How the tabs down the window's right edge are labelled: each pane's icon with its name
+    // written down the strip, its name across under the icon, or the icon alone. Chosen from the
+    // strip's right-click menu. See EdgeStrip.
+    public StripLabels StripLabels { get; set; }
+
+    // The Azure DevOps organizations added in Clone, to list the repositories of beside those of
+    // the organizations the code folder has clones from.
+    public List<string> AzureDevOpsOrganizations { get; set; } = [];
+
     // The tree's sections (Pinned, Recent) the user collapsed, so they stay that way.
     public List<string> CollapsedSections { get; set; } = [];
 
@@ -507,6 +552,11 @@ sealed class Settings
 /// How a folder is sorted: by which of the file list's columns, by its key, and which way.
 /// </summary>
 sealed record FolderSort(string Folder, string Column, bool Ascending);
+
+/// <summary>
+/// Which of the Changes and History panes are pinned for a repository.
+/// </summary>
+sealed record PinnedPanes(string Repo, bool Changes, bool History);
 
 /// <summary>
 /// Whether an action shows as a button on the actions bar, in the right-click menu, or both, and

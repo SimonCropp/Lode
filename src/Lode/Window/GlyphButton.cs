@@ -47,6 +47,28 @@ sealed class GlyphButton : Button
         Invalidate();
     }
 
+    /// <summary>
+    /// Whether what the button turns on is on: then it keeps the pressed shade, as a toggle button
+    /// on a toolbar does, Changes' filter shown say.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Checked
+    {
+        get => isChecked;
+        set
+        {
+            if (isChecked == value)
+            {
+                return;
+            }
+
+            isChecked = value;
+            Invalidate();
+        }
+    }
+
+    bool isChecked;
+
     // Drawn here in full, not by Button, whose flat look has square corners.
     protected override void OnPaint(PaintEventArgs args)
     {
@@ -54,10 +76,10 @@ sealed class GlyphButton : Button
         var background = Parent?.BackColor ?? SystemColors.Control;
         graphics.Clear(background);
         var highlighted = Enabled &&
-                          (hovered || pressed);
+                          (hovered || pressed || isChecked);
         if (highlighted)
         {
-            var shade = ExplorerStyle.Highlighted(background, pressed);
+            var shade = ExplorerStyle.Highlighted(background, pressed || (isChecked && !hovered));
 
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             using var brush = new SolidBrush(shade);

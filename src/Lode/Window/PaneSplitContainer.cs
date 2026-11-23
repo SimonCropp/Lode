@@ -1,4 +1,14 @@
 /// <summary>
+/// The line down a <see cref="PaneSplitContainer"/>'s splitter.
+/// </summary>
+enum SplitterLine
+{
+    Faint,
+    Plain,
+    None
+}
+
+/// <summary>
 /// A split container whose splitter works like File Explorer's: dragging it resizes the panes as
 /// the mouse moves, and pressing it leaves the focus where it was, so a click that does not drag
 /// changes nothing. SplitContainer's own splitter takes the focus when pressed and is dragged as
@@ -13,8 +23,10 @@ sealed class PaneSplitContainer : SplitContainer
     const uint redrawAllChildren = 0x0080;
     const uint redrawUpdateNow = 0x0100;
 
-    // While the splitter is being dragged, how far into it the mouse pressed it.
+    // While the splitter is being dragged, how far into it the mouse pressed it, and whether it
+    // has moved it yet.
     int? grip;
+    bool moved;
 
     public PaneSplitContainer()
     {
@@ -25,13 +37,38 @@ sealed class PaneSplitContainer : SplitContainer
         // (see OnPaint), as Explorer has between its panes. In the window's gray, it joined
         // the gray track of the tree's scrollbar into a wide gray bar.
         BackColor = ExplorerStyle.Window;
+
+        // The splitter painted again wherever it goes. SplitContainer leaves it to Windows to
+        // paint what moving the panes uncovers, which it didn't always: dragged, or the container
+        // resized, the line could be missing, and nothing between what was above and below it.
+        SplitterMoved += (_, _) => Invalidate(SplitterRectangle);
+        Resize += (_, _) => Invalidate(SplitterRectangle);
     }
+
+    /// <summary>
+    /// The line down the splitter: barely there, as between the tree and the list; plain, in the
+    /// colour of the line under the command bar, as between the list and the Changes and History
+    /// panes beside it, and between those two; or none, where a pane draws its own.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal SplitterLine Line { get; set; }
 
     protected override void OnPaint(PaintEventArgs args)
     {
         base.OnPaint(args);
+        if (Line == SplitterLine.None)
+        {
+            return;
+        }
+
         var bounds = SplitterRectangle;
-        using var pen = new Pen(ExplorerStyle.PaneDivider);
+        var colour = ExplorerStyle.PaneDivider;
+        if (Line == SplitterLine.Plain)
+        {
+            colour = ExplorerStyle.Divider;
+        }
+
+        using var pen = new Pen(colour);
         if (Orientation == Orientation.Vertical)
         {
             var x = bounds.Left + bounds.Width / 2;
@@ -96,6 +133,7 @@ sealed class PaneSplitContainer : SplitContainer
         // Not base, which is what takes the focus and starts the hatched bar. WinForms has
         // already captured the mouse, so the moves keep coming wherever it goes.
         grip = Along(args.Location) - SplitterDistance;
+        moved = false;
     }
 
     protected override void OnMouseMove(MouseEventArgs args)
@@ -117,6 +155,7 @@ sealed class PaneSplitContainer : SplitContainer
         }
 
         SplitterDistance = distance;
+        moved = true;
         // The panes painted now, before the next move is taken. Windows paints only once no
         // other message is waiting, and while the mouse keeps moving one always is, so until it
         // stopped, what a pane grew into showed what was there before: for the folder tree,
@@ -126,10 +165,43 @@ sealed class PaneSplitContainer : SplitContainer
         RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, redrawUpdateNow | redrawAllChildren);
     }
 
+    /// <summary>
+    /// Raised once a drag of the splitter ends, for the size it was dragged to to be kept.
+    /// SplitterMoved is raised too as the window resizes, or the distance is set.
+    /// </summary>
+    internal event Action? Dragged;
+
     protected override void OnMouseUp(MouseEventArgs args)
     {
+        var dragged = grip != null && moved;
         grip = null;
+        moved = false;
         base.OnMouseUp(args);
+        if (dragged)
+        {
+            Dragged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Makes the second pane <paramref name="size"/> wide, or tall, as far as the panes' least
+    /// sizes let it. Nothing while the container has no room, minimized say, where SplitContainer
+    /// would throw for a distance that doesn't fit.
+    /// </summary>
+    internal void SetPanel2Size(int size)
+    {
+        var length = Orientation == Orientation.Vertical ? Width : Height;
+        var room = length - SplitterWidth;
+        if (room <= Panel1MinSize + Panel2MinSize)
+        {
+            return;
+        }
+
+        var distance = Math.Clamp(room - size, Panel1MinSize, room - Panel2MinSize);
+        if (distance != SplitterDistance)
+        {
+            SplitterDistance = distance;
+        }
     }
 
     // The mouse taken by another window part way through (Alt+Tab, say) ends the drag.

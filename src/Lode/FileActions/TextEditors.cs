@@ -254,15 +254,12 @@ static class TextEditors
     /// </summary>
     internal static IReadOnlyList<string> AtLine(string editor, string path, int line, int column)
     {
-        var name = Path.GetFileNameWithoutExtension(editor);
-        if (name.Equals("Code", StringComparison.OrdinalIgnoreCase) ||
-            name.Equals("Code - Insiders", StringComparison.OrdinalIgnoreCase) ||
-            name.Equals("VSCodium", StringComparison.OrdinalIgnoreCase) ||
-            name.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
-            name.Equals("Windsurf", StringComparison.OrdinalIgnoreCase))
+        if (IsCodeFamily(editor))
         {
             return ["-g", $"{path}:{line}:{column}"];
         }
+
+        var name = Path.GetFileNameWithoutExtension(editor);
 
         if (name.Equals("subl", StringComparison.OrdinalIgnoreCase) ||
             name.Equals("sublime_text", StringComparison.OrdinalIgnoreCase) ||
@@ -277,6 +274,47 @@ static class TextEditors
         }
 
         return [path];
+    }
+
+    /// <summary>
+    /// What an editor is given to show two files side by side, the changes between them marked:
+    /// VS Code and those made from it take <c>--diff left right</c>. Null for an editor that
+    /// can't, which is given the right one alone.
+    /// </summary>
+    internal static IReadOnlyList<string>? Diff(string editor, string left, string right)
+    {
+        if (IsCodeFamily(editor))
+        {
+            return ["--diff", left, right];
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Shows the changes from <paramref name="left"/> to <paramref name="right"/> in the editor
+    /// chosen in Options. False when it can't show changes, for the caller to find another way.
+    /// </summary>
+    public static bool OpenDiff(IWin32Window owner, Settings settings, string left, string right)
+    {
+        var editor = EditorPath(settings);
+        if (Diff(editor, left, right) is not { } arguments)
+        {
+            return false;
+        }
+
+        Start(owner, editor, arguments, right);
+        return true;
+    }
+
+    static bool IsCodeFamily(string editor)
+    {
+        var name = Path.GetFileNameWithoutExtension(editor);
+        return name.Equals("Code", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("Code - Insiders", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("VSCodium", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("Cursor", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("Windsurf", StringComparison.OrdinalIgnoreCase);
     }
 
     static void Start(IWin32Window owner, string editor, IReadOnlyList<string> arguments, string first)
