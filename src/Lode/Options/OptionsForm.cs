@@ -803,7 +803,7 @@ class OptionsForm : Form
             "menus, or both, and in each, on its own or nested under its parent. The menus only " +
             "offer what applies to what was clicked.",
             new(3, 0, 3, 9)),
-        new ScrollingHost(BuildActionsTable())
+        BuildActionsTable()
     ];
 
     Control[] BuildCodePage() =>
@@ -1260,31 +1260,44 @@ class OptionsForm : Form
     // Where each action shows: a button on the actions bar, an entry in the right-click menus,
     // both or neither, and in each, whether nested under its parent. A tick changes every window
     // at once.
-    TableLayoutPanel BuildActionsTable()
+    HeadedTable BuildActionsTable()
     {
-        var table = new TableLayoutPanel
+        // Over names, so to their left, as they are.
+        var parentHeading = ColumnHeading("Parent");
+        parentHeading.Anchor = AnchorStyles.Left;
+        parentHeading.Margin = new(0, 0, 12, 3);
+        // The icon and name columns have none.
+        Label?[] headings =
+        [
+            null,
+            null,
+            parentHeading,
+            ColumnHeading("Button"),
+            ColumnHeading("Nested"),
+            ColumnHeading("Right-click"),
+            ColumnHeading("Nested")
+        ];
+
+        var table = new LaidOutTable
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 7,
+            ColumnCount = headings.Length,
             Margin = Padding.Empty
         };
         // Laid out once, when every row is in. The table sizes itself to what it holds, so each
         // control added would otherwise lay out all of it again, which for a couple of hundred
         // took most of the half second Options took to open.
         table.SuspendLayout();
-        // Empty, and sized to it, so they leave the icon and name columns as narrow as their rows.
-        table.Controls.Add(new Label {AutoSize = true}, 0, 0);
-        table.Controls.Add(new Label {AutoSize = true}, 1, 0);
-        // Over names, so to their left, as they are.
-        var parentHeading = ColumnHeading("Parent");
-        parentHeading.Anchor = AnchorStyles.Left;
-        parentHeading.Margin = new(0, 0, 12, 3);
-        table.Controls.Add(parentHeading, 2, 0);
-        table.Controls.Add(ColumnHeading("Button"), 3, 0);
-        table.Controls.Add(ColumnHeading("Nested"), 4, 0);
-        table.Controls.Add(ColumnHeading("Right-click"), 5, 0);
-        table.Controls.Add(ColumnHeading("Nested"), 6, 0);
+        // The headings are above the table rather than in it, so they stay put as it scrolls.
+        // This row, as wide as they are and no taller, keeps each column wide enough for its own.
+        for (var column = 0; column < headings.Length; column++)
+        {
+            if (headings[column] is { } heading)
+            {
+                table.Controls.Add(new HeadingWidth(heading), column, 0);
+            }
+        }
 
         var iconSize = LogicalToDeviceUnits(16);
         var row = 1;
@@ -1374,7 +1387,7 @@ class OptionsForm : Form
         }
 
         table.ResumeLayout();
-        return table;
+        return new(headings, table);
     }
 
     static CheckBox NestedCheckBox(string name, string accessibleName, bool nested, bool shown) =>
@@ -1677,46 +1690,132 @@ class OptionsForm : Form
         restoreButton.Enabled = registered != null;
     }
 
-    // Holds every page, one shown at a time, and asks for room for the largest, so the dialog
-    // keeps its size whichever page is shown.
-    // Holds the actions table, and scrolls it once it runs past a height the other pages fit in,
-    // so the list of actions doesn't set the dialog's height.
-    sealed class ScrollingHost : Panel
+    // A table under its column headings, as the actions are. Past a height the other pages fit
+    // in, the table scrolls and the headings stay put above it, so the list of actions doesn't
+    // set the dialog's height and what each column is shows however far down it is scrolled.
+    sealed class HeadedTable : TableLayoutPanel
     {
         const int maximumHeight = 360;
 
-        Control content;
-
-        public ScrollingHost(Control content)
+        /// <param name="headings">By column, null for one without.</param>
+        /// <param name="table">Its first row a <see cref="HeadingWidth"/> under each heading.</param>
+        public HeadedTable(Control?[] headings, LaidOutTable table)
         {
-            this.content = content;
             AutoSize = true;
-            AutoScroll = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            ColumnCount = 1;
             Margin = Padding.Empty;
-            content.Location = Point.Empty;
-            Controls.Add(content);
-        }
-
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            var preferred = content.GetPreferredSize(Size.Empty);
-            var height = LogicalToDeviceUnits(maximumHeight);
-            if (preferred.Height <= height)
+            var header = new TableLayoutPanel
             {
-                return preferred;
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = headings.Length,
+                RowCount = 1,
+                Margin = Padding.Empty
+            };
+            header.SuspendLayout();
+            for (var column = 0; column < headings.Length; column++)
+            {
+                header.ColumnStyles.Add(new(SizeType.Absolute, 0));
+                if (headings[column] is { } heading)
+                {
+                    header.Controls.Add(heading, column, 0);
+                }
             }
 
-            // Room beside the table for the scroll bar, so it never covers the last column.
-            return new(preferred.Width + SystemInformation.VerticalScrollBarWidth, height);
+            // Each heading over its column, however wide the table makes that.
+            void Align()
+            {
+                var widths = table.GetColumnWidths();
+                for (var column = 0; column < widths.Length; column++)
+                {
+                    var style = header.ColumnStyles[column];
+                    // Only where it differs, as each change lays the headings out again.
+                    if ((int) style.Width != widths[column])
+                    {
+                        style.Width = widths[column];
+                    }
+                }
+            }
+
+            Align();
+            header.ResumeLayout();
+            table.LaidOut += Align;
+            Controls.Add(header, 0, 0);
+            Controls.Add(new Rows(header, table), 0, 1);
         }
 
-        protected override void OnHandleCreated(EventArgs args)
+        // Under the headings, scrolling the table once it runs past the height left.
+        sealed class Rows : Panel
         {
-            base.OnHandleCreated(args);
-            SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
+            Control header;
+            Control table;
+
+            public Rows(Control header, Control table)
+            {
+                this.header = header;
+                this.table = table;
+                AutoSize = true;
+                AutoScroll = true;
+                Margin = Padding.Empty;
+                table.Location = Point.Empty;
+                Controls.Add(table);
+            }
+
+            public override Size GetPreferredSize(Size proposedSize)
+            {
+                var preferred = table.GetPreferredSize(Size.Empty);
+                var height = LogicalToDeviceUnits(maximumHeight) - header.GetPreferredSize(Size.Empty).Height;
+                if (preferred.Height <= height)
+                {
+                    return preferred;
+                }
+
+                // Room beside the table for the scroll bar, so it never covers the last column.
+                return new(preferred.Width + SystemInformation.VerticalScrollBarWidth, height);
+            }
+
+            protected override void OnHandleCreated(EventArgs args)
+            {
+                base.OnHandleCreated(args);
+                SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
+            }
         }
     }
 
+    // A table that says when it has laid out its columns, which Layout, raised just before, can't.
+    sealed class LaidOutTable : TableLayoutPanel
+    {
+        public event Action? LaidOut;
+
+        protected override void OnLayout(LayoutEventArgs args)
+        {
+            base.OnLayout(args);
+            LaidOut?.Invoke();
+        }
+    }
+
+    // In a table whose headings are above it rather than in it, as wide as the heading over its
+    // column, margins and all, and no taller, so the column is wide enough for the heading.
+    sealed class HeadingWidth : Control
+    {
+        Control heading;
+
+        public HeadingWidth(Control heading)
+        {
+            this.heading = heading;
+            AutoSize = true;
+            Margin = Padding.Empty;
+            TabStop = false;
+            SetStyle(ControlStyles.Selectable, false);
+        }
+
+        public override Size GetPreferredSize(Size proposedSize) =>
+            new(heading.GetPreferredSize(Size.Empty).Width + heading.Margin.Horizontal, 0);
+    }
+
+    // Holds every page, one shown at a time, and asks for room for the largest, so the dialog
+    // keeps its size whichever page is shown.
     sealed class PageHost : Panel
     {
         public PageHost() =>

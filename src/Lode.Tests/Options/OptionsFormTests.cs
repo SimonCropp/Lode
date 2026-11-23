@@ -178,6 +178,36 @@ public class OptionsFormTests
             });
     }
 
+    // The actions scroll under their column headings, which stay put above them, each over its
+    // column.
+    [Test]
+    public async Task ActionHeadingsStayAsTheActionsScroll()
+    {
+        using var scratch = new RegistryScratch();
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("Actions");
+        static IEnumerable<Control> All(Control control) =>
+            control.Controls.Cast<Control>().SelectMany(_ => All(_).Prepend(_));
+        static Rectangle OnScreen(Control control) =>
+            control.RectangleToScreen(control.ClientRectangle);
+        var heading = All(form).Single(_ => _ is Label {Text: "Button"});
+        var cut = form.Controls.Find("button.cut", true)[0];
+        var rows = (ScrollableControl) cut.Parent!.Parent!;
+        var headingBefore = OnScreen(heading);
+        var cutBefore = OnScreen(cut);
+
+        rows.AutoScrollPosition = new(0, rows.DisplayRectangle.Height);
+        Application.DoEvents();
+
+        await Assert.That(OnScreen(cut).Top).IsLessThan(cutBefore.Top);
+        await Assert.That(OnScreen(heading)).IsEqualTo(headingBefore);
+        await Assert.That(headingBefore.Bottom).IsLessThanOrEqualTo(OnScreen(rows).Top);
+        // Centred over its column, as the boxes in it are.
+        var headingMiddle = headingBefore.Left + headingBefore.Width / 2;
+        var cutMiddle = cutBefore.Left + cutBefore.Width / 2;
+        await Assert.That(Math.Abs(headingMiddle - cutMiddle)).IsLessThanOrEqualTo(1);
+    }
+
     // Only with a code folder set. Excluding asks first, then hands over the folder and says
     // how it went; the real exclusion never runs in a test.
     [Test]
