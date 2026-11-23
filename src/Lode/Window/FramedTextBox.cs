@@ -134,11 +134,36 @@ sealed class FramedTextBox : Control
 
     bool desktop;
 
+    /// <summary>
+    /// Whether it is drawn as Windows draws a push button, for a box beside one, such as a
+    /// Choose button: a pixel in from each edge, its corners as round as the button's, and two
+    /// pixels taller for the margin, so beside a button as tall the two line up.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool BesideButtons
+    {
+        get => besideButtons;
+        set
+        {
+            besideButtons = value;
+            Height = FrameHeight();
+            PlaceBox();
+            Invalidate();
+        }
+    }
+
+    bool besideButtons;
+
     int FrameHeight()
     {
         if (desktop)
         {
             return TextFrame.DesktopHeight(this, Font);
+        }
+
+        if (besideButtons)
+        {
+            return TextFrame.Height(Font) + ExplorerStyle.PushButtonInset * 2;
         }
 
         return TextFrame.Height(Font);
@@ -152,14 +177,14 @@ sealed class FramedTextBox : Control
         }
         else
         {
-            TextFrame.Draw(args.Graphics, this, Box.Focused);
+            TextFrame.Draw(args.Graphics, this, Box.Focused, besideButtons);
         }
 
         if (!desktop &&
             Outlined &&
             !Box.Focused)
         {
-            TextFrame.Outline(args.Graphics, this);
+            TextFrame.Outline(args.Graphics, this, besideButtons);
         }
 
         if (glyph is { } icon)
@@ -215,11 +240,12 @@ static class TextFrame
     /// The box's background, as Windows 11's Explorer draws its address and search boxes: white,
     /// with its corners rounded on the bar behind it, and no border until it has the focus, when
     /// it gets a faint one and an accent line along the bottom. With high contrast on, a text
-    /// box's own border, which shows where the box is.
+    /// box's own border, which shows where the box is. Beside push buttons, in from the edges as
+    /// one is: see <see cref="FramedTextBox.BesideButtons"/>.
     /// </summary>
-    public static void Draw(Graphics graphics, Control control, bool focused)
+    public static void Draw(Graphics graphics, Control control, bool focused, bool besideButtons = false)
     {
-        var bounds = control.ClientRectangle;
+        var (bounds, radius) = Frame(control, besideButtons);
         if (SystemInformation.HighContrast ||
             !Application.RenderWithVisualStyles)
         {
@@ -230,7 +256,6 @@ static class TextFrame
 
         graphics.Clear(control.Parent?.BackColor ?? SystemColors.Control);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        var radius = control.LogicalToDeviceUnits(4);
         using var shape = ExplorerStyle.RoundedRectangle(bounds, radius);
         using var window = new SolidBrush(ExplorerStyle.Window);
         graphics.FillPath(window, shape);
@@ -303,7 +328,7 @@ static class TextFrame
     /// <summary>
     /// The faint border the box has with the focus, without the accent line along the bottom.
     /// </summary>
-    public static void Outline(Graphics graphics, Control control)
+    public static void Outline(Graphics graphics, Control control, bool besideButtons = false)
     {
         if (SystemInformation.HighContrast ||
             !Application.RenderWithVisualStyles)
@@ -311,12 +336,26 @@ static class TextFrame
             return;
         }
 
-        var bounds = control.ClientRectangle;
+        var (bounds, radius) = Frame(control, besideButtons);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), control.LogicalToDeviceUnits(4));
+        using var outline = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right - 1, bounds.Bottom - 1), radius);
         using var pen = new Pen(ExplorerStyle.TabBorder);
         graphics.DrawPath(pen, outline);
         graphics.SmoothingMode = SmoothingMode.Default;
+    }
+
+    // Where the box goes, and how round its corners are: all of the control, as Explorer's, or
+    // beside push buttons, in from its edges and as round as one.
+    static (Rectangle Bounds, int Radius) Frame(Control control, bool besideButtons)
+    {
+        var bounds = control.ClientRectangle;
+        if (besideButtons)
+        {
+            var inset = ExplorerStyle.PushButtonInset;
+            return (Rectangle.Inflate(bounds, -inset, -inset), ExplorerStyle.PushButtonRadius);
+        }
+
+        return (bounds, control.LogicalToDeviceUnits(4));
     }
 
     static void DrawSystemBorder(Graphics graphics, Rectangle bounds, bool focused)

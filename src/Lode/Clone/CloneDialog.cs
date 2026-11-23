@@ -21,9 +21,12 @@ sealed class CloneDialog : Form
     SourceTabs sourceTabs;
     Panel listPage = new();
     Panel urlPage = new();
+    // The boxes and Clone are drawn as Windows draws Choose and Cancel, so they line up: each
+    // box as the path's beside Choose is, so the three match.
     FramedTextBox filterFrame = new()
     {
-        Outlined = true
+        Outlined = true,
+        BesideButtons = true
     };
     GlyphButton refreshButton = new();
     LinkLabel addOrganization = new();
@@ -32,14 +35,19 @@ sealed class CloneDialog : Form
     ListBox list = new();
     FramedTextBox urlFrame = new()
     {
-        Outlined = true
+        Outlined = true,
+        BesideButtons = true
     };
     FramedTextBox pathFrame = new()
     {
-        Outlined = true
+        Outlined = true,
+        BesideButtons = true
     };
     Button chooseButton = new();
-    AccentButton cloneButton = new();
+    AccentButton cloneButton = new()
+    {
+        BesideButtons = true
+    };
     Button cancelButton = new();
     ToolTip tip = new();
     Font bold;

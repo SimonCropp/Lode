@@ -182,6 +182,7 @@ class OptionsForm : Form
         Text = "Exclude from Defender…",
         AutoSize = true,
         FlatStyle = FlatStyle.System,
+        Padding = new(6, 0, 6, 0),
         Anchor = AnchorStyles.Left
     };
 

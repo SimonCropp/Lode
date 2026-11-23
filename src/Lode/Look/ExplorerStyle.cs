@@ -265,4 +265,65 @@ static class ExplorerStyle
         path.AddRoundedRectangle(bounds, new(radius * 2, radius * 2));
         return path;
     }
+
+    /// <summary>
+    /// How round the corners of Lode's own buttons are, as Explorer's are: the toolbar's, a glyph
+    /// button, Find in Files' toggles, and a tab's close button. Pixels at 100% scale.
+    /// </summary>
+    public const int ButtonRadius = 4;
+
+    /// <summary>
+    /// How far in from each edge Windows draws a push button. Its theme draws one from a single
+    /// small image whatever the scale, so this is in pixels at every scale, not scaled.
+    /// </summary>
+    public const int PushButtonInset = 1;
+
+    /// <summary>
+    /// How round Windows draws a push button's corners: pixels at every scale, not scaled, as
+    /// with <see cref="PushButtonInset"/>.
+    /// </summary>
+    public const int PushButtonRadius = 4;
+
+    /// <summary>
+    /// Fills a button's rounded shape over the whole of <paramref name="bounds"/>, each pixel of
+    /// its straight edges whole, so they are as sharp as a push button's. Only its corners are
+    /// smoothed.
+    /// </summary>
+    public static void FillButton(Graphics graphics, Rectangle bounds, Color color, int radius)
+    {
+        var state = SmoothButton(graphics);
+        using var brush = new SolidBrush(color);
+        using var shape = RoundedRectangle(bounds, radius);
+        graphics.FillPath(brush, shape);
+        graphics.Restore(state);
+    }
+
+    /// <summary>
+    /// A border a pixel wide round a button's shape, on the outermost pixels of
+    /// <paramref name="bounds"/>, so its outside is the edge <see cref="FillButton"/> fills to.
+    /// </summary>
+    public static void DrawButtonBorder(Graphics graphics, Rectangle bounds, Color color, int radius)
+    {
+        var state = SmoothButton(graphics);
+        using var pen = new Pen(color);
+        using var shape = new GraphicsPath();
+
+        // Down the middle of the outermost pixels, its corners half a pixel less round.
+        var diameter = Math.Max(0, radius * 2 - 1);
+        shape.AddRoundedRectangle(
+            new RectangleF(bounds.X + 0.5f, bounds.Y + 0.5f, bounds.Width - 1, bounds.Height - 1),
+            new SizeF(diameter, diameter));
+        graphics.DrawPath(pen, shape);
+        graphics.Restore(state);
+    }
+
+    // Smoothed, with each pixel's centre half a pixel in, so a shape on whole pixels covers them
+    // exactly. With the default, its edges fall across the middle of the pixels, and blur.
+    static GraphicsState SmoothButton(Graphics graphics)
+    {
+        var state = graphics.Save();
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        return state;
+    }
 }

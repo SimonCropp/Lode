@@ -206,6 +206,24 @@ sealed class AccentButton : Button
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Bold { get; set; } = "";
 
+    /// <summary>
+    /// Whether it is drawn as Windows draws a push button, for a dialog's buttons beside one,
+    /// such as Cancel: a pixel in from each edge, its corners less rounded, so the two line up.
+    /// Otherwise as Desktop's, filling its bounds.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool BesideButtons
+    {
+        get => besideButtons;
+        set
+        {
+            besideButtons = value;
+            Invalidate();
+        }
+    }
+
+    bool besideButtons;
+
     protected override void OnMouseEnter(EventArgs args)
     {
         base.OnMouseEnter(args);
@@ -247,14 +265,16 @@ sealed class AccentButton : Button
             text = ExplorerStyle.Blend(text, behind, 0.4f);
         }
 
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var brush = new SolidBrush(fill))
-        using (var shape = ExplorerStyle.RoundedRectangle(Rectangle.FromLTRB(0, 0, Width - 1, Height - 1), LogicalToDeviceUnits(DesktopStyle.Radius)))
+        if (besideButtons)
         {
-            graphics.FillPath(brush, shape);
+            var inset = ExplorerStyle.PushButtonInset;
+            ExplorerStyle.FillButton(graphics, Rectangle.Inflate(ClientRectangle, -inset, -inset), fill, ExplorerStyle.PushButtonRadius);
+        }
+        else
+        {
+            ExplorerStyle.FillButton(graphics, ClientRectangle, fill, LogicalToDeviceUnits(DesktopStyle.Radius));
         }
 
-        graphics.SmoothingMode = SmoothingMode.Default;
         const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine;
         var plain = TextRenderer.MeasureText(graphics, Text, Font, Size.Empty, flags);
         var strong = TextRenderer.MeasureText(graphics, Bold, bold, Size.Empty, flags);

@@ -390,6 +390,6 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
             return;
         }
 
-        Shade(graphics, new(Point.Empty, item.Size), shade, Scale(item, cornerRadius));
+        ExplorerStyle.FillButton(graphics, new(Point.Empty, item.Size), shade, Scale(item, ExplorerStyle.ButtonRadius));
     }
 }

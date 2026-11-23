@@ -11,7 +11,12 @@ sealed class BranchPicker : Form
     /// </summary>
     internal sealed record Row(string Text, GitBranches.Branch? Branch = null, bool Heading = false);
 
-    TextBox filterBox = new();
+    // Drawn as the Clone dialog's boxes are, lined up with New branch beside it.
+    FramedTextBox filterFrame = new()
+    {
+        Outlined = true,
+        BesideButtons = true
+    };
     Button newButton = new();
     ListBox list = new();
     GitBranches.Listing? listing;
@@ -35,8 +40,8 @@ sealed class BranchPicker : Form
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal string Search
     {
-        get => filterBox.Text;
-        set => filterBox.Text = value;
+        get => filterFrame.Box.Text;
+        set => filterFrame.Box.Text = value;
     }
 
     /// <summary>
@@ -88,11 +93,12 @@ sealed class BranchPicker : Form
         ClientSize = new(420, 420);
         Padding = new(6);
 
-        filterBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        filterBox.Margin = new(0, 0, 6, 0);
-        filterBox.AccessibleName = "Filter branches";
-        filterBox.PlaceholderText = "Filter";
-        filterBox.TextChanged += (_, _) => Refill();
+        // As tall as New branch, so its frame and the button's line up.
+        filterFrame.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top | AnchorStyles.Bottom;
+        filterFrame.Margin = new(0, 0, 6, 0);
+        filterFrame.Box.AccessibleName = "Filter branches";
+        filterFrame.Box.PlaceholderText = "Filter";
+        filterFrame.Box.TextChanged += (_, _) => Refill();
 
         newButton.Text = "New branch";
         newButton.AutoSize = true;
@@ -109,7 +115,7 @@ sealed class BranchPicker : Form
         };
         top.ColumnStyles.Add(new(SizeType.Percent, 100));
         top.ColumnStyles.Add(new(SizeType.AutoSize));
-        top.Controls.Add(filterBox, 0, 0);
+        top.Controls.Add(filterFrame, 0, 0);
         top.Controls.Add(newButton, 1, 0);
 
         list.Dock = DockStyle.Fill;
@@ -254,7 +260,7 @@ sealed class BranchPicker : Form
     protected override void OnShown(EventArgs args)
     {
         base.OnShown(args);
-        filterBox.Focus();
+        filterFrame.Box.Focus();
     }
 
     protected override void OnDeactivate(EventArgs args)
@@ -401,7 +407,7 @@ sealed class BranchPicker : Form
 
         if (listing != null &&
             !shown.Any(_ => _.Branch != null) &&
-            filterBox.Text.Trim().Length > 0)
+            filterFrame.Box.Text.Trim().Length > 0)
         {
             AskForNewBranch();
         }
@@ -463,7 +469,7 @@ sealed class BranchPicker : Form
 
     void AskForNewBranch()
     {
-        NewBranchName = SuggestedName(filterBox.Text);
+        NewBranchName = SuggestedName(filterFrame.Box.Text);
         CloseOnce();
     }
 
@@ -488,7 +494,7 @@ sealed class BranchPicker : Form
 
     void Refill()
     {
-        shown = RowsFor(listing, filterBox.Text);
+        shown = RowsFor(listing, filterFrame.Box.Text);
         using (list.SuspendPainting())
         {
             list.Items.Clear();
@@ -505,7 +511,7 @@ sealed class BranchPicker : Form
     // match, which is first.
     int FirstSelected()
     {
-        if (filterBox.Text.Trim().Length == 0)
+        if (filterFrame.Box.Text.Trim().Length == 0)
         {
             var current = shown.FindIndex(_ => _.Branch is { } branch && IsCurrent(branch));
             if (current >= 0)

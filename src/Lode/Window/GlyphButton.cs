@@ -80,12 +80,7 @@ sealed class GlyphButton : Button
         if (highlighted)
         {
             var shade = ExplorerStyle.Highlighted(background, pressed || (isChecked && !hovered));
-
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using var brush = new SolidBrush(shade);
-            using var shape = ExplorerStyle.RoundedRectangle(ClientRectangle, LogicalToDeviceUnits(4));
-            graphics.FillPath(brush, shape);
-            graphics.SmoothingMode = SmoothingMode.Default;
+            ExplorerStyle.FillButton(graphics, ClientRectangle, shade, LogicalToDeviceUnits(ExplorerStyle.ButtonRadius));
         }
 
         if (Text.Length == 0)

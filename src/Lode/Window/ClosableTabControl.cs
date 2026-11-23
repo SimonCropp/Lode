@@ -12,7 +12,6 @@ sealed class ClosableTabControl : TabControl
     const int crossBoxSize = 20;
     const int crossSize = 8;
     const int crossMargin = 5;
-    const int crossCornerRadius = 4;
     const int textMargin = 8;
     const int horizontalPadding = 17;
     const int verticalPadding = 5;
@@ -492,13 +491,12 @@ sealed class ClosableTabControl : TabControl
     // close button is.
     void PaintCross(Graphics graphics, Rectangle box, bool hovered, Color background)
     {
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
         if (hovered)
         {
-            using var brush = new SolidBrush(ExplorerStyle.Hover(background));
-            using var shape = ExplorerStyle.RoundedRectangle(box, LogicalToDeviceUnits(crossCornerRadius));
-            graphics.FillPath(brush, shape);
+            ExplorerStyle.FillButton(graphics, box, ExplorerStyle.Hover(background), LogicalToDeviceUnits(ExplorerStyle.ButtonRadius));
         }
+
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
         var inset = (box.Width - LogicalToDeviceUnits(crossSize)) / 2f;
         var left = box.Left + inset;

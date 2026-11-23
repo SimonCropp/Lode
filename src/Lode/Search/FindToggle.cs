@@ -56,9 +56,8 @@ sealed class FindToggle : CheckBox
         var background = Parent?.BackColor ?? SystemColors.Control;
         graphics.Clear(background);
         var text = ForeColor;
-        var bounds = Rectangle.FromLTRB(0, 0, Width - 1, Height - 1);
-        var radius = LogicalToDeviceUnits(4);
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var bounds = ClientRectangle;
+        var radius = LogicalToDeviceUnits(ExplorerStyle.ButtonRadius);
         if (SystemInformation.HighContrast)
         {
             if (Checked)
@@ -69,20 +68,14 @@ sealed class FindToggle : CheckBox
         }
         else if (Checked)
         {
-            using var shape = ExplorerStyle.RoundedRectangle(bounds, radius);
-            using var fill = new SolidBrush(ExplorerStyle.Blend(background, ExplorerStyle.Accent, 0.22f));
-            using var border = new Pen(ExplorerStyle.Accent);
-            graphics.FillPath(fill, shape);
-            graphics.DrawPath(border, shape);
+            ExplorerStyle.FillButton(graphics, bounds, ExplorerStyle.Blend(background, ExplorerStyle.Accent, 0.22f), radius);
+            ExplorerStyle.DrawButtonBorder(graphics, bounds, ExplorerStyle.Accent, radius);
         }
         else if (hovered)
         {
-            using var shape = ExplorerStyle.RoundedRectangle(bounds, radius);
-            using var fill = new SolidBrush(ExplorerStyle.Hover(background));
-            graphics.FillPath(fill, shape);
+            ExplorerStyle.FillButton(graphics, bounds, ExplorerStyle.Hover(background), radius);
         }
 
-        graphics.SmoothingMode = SmoothingMode.Default;
         if (!Enabled)
         {
             text = ExplorerStyle.DisabledText;
