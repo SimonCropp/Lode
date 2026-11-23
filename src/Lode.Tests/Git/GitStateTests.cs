@@ -404,15 +404,51 @@ public class GitStateTests
         await Assert.That(LibGitState.IndexEntries(empty)).IsEqualTo(0);
     }
 
-    // Whichever reads it, the state is the same.
+    // The most recent tag the commit has in its history, annotated or not: its own, else the
+    // nearest back. One the commit's history doesn't reach, on a branch apart, isn't it.
+    [Test]
+    public async Task ReadsTheMostRecentTag()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        var noTags = (await Read(repo)).Tag;
+
+        CodeCommandsTests.Scratch.Git(repo, "tag", "v1.0");
+        var own = (await Read(repo)).Tag;
+
+        Commit(repo, "second.txt");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "-a", "v2.0", "-m", "Two");
+        Commit(repo, "third.txt");
+        var back = (await Read(repo)).Tag;
+
+        CodeCommandsTests.Scratch.Git(repo, "switch", "-c", "feature", "v1.0");
+        Commit(repo, "feature.txt");
+        var onABranch = (await Read(repo)).Tag;
+
+        CodeCommandsTests.Scratch.Git(repo, "switch", "--orphan", "orphan");
+        Commit(repo, "orphan.txt");
+        var noneReached = (await Read(repo)).Tag;
+
+        await Assert.That(noTags).IsNull();
+        await Assert.That(own).IsEqualTo("v1.0");
+        await Assert.That(back).IsEqualTo("v2.0");
+        await Assert.That(onABranch).IsEqualTo("v1.0");
+        await Assert.That(noneReached).IsNull();
+    }
+
+    // Whichever reads it, the state is the same, its tag included.
     [Test]
     public async Task TheFasterReadsTheSame()
     {
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "v1.0");
+        Commit(repo, "second.txt");
         await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        var git = GitState.FromGit(repo, Cancel.None);
 
-        await Assert.That(LibGitState.FromFaster(repo, Cancel.None)).IsEqualTo(GitState.FromGit(repo, Cancel.None));
+        await Assert.That(git?.Tag).IsEqualTo("v1.0");
+        await Assert.That(LibGitState.FromFaster(repo, Cancel.None)).IsEqualTo(git);
     }
 
     [Test]

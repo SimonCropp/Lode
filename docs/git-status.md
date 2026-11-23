@@ -35,6 +35,7 @@ flowchart TD
 - how many commits it is ahead of and behind the branch it tracks, as of the last fetch
 - whether it tracks a branch at all
 - in a fork, how many commits upstream's default branch has that the commit checked out hasn't, as of the last fetch (`ForkBehind`)
+- the most recent tag the commit checked out has in its history, as `git describe --tags --abbrev=0` finds it (`Tag`), shown in the **Tag** column of a folder listing repositories
 - the files with changes not yet committed, each with a `GitChange`: Modified, Staged, Added, Renamed, Deleted, Untracked or Conflicted
 
 A folder git doesn't track counts as one file, as `git status` lists it. Ignored files don't count. Two states are equal only when all of this is equal, files included, which the backoff described below relies on.
@@ -46,7 +47,7 @@ When a `FolderView` loads a folder in the code folder, `FindRepos` works out, on
 - the repository the folder is in (`containingRepo`), looking up as far as the code folder, or
 - when it is in none, which of the folders it lists are repositories (`repos`).
 
-`ReadGitState` then wants the containing repository, plus the listed ones when the Git column is showing. It runs when:
+`ReadGitState` then wants the containing repository, plus the listed ones when the Git or Tag column is showing. It runs when:
 
 - the folder has been read
 - the view becomes visible, or the window comes back to the front
@@ -84,6 +85,13 @@ A fork is a repository with an `upstream` remote, as GitHub Desktop sets one up.
 - **`git status`**: only in a fork, as the config says, one more run, `git rev-list --count HEAD..refs/remotes/upstream/HEAD`. Other repositories pay nothing for it.
 
 Without `upstream/HEAD` recorded, an upstream added by hand say, it counts as 0.
+
+The most recent tag is found by each reader its own way too:
+
+- **LibGit2Sharp**: `Describe` with the tags strategy, in the same pass. Under a millisecond for most repositories, but it slows with a long history and many tags: efcore's 19,000 commits and 282 tags take 170 ms, and 57,000 commits and 13,000 tags take 500 ms.
+- **`git status`**: one more run, `git describe --tags --abbrev=0`, some 55 ms however long the history, most of it git starting. A repository with a history that long usually has more than 2,000 files too, so is read by git.
+
+A repository with no tags, or none its commit reaches, has no tag. A new tag, or one fetched, changes `.git/refs/tags` or `packed-refs`, which makes the repository stale like any other change.
 
 A view reads its repositories in parallel on background threads, in the order they are listed, and shows each as it arrives.
 

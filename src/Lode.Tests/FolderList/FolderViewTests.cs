@@ -8,10 +8,10 @@
 [NotInParallel("windows")]
 public class FolderViewTests
 {
-    const int folderColumn = 2;
-    const int dateColumn = 3;
-    const int typeColumn = 4;
-    const int sizeColumn = 5;
+    const int folderColumn = 3;
+    const int dateColumn = 4;
+    const int typeColumn = 5;
+    const int sizeColumn = 6;
 
     static readonly Places noPlaces = new([], [], ShowComputer: false, _ => "");
 
@@ -329,12 +329,45 @@ public class FolderViewTests
                 """);
     }
 
+    // Date modified starts newest first, as Explorer sorts it.
     [Test]
     public async Task SortByDate()
     {
         using var fixture = Fixture.Create();
         using var view = await Open(fixture.Root);
 
+        view.SortBy(dateColumn);
+
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects,
+                  status: 8 items,
+                  filter: ,
+                  rows: [
+                    folder  Source,
+                    folder  Docs,
+                    folder  Archive,
+                    file    summary.gamma  0 bytes,
+                    file    report2.beta  2,048 bytes,
+                    file    report10.beta  300,000 bytes,
+                    file    notes.aleph  12 bytes,
+                    file    Report1.beta  1,500,000 bytes
+                  ],
+                  selected: []
+                }
+                """);
+    }
+
+    // Clicked again, Date modified is oldest first.
+    [Test]
+    public async Task SortByDateTwice()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+
+        view.SortBy(dateColumn);
         view.SortBy(dateColumn);
 
         await Verify(Describe(view, fixture))
@@ -1967,8 +2000,8 @@ public class FolderViewTests
         await Pump.Loaded(view);
 
         await Assert.That(searching).IsEqualTo((folderColumn, true));
-        await Assert.That(view.Sort).IsEqualTo((dateColumn, true));
-        await Assert.That(settings.FolderSorts.Select(_ => (_.Column, _.Ascending))).IsEquivalentTo([("Date", true)]);
+        await Assert.That(view.Sort).IsEqualTo((dateColumn, false));
+        await Assert.That(settings.FolderSorts.Select(_ => (_.Column, _.Ascending))).IsEquivalentTo([("Date", false)]);
     }
 
     // A folder renamed while a view shows it, the view follows, sorted as it was, and the folder
@@ -2777,10 +2810,54 @@ public class FolderViewTests
         await GitRead(view);
 
         await Assert.That(view.ColumnTitles)
-            .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
+            .IsEquivalentTo(["Name", "Git", "Tag", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
         await Assert.That(GitCells(view))
             .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], CollectionOrdering.Matching);
         await Assert.That(view.GitText).IsEqualTo("");
+    }
+
+    // Beside Git, each repository's most recent tag. One without a tag, and a folder that isn't
+    // a repository, say nothing.
+    [Test]
+    public async Task TagColumnShowsEachRepository()
+    {
+        using var code = Repositories();
+        CodeCommandsTests.Scratch.Git(code.At("Clean"), "tag", "v1.0");
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+
+        await Assert.That(TagCells(view))
+            .IsEquivalentTo(["Changed: ", "Clean: v1.0", "origins: ", "Plain: "], CollectionOrdering.Matching);
+    }
+
+    // With Git hidden, the repositories are read all the same, for their tags.
+    [Test]
+    public async Task TagColumnWithGitHidden()
+    {
+        using var code = Repositories();
+        CodeCommandsTests.Scratch.Git(code.At("Clean"), "tag", "v1.0");
+        var settings = InCode(code);
+        settings.HiddenColumns = ["Git"];
+        using var view = await Open(code.Root, settings);
+        await GitRead(view);
+
+        await Assert.That(view.ColumnTitles)
+            .IsEquivalentTo(["Name", "Tag", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
+        await Assert.That(TagCells(view))
+            .IsEquivalentTo(["Changed: ", "Clean: v1.0", "origins: ", "Plain: "], CollectionOrdering.Matching);
+    }
+
+    // Tagged in a repository listed, the column says so, without going anywhere.
+    [Test]
+    public async Task TagColumnFollowsANewTag()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+
+        CodeCommandsTests.Scratch.Git(code.At("Clean"), "tag", "v2.0");
+
+        await Pump.Until(() => TagCells(view).Contains("Clean: v2.0"));
     }
 
     // Gone back to, the code folder shows what was last read of each repository at once, while
@@ -3440,6 +3517,39 @@ public class FolderViewTests
             .IsEquivalentTo(["Changed", "Clean", "Plain", "origins"], CollectionOrdering.Matching);
     }
 
+    // Numbers in a tag as numbers, so v1.10 comes after v1.9. Those without a tag first.
+    [Test]
+    public async Task SortByTag()
+    {
+        using var code = Repositories();
+        CodeCommandsTests.Scratch.Git(code.At("Clean"), "tag", "v1.10");
+        CodeCommandsTests.Scratch.Git(code.At("Changed"), "tag", "v1.9");
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+
+        view.SortBy(FolderView.tagColumn);
+
+        await Assert.That(view.Entries.Select(_ => _.Name))
+            .IsEquivalentTo(["origins", "Plain", "Changed", "Clean"], CollectionOrdering.Matching);
+    }
+
+    // As for Git, the sort the folder was left with is taken up once its repositories are found.
+    [Test]
+    public async Task AFolderSortedByTagIsSoWhenOpened()
+    {
+        using var code = Repositories();
+        CodeCommandsTests.Scratch.Git(code.At("Clean"), "tag", "v1.10");
+        CodeCommandsTests.Scratch.Git(code.At("Changed"), "tag", "v1.9");
+        var settings = InCode(code);
+        settings.SetSort(code.Root, "Tag", false);
+        using var view = await Open(code.Root, settings);
+        await GitRead(view);
+
+        await Assert.That(view.Sort).IsEqualTo((FolderView.tagColumn, false));
+        await Assert.That(view.Entries.Select(_ => _.Name))
+            .IsEquivalentTo(["Clean", "Changed", "Plain", "origins"], CollectionOrdering.Matching);
+    }
+
     // Hidden from the header's menu, it stays so, but the status bar still says.
     [Test]
     public async Task GitColumnHidden()
@@ -3702,6 +3812,15 @@ public class FolderViewTests
         view.Entries
             .Select((entry, index) => $"{entry.Name}: {view.RowCells(index)[1]}")
             .ToList();
+
+    // Each row's name, and what its Tag cell says, wherever that column is.
+    static List<string> TagCells(FolderView view)
+    {
+        var shown = view.ColumnTitles.ToList().IndexOf("Tag");
+        return view.Entries
+            .Select((entry, index) => $"{entry.Name}: {view.RowCells(index)[shown]}")
+            .ToList();
+    }
 
     static string DescribeMenuItem(ToolStripItem item)
     {

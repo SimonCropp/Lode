@@ -9,7 +9,7 @@
 [NotInParallel("windows")]
 public class MainFormTests
 {
-    const int sizeColumn = 5;
+    const int sizeColumn = 6;
 
     [Test]
     public Task Default() =>

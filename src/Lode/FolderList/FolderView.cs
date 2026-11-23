@@ -6,23 +6,26 @@ sealed class FolderView : UserControl
 {
     internal const int nameColumn = 0;
     internal const int gitColumn = 1;
-    internal const int folderColumn = 2;
-    const int dateColumn = 3;
-    const int typeColumn = 4;
-    const int sizeColumn = 5;
+    internal const int tagColumn = 2;
+    internal const int folderColumn = 3;
+    const int dateColumn = 4;
+    const int typeColumn = 5;
+    const int sizeColumn = 6;
 
     // The list's columns, in order, by the index sorting and the cells use. Name is always
     // shown; the others can be hidden from the header's right-click menu, in every view at once.
     // On This PC, Date modified and Size show each drive's free space and total size. Folder,
     // where each item is, only a search has, whose items come from all through the folder. Git
     // only a folder in the code folder has, in a repository or listing some: beside the name, as
-    // it says what has become of the file, or the repository, it names.
+    // it says what has become of the file, or the repository, it names. Tag, each repository's
+    // most recent tag, only a folder listing repositories has, as a file has no tag of its own.
     sealed record ColumnDefinition(string Key, string Title, string ThisPCTitle, int Width, HorizontalAlignment Alignment);
 
     static ColumnDefinition[] columnDefinitions =
     [
         new("Name", "Name", "Name", 380, HorizontalAlignment.Left),
         new("Git", "Git", "Git", 220, HorizontalAlignment.Left),
+        new("Tag", "Tag", "Tag", 120, HorizontalAlignment.Left),
         new("Folder", "Folder", "Folder", 220, HorizontalAlignment.Left),
         new("Date", "Date modified", "Free space", 150, HorizontalAlignment.Left),
         new("Type", "Type", "Type", 180, HorizontalAlignment.Left),
@@ -1836,10 +1839,11 @@ sealed class FolderView : UserControl
         containingRepo = containing;
         Repo = containing;
 
-        // Sorted by Git when last open: the column shows only now the repositories are known.
+        // Sorted by Git or Tag when last open: the column shows only now the repositories are
+        // known.
         if (!preserveState &&
-            sortColumn != gitColumn &&
-            settings.SortOf(path) is {Column: "Git"})
+            settings.SortOf(path) is {Column: "Git" or "Tag"} sort &&
+            columnDefinitions[sortColumn].Key != sort.Column)
         {
             (sortColumn, sortAscending) = SortOfFolder();
         }
@@ -1969,9 +1973,14 @@ sealed class FolderView : UserControl
         !IsDisposed &&
         (containingRepo != null || repos.Count > 0);
 
+    // Whether a column that says something of the repositories listed shows: Git, or Tag.
+    bool ShowsRepoColumn =>
+        IsColumnShown(gitColumn) ||
+        IsColumnShown(tagColumn);
+
     /// <summary>
     /// Reads again the state of the repository the folder is in, and of those it lists while
-    /// the Git column shows: the folder was read, or the window came back to the front, where
+    /// the Git or Tag column shows: the folder was read, or the window came back to the front, where
     /// a commit made in a terminal meanwhile changed it, or a git action finished. A view nobody
     /// can see reads once it shows.
     /// </summary>
@@ -1990,7 +1999,7 @@ sealed class FolderView : UserControl
         }
 
         // In the order they are listed, so those at the top are read first.
-        if (IsColumnShown(gitColumn))
+        if (ShowsRepoColumn)
         {
             wanted.AddRange(
                 displayed
@@ -2223,7 +2232,7 @@ sealed class FolderView : UserControl
         }
 
         gitCells = new(gitStates, containingRepo, containing);
-        if (sortColumn == gitColumn &&
+        if (sortColumn is gitColumn or tagColumn &&
             !editing)
         {
             entriesSort = (-1, false);
@@ -3163,6 +3172,12 @@ sealed class FolderView : UserControl
             return false;
         }
 
+        if (column == tagColumn &&
+            !HasTagColumn)
+        {
+            return false;
+        }
+
         return !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -3171,6 +3186,11 @@ sealed class FolderView : UserControl
     // from inside the repositories, which have no state of their own.
     bool HasGitColumn => containingRepo != null ||
                          (repos.Count > 0 && !IsSearch);
+
+    // Tag is for a folder listing repositories alone: in a repository, the files and folders
+    // have no tag of their own, and nor do the items a search finds inside the repositories.
+    bool HasTagColumn => repos.Count > 0 &&
+                         !IsSearch;
 
     // Brings the list's columns in line with the setting. True when they changed, in which case
     // every row needs building again, since a row holds a cell per column shown.
@@ -3372,8 +3392,8 @@ sealed class FolderView : UserControl
 
         Populate(true);
 
-        // Git shown again: the repositories' states weren't read while it was hidden.
-        if (IsColumnShown(gitColumn) &&
+        // Git or Tag shown again: the repositories' states weren't read while both were hidden.
+        if (ShowsRepoColumn &&
             repos.Any(_ => !gitStates.ContainsKey(_)))
         {
             ReadGitState();
@@ -3407,7 +3427,8 @@ sealed class FolderView : UserControl
         {
             // Hidden or shown only while there is a search, or are repositories, to show it for.
             if ((column == folderColumn && !IsSearch) ||
-                (column == gitColumn && !HasGitColumn))
+                (column == gitColumn && !HasGitColumn) ||
+                (column == tagColumn && !HasTagColumn))
             {
                 continue;
             }
@@ -3506,6 +3527,7 @@ sealed class FolderView : UserControl
             displayName,
             "",
             "",
+            "",
             DriveSize(entry, entry.FreeSpace),
             typeName,
             DriveSize(entry, entry.Size)
@@ -3521,6 +3543,7 @@ sealed class FolderView : UserControl
         {
             case folderColumn:
             case gitColumn:
+            case tagColumn:
                 return "";
             case dateColumn:
                 return DriveSize(entry, entry.FreeSpace);
@@ -3621,6 +3644,8 @@ sealed class FolderView : UserControl
                 return ShellIcons.GetTypeName(entry.FullPath, entry.IsDirectory);
             case gitColumn:
                 return gitCells.Text(entry);
+            case tagColumn:
+                return gitCells.Tag(entry);
         }
 
         if (entry.IsDirectory)
@@ -3659,6 +3684,7 @@ sealed class FolderView : UserControl
         [
             Cell(entry, nameColumn),
             Cell(entry, gitColumn),
+            Cell(entry, tagColumn),
             Cell(entry, folderColumn),
             Cell(entry, dateColumn),
             Cell(entry, typeColumn),
@@ -3774,7 +3800,7 @@ sealed class FolderView : UserControl
         (first, second) => Compare(first, second, column, ascending, cells);
 
     // Static, with the column and direction handed in, so a folder can be sorted off the UI
-    // thread as it is read. By Git, by what the column says, which is handed in too.
+    // thread as it is read. By Git or Tag, by what the column says, which is handed in too.
     static int Compare(FileEntry first, FileEntry second, int column, bool ascending, GitCells? cells = null)
     {
         // Folders stay grouped above files whichever way the column is sorted.
@@ -3804,6 +3830,8 @@ sealed class FolderView : UserControl
             // By what the column says: repositories by branch, so those on a branch other than
             // the one most are on stand together; files by what has become of them.
             gitColumn => StrCmpLogicalW((cells ?? GitCells.None).Text(first), (cells ?? GitCells.None).Text(second)),
+            // Numbers as numbers, so v1.10 comes after v1.9.
+            tagColumn => StrCmpLogicalW((cells ?? GitCells.None).Tag(first), (cells ?? GitCells.None).Tag(second)),
             _ => 0
         };
 
@@ -3934,9 +3962,10 @@ sealed class FolderView : UserControl
         SortBy(shownColumns[args.Column]);
 
     /// <summary>
-    /// Sorts by a column, as clicking its header does: ascending first, then toggling. The
-    /// folder is sorted so from then on, in any tab, and the next time Lode starts, as Explorer
-    /// keeps each folder's. Folder, which only a search has, is for the search alone.
+    /// Sorts by a column, as clicking its header does: first the way the column starts, then
+    /// toggling (see <see cref="StartsAscending"/>). The folder is sorted so from then on, in
+    /// any tab, and the next time Lode starts, as Explorer keeps each folder's. Folder, which
+    /// only a search has, is for the search alone.
     /// </summary>
     public void SortBy(int column)
     {
@@ -3947,7 +3976,7 @@ sealed class FolderView : UserControl
         else
         {
             sortColumn = column;
-            sortAscending = true;
+            sortAscending = StartsAscending(column);
         }
 
         if (column != folderColumn)
@@ -3964,6 +3993,13 @@ sealed class FolderView : UserControl
 
         Populate(true);
     }
+
+    // Which way a column is first sorted: Date modified newest first, as Explorer sorts it, the
+    // others ascending. On This PC that column is Free space, which starts ascending as the
+    // others do.
+    bool StartsAscending(int column) =>
+        column != dateColumn ||
+        IsThisPC;
 
     // From this many items a sort by another column is done off the UI thread: of a hundred
     // thousand it is over a million comparisons, each a call into Windows, and by Type two

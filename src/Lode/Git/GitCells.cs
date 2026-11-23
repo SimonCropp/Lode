@@ -1,8 +1,8 @@
 /// <summary>
-/// What the Git column says of each item. In a folder of repositories, the code folder say, each
-/// repository's state. In a repository, what has happened to a file, or how many changes a
-/// folder holds. Made afresh each time the states change, and not changed after, so a folder can
-/// be sorted by it off the UI thread.
+/// What the Git and Tag columns say of each item. In a folder of repositories, the code folder
+/// say, each repository's state, and its most recent tag. In a repository, what has happened to
+/// a file, or how many changes a folder holds. Made afresh each time the states change, and not
+/// changed after, so a folder can be sorted by it off the UI thread.
 /// </summary>
 sealed class GitCells
 {
@@ -66,6 +66,21 @@ sealed class GitCells
             folders.TryGetValue(path, out var count))
         {
             return GitState.CountOf(count, "change");
+        }
+
+        return "";
+    }
+
+    /// <summary>
+    /// What the Tag column says of the item: a repository's most recent tag. Nothing for one
+    /// without a tag, one not read yet, and anything not a repository.
+    /// </summary>
+    public string Tag(FileEntry entry)
+    {
+        if (repos.TryGetValue(entry.FullPath, out var state) &&
+            state.Tag is { } tag)
+        {
+            return tag;
         }
 
         return "";

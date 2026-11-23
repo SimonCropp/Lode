@@ -1,7 +1,8 @@
 /// <summary>
 /// Where a repository's working tree is: the branch it is on, or the commit when detached, how
-/// many commits it is ahead of and behind the branch it tracks, as last fetched, and the paths
-/// that have changes not yet committed, staged or not, files git doesn't track included.
+/// many commits it is ahead of and behind the branch it tracks, as last fetched, its most recent
+/// tag, and the paths that have changes not yet committed, staged or not, files git doesn't
+/// track included.
 /// <paramref name="Branch"/> is null when detached; <paramref name="Commit"/> is null before the
 /// first commit. <paramref name="Files"/> are in order of their paths.
 /// </summary>
@@ -31,6 +32,13 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     public int ForkBehind { get; init; }
 
     /// <summary>
+    /// The most recent tag the commit checked out has in its history, as git describe --tags
+    /// finds it: the fewest commits back, annotated or not, and the commit's own where it has
+    /// one. Null where there is none, as before the first commit.
+    /// </summary>
+    public string? Tag { get; init; }
+
+    /// <summary>
     /// Whether Git push would have nothing to do: no change, staged or not, for it to commit,
     /// new files included, which it adds, and no commit the branch it tracks hasn't got. Never
     /// without a branch tracked, as the push could be what makes it.
@@ -49,10 +57,11 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         Ahead == other.Ahead &&
         Behind == other.Behind &&
         ForkBehind == other.ForkBehind &&
+        Tag == other.Tag &&
         Files.SequenceEqual(other.Files);
 
     public override int GetHashCode() =>
-        HashCode.Combine(Branch, Commit, Ahead, Behind, ForkBehind, Files.Count);
+        HashCode.Combine(Branch, Commit, Ahead, Behind, ForkBehind, Tag, Files.Count);
 
     /// <summary>
     /// The files in order of their paths, as each reader finds them in an order of its own.
@@ -142,8 +151,8 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     }
 
     /// <summary>
-    /// Asks the git the user has installed, with their config, in one run of git status, and, in
-    /// a fork, one more, counting how far behind upstream it is.
+    /// Asks the git the user has installed, with their config, in one run of git status, one of
+    /// git describe for the tag, and, in a fork, one more, counting how far behind upstream it is.
     /// </summary>
     public static GitState? FromGit(string repo, Cancel cancel)
     {
@@ -152,8 +161,16 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
             return null;
         }
 
-        if (state.Commit == null ||
-            !CodeCommands.IsFork(repo))
+        if (state.Commit == null)
+        {
+            return state;
+        }
+
+        state = state with
+        {
+            Tag = TagFromGit(repo, cancel)
+        };
+        if (!CodeCommands.IsFork(repo))
         {
             return state;
         }
@@ -170,6 +187,23 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         {
             ForkBehind = behind
         };
+    }
+
+    // The most recent tag the commit checked out has in its history, as git describe --tags
+    // --abbrev=0 gives it: the tag alone, without how far on the commit is. Null where it has
+    // none, for which describe fails. Some 55 ms, most of it git starting, however long the
+    // history.
+    static string? TagFromGit(string repo, Cancel cancel)
+    {
+        var describe = CodeCommands.GitOutput(repo, cancel, ["--no-optional-locks", "describe", "--tags", "--abbrev=0"]);
+        var tag = describe.Output.Trim();
+        if (!describe.Succeeded ||
+            tag.Length == 0)
+        {
+            return null;
+        }
+
+        return tag;
     }
 
     static GitState? Status(string repo, Cancel cancel)

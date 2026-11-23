@@ -48,7 +48,8 @@ static class LibGitState
             return new(branch, head.Tip?.Sha, tracking.AheadBy ?? 0, tracking.BehindBy ?? 0, GitState.InOrder(files))
             {
                 Upstream = head.IsTracking,
-                ForkBehind = ForkBehind(repository, head.Tip)
+                ForkBehind = ForkBehind(repository, head.Tip),
+                Tag = TagOf(repository, head.Tip)
             };
         }
         // Not a repository libgit2 will take, or libgit2 itself not loaded: its native library
@@ -77,6 +78,38 @@ static class LibGitState
 
         return repository.ObjectDatabase.CalculateHistoryDivergence(tip, upstream).BehindBy ?? 0;
     }
+
+    // As git describe --tags --abbrev=0 finds it: any tag, annotated or not, and the tag alone,
+    // without how far on the commit is.
+    static DescribeOptions describeOptions = new()
+    {
+        Strategy = DescribeStrategy.Tags,
+        MinimumCommitIdAbbreviatedSize = 0
+    };
+
+    // As GitState.TagFromGit finds it: the most recent tag the commit has in its history. None
+    // where there is none, which libgit2 reports as an error, as it does a repository with no
+    // tags at all. Under a millisecond for most, but slower than git describe for a long
+    // history with many tags, where libgit2 takes hundreds of milliseconds, efcore's 19,000
+    // commits and 282 tags 170 ms against git's 55 ms. Such a repository usually has many files
+    // too, and so is read by git.
+    static string? TagOf(Repository repository, Commit? tip)
+    {
+        if (tip == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return repository.Describe(tip, describeOptions);
+        }
+        catch (LibGit2SharpException)
+        {
+            return null;
+        }
+    }
+
 
     /// <summary>
     /// Which of <paramref name="folders"/>, in the repository, git ignores, and of the folders
