@@ -21,4 +21,31 @@ public class WindowContextTests
                   shiftRightClick: None
                 }
                 """);
+
+    // Only a newer version has an item: newest and build are none, so leave the snapshot.
+    [Test]
+    public Task UpdateItemText() =>
+        Verify(
+            new
+            {
+                available = WindowContext.UpdateItemText(
+                    TestUpdates.Installed(
+                        new()
+                        {
+                            AvailableUpdate = "0.4.0-beta.2"
+                        })),
+                newest = WindowContext.UpdateItemText(TestUpdates.Installed(new())),
+                build = WindowContext.UpdateItemText(
+                    TestUpdates.Build(
+                        new()
+                        {
+                            AvailableUpdate = "0.4.0"
+                        }))
+            })
+            .Snapshot(
+                """
+                {
+                  available: Update to Lode 0.4.0-beta.2
+                }
+                """);
 }

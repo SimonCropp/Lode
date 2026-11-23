@@ -1,7 +1,7 @@
 /// <summary>
 /// The running app: its windows and its tray icon. Closing the last window hides it to the
-/// tray rather than exiting; only Exit (in the tray menu or the window menu), or Windows
-/// shutting down, ends the app.
+/// tray rather than exiting; only Exit (in the tray menu or the window menu), an update, or
+/// Windows shutting down, ends the app.
 /// </summary>
 sealed class WindowContext : ApplicationContext
 {
@@ -32,7 +32,17 @@ sealed class WindowContext : ApplicationContext
         menu.Items.Add(open);
         menu.Items.Add("New window", null, (_, _) => OpenWindow([settings.StartLocation()]));
         menu.Items.Add(new ToolStripSeparator());
+        var update = new ToolStripMenuItem("", null, (_, _) => ApplyUpdate());
+        menu.Items.Add(update);
         menu.Items.Add("Exit", null, (_, _) => Exit());
+        // Looked at each time the menu opens, rather than as checks end, since the menu is only
+        // seen then.
+        menu.Opening += (_, _) =>
+        {
+            var text = UpdateItemText(Updates.Instance);
+            update.Visible = text != null;
+            update.Text = text;
+        };
         tray = new()
         {
             Icon = trayIcon,
@@ -103,6 +113,20 @@ sealed class WindowContext : ApplicationContext
         }
 
         return TrayAction.ShowWindows;
+    }
+
+    /// <summary>
+    /// The tray menu's update item, or null for none, which is when no newer Lode is known, as
+    /// for a build's output, which never knows of one.
+    /// </summary>
+    internal static string? UpdateItemText(Updates updates)
+    {
+        if (updates.Available is not { } available)
+        {
+            return null;
+        }
+
+        return $"Update to Lode {available.ToNormalizedString()}";
     }
 
     void Track(MainForm window)
@@ -201,23 +225,65 @@ sealed class WindowContext : ApplicationContext
 
     void Exit()
     {
-        // Asked first, as Exit stops what is running part way.
-        if (ActionLog.RunningMessage() is { } running)
+        if (!MayStopActions("Exit Lode"))
         {
-            var owner = windows.FirstOrDefault(_ => _.Visible);
-            var answer = MessageBox.Show(
-                owner,
-                $"{running}\n\nExit Lode anyway?",
-                "Exit Lode",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-            if (answer != DialogResult.Yes)
-            {
-                return;
-            }
+            return;
         }
 
+        CloseAll();
+    }
+
+    // The update waits for Lode to exit, so it goes as Exit does, once the shell is started.
+    void ApplyUpdate()
+    {
+        if (!MayStopActions("Update Lode"))
+        {
+            return;
+        }
+
+        try
+        {
+            Updates.Instance.Apply();
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    Win32Exception or
+                    InvalidOperationException)
+        {
+            MessageBox.Show(
+                windows.FirstOrDefault(_ => _.Visible),
+                $"Lode couldn't start the update: {exception.Message}",
+                "Lode",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        CloseAll();
+    }
+
+    // Asked first, as exiting stops what is running part way. True when nothing is running, or
+    // the answer is to go anyway.
+    bool MayStopActions(string doing)
+    {
+        if (ActionLog.RunningMessage() is not { } running)
+        {
+            return true;
+        }
+
+        var answer = MessageBox.Show(
+            windows.FirstOrDefault(_ => _.Visible),
+            $"{running}\n\n{doing} anyway?",
+            doing,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        return answer == DialogResult.Yes;
+    }
+
+    void CloseAll()
+    {
         global::MainForm.HideLastWindowOnClose = false;
         tray.Visible = false;
         // Each window writes its tabs and bounds to the settings as it closes, and the last to
