@@ -1,20 +1,14 @@
 class MainForm : Form
 {
-    // Glyphs of the icon font (see Icons) for the address row's buttons.
-    const string backGlyph = "\uE72B";
-    const string forwardGlyph = "\uE72A";
-    const string upGlyph = "\uE74A";
-    const string refreshGlyph = "\uE72C";
-    const string moreGlyph = "\uE712";
-    const string addGlyph = "\uE710";
-
     const int browserBackwardCommand = 1;
     const int browserForwardCommand = 2;
     const int maximumTabTextLength = 28;
 
-    ToolTip toolTip = new();
-    Breadcrumb breadcrumb = new();
-    TextBox addressBox;
+    /// <summary>
+    /// Along the top: Back, Forward and Up, the folder's address, the search box, and the ⋯ menu,
+    /// for the tab showing.
+    /// </summary>
+    internal AddressBar AddressBar { get; }
 
     /// <summary>
     /// Explorer's command bar, under the address bar: buttons for what is most often done to the
@@ -22,8 +16,6 @@ class MainForm : Form
     /// </summary>
     internal ActionsBar ActionsBar { get; }
 
-    FramedTextBox filterFrame = new();
-    TextBox filterBox;
     PaneSplitContainer split = new();
     Settings settings;
     Places places;
@@ -52,11 +44,6 @@ class MainForm : Form
     // The instance the status bar and Options follow, kept so the bar stops listening to that
     // one when the window closes.
     Updates updates = Updates.Instance;
-
-    Button backButton;
-    Button forwardButton;
-    Button upButton;
-    bool updatingFilter;
 
     // Folders of tabs closed in this window, most recent last, for Ctrl+Shift+T.
     List<string> closedTabs = [];
@@ -126,8 +113,6 @@ class MainForm : Form
         this.places = places;
         OpenSite = url => FileOperations.Open(this, url);
         Tree = new(settings, places);
-        addressBox = breadcrumb.Box;
-        filterBox = filterFrame.Box;
         FindHost = new(this, settings, Tabs, () => ActiveView, () => Views, ShowInFolder);
         GitPanes = new(this, settings)
         {
@@ -140,6 +125,7 @@ class MainForm : Form
         GitPanes.ChangesRead += DiffHost.ChangesRead;
         GitPanes.PinnedChanged += ApplyPinnedInAllWindows;
         GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
+        AddressBar = new(this, () => ActiveView, Reload, NewTab, WindowCommands);
         ActionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
         StatusBar = new(this, settings, updates, () => ActiveView, ShowOptions, url => OpenSite(url), folder => AddTab(folder, true));
         FindHost.ProgressChanged += () => StatusBar.ShowProgress(FindHost.Progress);
@@ -183,159 +169,19 @@ class MainForm : Form
         ClientSize = new(1200, 760);
         MinimumSize = new(520, 320);
 
-        backButton = CreateButton(backGlyph, "Back (Alt+Left)", () => ActiveView?.GoBack());
-        forwardButton = CreateButton(forwardGlyph, "Forward (Alt+Right)", () => ActiveView?.GoForward());
-
-        // Right-clicked, each lists where it would go, to go several steps at once.
-        backButton.MouseUp += (_, args) => ShowHistory(backButton, args, _ => _.BackHistory);
-        forwardButton.MouseUp += (_, args) => ShowHistory(forwardButton, args, _ => _.ForwardHistory);
-        upButton = CreateButton(upGlyph, "Up (Alt+Up)", () => ActiveView?.GoUp());
-
         Controls.Add(BuildContent());
 
         // Straight after the content, so it docks after the bars, the find strip and the status
         // bar have taken their edges: down the right between the command bar and the find strip.
         Controls.Add(GitPanes.Strip);
         Controls.Add(ActionsBar.Strip);
-        Controls.Add(BuildNavigationBar());
+        Controls.Add(AddressBar.Row);
 
         // Before the status bar, so it docks above it.
         Controls.Add(FindHost.Panel);
         Controls.Add(StatusBar.Strip);
         ResumeLayout(false);
         PerformLayout();
-    }
-
-    Control BuildNavigationBar()
-    {
-        var refreshButton = CreateButton(refreshGlyph, "Refresh (F5)", Reload);
-        var newTabButton = CreateButton(addGlyph, "New tab (Ctrl+T)", NewTab);
-        var menuButton = CreateButton(moreGlyph, "Menu", () => { });
-        menuButton.Click += (_, _) => ShowWindowMenu(menuButton);
-
-        addressBox.Name = "address";
-        addressBox.AccessibleName = "Address";
-        breadcrumb.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        breadcrumb.Margin = new(6, 0, 4, 0);
-        breadcrumb.PathClicked += _ =>
-        {
-            ActiveView?.Navigate(_);
-            ActiveView?.FocusList();
-        };
-        addressBox.AutoCompleteMode = AutoCompleteMode.Suggest;
-        addressBox.AutoCompleteSource = AutoCompleteSource.FileSystemDirectories;
-        addressBox.KeyDown += OnAddressKeyDown;
-        addressBox.Enter += (_, _) => BeginInvoke(addressBox.SelectAll);
-
-        filterBox.Name = "filter";
-        filterBox.AccessibleName = "Search";
-        filterFrame.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        filterFrame.Margin = new(4, 0, 4, 0);
-        filterBox.PlaceholderText = "Search this folder (Ctrl+F)";
-        filterFrame.Glyph = Icons.Search;
-        filterBox.TextChanged += OnFilterTextChanged;
-        filterBox.KeyDown += OnFilterKeyDown;
-
-        var bar = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            ColumnCount = 8,
-            RowCount = 1,
-            Padding = new(4, 3, 4, 3),
-            // Explorer's address row, a shade off white, with the command bar white below it.
-            BackColor = ExplorerStyle.AddressRow
-        };
-        bar.ColumnStyles.Add(new(SizeType.AutoSize));
-        bar.ColumnStyles.Add(new(SizeType.AutoSize));
-        bar.ColumnStyles.Add(new(SizeType.AutoSize));
-        bar.ColumnStyles.Add(new(SizeType.AutoSize));
-        bar.ColumnStyles.Add(new(SizeType.Percent, 100));
-        bar.ColumnStyles.Add(new(SizeType.Absolute, 240));
-        bar.ColumnStyles.Add(new(SizeType.AutoSize));
-        bar.ColumnStyles.Add(new(SizeType.AutoSize));
-        bar.Controls.Add(backButton, 0, 0);
-        bar.Controls.Add(forwardButton, 1, 0);
-        bar.Controls.Add(upButton, 2, 0);
-        bar.Controls.Add(refreshButton, 3, 0);
-        bar.Controls.Add(breadcrumb, 4, 0);
-        bar.Controls.Add(filterFrame, 5, 0);
-        bar.Controls.Add(newTabButton, 6, 0);
-        bar.Controls.Add(menuButton, 7, 0);
-        return bar;
-    }
-
-    // Its text is a glyph of the icon font, which a screen reader can't say, so it is named by
-    // its tooltip, less the keys, which describe it.
-    // How many places Back's and Forward's lists show, the nearest: as many as are easily read.
-    const int mostHistory = 15;
-
-    void ShowHistory(Button button, MouseEventArgs args, Func<FolderView, IReadOnlyList<(string Path, int Position)>> history)
-    {
-        if (args.Button != MouseButtons.Right ||
-            ActiveView is not { } view ||
-            HistoryCommands(view, history(view)) is not { Count: > 0 } commands)
-        {
-            return;
-        }
-
-        var menu = new ExplorerMenu();
-        foreach (var (text, go) in commands)
-        {
-            menu.Items.Add(text, null, (_, _) => go());
-        }
-
-        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-        menu.Show(button, new(0, button.Height));
-    }
-
-    /// <summary>
-    /// What Back's or Forward's list offers: each place by its name, the nearest first, and
-    /// going straight to it.
-    /// </summary>
-    internal static List<(string Text, Action Go)> HistoryCommands(FolderView view, IReadOnlyList<(string Path, int Position)> history) =>
-        history
-            .Take(mostHistory)
-            .Select(_ => (Locations.DisplayName(_.Path), (Action)(() => view.GoToHistory(_.Position))))
-            .ToList();
-
-    Button CreateButton(string glyph, string tip, Action action)
-    {
-        var name = tip;
-        var keys = tip.IndexOf(" (", StringComparison.Ordinal);
-        if (keys > 0)
-        {
-            name = tip[..keys];
-        }
-
-        var button = new GlyphButton
-        {
-            Text = glyph,
-            AccessibleName = name,
-            AccessibleDescription = tip,
-            Size = new(36, 30),
-            Margin = new(1),
-            TabStop = false
-        };
-        button.Click += (_, _) => action();
-        toolTip.SetToolTip(button, tip);
-        return button;
-    }
-
-    // The ⋯ menu at the right of the address bar: Lode's own commands, apart from the actions,
-    // which are buttons or under See more.
-    void ShowWindowMenu(Control button)
-    {
-        Action? chosen = null;
-        var strip = QuickMenu.Build(WindowCommands(), null, _ => chosen = _);
-        // Run the choice once the menu has closed, so a dialog it opens gets the focus.
-        strip.Closed += (_, _) => strip.BeginInvoke(
-            () =>
-            {
-                strip.Dispose();
-                chosen?.Invoke();
-            });
-        strip.Show(button, new(0, button.Height));
     }
 
     /// <summary>
@@ -1228,7 +1074,7 @@ class MainForm : Form
         // is asked for.
         UpdateShowing();
         var view = ActiveView;
-        ShowingFolder(view != null);
+        AddressBar.Update(view);
         if (view == null)
         {
             // The Diff tab keeps the panes on the repository its diff is of, so the files listed
@@ -1256,14 +1102,7 @@ class MainForm : Form
             return;
         }
 
-        breadcrumb.Path = view.CurrentPath;
-        updatingFilter = true;
-        filterBox.Text = view.Filter;
-        updatingFilter = false;
         Retitle();
-        backButton.Enabled = view.CanGoBack;
-        forwardButton.Enabled = view.CanGoForward;
-        upButton.Enabled = view.CanGoUp;
         Tree.SelectPath(view.CurrentPath);
         UpdateStatus(view);
     }
@@ -1820,72 +1659,6 @@ class MainForm : Form
         TaskDialog.ShowDialog(this, page);
     }
 
-    void FocusAddress() =>
-        breadcrumb.BeginEdit();
-
-    void OnAddressKeyDown(object? sender, KeyEventArgs args)
-    {
-        var view = ActiveView;
-        if (view == null)
-        {
-            return;
-        }
-
-        if (args.KeyCode == Keys.Enter)
-        {
-            args.Handled = true;
-            args.SuppressKeyPress = true;
-            view.GoToTyped(addressBox.Text);
-            breadcrumb.Path = view.CurrentPath;
-            view.FocusList();
-        }
-        else if (args.KeyCode == Keys.Escape)
-        {
-            args.Handled = true;
-            args.SuppressKeyPress = true;
-            breadcrumb.Path = view.CurrentPath;
-            view.FocusList();
-        }
-    }
-
-    void OnFilterTextChanged(object? sender, EventArgs args)
-    {
-        if (!updatingFilter &&
-            ActiveView is { } view)
-        {
-            view.Filter = filterBox.Text;
-        }
-    }
-
-    void OnFilterKeyDown(object? sender, KeyEventArgs args)
-    {
-        // What it says, searched for inside the files instead.
-        if (args.KeyData == (Keys.Control | Keys.Enter))
-        {
-            args.Handled = true;
-            args.SuppressKeyPress = true;
-            if (ActiveView is { CanSearchInsideTheFiles: true } view)
-            {
-                view.SearchInsideTheFiles();
-            }
-
-            return;
-        }
-
-        if (args.KeyCode == Keys.Escape)
-        {
-            filterBox.Clear();
-        }
-        else if (args.KeyCode is not (Keys.Enter or Keys.Down))
-        {
-            return;
-        }
-
-        args.Handled = true;
-        args.SuppressKeyPress = true;
-        ActiveView?.FocusList();
-    }
-
     void OnTabsMouseUp(object? sender, MouseEventArgs args)
     {
         var page = TabAt(args.Location);
@@ -1979,8 +1752,8 @@ class MainForm : Form
         Add("Forward", () => ActiveView?.GoForward(), "Alt+Right", view?.CanGoForward == true);
         Add("Up", () => ActiveView?.GoUp(), "Alt+Up", view?.CanGoUp == true);
         Add("Refresh", Reload, "F5");
-        Add("Go to address", FocusAddress, "Ctrl+L");
-        Add("Search this folder", FocusFilter, "Ctrl+F");
+        Add("Go to address", AddressBar.FocusAddress, "Ctrl+L");
+        Add("Search this folder", AddressBar.FocusFilter, "Ctrl+F");
         Add("New tab", NewTab, "Ctrl+T");
         Add("New window", NewWindow, "Ctrl+N");
         Add("Find in files", FindHost.Open, "Ctrl+Shift+F");
@@ -2116,34 +1889,12 @@ class MainForm : Form
         }
     }
 
-    void FocusFilter()
-    {
-        filterBox.Focus();
-        filterBox.SelectAll();
-    }
-
     // As Find Results shows: what was found so far in the status bar, and none of what is a
     // folder's, its free space, its repository, or the actions on its selection.
     void UpdateResultsStatus()
     {
         StatusBar.ShowResults(FindHost.Progress);
         ActionsBar.Update();
-    }
-
-    // Find Results has no folder: going back, forward and up, the address and the search box
-    // are for the folders' tabs.
-    void ShowingFolder(bool folder)
-    {
-        breadcrumb.Enabled = folder;
-        filterFrame.Enabled = folder;
-        if (folder)
-        {
-            return;
-        }
-
-        backButton.Enabled = false;
-        forwardButton.Enabled = false;
-        upButton.Enabled = false;
     }
 
     // Show in folder, from Find Results: the tab showing the folder the file is in, or a new
@@ -2362,11 +2113,11 @@ class MainForm : Form
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D:
             case Keys.F4:
-                FocusAddress();
+                AddressBar.FocusAddress();
                 return true;
             case Keys.Control | Keys.F:
             case Keys.F3:
-                FocusFilter();
+                AddressBar.FocusFilter();
                 return true;
             case Keys.Control | Keys.N:
                 NewWindow();
@@ -2514,7 +2265,7 @@ class MainForm : Form
             GitPanes.Dispose();
             DiffHost.Dispose();
             StatusBar.Dispose();
-            toolTip.Dispose();
+            AddressBar.Dispose();
             trayTimer.Dispose();
             unusedTabsTimer.Dispose();
             tabsTimer.Dispose();
