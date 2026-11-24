@@ -11,8 +11,8 @@ class MainForm : Form
     internal AddressBar AddressBar { get; }
 
     /// <summary>
-    /// The window's own commands: what the ⋯ menu and the command palette offer, and those only
-    /// they and the keys run.
+    /// The window's own commands: what the ⋯ menu, the command palette and the keys offer, and
+    /// those only they run.
     /// </summary>
     internal Commands Commands { get; }
 
@@ -1466,40 +1466,6 @@ class MainForm : Form
         AddTab(path, true);
     }
 
-    // Ctrl+Z and Ctrl+Y: through the tab's view, which says when one can't be done; with Find
-    // Results showing, which has none, the window says.
-    internal void Undo()
-    {
-        if (ActiveView is { } view)
-        {
-            view.Undo();
-            return;
-        }
-
-        RunUndo(UndoHistory.Instance.Undo);
-    }
-
-    internal void Redo()
-    {
-        if (ActiveView is { } view)
-        {
-            view.Redo();
-            return;
-        }
-
-        RunUndo(UndoHistory.Instance.Redo);
-    }
-
-    async void RunUndo(Func<IntPtr, Task<string?>> step)
-    {
-        var failure = await step(Handle);
-        if (failure != null &&
-            !IsDisposed)
-        {
-            MessageBox.Show(this, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-    }
-
     TabPage? TabAt(Point location)
     {
         for (var index = 0; index < Tabs.TabCount; index++)
@@ -1555,145 +1521,11 @@ class MainForm : Form
         }
     }
 
-    internal void SelectAdjacentTab(int offset)
-    {
-        if (Tabs.TabCount > 1)
-        {
-            Tabs.SelectedIndex = (Tabs.SelectedIndex + offset + Tabs.TabCount) % Tabs.TabCount;
-            ActiveView?.FocusList();
-        }
-    }
-
-    // Ctrl+1 to Ctrl+8 go to the tab at that place, and Ctrl+9 to the last, as in Explorer and
-    // the browsers. One that isn't there does nothing.
-    void SelectTabAt(int number)
-    {
-        var index = number - 1;
-        if (number == 9)
-        {
-            index = Tabs.TabCount - 1;
-        }
-
-        if (index < 0 ||
-            index >= Tabs.TabCount)
-        {
-            return;
-        }
-
-        Tabs.SelectedIndex = index;
-        ActiveView?.FocusList();
-    }
-
-    // The number Ctrl was held with, on the top row or the number pad, or 0.
-    static int TabNumber(Keys keyData)
-    {
-        if ((keyData & Keys.Modifiers) != Keys.Control)
-        {
-            return 0;
-        }
-
-        var key = keyData & Keys.KeyCode;
-        if (key is >= Keys.D1 and <= Keys.D9)
-        {
-            return key - Keys.D0;
-        }
-
-        if (key is >= Keys.NumPad1 and <= Keys.NumPad9)
-        {
-            return key - Keys.NumPad0;
-        }
-
-        return 0;
-    }
-
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
-        if (TabNumber(keyData) is > 0 and var number)
+        if (Commands.RunKey(keyData))
         {
-            SelectTabAt(number);
             return true;
-        }
-
-        switch (keyData)
-        {
-            case Keys.Alt | Keys.Left:
-                ActiveView?.GoBack();
-                return true;
-            case Keys.Alt | Keys.Right:
-                ActiveView?.GoForward();
-                return true;
-            case Keys.Alt | Keys.Up:
-                ActiveView?.GoUp();
-                return true;
-            case Keys.F5:
-                Reload();
-                return true;
-            case Keys.Control | Keys.T:
-                NewTab();
-                return true;
-            case Keys.Control | Keys.W:
-                if (Tabs.SelectedTab is { } selected)
-                {
-                    CloseTab(selected);
-                }
-
-                return true;
-            case Keys.Control | Keys.Z when !IsEditingText():
-                Undo();
-                return true;
-            case Keys.Control | Keys.Y when !IsEditingText():
-            case Keys.Control | Keys.Shift | Keys.Z when !IsEditingText():
-                Redo();
-                return true;
-            case Keys.Control | Keys.Shift | Keys.F:
-                FindHost.Open();
-                return true;
-            case Keys.Control | Keys.Shift | Keys.T:
-                ReopenClosedTab();
-                return true;
-            case Keys.Control | Keys.Shift | Keys.P:
-                Commands.ShowPalette();
-                return true;
-            case Keys.Control | Keys.Tab:
-                SelectAdjacentTab(1);
-                return true;
-            case Keys.Control | Keys.Shift | Keys.Tab:
-                SelectAdjacentTab(-1);
-                return true;
-            // With Find Results showing, which has no address, the next match and the one before.
-            case Keys.F4 when FindHost.ResultsShowing:
-                FindHost.ResultsView?.GoToMatch(true);
-                return true;
-            case Keys.Shift | Keys.F4 when FindHost.ResultsShowing:
-                FindHost.ResultsView?.GoToMatch(false);
-                return true;
-            case Keys.Control | Keys.L:
-            case Keys.Alt | Keys.D:
-            case Keys.F4:
-                AddressBar.FocusAddress();
-                return true;
-            case Keys.Control | Keys.F:
-            case Keys.F3:
-                AddressBar.FocusFilter();
-                return true;
-            case Keys.Control | Keys.N:
-                NewWindow();
-                return true;
-            case Keys.Control | Keys.H:
-                Commands.ToggleHidden();
-                return true;
-            case Keys.Control | Keys.B:
-                StatusBar.ShowBranches();
-                return true;
-            case Keys.Control | Keys.Shift | Keys.G:
-                GitPanes.Toggle(GitPane.Changes);
-                return true;
-            case Keys.Control | Keys.Shift | Keys.H:
-                GitPanes.Toggle(GitPane.History);
-                return true;
-            case Keys.Control | Keys.Shift | Keys.O:
-                Commands.ShowClone();
-                return true;
         }
 
         return base.ProcessCmdKey(ref message, keyData);
@@ -1707,21 +1539,6 @@ class MainForm : Form
         {
             BeginInvoke(ActionsBar.Update);
         }
-    }
-
-    // Typing in a box (the address, the filter, a name being edited) keeps Ctrl+Z for the text.
-    static unsafe bool IsEditingText()
-    {
-        var focus = GetFocus();
-        if (focus == IntPtr.Zero)
-        {
-            return false;
-        }
-
-        const int capacity = 64;
-        var name = stackalloc char[capacity];
-        var length = GetClassNameW(focus, name, capacity);
-        return new CharSpan(name, Math.Max(length, 0)).Contains("Edit", StringComparison.OrdinalIgnoreCase);
     }
 
     // What Explorer tells every window when it starts, as the taskbar: after a crash, or when

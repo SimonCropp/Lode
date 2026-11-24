@@ -1,8 +1,9 @@
 /// <summary>
 /// A window's own commands, apart from the actions on the selection: what the ⋯ menu at the
-/// right of the address bar lists and what the command palette offers, and those of them only
-/// they and the keys run: showing hidden items and system files, Terminal, Open in Claude, the
-/// coding agents, pinning the folder open to Quick access, cloning a repository, and About.
+/// right of the address bar lists, what the command palette offers and what the keys do, and
+/// those of them only they run: Undo and Redo, going to the next tab or one by its number,
+/// showing hidden items and system files, Terminal, Open in Claude, the coding agents, pinning
+/// the folder open to Quick access, cloning a repository, and About.
 /// </summary>
 sealed class Commands
 {
@@ -202,10 +203,10 @@ sealed class Commands
 
         Add("Reopen closed tab", window.ReopenClosedTab, "Ctrl+Shift+T", window.CanReopenClosedTab);
         var history = UndoHistory.Instance;
-        Add(history.UndoText, window.Undo, "Ctrl+Z", history.CanUndo);
-        Add(history.RedoText, window.Redo, "Ctrl+Y", history.CanRedo);
-        Add("Next tab", () => window.SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
-        Add("Previous tab", () => window.SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
+        Add(history.UndoText, Undo, "Ctrl+Z", history.CanUndo);
+        Add(history.RedoText, Redo, "Ctrl+Y", history.CanRedo);
+        Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
+        Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
         Add(settings.ShowSystem ? "Hide system files" : "Show system files", ToggleSystem);
         Add("Terminal", () => OpenTerminal(admin: false), enabled: PinnablePath() != null);
@@ -306,6 +307,205 @@ sealed class Commands
                         action();
                     },
                     viewShortcuts.GetValueOrDefault(name, "")));
+        }
+    }
+
+    /// <summary>
+    /// Runs what <paramref name="keyData"/> does, pressed anywhere in the window. False for a key
+    /// the window does nothing with, which goes on to the control with the focus.
+    /// </summary>
+    public bool RunKey(Keys keyData)
+    {
+        if (TabNumber(keyData) is > 0 and var number)
+        {
+            SelectTabAt(number);
+            return true;
+        }
+
+        switch (keyData)
+        {
+            case Keys.Alt | Keys.Left:
+                window.ActiveView?.GoBack();
+                return true;
+            case Keys.Alt | Keys.Right:
+                window.ActiveView?.GoForward();
+                return true;
+            case Keys.Alt | Keys.Up:
+                window.ActiveView?.GoUp();
+                return true;
+            case Keys.F5:
+                window.Reload();
+                return true;
+            case Keys.Control | Keys.T:
+                window.NewTab();
+                return true;
+            case Keys.Control | Keys.W:
+                if (window.Tabs.SelectedTab is { } selected)
+                {
+                    window.CloseTab(selected);
+                }
+
+                return true;
+            case Keys.Control | Keys.Z when !IsEditingText():
+                Undo();
+                return true;
+            case Keys.Control | Keys.Y when !IsEditingText():
+            case Keys.Control | Keys.Shift | Keys.Z when !IsEditingText():
+                Redo();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.F:
+                window.FindHost.Open();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.T:
+                window.ReopenClosedTab();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.P:
+                ShowPalette();
+                return true;
+            case Keys.Control | Keys.Tab:
+                SelectAdjacentTab(1);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.Tab:
+                SelectAdjacentTab(-1);
+                return true;
+            // With Find Results showing, which has no address, the next match and the one before.
+            case Keys.F4 when window.FindHost.ResultsShowing:
+                window.FindHost.ResultsView?.GoToMatch(true);
+                return true;
+            case Keys.Shift | Keys.F4 when window.FindHost.ResultsShowing:
+                window.FindHost.ResultsView?.GoToMatch(false);
+                return true;
+            case Keys.Control | Keys.L:
+            case Keys.Alt | Keys.D:
+            case Keys.F4:
+                window.AddressBar.FocusAddress();
+                return true;
+            case Keys.Control | Keys.F:
+            case Keys.F3:
+                window.AddressBar.FocusFilter();
+                return true;
+            case Keys.Control | Keys.N:
+                window.NewWindow();
+                return true;
+            case Keys.Control | Keys.H:
+                ToggleHidden();
+                return true;
+            case Keys.Control | Keys.B:
+                window.StatusBar.ShowBranches();
+                return true;
+            case Keys.Control | Keys.Shift | Keys.G:
+                window.GitPanes.Toggle(GitPane.Changes);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.H:
+                window.GitPanes.Toggle(GitPane.History);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.O:
+                ShowClone();
+                return true;
+        }
+
+        return false;
+    }
+
+    // The number Ctrl was held with, on the top row or the number pad, or 0.
+    static int TabNumber(Keys keyData)
+    {
+        if ((keyData & Keys.Modifiers) != Keys.Control)
+        {
+            return 0;
+        }
+
+        var key = keyData & Keys.KeyCode;
+        if (key is >= Keys.D1 and <= Keys.D9)
+        {
+            return key - Keys.D0;
+        }
+
+        if (key is >= Keys.NumPad1 and <= Keys.NumPad9)
+        {
+            return key - Keys.NumPad0;
+        }
+
+        return 0;
+    }
+
+    // Ctrl+1 to Ctrl+8 go to the tab at that place, and Ctrl+9 to the last, as in Explorer and
+    // the browsers. One that isn't there does nothing.
+    void SelectTabAt(int number)
+    {
+        var tabs = window.Tabs;
+        var index = number - 1;
+        if (number == 9)
+        {
+            index = tabs.TabCount - 1;
+        }
+
+        if (index < 0 ||
+            index >= tabs.TabCount)
+        {
+            return;
+        }
+
+        tabs.SelectedIndex = index;
+        window.ActiveView?.FocusList();
+    }
+
+    void SelectAdjacentTab(int offset)
+    {
+        var tabs = window.Tabs;
+        if (tabs.TabCount > 1)
+        {
+            tabs.SelectedIndex = (tabs.SelectedIndex + offset + tabs.TabCount) % tabs.TabCount;
+            window.ActiveView?.FocusList();
+        }
+    }
+
+    // Typing in a box (the address, the filter, a name being edited) keeps Ctrl+Z for the text.
+    static unsafe bool IsEditingText()
+    {
+        var focus = GetFocus();
+        if (focus == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        const int capacity = 64;
+        var name = stackalloc char[capacity];
+        var length = GetClassNameW(focus, name, capacity);
+        return new CharSpan(name, Math.Max(length, 0)).Contains("Edit", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Ctrl+Z and Ctrl+Y: through the tab's view, which says when one can't be done; with Find
+    // Results showing, which has none, the window says.
+    void Undo()
+    {
+        if (window.ActiveView is { } view)
+        {
+            view.Undo();
+            return;
+        }
+
+        RunUndo(UndoHistory.Instance.Undo);
+    }
+
+    void Redo()
+    {
+        if (window.ActiveView is { } view)
+        {
+            view.Redo();
+            return;
+        }
+
+        RunUndo(UndoHistory.Instance.Redo);
+    }
+
+    async void RunUndo(Func<IntPtr, Task<string?>> step)
+    {
+        var failure = await step(window.Handle);
+        if (failure != null &&
+            !window.IsDisposed)
+        {
+            MessageBox.Show(window, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
