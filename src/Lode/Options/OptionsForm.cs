@@ -623,6 +623,22 @@ class OptionsForm : Form
             page.Controls.Add(part);
         }
 
+        // A page ending in a table that scrolls, the actions', fills the height the pages have,
+        // the table taking what is left under what is above it, rather than stopping at the
+        // height it asks for, which leaves the dialog no taller, and the rest of the page empty.
+        if (parts[^1] is HeadedTable table)
+        {
+            page.Dock = DockStyle.Fill;
+            // The heading and each part as tall as it is, but the table.
+            for (var row = 0; row < parts.Length; row++)
+            {
+                page.RowStyles.Add(new(SizeType.AutoSize));
+            }
+
+            page.RowStyles.Add(new(SizeType.Percent, 100));
+            table.Dock = DockStyle.Fill;
+        }
+
         pages.Add(page);
         pageList.Add(title, glyph);
     }
@@ -1691,9 +1707,10 @@ class OptionsForm : Form
         restoreButton.Enabled = registered != null;
     }
 
-    // A table under its column headings, as the actions are. Past a height the other pages fit
-    // in, the table scrolls and the headings stay put above it, so the list of actions doesn't
-    // set the dialog's height and what each column is shows however far down it is scrolled.
+    // A table under its column headings, as the actions are. It asks for no more than a height
+    // the other pages are taller than, so the list of actions doesn't set the dialog's height,
+    // and scrolls in whatever height it is given, the headings staying put above it, so what
+    // each column is shows however far down it is scrolled.
     sealed class HeadedTable : TableLayoutPanel
     {
         const int maximumHeight = 360;
@@ -1742,11 +1759,21 @@ class OptionsForm : Form
             Align();
             header.ResumeLayout();
             table.LaidOut += Align;
+            // The headings as tall as they are, and the rows the rest.
+            RowStyles.Add(new(SizeType.AutoSize));
+            RowStyles.Add(new(SizeType.Percent, 100));
             Controls.Add(header, 0, 0);
-            Controls.Add(new Rows(header, table), 0, 1);
+            Controls.Add(
+                new Rows(header, table)
+                {
+                    Dock = DockStyle.Fill
+                },
+                0,
+                1);
         }
 
-        // Under the headings, scrolling the table once it runs past the height left.
+        // Under the headings, asking for no more than maximumHeight, headings and all, and
+        // scrolling the table where it runs past the height it is given.
         sealed class Rows : Panel
         {
             Control header;

@@ -1300,6 +1300,8 @@ public class OptionsFormTests
 
     // On a screen too short for it, a small one or one scaled up, the dialog is no taller than
     // the screen and the pages scroll, so Close is still on it. Each page shows from its top.
+    // The Actions page fits the height left, its table scrolling in it, rather than the page
+    // scrolling around a table that scrolls.
     [Test]
     public async Task FitsWithinAShortScreen()
     {
@@ -1312,9 +1314,20 @@ public class OptionsFormTests
         form.FitWithin(area);
         Application.DoEvents();
         var close = form.AcceptButton as Control;
+        var scrolling = new List<string>();
+        foreach (var page in new[] { "General", "View", "Actions", "Search", "Code", "Promoted files", "File Explorer", "Links", "Updates" })
+        {
+            form.ShowPage(page);
+            Application.DoEvents();
+            if (form.PagesScroll)
+            {
+                scrolling.Add(page);
+            }
+        }
 
         await Assert.That(form.Height).IsLessThanOrEqualTo(area.Height);
-        await Assert.That(form.PagesScroll).IsTrue();
+        await Assert.That(scrolling).IsNotEmpty();
+        await Assert.That(scrolling).DoesNotContain("Actions");
         await Assert.That(close!.Visible).IsTrue();
         await Assert.That(form.RectangleToClient(close.RectangleToScreen(close.ClientRectangle)).Bottom).IsLessThanOrEqualTo(form.ClientSize.Height);
     }
