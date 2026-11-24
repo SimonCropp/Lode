@@ -259,6 +259,9 @@ static partial class NativeMethods
     [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
     public static partial int GetWindowLong(IntPtr window, int index);
 
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongW")]
+    public static partial int SetWindowLong(IntPtr window, int index, int value);
+
     [LibraryImport("gdi32.dll")]
     public static partial int SaveDC(IntPtr dc);
 

@@ -388,9 +388,10 @@ sealed class RowList : ListView
             rowHeight = Math.Max(rowHeight, GetItemRect(0).Height);
         }
 
+        // The scrollbar as wide as on the screen the list is on, not the one Windows started on.
         if (VirtualListSize * rowHeight > Height)
         {
-            width -= SystemInformation.VerticalScrollBarWidth;
+            width -= SystemInformation.GetVerticalScrollBarWidthForDpi(DeviceDpi);
         }
 
         width = Math.Max(1, width);
@@ -498,8 +499,24 @@ sealed class RowList : ListView
     // A click picked none, and the list's timer is yet to pick the row again.
     bool unpicked;
 
+    const int nonClientCalcSize = 0x0083;
+
     protected override void WndProc(ref Message message)
     {
+        // No scrollbar along the bottom, as its frame is measured: the column is fitted across,
+        // so there is nothing to scroll to, but the list brought one whenever the column was
+        // wider than the room for a moment, as more rows than fit came or the list narrowed, and
+        // kept it once the column fitted.
+        if (message.Msg == nonClientCalcSize &&
+            IsHandleCreated)
+        {
+            var style = GetWindowLong(Handle, WindowStyle);
+            if ((style & WindowStyleHorizontalScroll) != 0)
+            {
+                SetWindowLong(Handle, WindowStyle, style & ~WindowStyleHorizontalScroll);
+            }
+        }
+
         if (!DeselectsOnClick)
         {
             base.WndProc(ref message);

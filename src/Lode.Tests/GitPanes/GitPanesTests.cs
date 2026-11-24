@@ -582,6 +582,36 @@ public class GitPanesTests
         await Assert.That(list.TopItem?.Index).IsEqualTo(0);
     }
 
+    // History's commits and the newest's files, more of each than fit, as the window opens: a
+    // scrollbar along the side of each, none along the bottom, which the files brought as the
+    // pane was laid out narrower than it first was, and again once they came.
+    [Test]
+    public async Task HistoryNoScrollbarAlongBottom()
+    {
+        using var stubs = new PaneStubs();
+        var history = Enumerable.Range(0, 40)
+            .Select(_ => new GitCommit($"{_:x40}", ["0000000000000000000000000000000000000000"], "Ada Lovelace", PaneStubs.Now, [], $"Commit {_}"))
+            .ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _) => history.Skip(skip).Take(count).ToList();
+        var many = Enumerable.Range(0, 40)
+            .Select(_ => new Change($"src/file{_:00}.cs", null, GitChange.Modified))
+            .ToList();
+        HistoryPane.ReadFiles = (_, _, _) => many;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        PumpFor(TimeSpan.FromMilliseconds(200));
+        var pane = form.GitPanes.HistoryPane;
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(many.Count);
+        await Assert.That(RowListTests.Scrollbars(pane.CommitList)).IsEqualTo("side");
+        await Assert.That(RowListTests.Scrollbars(pane.FileList)).IsEqualTo("side");
+    }
+
     // A click as Windows sends one: the button up waiting in the queue, for the list, which
     // doesn't come back from the press until the button is up, to find.
     static void Click(RowList list, int index)
