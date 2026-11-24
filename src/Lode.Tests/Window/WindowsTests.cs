@@ -1530,8 +1530,8 @@ public class WindowsTests
         return point;
     }
 
-    // Right-clicking anywhere on the bar but a button, See more say, offers only the Actions page
-    // of Options.
+    // Right-clicking anywhere on the bar but a button, See more say, offers only the Button
+    // actions page of Options.
     [Test]
     public async Task RightClickingSeeMore()
     {

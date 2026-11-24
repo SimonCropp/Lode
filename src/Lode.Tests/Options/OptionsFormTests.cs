@@ -242,7 +242,8 @@ public class OptionsFormTests
                 """);
     }
 
-    // Each action has a tick for the actions bar and one for the right-click menus.
+    // Each action has a tick for the actions bar, on the Button actions page, and one for the
+    // right-click menus, on the Menu actions page.
     [Test]
     public async Task TickingAnActionChangesWhereItShows()
     {
@@ -346,6 +347,97 @@ public class OptionsFormTests
                 """);
     }
 
+    // Reset on the Button actions page puts every action on the bar back as it was at first, its
+    // ticks with it, leaving the right-click menus as they are, and Reset on the Menu actions
+    // page does the same for the menus. Each is greyed out while there is nothing to put back,
+    // and a placement put back is forgotten, as one never changed is.
+    [Test]
+    public async Task ResetPutsTheActionsBack()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        CheckBox Box(string name) => (CheckBox) form.Controls.Find(name, true)[0];
+        Button Reset(string name) => (Button) form.Controls.Find(name, true)[0];
+        object State() =>
+            new
+            {
+                buttonReset = Reset("buttonReset").Enabled,
+                menuReset = Reset("menuReset").Enabled,
+                openButton = Box("button.open").Checked,
+                cutButtonNested = Box("buttonNested.cut").Checked,
+                cutMenu = Box("menu.cut").Checked,
+                changed = settings.Actions.Keys.Order().ToList()
+            };
+        var opened = State();
+        Box("button.open").Checked = true;
+        Box("buttonNested.cut").Checked = true;
+        Box("menu.cut").Checked = false;
+        var ticked = State();
+        var changes = new List<SettingsChange>();
+        form.SettingsChanged += changes.Add;
+
+        form.ShowPage("Button actions");
+        Reset("buttonReset").PerformClick();
+        var buttonsReset = State();
+        form.ShowPage("Menu actions");
+        Reset("menuReset").PerformClick();
+
+        await Verify(
+            new
+            {
+                opened,
+                ticked,
+                buttonsReset,
+                menusReset = State(),
+                changes
+            })
+            .Snapshot(
+                """
+                {
+                  opened: {
+                    buttonReset: false,
+                    menuReset: false,
+                    openButton: false,
+                    cutButtonNested: false,
+                    cutMenu: true
+                  },
+                  ticked: {
+                    buttonReset: true,
+                    menuReset: true,
+                    openButton: true,
+                    cutButtonNested: true,
+                    cutMenu: false,
+                    changed: [
+                      cut,
+                      open
+                    ]
+                  },
+                  buttonsReset: {
+                    buttonReset: false,
+                    menuReset: true,
+                    openButton: false,
+                    cutButtonNested: false,
+                    cutMenu: false,
+                    changed: [
+                      cut
+                    ]
+                  },
+                  menusReset: {
+                    buttonReset: false,
+                    menuReset: false,
+                    openButton: false,
+                    cutButtonNested: false,
+                    cutMenu: true
+                  },
+                  changes: [
+                    Actions,
+                    Actions
+                  ]
+                }
+                """);
+    }
+
     // The actions scroll under their column headings, which stay put above them, each over its
     // column.
     [Test]
@@ -353,12 +445,12 @@ public class OptionsFormTests
     {
         using var scratch = new RegistryScratch();
         using var form = Show(scratch.Replacement());
-        form.ShowPage("Actions");
+        form.ShowPage("Button actions");
         static IEnumerable<Control> All(Control control) =>
             control.Controls.Cast<Control>().SelectMany(_ => All(_).Prepend(_));
         static Rectangle OnScreen(Control control) =>
             control.RectangleToScreen(control.ClientRectangle);
-        var heading = All(form).Single(_ => _ is Label {Text: "Button"});
+        var heading = All(form).Single(_ => _ is Label {Text: "Show", Visible: true});
         var cut = form.Controls.Find("button.cut", true)[0];
         var rows = (ScrollableControl) cut.Parent!.Parent!;
         var headingBefore = OnScreen(heading);
@@ -830,8 +922,12 @@ public class OptionsFormTests
         VerifyPage("View", new());
 
     [Test]
-    public Task ActionsPage() =>
-        VerifyPage("Actions", new());
+    public Task ButtonActionsPage() =>
+        VerifyPage("Button actions", new());
+
+    [Test]
+    public Task MenuActionsPage() =>
+        VerifyPage("Menu actions", new());
 
     [Test]
     public Task CodePage() =>
@@ -920,7 +1016,8 @@ public class OptionsFormTests
                   pages: [
                     General,
                     View,
-                    Actions,
+                    Button actions,
+                    Menu actions,
                     Search,
                     Code,
                     Promoted files,
@@ -967,7 +1064,12 @@ public class OptionsFormTests
 
         if (form.Controls.Find("button.cut", true)[0].Visible)
         {
-            return "Actions";
+            return "Button actions";
+        }
+
+        if (form.Controls.Find("menu.cut", true)[0].Visible)
+        {
+            return "Menu actions";
         }
 
         if (form.Controls.Find("textEditor", true)[0].Visible)
@@ -1300,14 +1402,14 @@ public class OptionsFormTests
 
     // On a screen too short for it, a small one or one scaled up, the dialog is no taller than
     // the screen and the pages scroll, so Close is still on it. Each page shows from its top.
-    // The Actions page fits the height left, its table scrolling in it, rather than the page
+    // An actions page fits the height left, its table scrolling in it, rather than the page
     // scrolling around a table that scrolls.
     [Test]
     public async Task FitsWithinAShortScreen()
     {
         using var scratch = new RegistryScratch();
         using var form = Show(scratch.Replacement());
-        form.ShowPage("Actions");
+        form.ShowPage("Button actions");
         var fullHeight = form.Height;
         var area = new Rectangle(form.Left, form.Top, 2000, fullHeight - 150);
 
@@ -1315,7 +1417,7 @@ public class OptionsFormTests
         Application.DoEvents();
         var close = form.AcceptButton as Control;
         var scrolling = new List<string>();
-        foreach (var page in new[] { "General", "View", "Actions", "Search", "Code", "Promoted files", "File Explorer", "Links", "Updates" })
+        foreach (var page in new[] { "General", "View", "Button actions", "Menu actions", "Search", "Code", "Promoted files", "File Explorer", "Links", "Updates" })
         {
             form.ShowPage(page);
             Application.DoEvents();
@@ -1327,14 +1429,15 @@ public class OptionsFormTests
 
         await Assert.That(form.Height).IsLessThanOrEqualTo(area.Height);
         await Assert.That(scrolling).IsNotEmpty();
-        await Assert.That(scrolling).DoesNotContain("Actions");
+        await Assert.That(scrolling).DoesNotContain("Button actions");
+        await Assert.That(scrolling).DoesNotContain("Menu actions");
         await Assert.That(close!.Visible).IsTrue();
         await Assert.That(form.RectangleToClient(close.RectangleToScreen(close.ClientRectangle)).Bottom).IsLessThanOrEqualTo(form.ClientSize.Height);
     }
 
     // On a screen set above 100%, the dialog is scaled up once it is built, as this one is for
-    // 125%. It is as wide whichever page shows, the Actions page before it has been shown as
-    // much as after.
+    // 125%. It is as wide whichever page shows, the actions pages before they have been shown
+    // as much as after.
     [Test]
     public async Task ScaledUpKeepsItsWidthAcrossPages()
     {
@@ -1350,13 +1453,17 @@ public class OptionsFormTests
         Application.DoEvents();
         var opened = form.Width;
 
-        form.ShowPage("Actions");
+        form.ShowPage("Button actions");
         Application.DoEvents();
-        var actions = form.Width;
+        var buttonActions = form.Width;
+        form.ShowPage("Menu actions");
+        Application.DoEvents();
+        var menuActions = form.Width;
         form.ShowPage("General");
         Application.DoEvents();
 
-        await Assert.That(actions).IsEqualTo(opened);
+        await Assert.That(buttonActions).IsEqualTo(opened);
+        await Assert.That(menuActions).IsEqualTo(opened);
         await Assert.That(form.Width).IsEqualTo(opened);
     }
 

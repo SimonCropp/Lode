@@ -85,8 +85,10 @@ static class Icons
     public const char MoreOptions = '\uE8FD';
     // The pages of Options.
     public const char View = '\uE890';
-    // A lightning bolt, for the actions the bar and menus offer.
-    public const char Actions = '\uE945';
+    // A lightning bolt, for the actions the bar offers, and lines of a menu, for the right-click
+    // menus'.
+    public const char ButtonActions = '\uE945';
+    public const char MenuActions = '\uE700';
     public const char Code = '\uE943';
     public const char FileExplorer = '\uEC50';
     // An arrow up, for the files a folder down listed at a repository's root too.

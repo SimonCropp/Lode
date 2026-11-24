@@ -127,8 +127,9 @@ sealed class Settings
 
     /// <summary>
     /// Whether an action is a button on the bar, and nested under its parent there, as the bar's
-    /// own right-click menu changes it: where it shows in the right-click menus stays as it is.
-    /// <paramref name="nested"/> is ignored for an action without a parent.
+    /// own right-click menu and the Button actions page of Options change it: where it shows in
+    /// the right-click menus stays as it is. <paramref name="nested"/> is ignored for an action
+    /// without a parent.
     /// </summary>
     public void SetButtonPlacement(string id, bool button, bool nested)
     {
@@ -140,6 +141,89 @@ sealed class Settings
 
         SetPlacement(id, button, ShowsInMenu(id), nested, NestsInMenu(id));
     }
+
+    /// <summary>
+    /// Whether an action is in the right-click menus, and nested under its parent there, as the
+    /// Menu actions page of Options changes it: whether it is a button stays as it is.
+    /// <paramref name="nested"/> is ignored for an action without a parent.
+    /// </summary>
+    public void SetMenuPlacement(string id, bool menu, bool nested)
+    {
+        if (LodeActions.Find(id)?.Parent == null)
+        {
+            SetPlacement(id, ShowsAsButton(id), menu);
+            return;
+        }
+
+        SetPlacement(id, ShowsAsButton(id), menu, NestsButton(id), nested);
+    }
+
+    /// <summary>
+    /// Whether any action is on the bar other than as LodeActions has it, which Reset on the
+    /// Button actions page of Options undoes.
+    /// </summary>
+    public bool ButtonPlacementsChanged() =>
+        PlacementsChanged(ButtonDiffers);
+
+    /// <summary>
+    /// Whether any action is in the right-click menus other than as LodeActions has it, which
+    /// Reset on the Menu actions page of Options undoes.
+    /// </summary>
+    public bool MenuPlacementsChanged() =>
+        PlacementsChanged(MenuDiffers);
+
+    /// <summary>
+    /// Every action on the bar as LodeActions has it, as Reset on the Button actions page of
+    /// Options puts them: where each shows in the right-click menus stays as it is.
+    /// </summary>
+    public void ResetButtonPlacements() =>
+        ResetPlacements(static (placement, action) =>
+        {
+            placement.Button = action.Button;
+            placement.ButtonNested = null;
+        });
+
+    /// <summary>
+    /// Every action in the right-click menus as LodeActions has it, as Reset on the Menu actions
+    /// page of Options puts them: whether each is a button stays as it is.
+    /// </summary>
+    public void ResetMenuPlacements() =>
+        ResetPlacements(static (placement, action) =>
+        {
+            placement.Menu = action.Menu;
+            placement.MenuNested = null;
+        });
+
+    bool PlacementsChanged(Func<ActionPlacement, LodeActions.Definition, bool> differs) =>
+        Actions.Any(_ => LodeActions.Find(_.Key) is { } action &&
+                         differs(_.Value, action));
+
+    // A placement left no different from LodeActions' is forgotten, as one never changed is.
+    void ResetPlacements(Action<ActionPlacement, LodeActions.Definition> reset)
+    {
+        foreach (var (id, placement) in Actions.ToList())
+        {
+            if (LodeActions.Find(id) is not { } action)
+            {
+                continue;
+            }
+
+            reset(placement, action);
+            if (!ButtonDiffers(placement, action) &&
+                !MenuDiffers(placement, action))
+            {
+                Actions.Remove(id);
+            }
+        }
+    }
+
+    static bool ButtonDiffers(ActionPlacement placement, LodeActions.Definition action) =>
+        placement.Button != action.Button ||
+        (placement.ButtonNested ?? action.ButtonNested) != action.ButtonNested;
+
+    static bool MenuDiffers(ActionPlacement placement, LodeActions.Definition action) =>
+        placement.Menu != action.Menu ||
+        (placement.MenuNested ?? action.MenuNested) != action.MenuNested;
 
     // The file list's columns hidden from its header's right-click menu: Date, Type, Size or Git.
     public List<string> HiddenColumns { get; set; } = [];

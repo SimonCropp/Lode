@@ -143,15 +143,15 @@ sealed class ActionsBar
         new("Hide button", () => PlaceButtons([id], shown: false, nested: true)),
         new("Un-nest", () => PlaceButtons([id], shown: true, nested: false)),
         null,
-        new("Customize buttons…", () => showOptions("Actions"))
+        new("Customize buttons…", () => showOptions("Button actions"))
     ];
 
     /// <summary>
     /// What right-clicking <paramref name="item"/> on the bar offers. For an action's own button:
     /// hide it, which puts it under See more, and nest it under its parent. For a parent's
     /// drop-down: hide it, and un-nest what is in it, all or one, each a button of its own.
-    /// Then, wherever the bar is right-clicked, the Actions page of Options, for the rest and to
-    /// show again what was hidden. Each changes every window, as a tick on that page does.
+    /// Then, wherever the bar is right-clicked, the Button actions page of Options, for the rest
+    /// and to show again what was hidden. Each changes every window, as a tick on that page does.
     /// </summary>
     internal List<QuickMenu.Command?> MenuCommands(ToolStripItem? item)
     {
@@ -199,7 +199,7 @@ sealed class ActionsBar
             commands.Add(null);
         }
 
-        commands.Add(new("Customize buttons…", () => showOptions("Actions")));
+        commands.Add(new("Customize buttons…", () => showOptions("Button actions")));
         return commands;
     }
 

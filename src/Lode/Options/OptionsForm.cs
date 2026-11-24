@@ -1,6 +1,7 @@
 /// <summary>
-/// Lode's options, a page each for General, View, Actions, Code, File Explorer, Links and Updates, picked
-/// from the list down the left, as Windows 11's Settings does. A change applies straight away.
+/// Lode's options, a page each for General, View, Button actions, Menu actions, Search, Code,
+/// Promoted files, File Explorer, Links and Updates, picked from the list down the left, as
+/// Windows 11's Settings does. A change applies straight away.
 /// </summary>
 /// <remarks>
 /// Laid out by docking: the dialog is a fixed size, the list docked down its left and Close along
@@ -504,10 +505,10 @@ class OptionsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
-        // Room for the actions' table, the widest page, with some to spare, as text measures a
-        // little wider than it scales on a screen above 100%. Each page's text wraps to the width
-        // left, and a page taller than the room left scrolls.
-        ClientSize = new(880, 600);
+        // Room for the pages, with some to spare, as text measures a little wider than it scales
+        // on a screen above 100%. Each page's text wraps to the width left, and a page taller than
+        // the room left scrolls.
+        ClientSize = new(740, 600);
         Padding = new(9);
         headingFont = new(Font.FontFamily, Font.SizeInPoints * 1.5f);
         sectionFont = new(Font, FontStyle.Bold);
@@ -537,7 +538,8 @@ class OptionsForm : Form
 
         AddPage("General", Icons.Options, BuildGeneralPage());
         AddPage("View", Icons.View, BuildViewPage());
-        AddPage("Actions", Icons.Actions, BuildActionsPage());
+        AddPage("Button actions", Icons.ButtonActions, BuildButtonActionsPage());
+        AddPage("Menu actions", Icons.MenuActions, BuildMenuActionsPage());
         AddPage("Search", Icons.Search, BuildSearchPage());
         AddPage("Code", Icons.Code, BuildCodePage());
         AddPage("Promoted files", Icons.PromotedFiles, BuildPromotedFilesPage());
@@ -571,7 +573,7 @@ class OptionsForm : Form
     /// <summary>
     /// Makes the dialog no taller than <paramref name="area"/>, and moves it up within it. On a
     /// short screen, or one scaled up, it would run off the bottom, Close and all. Shorter, the
-    /// page picked scrolls in the room left, or, the actions', fits its table to it.
+    /// page picked scrolls in the room left, or, an actions page, fits its table to it.
     /// </summary>
     internal void FitWithin(Rectangle area)
     {
@@ -592,9 +594,10 @@ class OptionsForm : Form
     /// </summary>
     internal bool PagesScroll => pages[pageList.SelectedIndex].VerticalScroll.Visible;
 
-    // A page: its name as a heading, then its parts, each docked under the one before. A part
-    // docked to fill, the actions' table, takes what is left under the rest, and scrolls itself.
-    // Any other page scrolls where it is taller than the room it has. Hidden until picked.
+    // A page: its name as a heading, then its parts, each docked under the one before, or along
+    // the bottom where it says so. A part docked to fill, an actions page's table, takes what is
+    // left between, and scrolls itself. Any other page scrolls where it is taller than the room
+    // it has. Hidden until picked.
     void AddPage(string title, char glyph, Control[] parts)
     {
         Control[] stack =
@@ -614,17 +617,19 @@ class OptionsForm : Form
             AutoScroll = stack.All(_ => _.Dock != DockStyle.Fill),
             Visible = false
         };
-        // Docking goes from the last added, so the parts are added from the bottom up.
-        for (var index = stack.Length - 1; index >= 0; index--)
+        foreach (var part in stack.Where(_ => _.Dock == DockStyle.None))
         {
-            var part = stack[index];
-            if (part.Dock == DockStyle.None)
-            {
-                part.Dock = DockStyle.Top;
-            }
-
-            page.Controls.Add(part);
+            part.Dock = DockStyle.Top;
         }
+
+        // Docking goes from the last added: those across the top first, from the top down, then
+        // those along the bottom, the last lowest, and last the one filling what is left.
+        page.Controls.AddRange(
+        [
+            .. stack.Where(_ => _.Dock == DockStyle.Fill),
+            .. stack.Where(_ => _.Dock == DockStyle.Bottom),
+            .. stack.Where(_ => _.Dock == DockStyle.Top).Reverse()
+        ]);
 
         pages.Add(page);
         host.Controls.Add(page);
@@ -791,15 +796,33 @@ class OptionsForm : Form
             "are the ones Explorer adds there because you use them often.")
     ];
 
-    Control[] BuildActionsPage() =>
-    [
-        Description(
-            "Show each action as a button on the bar under the address bar, in the right-click " +
-            "menus, or both, and in each, on its own or nested under its parent. The menus only " +
-            "offer what applies to what was clicked.",
-            new(3, 0, 3, 9)),
-        BuildActionsTable()
-    ];
+    Control[] BuildButtonActionsPage() =>
+        BuildActionsPage(
+            description:
+            "Show each action as a button on the bar under the address bar, on its own or nested " +
+            "in its parent's drop-down. The rest are under See more, as are the buttons a narrow " +
+            "window has no room for. Reset puts them back as they were at first.",
+            boxName: "button",
+            where: "on the bar",
+            shows: settings.ShowsAsButton,
+            nests: settings.NestsButton,
+            place: settings.SetButtonPlacement,
+            changed: settings.ButtonPlacementsChanged,
+            reset: settings.ResetButtonPlacements);
+
+    Control[] BuildMenuActionsPage() =>
+        BuildActionsPage(
+            description:
+            "Show each action in the right-click menus, on its own or nested in its parent's " +
+            "submenu. The menus only offer what applies to what was clicked. Reset puts them back " +
+            "as they were at first.",
+            boxName: "menu",
+            where: "in the right-click menu",
+            shows: settings.ShowsInMenu,
+            nests: settings.NestsInMenu,
+            place: settings.SetMenuPlacement,
+            changed: settings.MenuPlacementsChanged,
+            reset: settings.ResetMenuPlacements);
 
     Control[] BuildCodePage() =>
     [
@@ -1211,11 +1234,37 @@ class OptionsForm : Form
         resetDefaultDirectory.Enabled = settings.DefaultDirectory != null;
     }
 
-    // Where each action shows: a button on the actions bar, an entry in the right-click menus,
-    // both or neither, and in each, whether nested under its parent. A tick changes every window
-    // at once.
-    HeadedTable BuildActionsTable()
+    /// <summary>
+    /// A page of whether each action shows in one place, the actions bar or the right-click
+    /// menus, and whether nested under its parent there, with Reset under it. A tick, or Reset,
+    /// changes every window at once, and leaves where actions show in the other place as it is.
+    /// </summary>
+    /// <param name="boxName">Before each tick's name, button.cut and buttonNested.cut, and Reset's, buttonReset.</param>
+    /// <param name="where">After each tick's accessible name: Cut on the bar.</param>
+    /// <param name="place">Sets whether the action shows there, and is nested there.</param>
+    /// <param name="changed">Whether any action shows there other than as it does at first.</param>
+    /// <param name="reset">Puts every action there back as it was at first.</param>
+    Control[] BuildActionsPage(string description, string boxName, string where, Func<string, bool> shows, Func<string, bool> nests, Action<string, bool, bool> place, Func<bool> changed, Action reset)
     {
+        var resetButton = new Button
+        {
+            Name = $"{boxName}Reset",
+            Text = "Reset",
+            AutoSize = true,
+            Enabled = changed()
+        };
+        // Each row's ticks set again from the settings, once Reset has changed them, while the
+        // ticks' own changes are ignored.
+        var refreshes = new List<Action>();
+        var refreshing = false;
+
+        // After a tick or Reset: Reset greyed out once there is nothing left to put back.
+        void Placed()
+        {
+            resetButton.Enabled = changed();
+            SettingsChanged?.Invoke(SettingsChange.Actions);
+        }
+
         // Over names, so to their left, as they are.
         var parentHeading = ColumnHeading("Parent");
         parentHeading.Anchor = AnchorStyles.Left;
@@ -1226,9 +1275,7 @@ class OptionsForm : Form
             null,
             null,
             parentHeading,
-            ColumnHeading("Button"),
-            ColumnHeading("Nested"),
-            ColumnHeading("Right-click"),
+            ColumnHeading("Show"),
             ColumnHeading("Nested")
         ];
 
@@ -1274,56 +1321,56 @@ class OptionsForm : Form
                 Anchor = AnchorStyles.Left,
                 Margin = new(0, 1, 12, 1)
             };
-            var button = new CheckBox
+            var shown = new CheckBox
             {
-                Name = $"button.{action.Id}",
-                AccessibleName = $"{action.Text} as a button",
+                Name = $"{boxName}.{action.Id}",
+                AccessibleName = $"{action.Text} {where}",
                 AutoSize = true,
                 Anchor = AnchorStyles.None,
                 Margin = new(3, 1, 3, 1),
-                Checked = settings.ShowsAsButton(action.Id)
-            };
-            var menu = new CheckBox
-            {
-                Name = $"menu.{action.Id}",
-                AccessibleName = $"{action.Text} in the right-click menu",
-                AutoSize = true,
-                Anchor = AnchorStyles.None,
-                Margin = new(3, 1, 3, 1),
-                Checked = settings.ShowsInMenu(action.Id)
+                Checked = shows(action.Id)
             };
             table.Controls.Add(icon, 0, row);
             table.Controls.Add(name, 1, row);
-            table.Controls.Add(button, 3, row);
-            table.Controls.Add(menu, 5, row);
+            table.Controls.Add(shown, 3, row);
             var id = action.Id;
             if (action.Parent is not { } parent)
             {
-                EventHandler placed = (_, _) =>
+                shown.CheckedChanged += (_, _) =>
                 {
-                    settings.SetPlacement(id, button.Checked, menu.Checked);
-                    SettingsChanged?.Invoke(SettingsChange.Actions);
+                    if (refreshing)
+                    {
+                        return;
+                    }
+
+                    place(id, shown.Checked, false);
+                    Placed();
                 };
-                button.CheckedChanged += placed;
-                menu.CheckedChanged += placed;
+                refreshes.Add(() => shown.Checked = shows(id));
                 row++;
                 continue;
             }
 
-            var buttonNested = NestedCheckBox($"buttonNested.{id}", $"{action.Text} under {parent.Text} on the bar", settings.NestsButton(id), button.Checked);
-            var menuNested = NestedCheckBox($"menuNested.{id}", $"{action.Text} under {parent.Text} in the right-click menu", settings.NestsInMenu(id), menu.Checked);
-            EventHandler changed = (_, _) =>
+            var nested = NestedCheckBox($"{boxName}Nested.{id}", $"{action.Text} under {parent.Text} {where}", nests(id), shown.Checked);
+            EventHandler ticked = (_, _) =>
             {
                 // Nesting only means anything where the action shows.
-                buttonNested.Enabled = button.Checked;
-                menuNested.Enabled = menu.Checked;
-                settings.SetPlacement(id, button.Checked, menu.Checked, buttonNested.Checked, menuNested.Checked);
-                SettingsChanged?.Invoke(SettingsChange.Actions);
+                nested.Enabled = shown.Checked;
+                if (refreshing)
+                {
+                    return;
+                }
+
+                place(id, shown.Checked, nested.Checked);
+                Placed();
             };
-            button.CheckedChanged += changed;
-            menu.CheckedChanged += changed;
-            buttonNested.CheckedChanged += changed;
-            menuNested.CheckedChanged += changed;
+            shown.CheckedChanged += ticked;
+            nested.CheckedChanged += ticked;
+            refreshes.Add(() =>
+            {
+                shown.Checked = shows(id);
+                nested.Checked = nests(id);
+            });
             table.Controls.Add(
                 new Label
                 {
@@ -1335,13 +1382,32 @@ class OptionsForm : Form
                 },
                 2,
                 row);
-            table.Controls.Add(buttonNested, 4, row);
-            table.Controls.Add(menuNested, 6, row);
+            table.Controls.Add(nested, 4, row);
             row++;
         }
 
         table.ResumeLayout();
-        return new(headings, table);
+        resetButton.Click += (_, _) =>
+        {
+            reset();
+            refreshing = true;
+            foreach (var refresh in refreshes)
+            {
+                refresh();
+            }
+
+            refreshing = false;
+            Placed();
+        };
+        var resetRow = Row(resetButton);
+        resetRow.Dock = DockStyle.Bottom;
+        resetRow.Padding = new(0, 9, 0, 0);
+        return
+        [
+            Description(description, new(3, 0, 3, 9)),
+            new HeadedTable(headings, table),
+            resetRow
+        ];
     }
 
     static CheckBox NestedCheckBox(string name, string accessibleName, bool nested, bool shown) =>

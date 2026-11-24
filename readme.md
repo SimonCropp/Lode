@@ -122,7 +122,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 ## Features
 
  * **Address bar**: each folder up the path is a button, as in Explorer. Click the empty space after it, or press Ctrl+L, to type: a path, full or from the folder open (`src`, `..`); a shell name, `shell:downloads`; or a command, `cmd`, `wt` or `code .`, run in the folder open.
- * **Actions bar**: a button for any of the right-click menus' actions, enabled when it applies to the selection. On the **Actions** page of Options, choose which actions are buttons, which are in the right-click menus, and which are nested under their parent (Clipboard, File, Open, Terminal, AI, Git, Packages): a submenu, or a drop-down button. The rest are under **See more** (⋯), as are the buttons a narrow window has no room for. Right-click a button to hide it, which puts it under See more, or nest it under its parent; right-click a parent's drop-down to hide it, or un-nest what is in it, all of it or one; right-click an action in the drop-down to hide or un-nest just that one. **Customize buttons…**, on the same menu, opens the Actions page.
+ * **Actions bar**: a button for any of the right-click menus' actions, enabled when it applies to the selection. On the **Button actions** page of Options, choose which actions are buttons, and which are nested under their parent (Clipboard, File, Open, Terminal, AI, Git, Packages) in a drop-down button; on the **Menu actions** page, which are in the right-click menus, and which are nested under their parent in a submenu. The rest are under **See more** (⋯), as are the buttons a narrow window has no room for. Right-click a button to hide it, which puts it under See more, or nest it under its parent; right-click a parent's drop-down to hide it, or un-nest what is in it, all of it or one; right-click an action in the drop-down to hide or un-nest just that one. **Customize buttons…**, on the same menu, opens the Button actions page.
 
    Right-clicking the **Git** drop-down:
 
@@ -132,9 +132,9 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![See more](src/Lode.Tests/Menus/MenuTests.SeeMore.verified.png)
 
-   The **Actions** page of **Options**:
+   The **Button actions** page of **Options**:
 
-   ![The Actions page of Options](src/Lode.Tests/Options/OptionsFormTests.ActionsPage.verified.png)
+   ![The Button actions page of Options](src/Lode.Tests/Options/OptionsFormTests.ButtonActionsPage.verified.png)
 
  * <a id="tabs"></a>**Tabs**, each with its own history: right-click **Back** or **Forward** for where it goes, to go several steps at once, and a folder deleted since is passed over. Right-click one to duplicate, pin or close it, or the others. **Reopen closed tab** (Ctrl+Shift+T) brings back the last closed. A tab follows its folder when it is renamed or moved, and goes up when it is deleted. Drag a tab along the row to reorder it, off the row for a window of its own, or onto another window to move it there. **Close tabs not looked at for**, on the **General** page of Options, closes tabs unused for the hours given.
 
@@ -171,10 +171,15 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![New](src/Lode.Tests/Menus/MenuTests.NewMenu.verified.png)
 
+   The **Menu actions** page of **Options**, for which actions the menus offer:
+
+   ![The Menu actions page of Options](src/Lode.Tests/Options/OptionsFormTests.MenuActionsPage.verified.png)
+
  * **Options**, in the ⋯ menu. Changes apply straight away.
    * **General**: the folder new tabs open in, the text editor, closing unused tabs.
    * **View**: the theme (light, dark, or as Windows, taken on at the next start), hidden items (also Ctrl+H), system files, expanding the tree to the open folder, the Recent section.
-   * **Actions**: the bar's buttons and the menus' entries.
+   * **Button actions**: the bar's buttons, and **Reset** to put them back as they were at first.
+   * **Menu actions**: the right-click menus' entries, and **Reset** to put them back as they were at first.
    * **Search**: whether the search box searches what git ignores, Find in Files' context lines, and turning Windows Search off, or on again, which Lode doesn't use.
    * **Code**: the code folder, how Git purge deletes, excluding the code folder from Defender.
    * **Promoted files**: [the files just below a repository's root listed there too](#promoted-files).

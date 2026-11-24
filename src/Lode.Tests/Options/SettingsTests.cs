@@ -268,6 +268,52 @@ public class SettingsTests
                 """);
     }
 
+    // The Button actions page and the bar's right-click menu change where an action shows on
+    // the bar, and the Menu actions page where it shows in the right-click menus, each leaving
+    // the other as it was.
+    [Test]
+    public async Task PlacingInOnePlaceLeavesTheOther()
+    {
+        var settings = new Settings();
+        settings.SetPlacement("cut", button: true, menu: true, buttonNested: true, menuNested: true);
+        object Cut() =>
+            new
+            {
+                button = settings.ShowsAsButton("cut"),
+                buttonNested = settings.NestsButton("cut"),
+                menu = settings.ShowsInMenu("cut"),
+                menuNested = settings.NestsInMenu("cut")
+            };
+
+        settings.SetMenuPlacement("cut", menu: false, nested: false);
+        var menuPlaced = Cut();
+        settings.SetButtonPlacement("cut", button: false, nested: false);
+
+        await Verify(
+            new
+            {
+                menuPlaced,
+                buttonPlaced = Cut()
+            })
+            .Snapshot(
+                """
+                {
+                  menuPlaced: {
+                    button: true,
+                    buttonNested: true,
+                    menu: false,
+                    menuNested: false
+                  },
+                  buttonPlaced: {
+                    button: false,
+                    buttonNested: false,
+                    menu: false,
+                    menuNested: false
+                  }
+                }
+                """);
+    }
+
     [Test]
     public async Task CorruptFileFallsBackToDefaults()
     {
