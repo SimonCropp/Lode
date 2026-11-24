@@ -13,15 +13,6 @@ class MainForm : Form
     const int maximumTabTextLength = 28;
 
     ToolTip toolTip = new();
-
-    // The status bar's tooltips, shown above what they are for. The bar's own are shown below
-    // the pointer, and at the bottom of the screen Windows moves them up over it, which the bar
-    // takes for the pointer leaving: the tooltip hides, the pointer is over the bar again, and
-    // it shows again, over and over.
-    ToolTip statusTip = new()
-    {
-        ShowAlways = true
-    };
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
 
@@ -52,68 +43,16 @@ class MainForm : Form
     /// </summary>
     internal DiffHost DiffHost { get; }
 
-    ToolStripStatusLabel statusLabel = new()
-    {
-        TextAlign = ContentAlignment.MiddleLeft
-    };
+    /// <summary>
+    /// Along the bottom: what the tab showing has, or has selected, its repository and the free
+    /// space.
+    /// </summary>
+    internal StatusBar StatusBar { get; }
 
-    // Right after what the search box found, while it has found anything or not: the same text
-    // searched for inside the files instead, with Find in Files. Then the room left, so the
-    // link sits beside the count rather than across the bar from it.
-    ToolStripStatusLabel searchInsideLabel = new()
-    {
-        Name = "searchInside",
-        Text = "Search inside the files",
-        IsLink = true,
-        LinkBehavior = LinkBehavior.HoverUnderline,
-        Margin = new(12, 3, 0, 2),
-        Visible = false
-    };
-
-    ToolStripStatusLabel statusRoom = new()
-    {
-        Spring = true
-    };
-
-    // Before the free space: the state of the repository the folder is in, a part for each of
-    // what GitState says, each acting on what it says. The branch opens the branches above it,
-    // to switch to, as GitHub Desktop's Current branch has them.
-    ChevronDropDownButton gitButton = new("", Icons.ChevronUp)
-    {
-        Name = "git",
-        Margin = new(0, 1, 0, 0),
-        ToolTipText = "Switch branch (Ctrl+B)",
-        Visible = false
-    };
-
-    // After the branch, each after a dot: that there are no commits yet, which there is nothing
-    // to do about, then the changes, to commit or discard, and the commits to push and to pull.
-    Dictionary<GitState.PartKind, (ToolStripStatusLabel Dot, ToolStripItem Item)> gitParts = [];
-
-    // After the branch: the site the repository's origin is on, GitHub say, which it opens.
-    ToolStripStatusLabel siteLabel = new()
-    {
-        Name = "site",
-        IsLink = true,
-        LinkBehavior = LinkBehavior.HoverUnderline,
-        Margin = new(0, 3, 12, 2),
-        Visible = false
-    };
-    ToolStripStatusLabel spaceLabel = new();
-
-    // The instance this window listens to, so it stops listening to that one when it closes.
+    // The instance the status bar and Options follow, kept so the bar stops listening to that
+    // one when the window closes.
     Updates updates = Updates.Instance;
 
-    // Beside the free space: a newer Lode, when there is one. Clicking it opens Options at Updates.
-    ToolStripStatusLabel updateLabel = new()
-    {
-        Name = "update",
-        IsLink = true,
-        LinkBehavior = LinkBehavior.HoverUnderline,
-        ToolTipText = "Open Options to update",
-        Margin = new(0, 3, 12, 2),
-        Visible = false
-    };
     Button backButton;
     Button forwardButton;
     Button upButton;
@@ -190,7 +129,6 @@ class MainForm : Form
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
         FindHost = new(this, settings, Tabs, () => ActiveView, () => Views, ShowInFolder);
-        FindHost.ProgressChanged += ShowResultsProgress;
         GitPanes = new(this, settings)
         {
             FocusList = () => ActiveView?.FocusList()
@@ -203,9 +141,10 @@ class MainForm : Form
         GitPanes.PinnedChanged += ApplyPinnedInAllWindows;
         GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
         ActionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
+        StatusBar = new(this, settings, updates, () => ActiveView, ShowOptions, url => OpenSite(url), folder => AddTab(folder, true));
+        FindHost.ProgressChanged += () => StatusBar.ShowProgress(FindHost.Progress);
         places.Changed += RebuildPlaces;
         UndoHistory.Instance.Changed += OnUndoChanged;
-        updates.Changed += OnUpdatesChanged;
         ActionLog.Changed += ReadGitState;
         trayTimer.Tick += (_, _) =>
         {
@@ -262,7 +201,7 @@ class MainForm : Form
 
         // Before the status bar, so it docks above it.
         Controls.Add(FindHost.Panel);
-        Controls.Add(BuildStatusBar());
+        Controls.Add(StatusBar.Strip);
         ResumeLayout(false);
         PerformLayout();
     }
@@ -567,186 +506,6 @@ class MainForm : Form
         split.Panel1.Controls.Add(actionsPanel);
         GitPanes.Attach(split.Panel2, Tabs);
         return split;
-    }
-
-    Control BuildStatusBar()
-    {
-        // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
-        // 11 windows are resized from their edges.
-        // In the window's font, as the folder tree and the list are, rather than the smaller one
-        // a tool strip has otherwise.
-        var status = new StatusStrip
-        {
-            Renderer = new ExplorerRenderer(),
-            SizingGrip = false,
-            Font = Font,
-            Padding = new(LogicalToDeviceUnits(10), LogicalToDeviceUnits(2), LogicalToDeviceUnits(10), LogicalToDeviceUnits(2))
-        };
-        status.Items.Add(statusLabel);
-        status.Items.Add(searchInsideLabel);
-        status.Items.Add(statusRoom);
-        status.Items.Add(updateLabel);
-        status.Items.Add(gitButton);
-        AddGitPart(
-            status,
-            GitState.PartKind.NoCommits,
-            new ToolStripStatusLabel
-            {
-                Margin = new(0, 3, 0, 2)
-            });
-        AddGitPart(status, GitState.PartKind.Changes, GitPartButton("Commit or discard them", GitState.PartKind.Changes));
-        AddGitPart(status, GitState.PartKind.Ahead, GitPartButton("Push them", GitState.PartKind.Ahead));
-        AddGitPart(status, GitState.PartKind.Behind, GitPartButton("Pull them", GitState.PartKind.Behind));
-        AddGitPart(status, GitState.PartKind.ForkBehind, GitPartButton("Sync the fork with upstream", GitState.PartKind.ForkBehind));
-        status.Items.Add(siteLabel);
-        status.Items.Add(spaceLabel);
-
-        // On the bar now, so the chevron's room is scaled as the bar is. A branch before the
-        // name, as GitHub Desktop has.
-        gitButton.Padding = gitButton.Padding with
-        {
-            Right = gitButton.Padding.Right + gitButton.ChevronWidth
-        };
-        gitButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
-        gitButton.TextImageRelation = TextImageRelation.ImageBeforeText;
-        gitButton.Image = Icons.Bitmap(Icons.Branch, LogicalToDeviceUnits(16), SystemColors.ControlText, LogicalToDeviceUnits(4));
-        gitButton.Click += (_, _) => ShowBranches();
-        updateLabel.Click += (_, _) => ShowOptions("Updates");
-        searchInsideLabel.Click += (_, _) => ActiveView?.SearchInsideTheFiles();
-        siteLabel.Click += (_, _) =>
-        {
-            if (siteLabel.Tag is RemoteSite site)
-            {
-                OpenSite(site.Url);
-            }
-        };
-        foreach (ToolStripItem item in status.Items)
-        {
-            item.MouseHover += (_, _) => ShowStatusTip(status, item);
-            item.MouseLeave += (_, _) => statusTip.Hide(status);
-            item.MouseDown += (_, _) => statusTip.Hide(status);
-        }
-
-        ShowUpdate();
-        return status;
-    }
-
-    // Its text as of now: the site's changes with the folder.
-    void ShowStatusTip(StatusStrip status, ToolStripItem item)
-    {
-        var text = item.ToolTipText;
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        // Windows draws tooltips in the status font, with a margin round the text.
-        var font = SystemFonts.StatusFont ?? Font;
-        var height = TextRenderer.MeasureText(text, font).Height + LogicalToDeviceUnits(12);
-        statusTip.Show(text, status, StatusTipLocation(item.Bounds, height, LogicalToDeviceUnits(4)), statusTip.AutoPopDelay);
-    }
-
-    /// <summary>
-    /// Where a tooltip <paramref name="height"/> high goes for a status bar item at
-    /// <paramref name="item"/>, in the bar's coordinates: over the item's left, wholly above the
-    /// bar with a <paramref name="gap"/>, so never under the pointer, which is on the bar.
-    /// </summary>
-    internal static Point StatusTipLocation(Rectangle item, int height, int gap) =>
-        new(item.Left, -height - gap);
-
-    void AddGitPart(StatusStrip status, GitState.PartKind kind, ToolStripItem item)
-    {
-        var dot = new ToolStripStatusLabel("·")
-        {
-            Margin = new(0, 3, 0, 2),
-            Visible = false
-        };
-        item.Visible = false;
-        status.Items.Add(dot);
-        status.Items.Add(item);
-        gitParts[kind] = (dot, item);
-    }
-
-    ToolStripButton GitPartButton(string toolTip, GitState.PartKind kind)
-    {
-        var button = new ToolStripButton
-        {
-            Margin = new(0, 1, 0, 0),
-            AutoToolTip = false,
-            ToolTipText = toolTip
-        };
-        button.Click += (_, _) => ActOnGit(kind);
-        return button;
-    }
-
-    // The changes, ahead, behind or behind upstream clicked: asks what to do about them, pull
-    // say.
-    void ActOnGit(GitState.PartKind kind)
-    {
-        if (ActiveView is { GitRepo: { } repo, GitRepoState: { } state })
-        {
-            GitStatusActions.Act(this, kind, repo, state, settings.CodeDirectory);
-        }
-    }
-
-    // A part for each of what the state says, the last spaced from what follows. Each is set
-    // once, to what it is to be: hidden and shown again, the bar would be laid out again for
-    // every status update, each change of selection say, closing a tooltip open over it.
-    void ShowGitParts(GitState? state)
-    {
-        var parts = state?.Parts() ?? [];
-        var texts = parts.ToDictionary(_ => _.Kind, _ => _.Text);
-        ToolStripItem? last = null;
-        if (parts.Count > 0)
-        {
-            last = ItemOf(parts[^1].Kind);
-        }
-
-        Show(gitButton, texts.GetValueOrDefault(GitState.PartKind.Branch));
-        foreach (var (kind, (dot, item)) in gitParts)
-        {
-            var text = texts.GetValueOrDefault(kind);
-            dot.Visible = text != null;
-            Show(item, text);
-        }
-
-        ToolStripItem ItemOf(GitState.PartKind kind)
-        {
-            if (kind == GitState.PartKind.Branch)
-            {
-                return gitButton;
-            }
-
-            return gitParts[kind].Item;
-        }
-
-        void Show(ToolStripItem item, string? text)
-        {
-            item.Visible = text != null;
-            if (text == null)
-            {
-                return;
-            }
-
-            item.Text = text;
-
-            // The chevron sits closer to the branch's right edge than text does to a part's, so
-            // the dot after it gets the difference.
-            var right = 0;
-            if (item == last)
-            {
-                right = LogicalToDeviceUnits(12);
-            }
-            else if (item == gitButton)
-            {
-                right = LogicalToDeviceUnits(4);
-            }
-
-            item.Margin = item.Margin with
-            {
-                Right = right
-            };
-        }
     }
 
     /// <summary>
@@ -1515,29 +1274,7 @@ class MainForm : Form
     {
         var selection = view.SelectedEntries();
         ActionsBar.Update(selection);
-        statusLabel.Text = view.StatusFor(selection);
-        var searchesInside = view.CanSearchInsideTheFiles;
-        if (searchInsideLabel.Visible != searchesInside)
-        {
-            searchInsideLabel.Visible = searchesInside;
-        }
-
-        if (searchesInside)
-        {
-            searchInsideLabel.ToolTipText = $"Search for \"{view.Filter}\" in what the files hold, with Find in Files (Ctrl+Enter)";
-        }
-
-        ShowGitParts(view.GitRepoState);
-        var site = view.GitSite;
-        siteLabel.Tag = site;
-        siteLabel.Visible = site != null;
-        if (site != null)
-        {
-            siteLabel.Text = site.Name;
-            siteLabel.ToolTipText = $"Open {site.Url}";
-        }
-
-        spaceLabel.Text = view.FreeSpaceText;
+        StatusBar.Update(view, selection);
         ShowPanes(view);
     }
 
@@ -1629,34 +1366,6 @@ class MainForm : Form
     /// Opens the repository's page on its site, in the browser. Tests swap it.
     /// </summary>
     internal Action<string> OpenSite;
-
-    // When the branches last closed, as Environment.TickCount64. Clicking the branch while they
-    // are open closes them, as the click goes to the window first, and then the click itself
-    // would open them again.
-    long branchesClosedAt = long.MinValue / 2;
-
-    // Ctrl+B, or the branch clicked: the branches of the repository the folder is in, above the
-    // branch, found as they open. Outside a repository, nothing.
-    void ShowBranches()
-    {
-        if (!gitButton.Visible ||
-            gitButton.Owner == null ||
-            ActiveView is not { GitRepo: { } repo } view ||
-            Environment.TickCount64 - branchesClosedAt < 500)
-        {
-            return;
-        }
-
-        var state = view.GitRepoState;
-        var picker = BranchPicker.Show(
-            this,
-            gitButton.Owner.RectangleToScreen(gitButton.Bounds),
-            Task.Run(() => GitBranches.Read(repo, Cancel.None)),
-            branch => CodeMenu.SwitchBranch(this, repo, state, branch),
-            name => CodeMenu.NewBranch(this, repo, name),
-            (listing, branch) => CodeMenu.BranchCommands(this, repo, listing, branch, folder => AddTab(folder, true)));
-        picker.FormClosed += (_, _) => branchesClosedAt = Environment.TickCount64;
-    }
 
     // A git action that started or finished.
     void ReadGitState()
@@ -1986,32 +1695,6 @@ class MainForm : Form
         if (options.UpdateStarted)
         {
             ExitRequested?.Invoke();
-        }
-    }
-
-    void OnUpdatesChanged()
-    {
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        if (InvokeRequired)
-        {
-            BeginInvoke(ShowUpdate);
-            return;
-        }
-
-        ShowUpdate();
-    }
-
-    void ShowUpdate()
-    {
-        var available = updates.Available;
-        updateLabel.Visible = available != null;
-        if (available != null)
-        {
-            updateLabel.Text = $"Lode {available.ToNormalizedString()} is available";
         }
     }
 
@@ -2443,23 +2126,8 @@ class MainForm : Form
     // folder's, its free space, its repository, or the actions on its selection.
     void UpdateResultsStatus()
     {
-        ShowResultsProgress();
-        searchInsideLabel.Visible = false;
-        spaceLabel.Text = "";
-        siteLabel.Visible = false;
-        ShowGitParts(null);
+        StatusBar.ShowResults(FindHost.Progress);
         ActionsBar.Update();
-    }
-
-    // Ten times a second while searching. Set once, and only when it says something else: the
-    // status bar emptied, even for a moment, is shorter, and everything above it moves.
-    void ShowResultsProgress()
-    {
-        var text = FindHost.Progress;
-        if (statusLabel.Text != text)
-        {
-            statusLabel.Text = text;
-        }
     }
 
     // Find Results has no folder: going back, forward and up, the address and the search box
@@ -2707,7 +2375,7 @@ class MainForm : Form
                 ToggleHidden();
                 return true;
             case Keys.Control | Keys.B:
-                ShowBranches();
+                StatusBar.ShowBranches();
                 return true;
             case Keys.Control | Keys.Shift | Keys.G:
                 GitPanes.Toggle(GitPane.Changes);
@@ -2842,12 +2510,11 @@ class MainForm : Form
         {
             places.Changed -= RebuildPlaces;
             UndoHistory.Instance.Changed -= OnUndoChanged;
-            updates.Changed -= OnUpdatesChanged;
             ActionLog.Changed -= ReadGitState;
             GitPanes.Dispose();
             DiffHost.Dispose();
+            StatusBar.Dispose();
             toolTip.Dispose();
-            statusTip.Dispose();
             trayTimer.Dispose();
             unusedTabsTimer.Dispose();
             tabsTimer.Dispose();

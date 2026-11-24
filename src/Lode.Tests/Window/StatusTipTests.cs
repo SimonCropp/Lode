@@ -10,7 +10,7 @@ public class StatusTipTests
     {
         var item = new Rectangle(900, 2, 120, 26);
 
-        var location = MainForm.StatusTipLocation(item, height: 30, gap: 4);
+        var location = StatusBar.TipLocation(item, height: 30, gap: 4);
 
         await Assert.That(location).IsEqualTo(new(900, -34));
         // Its bottom, the location's top plus its height, is still above the bar's top.
