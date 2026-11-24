@@ -2,19 +2,20 @@
 /// Lode's options, a page each for General, View, Actions, Code, File Explorer, Links and Updates, picked
 /// from the list down the left, as Windows 11's Settings does. A change applies straight away.
 /// </summary>
+/// <remarks>
+/// Laid out by docking: the dialog is a fixed size, the list docked down its left and Close along
+/// its bottom, and the page picked fills the rest. A page's parts are docked one under another,
+/// so its text wraps at the page's width. Docking takes no notice of margins, so a part's
+/// padding is the room round it.
+/// </remarks>
 class OptionsForm : Form
 {
-    // The widest a page's text runs before it wraps.
-    const int textWidth = 440;
-
     ExplorerReplacement explorerReplacement;
 
-    Label explorerStatus = new()
+    Label explorerStatus = new WrappingLabel
     {
         Name = "explorerStatus",
-        AutoSize = true,
-        MaximumSize = new(textWidth, 0),
-        Margin = new(3, 0, 3, 6)
+        Padding = new(3, 0, 3, 6)
     };
 
     Button replaceButton = new()
@@ -216,12 +217,10 @@ class OptionsForm : Form
         AutoSize = true
     };
 
-    Label windowsSearchStatus = new()
+    Label windowsSearchStatus = new WrappingLabel
     {
         Name = "windowsSearchStatus",
-        AutoSize = true,
-        MaximumSize = new(textWidth, 0),
-        Margin = new(3, 0, 3, 6)
+        Padding = new(3, 0, 3, 6)
     };
 
     // With the shield, as each asks for administrator permission.
@@ -277,12 +276,10 @@ class OptionsForm : Form
 
     Updates updates;
 
-    Label updateStatus = new()
+    Label updateStatus = new WrappingLabel
     {
         Name = "updateStatus",
-        AutoSize = true,
-        MaximumSize = new(textWidth, 0),
-        Margin = new(3, 0, 3, 6)
+        Padding = new(3, 0, 3, 6)
     };
 
     Button applyUpdate = new()
@@ -363,12 +360,18 @@ class OptionsForm : Form
     {
         Name = "pages",
         AutoSize = true,
-        Anchor = AnchorStyles.Top | AnchorStyles.Left,
-        Margin = new(0, 0, 15, 0)
+        Dock = DockStyle.Left
+    };
+
+    // The page picked, filling what the list and Close leave, a little in from the list.
+    Panel host = new()
+    {
+        Dock = DockStyle.Fill,
+        Padding = new(15, 6, 0, 0)
     };
 
     // In the list's order, only the one picked there shown.
-    List<Control> pages = [];
+    List<Panel> pages = [];
 
     // A page's name over it, and the headings of its sections.
     Font headingFont;
@@ -501,8 +504,10 @@ class OptionsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        // Room for the actions' table, the widest page, with some to spare, as text measures a
+        // little wider than it scales on a screen above 100%. Each page's text wraps to the width
+        // left, and a page taller than the room left scrolls.
+        ClientSize = new(880, 600);
         Padding = new(9);
         headingFont = new(Font.FontFamily, Font.SizeInPoints * 1.5f);
         sectionFont = new(Font, FontStyle.Bold);
@@ -515,11 +520,20 @@ class OptionsForm : Form
             Text = "Close",
             DialogResult = DialogResult.OK,
             AutoSize = true,
-            Anchor = AnchorStyles.Right,
             Margin = new(3, 12, 3, 3)
         };
         AcceptButton = closeButton;
         CancelButton = closeButton;
+
+        // Close along the bottom, at its right.
+        var bottom = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false
+        };
+        bottom.Controls.Add(closeButton);
 
         AddPage("General", Icons.Options, BuildGeneralPage());
         AddPage("View", Icons.View, BuildViewPage());
@@ -533,29 +547,11 @@ class OptionsForm : Form
         pageList.SelectedChanged += ShowSelectedPage;
         ShowSelectedPage();
 
-        host = new()
-        {
-            AutoSize = true,
-            Margin = new(0, 6, 0, 0)
-        };
-        foreach (var page in pages)
-        {
-            host.Controls.Add(page);
-        }
-
-        // The pages down the left, and beside them the one picked.
-        var layout = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            Location = new(Padding.Left, Padding.Top)
-        };
-        layout.Controls.Add(pageList, 0, 0);
-        layout.Controls.Add(host, 1, 0);
-        layout.Controls.Add(closeButton, 0, 1);
-        layout.SetColumnSpan(closeButton, 2);
-        Controls.Add(layout);
+        // Docking goes from the last added: Close's row along the whole bottom first, then the
+        // list down the left of what is above it, and the page picked fills the rest.
+        Controls.Add(host);
+        Controls.Add(pageList);
+        Controls.Add(bottom);
         ResumeLayout(false);
         PerformLayout();
 
@@ -565,8 +561,6 @@ class OptionsForm : Form
         UpdateWindowsSearchState();
     }
 
-    PageHost host;
-
     // Brought within the screen it opens on, once it knows which.
     protected override void OnLoad(EventArgs args)
     {
@@ -575,18 +569,15 @@ class OptionsForm : Form
     }
 
     /// <summary>
-    /// Makes the dialog no taller than <paramref name="area"/>, the pages scrolling where they
-    /// are taller than that leaves room for, and moves it up within it. On a short screen, or
-    /// one scaled up, the dialog as tall as its tallest page would run off the bottom, Close and
-    /// all.
+    /// Makes the dialog no taller than <paramref name="area"/>, and moves it up within it. On a
+    /// short screen, or one scaled up, it would run off the bottom, Close and all. Shorter, the
+    /// page picked scrolls in the room left, or, the actions', fits its table to it.
     /// </summary>
     internal void FitWithin(Rectangle area)
     {
-        var over = Height - area.Height;
-        if (over > 0)
+        if (Height > area.Height)
         {
-            host.MaximumHeight = host.Height - over;
-            PerformLayout();
+            Height = area.Height;
         }
 
         // Not one placed off every screen on purpose, as the tests place theirs.
@@ -597,49 +588,46 @@ class OptionsForm : Form
     }
 
     /// <summary>
-    /// Whether the pages scroll, as they do once <see cref="FitWithin"/> has made the dialog
-    /// shorter than they are.
+    /// Whether the page shown scrolls, as one taller than the room it has does.
     /// </summary>
-    internal bool PagesScroll => host.VerticalScroll.Visible;
+    internal bool PagesScroll => pages[pageList.SelectedIndex].VerticalScroll.Visible;
 
-    // A page: its name as a heading, then its parts one under another. Hidden until picked.
+    // A page: its name as a heading, then its parts, each docked under the one before. A part
+    // docked to fill, the actions' table, takes what is left under the rest, and scrolls itself.
+    // Any other page scrolls where it is taller than the room it has. Hidden until picked.
     void AddPage(string title, char glyph, Control[] parts)
     {
-        var page = Column(Padding.Empty);
-        // Docked to the top rather than filling the host, so a page taller than the host
-        // scrolls in it.
-        page.Dock = DockStyle.Top;
-        page.Visible = false;
-        page.Controls.Add(
+        Control[] stack =
+        [
             new Label
             {
                 Text = title,
                 AutoSize = true,
                 Font = headingFont,
-                Margin = new(1, 0, 3, 12)
-            });
-        foreach (var part in parts)
+                Padding = new(1, 0, 3, 12)
+            },
+            .. parts
+        ];
+        var page = new Panel
         {
+            Dock = DockStyle.Fill,
+            AutoScroll = stack.All(_ => _.Dock != DockStyle.Fill),
+            Visible = false
+        };
+        // Docking goes from the last added, so the parts are added from the bottom up.
+        for (var index = stack.Length - 1; index >= 0; index--)
+        {
+            var part = stack[index];
+            if (part.Dock == DockStyle.None)
+            {
+                part.Dock = DockStyle.Top;
+            }
+
             page.Controls.Add(part);
         }
 
-        // A page ending in a table that scrolls, the actions', fills the height the pages have,
-        // the table taking what is left under what is above it, rather than stopping at the
-        // height it asks for, which leaves the dialog no taller, and the rest of the page empty.
-        if (parts[^1] is HeadedTable table)
-        {
-            page.Dock = DockStyle.Fill;
-            // The heading and each part as tall as it is, but the table.
-            for (var row = 0; row < parts.Length; row++)
-            {
-                page.RowStyles.Add(new(SizeType.AutoSize));
-            }
-
-            page.RowStyles.Add(new(SizeType.Percent, 100));
-            table.Dock = DockStyle.Fill;
-        }
-
         pages.Add(page);
+        host.Controls.Add(page);
         pageList.Add(title, glyph);
     }
 
@@ -656,9 +644,8 @@ class OptionsForm : Form
             UpdateWindowsSearchState();
         }
 
-        // Each page from its top, rather than as far down as the last one was scrolled.
-        // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract
-        host?.AutoScrollPosition = Point.Empty;
+        // Each page from its top, rather than as far down as it was last scrolled.
+        pages[pageList.SelectedIndex].AutoScrollPosition = Point.Empty;
     }
 
     /// <summary>
@@ -697,58 +684,49 @@ class OptionsForm : Form
         return true;
     }
 
-    static TableLayoutPanel Column(Padding margin) =>
-        new()
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            Margin = margin
-        };
-
-    // A part of a page: a heading, what it is for, then its controls.
-    TableLayoutPanel Section(string heading, string description, params Control[] controls)
+    // A part of a page: a heading, what it is for, then its controls, the last with the room
+    // under it before the next part.
+    Control[] Section(string heading, string description, params Control[] controls)
     {
-        var section = Column(new(0, 0, 0, 15));
-        section.Controls.Add(
+        var last = controls[^1];
+        last.Padding = last.Padding with
+        {
+            Bottom = last.Padding.Bottom + 15
+        };
+        return
+        [
             new Label
             {
                 Text = heading,
                 AutoSize = true,
                 Font = sectionFont,
-                Margin = new(3, 0, 3, 3)
-            });
-        section.Controls.Add(Description(description, new(3, 0, 3, 6)));
-        foreach (var control in controls)
-        {
-            section.Controls.Add(control);
-        }
-
-        return section;
+                Padding = new(3, 0, 3, 3)
+            },
+            Description(description, new(3, 0, 3, 6)),
+            .. controls
+        ];
     }
 
-    static Label Description(string text, Padding margin) =>
-        new()
+    static Label Description(string text, Padding padding) =>
+        new WrappingLabel
         {
             Text = text,
-            AutoSize = true,
-            MaximumSize = new(textWidth, 0),
-            Margin = margin
+            Padding = padding
         };
 
     // Grey text under a check box, lined up with the box's text.
     static Label Note(string text) =>
-        new()
+        new WrappingLabel
         {
             Text = text,
-            AutoSize = true,
-            MaximumSize = new(textWidth, 0),
-            Margin = new(21, 0, 3, 9),
+            Padding = new(21, 0, 3, 9),
             ForeColor = SystemColors.GrayText
         };
 
     // A table row rather than a flow, so each control is centred on the row's middle and a text
-    // box lines up with the taller buttons beside it.
+    // box lines up with the taller buttons beside it. Docked across a page, it keeps its
+    // controls their own size, at its left, where docked themselves they would be as wide as the
+    // page. Their margins count in it.
     static TableLayoutPanel Row(params Control[] controls)
     {
         var row = new TableLayoutPanel
@@ -770,21 +748,21 @@ class OptionsForm : Form
 
     Control[] BuildGeneralPage() =>
     [
-        Section(
+        .. Section(
             "Default folder",
             "The folder new tabs open in, and new windows given no folder to show. Reset goes " +
             "back to your user folder.",
             Row(defaultDirectory, browseDefaultDirectory, resetDefaultDirectory)),
-        Section(
+        .. Section(
             "Text editor",
             "Edit, on the right-click menu of a text file, opens it in this editor.",
-            textEditor),
-        Section(
+            Row(textEditor)),
+        .. Section(
             "Changes",
             "Where a file picked in the Changes or History pane shows its changes, drawn as " +
             "GitHub Desktop draws them.",
-            diffPlacement),
-        Section(
+            Row(diffPlacement)),
+        .. Section(
             "Tabs",
             "Other apps opening folders in Lode leave a tab for each. Lode can close those you " +
             "haven't looked at for a while, once you have gone to another app. It never closes " +
@@ -794,20 +772,20 @@ class OptionsForm : Form
 
     Control[] BuildViewPage() =>
     [
-        Section(
+        .. Section(
             "Theme",
             "Light or dark, or whichever Windows' apps are set to. Lode takes it on when it next " +
             "starts: choose Exit from its icon in the notification area, then open it again.",
-            theme),
-        showHidden,
-        showSystem,
+            Row(theme)),
+        Row(showHidden),
+        Row(showSystem),
         Note("Windows, Program Files, other people's folders under Users, and the files Windows protects."),
-        expandToOpenFolder,
+        Row(expandToOpenFolder),
         Note(
             "The tree opens out down to the folder the tab shows, and selects it, as File " +
             "Explorer's does only with Expand to open folder on, which it is not by default. Off, " +
             "the tree stays as you leave it, and selects the folder only where it already shows."),
-        showRecent,
+        Row(showRecent),
         Note(
             "Pinned folders are the ones pinned to Quick access in File Explorer. Recent folders " +
             "are the ones Explorer adds there because you use them often.")
@@ -825,25 +803,25 @@ class OptionsForm : Form
 
     Control[] BuildCodePage() =>
     [
-        Section(
+        .. Section(
             "Code folder",
             "The folder your git repositories are in. Folders in it get a Git menu (pull, switch " +
             "to default branch, push, discard, purge) and Update NuGets on their right-click menu. " +
             "Lode watches it while it runs, so Windows won't let a folder it is in be renamed or " +
             "moved until it is cleared here, or Lode exits.",
             Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
-        Section(
+        .. Section(
             "Git purge",
             "Git purge deletes every file and folder git doesn't track, ignored ones " +
             "included, such as bin and obj. It moves them to the Recycle Bin.",
-            purgePermanently),
-        Section(
+            Row(purgePermanently)),
+        .. Section(
             "Microsoft Defender",
             "Defender scans every file builds and git write in the code folder, which slows " +
             "them down. Excluding the folder stops that, as Rider suggests, and removes the " +
             "exclusions under it, which it makes redundant. Windows asks for administrator " +
             "permission.",
-            excludeFromDefender)
+            Row(excludeFromDefender))
     ];
 
     Control[] BuildPromotedFilesPage() =>
@@ -857,7 +835,7 @@ class OptionsForm : Form
             "One a line: a whole name, or one with a *, before which is how the name starts, and " +
             "after which how it ends, as in *.slnx or Directory.*.props. Case doesn't matter.",
             new(3, 0, 3, 9)),
-        promotedFiles
+        Row(promotedFiles)
     ];
 
     // The patterns typed, one a line, without the blank lines.
@@ -879,42 +857,29 @@ class OptionsForm : Form
         SettingsChanged?.Invoke(SettingsChange.Listing);
     }
 
-    Control[] BuildSearchPage()
-    {
-        var buttons = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = false,
-            Margin = Padding.Empty
-        };
-        buttons.Controls.Add(turnOffWindowsSearch);
-        buttons.Controls.Add(turnOnWindowsSearch);
-
-        return
-        [
-            Section(
-                "Search box",
-                "The search box at the top right finds what is named like what is typed, in the " +
-                "folder open and every folder beneath it. In a repository it leaves out what git " +
-                "ignores, bin and node_modules say, as Find in Files does, and never goes into .git.",
-                searchIgnored),
-            Section(
-                "Find in Files",
-                "Ctrl+Shift+F searches what files hold, in the folder open, leaving out what git " +
-                "ignores. With Context on in its strip, it shows lines either side of each match.",
-                Row(contextLines, contextLinesUnit)),
-            Section(
-                "Windows Search",
-                "Windows Search indexes your files in the background, for Start's search and " +
-                "Explorer's. Lode doesn't use it: its search reads the folders itself. Turning it " +
-                "off stops the indexing for good, but Start, Settings, Outlook and OneNote then " +
-                "find no files, and Explorer's search becomes slower. Turn on starts it again as " +
-                "Windows has it. Windows asks for administrator permission.",
-                windowsSearchStatus,
-                buttons)
-        ];
-    }
+    Control[] BuildSearchPage() =>
+    [
+        .. Section(
+            "Search box",
+            "The search box at the top right finds what is named like what is typed, in the " +
+            "folder open and every folder beneath it. In a repository it leaves out what git " +
+            "ignores, bin and node_modules say, as Find in Files does, and never goes into .git.",
+            Row(searchIgnored)),
+        .. Section(
+            "Find in Files",
+            "Ctrl+Shift+F searches what files hold, in the folder open, leaving out what git " +
+            "ignores. With Context on in its strip, it shows lines either side of each match.",
+            Row(contextLines, contextLinesUnit)),
+        .. Section(
+            "Windows Search",
+            "Windows Search indexes your files in the background, for Start's search and " +
+            "Explorer's. Lode doesn't use it: its search reads the folders itself. Turning it " +
+            "off stops the indexing for good, but Start, Settings, Outlook and OneNote then " +
+            "find no files, and Explorer's search becomes slower. Turn on starts it again as " +
+            "Windows has it. Windows asks for administrator permission.",
+            windowsSearchStatus,
+            Row(turnOffWindowsSearch, turnOnWindowsSearch))
+    ];
 
     void UpdateWindowsSearchState()
     {
@@ -1018,12 +983,10 @@ class OptionsForm : Form
         };
         foreach (var handler in RepositoryLinks.All)
         {
-            var status = new Label
+            var status = new WrappingLabel
             {
                 Name = $"linkStatus.{handler.Id}",
-                AutoSize = true,
-                MaximumSize = new(textWidth, 0),
-                Margin = new(3, 6, 3, 3)
+                Padding = new(3, 6, 3, 3)
             };
             var take = new Button
             {
@@ -1107,53 +1070,27 @@ class OptionsForm : Form
         }
     }
 
-    Control[] BuildExplorerPage()
-    {
-        var buttons = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = false,
-            Margin = Padding.Empty
-        };
-        buttons.Controls.Add(replaceButton);
-        buttons.Controls.Add(restoreButton);
+    Control[] BuildExplorerPage() =>
+    [
+        Description(
+            "Open folders, drives and Win+E in Lode instead of File Explorer. This applies to " +
+            "your Windows account only. Explorer's own Open stays on every folder's " +
+            "right-click menu, and the taskbar's File Explorer button still opens Explorer.",
+            new(3, 0, 3, 9)),
+        explorerStatus,
+        Row(replaceButton, restoreButton)
+    ];
 
-        return
-        [
-            Description(
-                "Open folders, drives and Win+E in Lode instead of File Explorer. This applies to " +
-                "your Windows account only. Explorer's own Open stays on every folder's " +
-                "right-click menu, and the taskbar's File Explorer button still opens Explorer.",
-                new(3, 0, 3, 9)),
-            explorerStatus,
-            buttons
-        ];
-    }
-
-    Control[] BuildUpdatesPage()
-    {
-        var buttons = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            WrapContents = false,
-            Margin = Padding.Empty
-        };
-        buttons.Controls.Add(applyUpdate);
-        buttons.Controls.Add(checkForUpdates);
-
-        return
-        [
-            Description(
-                "Lode asks NuGet for a newer version once a day, and shows one beside the free " +
-                "space at the bottom of each window. Updating closes Lode, runs dotnet tool " +
-                "update, and starts Lode again with the tabs it had.",
-                new(3, 0, 3, 9)),
-            updateStatus,
-            buttons
-        ];
-    }
+    Control[] BuildUpdatesPage() =>
+    [
+        Description(
+            "Lode asks NuGet for a newer version once a day, and shows one beside the free " +
+            "space at the bottom of each window. Updating closes Lode, runs dotnet tool " +
+            "update, and starts Lode again with the tabs it had.",
+            new(3, 0, 3, 9)),
+        updateStatus,
+        Row(applyUpdate, checkForUpdates)
+    ];
 
     void OnUpdatesChanged()
     {
@@ -1707,23 +1644,19 @@ class OptionsForm : Form
         restoreButton.Enabled = registered != null;
     }
 
-    // A table under its column headings, as the actions are. It asks for no more than a height
-    // the other pages are taller than, so the list of actions doesn't set the dialog's height,
-    // and scrolls in whatever height it is given, the headings staying put above it, so what
-    // each column is shows however far down it is scrolled.
+    // A table under its column headings, as the actions are, filling what is left of its page
+    // under what is above it. The rows scroll in that, the headings staying put above them, so
+    // what each column is shows however far down they are scrolled.
     sealed class HeadedTable : TableLayoutPanel
     {
-        const int maximumHeight = 360;
-
         /// <param name="headings">By column, null for one without.</param>
         /// <param name="table">Its first row a <see cref="HeadingWidth"/> under each heading.</param>
         public HeadedTable(Control?[] headings, LaidOutTable table)
         {
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Dock = DockStyle.Fill;
             ColumnCount = 1;
             Margin = Padding.Empty;
-            var header = new Headings(table)
+            var header = new TableLayoutPanel
             {
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -1759,12 +1692,14 @@ class OptionsForm : Form
             Align();
             header.ResumeLayout();
             table.LaidOut += Align;
-            // The headings as tall as they are, and the rows the rest.
+            // As wide as the page, so the rows' scroll bar is at its right edge. The headings as
+            // tall as they are, and the rows the rest.
+            ColumnStyles.Add(new(SizeType.Percent, 100));
             RowStyles.Add(new(SizeType.AutoSize));
             RowStyles.Add(new(SizeType.Percent, 100));
             Controls.Add(header, 0, 0);
             Controls.Add(
-                new Rows(header, table)
+                new Rows(table)
                 {
                     Dock = DockStyle.Fill
                 },
@@ -1772,52 +1707,61 @@ class OptionsForm : Form
                 1);
         }
 
-        // Over the table's columns, so as wide as the table, which is what they ask for. Their
-        // columns are set from the table's as it was last laid out, which on a screen above
-        // 100% for a page not shown yet is as the table was before the dialog was scaled up to
-        // the screen. Scaled up with it, they would ask for room for its text scaled a second
-        // time, and the dialog be wider until the page had shown.
-        sealed class Headings(Control table) : TableLayoutPanel
-        {
-            public override Size GetPreferredSize(Size proposedSize) =>
-                new(table.GetPreferredSize(Size.Empty).Width, base.GetPreferredSize(proposedSize).Height);
-        }
-
-        // Under the headings, asking for no more than maximumHeight, headings and all, and
-        // scrolling the table where it runs past the height it is given.
+        // Under the headings, scrolling the table where it runs past the room it has.
         sealed class Rows : Panel
         {
-            Control header;
-            Control table;
-
-            public Rows(Control header, Control table)
+            public Rows(Control table)
             {
-                this.header = header;
-                this.table = table;
-                AutoSize = true;
                 AutoScroll = true;
                 Margin = Padding.Empty;
                 table.Location = Point.Empty;
                 Controls.Add(table);
             }
 
-            public override Size GetPreferredSize(Size proposedSize)
-            {
-                var preferred = table.GetPreferredSize(Size.Empty);
-                var height = LogicalToDeviceUnits(maximumHeight) - header.GetPreferredSize(Size.Empty).Height;
-                if (preferred.Height <= height)
-                {
-                    return preferred;
-                }
-
-                // Room beside the table for the scroll bar, so it never covers the last column.
-                return new(preferred.Width + SystemInformation.VerticalScrollBarWidth, height);
-            }
-
             protected override void OnHandleCreated(EventArgs args)
             {
                 base.OnHandleCreated(args);
                 SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
+            }
+        }
+    }
+
+    // Text docked across a page, as tall as it is wrapped at the page's width. Docking leaves a
+    // label that sizes itself as it sizes itself, which is on one line, so this one doesn't, but
+    // takes the height its text needs at the width docking gives it, again whenever that width,
+    // or what it shows, changes.
+    sealed class WrappingLabel : Label
+    {
+        protected override void OnSizeChanged(EventArgs args)
+        {
+            base.OnSizeChanged(args);
+            Fit();
+        }
+
+        protected override void OnTextChanged(EventArgs args)
+        {
+            base.OnTextChanged(args);
+            Fit();
+        }
+
+        protected override void OnFontChanged(EventArgs args)
+        {
+            base.OnFontChanged(args);
+            Fit();
+        }
+
+        protected override void OnPaddingChanged(EventArgs args)
+        {
+            base.OnPaddingChanged(args);
+            Fit();
+        }
+
+        void Fit()
+        {
+            var height = GetPreferredSize(new(Width, 0)).Height;
+            if (Height != height)
+            {
+                Height = height;
             }
         }
     }
@@ -1851,48 +1795,5 @@ class OptionsForm : Form
 
         public override Size GetPreferredSize(Size proposedSize) =>
             new(heading.GetPreferredSize(Size.Empty).Width + heading.Margin.Horizontal, 0);
-    }
-
-    // Holds every page, one shown at a time, and asks for room for the largest, so the dialog
-    // keeps its size whichever page is shown.
-    sealed class PageHost : Panel
-    {
-        public PageHost() =>
-            AutoScroll = true;
-
-        /// <summary>
-        /// How tall it may be, in pixels, the pages scrolling past that. 0 for as tall as the
-        /// tallest page.
-        /// </summary>
-        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public int MaximumHeight
-        {
-            get;
-            set
-            {
-                field = value;
-                // What it asks for has changed, which the layout it is in only hears this way.
-                Parent?.PerformLayout(this, nameof(MaximumHeight));
-            }
-        }
-
-        public override Size GetPreferredSize(Size proposedSize)
-        {
-            var size = Size.Empty;
-            foreach (Control page in Controls)
-            {
-                var preferred = page.GetPreferredSize(proposedSize);
-                size = new(Math.Max(size.Width, preferred.Width), Math.Max(size.Height, preferred.Height));
-            }
-
-            if (MaximumHeight == 0 ||
-                size.Height <= MaximumHeight)
-            {
-                return size;
-            }
-
-            // Room beside the pages for the scroll bar, so it never covers what is at their right.
-            return new(size.Width + SystemInformation.VerticalScrollBarWidth, MaximumHeight);
-        }
     }
 }
