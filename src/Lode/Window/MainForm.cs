@@ -654,7 +654,7 @@ class MainForm : Form
             if (parent != null)
             {
                 List<LodeActions.Definition> members = [action];
-                var dropDown = CreateDropDown(parent.Text, parent.Glyph, parent.Text, iconSize, () => ParentEntries(members), members);
+                var dropDown = CreateDropDown(parent.Text, parent.Glyph, null, iconSize, () => ParentEntries(members), members);
                 parentButtons[parent] = (dropDown, members);
                 barItems.Add(dropDown);
                 continue;
@@ -978,25 +978,26 @@ class MainForm : Form
     }
 
     // As in Explorer's command bar, drop-downs (New, Open with) keep their name beside their
-    // icon; the rest show theirs as a tooltip. Disabled buttons grey their icon themselves.
+    // icon; the rest show theirs as a tooltip, with their keys. A drop-down has a tooltip only
+    // where it has keys, as its name shows already. Disabled buttons grey their icon themselves.
     ToolStripItem CreateActionButton(LodeActions.Definition action, int iconSize)
     {
-        var toolTip = action.Text;
+        string? withKeys = null;
         if (action.Shortcut.Length > 0)
         {
-            toolTip = $"{action.Text} ({action.Shortcut})";
+            withKeys = $"{action.Text} ({action.Shortcut})";
         }
 
         if (action.Submenu)
         {
-            return CreateDropDown(action.Text, action.Glyph, toolTip, iconSize, () => SubmenuEntries(action.Id));
+            return CreateDropDown(action.Text, action.Glyph, withKeys, iconSize, () => SubmenuEntries(action.Id));
         }
 
         var item = new ToolStripButton(action.Text)
         {
             Image = Icons.Bitmap(action.Glyph, iconSize, SystemColors.ControlText),
             DisplayStyle = ToolStripItemDisplayStyle.Image,
-            ToolTipText = toolTip
+            ToolTipText = withKeys ?? action.Text
         };
         item.Click += (_, _) => RunAction(action.Id, item);
         SpaceActionButton(item);
@@ -1014,14 +1015,16 @@ class MainForm : Form
     // A drop-down on the bar, for a submenu action (New, Open with) or a parent of nested
     // buttons: its name beside its icon, then a chevron, filled with <paramref name="entries"/>
     // as it opens. A parent's lists <paramref name="nested"/>, each of which can be
-    // right-clicked there.
-    ChevronDropDownButton CreateDropDown(string text, char glyph, string toolTip, int iconSize, Func<IReadOnlyList<QuickMenu.Command?>> entries, IReadOnlyList<LodeActions.Definition>? nested = null)
+    // right-clicked there. Without a <paramref name="toolTip"/> it has none, rather than its
+    // name again.
+    ChevronDropDownButton CreateDropDown(string text, char glyph, string? toolTip, int iconSize, Func<IReadOnlyList<QuickMenu.Command?>> entries, IReadOnlyList<LodeActions.Definition>? nested = null)
     {
         var dropDown = new ChevronDropDownButton(text)
         {
             DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
             TextImageRelation = TextImageRelation.ImageBeforeText,
             ToolTipText = toolTip,
+            AutoToolTip = false,
             // Its name as far from its icon as Explorer's New is.
             Image = Icons.Bitmap(glyph, iconSize, SystemColors.ControlText, LogicalToDeviceUnits(6))
         };

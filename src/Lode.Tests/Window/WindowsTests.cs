@@ -929,6 +929,31 @@ public class WindowsTests
                 """);
     }
 
+    // A button showing only its icon has its name as a tooltip, with its keys. A drop-down shows
+    // its name beside its icon, so has no tooltip, rather than its name again.
+    [Test]
+    public async Task OnlyButtonsWithoutTheirNameShownHaveATooltip()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+
+        await Verify(
+                new[] { "New", "Open with", "AI", "Git", "Copy", "Terminal", "See more" }
+                    .Select(_ => $"{_}: {form.BarItem(_).ToolTipText ?? "none"}"))
+            .Snapshot(
+                """
+                [
+                  New: none,
+                  Open with: none,
+                  AI: none,
+                  Git: none,
+                  Copy: Copy (Ctrl+C),
+                  Terminal: Terminal,
+                  See more: See more
+                ]
+                """);
+    }
+
     // On a display above 100% the form scales its controls after building them. The boxes in
     // the address bar and filter frames must still sit centred inside them, not pushed down and
     // over the right border.
