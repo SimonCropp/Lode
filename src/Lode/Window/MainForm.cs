@@ -2325,8 +2325,9 @@ class MainForm : Form
         }
 
         Add("Reopen closed tab", ReopenClosedTab, "Ctrl+Shift+T", CanReopenClosedTab);
-        Add(UndoHistory.Instance.UndoText, Undo, "Ctrl+Z", UndoHistory.Instance.CanUndo);
-        Add(UndoHistory.Instance.RedoText, Redo, "Ctrl+Y", UndoHistory.Instance.CanRedo);
+        var history = UndoHistory.Instance;
+        Add(history.UndoText, Undo, "Ctrl+Z", history.CanUndo);
+        Add(history.RedoText, Redo, "Ctrl+Y", history.CanRedo);
         Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", Tabs.TabCount > 1);
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", Tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");

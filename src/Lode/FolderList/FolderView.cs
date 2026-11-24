@@ -742,9 +742,12 @@ sealed class FolderView : UserControl
 
     // `code .` is code given the folder open, though as a path it is the folder named code,
     // where the folder open has one: Windows drops the dots and spaces a name ends with.
-    static bool GivenOnlyDots(TypedCommand.Command command) =>
-        command.Arguments.Length > 0 &&
-        command.Arguments.AsSpan().Trim(". \t").IsEmpty;
+    static bool GivenOnlyDots(TypedCommand.Command command)
+    {
+        var arguments = command.Arguments;
+        return arguments.Length > 0 &&
+               arguments.AsSpan().Trim(". \t").IsEmpty;
+    }
 
     // Whether what was typed is somewhere to go: This PC, or a folder or file here, which a
     // command never shadows.
