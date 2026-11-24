@@ -1376,6 +1376,68 @@ public class WindowsTests
                 """);
     }
 
+    // Right-clicking an action in its parent's drop-down un-nests it, a button of its own in its
+    // place among the others, or hides it, under See more, still nested there for when it is a
+    // button again. With Fetch hidden, the drop-down stands where Sync fork does, after Pull.
+    // Outside the code folder none of them applies, and greyed out they are still called what
+    // the Git submenu calls them.
+    [Test]
+    public async Task RightClickingANestedActionUnnestsOrHidesIt()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        // Room for the button un-nested, so it doesn't go under See more.
+        settings.SetPlacement("openWith", button: false, menu: true);
+        using var form = await Show(fixture, settings, fixture.Root);
+        var pullMenu = form.NestedMenuCommands("gitPull").Select(DescribeCommand).ToList();
+
+        Choose(form.NestedMenuCommands("gitPull"), "Un-nest");
+        Choose(form.NestedMenuCommands("gitFetch"), "Hide button");
+
+        await Verify(
+                new
+                {
+                    pullMenu,
+                    buttons = form.DescribeActions().SkipWhile(_ => _ != "Properties").ToList(),
+                    git = form.ParentEntries("Git").Select(_ => _!.Text).ToList(),
+                    fetch = new
+                    {
+                        button = settings.ShowsAsButton("gitFetch"),
+                        nested = settings.NestsButton("gitFetch")
+                    }
+                })
+            .Snapshot(
+                """
+                {
+                  pullMenu: [
+                    Hide button,
+                    Un-nest,
+                    ----,
+                    Customize buttons…
+                  ],
+                  buttons: [
+                    Properties,
+                    ----,
+                    Git pull (disabled),
+                    Git (disabled),
+                    ----,
+                    See more
+                  ],
+                  git: [
+                    Sync fork,
+                    Switch to default branch,
+                    Push…,
+                    Discard…,
+                    Purge…
+                  ],
+                  fetch: {
+                    button: false,
+                    nested: true
+                  }
+                }
+                """);
+    }
+
     // Right-clicking anywhere on the bar but a button, See more say, offers only the Actions page
     // of Options.
     [Test]

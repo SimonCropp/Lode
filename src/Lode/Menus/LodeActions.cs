@@ -13,6 +13,10 @@ static class LodeActions
     /// unless Options says otherwise.</param>
     /// <param name="ButtonNested">Whether it is in its parent's drop-down on the bar, rather than
     /// a button of its own, unless Options says otherwise.</param>
+    /// <param name="NestedText">What it is called in its parent's submenu or drop-down, where the
+    /// parent's name says the rest: Pull, under Git. Null where it is called
+    /// <paramref name="Text"/> there too. Greyed out there, where it doesn't apply, it is still
+    /// called this.</param>
     public sealed record Definition(
         string Id,
         string Text,
@@ -24,7 +28,8 @@ static class LodeActions
         bool Submenu = false,
         Parent? Parent = null,
         bool MenuNested = false,
-        bool ButtonNested = false);
+        bool ButtonNested = false,
+        string? NestedText = null);
 
     /// <summary>
     /// A submenu in the right-click menus, and a drop-down on the bar, that actions can be nested
@@ -82,13 +87,13 @@ static class LodeActions
         new("extractHere", "Extract here", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
         new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: true, Menu: true, "Ctrl+Shift+C", Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
-        new("gitFetch", "Git fetch", Icons.Fetch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
-        new("gitPull", "Git pull", Icons.Pull, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
-        new("gitSyncFork", "Git sync fork", Icons.SyncFork, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
-        new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
-        new("gitPush", "Git push", Icons.Push, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
-        new("gitDiscard", "Git discard", Icons.Discard, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
-        new("gitPurge", "Git purge", Icons.Purge, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true),
+        new("gitFetch", "Git fetch", Icons.Fetch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Fetch"),
+        new("gitPull", "Git pull", Icons.Pull, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Pull"),
+        new("gitSyncFork", "Git sync fork", Icons.SyncFork, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Sync fork"),
+        new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Switch to default branch"),
+        new("gitPush", "Git push", Icons.Push, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Push…"),
+        new("gitDiscard", "Git discard", Icons.Discard, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Discard…"),
+        new("gitPurge", "Git purge", Icons.Purge, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Purge…"),
         new("updateNugets", "Update NuGets", Icons.Package, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new("updateNugetsAndBuild", "Update NuGets and build", Icons.Build, 4, Button: false, Menu: true, Parent: packages, MenuNested: true),
         new(More, "Show more options", Icons.MoreOptions, 5, Button: false, Menu: true)
@@ -115,8 +120,9 @@ static class LodeActions
         byId[id];
 
     /// <summary>
-    /// A right-click menu entry for the action, with its icon. <paramref name="text"/> stands in
-    /// for the action's name where the menu words it differently.
+    /// A right-click menu entry for the action, with its icon, and what it is called under its
+    /// parent. <paramref name="text"/> stands in for the action's name where the menu words it
+    /// differently.
     /// </summary>
     public static QuickMenu.Command Command(string id, Action action, bool enabled = true, string? text = null)
     {
@@ -124,7 +130,8 @@ static class LodeActions
         return new(text ?? definition.Text, action, enabled)
         {
             Id = id,
-            Glyph = definition.Glyph
+            Glyph = definition.Glyph,
+            NestedText = definition.NestedText
         };
     }
 

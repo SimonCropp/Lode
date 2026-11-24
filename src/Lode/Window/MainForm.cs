@@ -450,11 +450,13 @@ class MainForm : Form
         return actionsBar;
     }
 
-    void ShowBarMenu(Point screen)
+    void ShowBarMenu(Point screen) =>
+        ShowBarMenu(screen, BarMenuCommands(actionsBar.GetItemAt(actionsBar.PointToClient(screen))));
+
+    void ShowBarMenu(Point screen, IReadOnlyList<QuickMenu.Command?> commands)
     {
-        var client = actionsBar.PointToClient(screen);
         Action? chosen = null;
-        var strip = QuickMenu.Build(BarMenuCommands(actionsBar.GetItemAt(client)), null, _ => chosen = _);
+        var strip = QuickMenu.Build(commands, null, _ => chosen = _);
         // Run the choice once the menu has closed: the bar is made again, and Customize opens a
         // dialog.
         strip.Closed += (_, _) => strip.BeginInvoke(
@@ -463,8 +465,38 @@ class MainForm : Form
                 strip.Dispose();
                 chosen?.Invoke();
             });
-        strip.Show(actionsBar, client);
+        strip.Show(actionsBar, actionsBar.PointToClient(screen));
     }
+
+    // Right-clicking an action in a parent's drop-down, which lists them in their order, one
+    // each: what can be done to it, once the drop-down has closed, as whatever is chosen makes
+    // the bar again.
+    void ShowNestedMenu(ChevronDropDownButton dropDown, IReadOnlyList<LodeActions.Definition> nested, Point screen)
+    {
+        if (dropDown.DropDown.GetItemAt(dropDown.DropDown.PointToClient(screen)) is not { } item ||
+            dropDown.DropDownItems.IndexOf(item) is not (var index and >= 0) ||
+            index >= nested.Count)
+        {
+            return;
+        }
+
+        var commands = NestedMenuCommands(nested[index].Id);
+        dropDown.HideDropDown();
+        BeginInvoke(() => ShowBarMenu(screen, commands));
+    }
+
+    /// <summary>
+    /// What right-clicking the action <paramref name="id"/> in its parent's drop-down offers:
+    /// hide it, which puts it under See more, still nested there for when it is a button again,
+    /// and un-nest it, a button of its own after the drop-down.
+    /// </summary>
+    internal List<QuickMenu.Command?> NestedMenuCommands(string id) =>
+    [
+        new("Hide button", () => PlaceButtons([id], shown: false, nested: true)),
+        new("Un-nest", () => PlaceButtons([id], shown: true, nested: false)),
+        null,
+        new("Customize buttons…", () => ShowOptions("Actions"))
+    ];
 
     /// <summary>
     /// What right-clicking <paramref name="item"/> on the bar offers. For an action's own button:
@@ -583,7 +615,7 @@ class MainForm : Form
             if (parent != null)
             {
                 List<LodeActions.Definition> members = [action];
-                var dropDown = CreateDropDown(parent.Text, parent.Glyph, parent.Text, iconSize, () => ParentEntries(members));
+                var dropDown = CreateDropDown(parent.Text, parent.Glyph, parent.Text, iconSize, () => ParentEntries(members), members);
                 parentButtons[parent] = (dropDown, members);
                 barItems.Add(dropDown);
                 continue;
@@ -942,8 +974,9 @@ class MainForm : Form
 
     // A drop-down on the bar, for a submenu action (New, Open with) or a parent of nested
     // buttons: its name beside its icon, then a chevron, filled with <paramref name="entries"/>
-    // as it opens.
-    ChevronDropDownButton CreateDropDown(string text, char glyph, string toolTip, int iconSize, Func<IReadOnlyList<QuickMenu.Command?>> entries)
+    // as it opens. A parent's lists <paramref name="nested"/>, each of which can be
+    // right-clicked there.
+    ChevronDropDownButton CreateDropDown(string text, char glyph, string toolTip, int iconSize, Func<IReadOnlyList<QuickMenu.Command?>> entries, IReadOnlyList<LodeActions.Definition>? nested = null)
     {
         var dropDown = new ChevronDropDownButton(text)
         {
@@ -953,6 +986,15 @@ class MainForm : Form
             // Its name as far from its icon as Explorer's New is.
             Image = Icons.Bitmap(glyph, iconSize, SystemColors.ControlText, LogicalToDeviceUnits(6))
         };
+        if (nested != null)
+        {
+            var list = new ActionsDropDown();
+            list.MenuRequested += screen => ShowNestedMenu(dropDown, nested, screen);
+            dropDown.DropDown = list;
+            // A drop-down given its list leaves it to be disposed by whoever gave it.
+            dropDown.Disposed += (_, _) => list.Dispose();
+        }
+
         // Without an item it would not open; filled with the real ones as it opens.
         dropDown.DropDownItems.Add(text);
         dropDown.DropDownOpening += (_, _) => FillDropDown(dropDown, entries());

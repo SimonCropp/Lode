@@ -12,15 +12,30 @@ sealed class ActionsStrip : ToolStrip
 
     protected override void WndProc(ref Message message)
     {
-        // From the keyboard the menu has no point, and the strip is never focused to be asked.
-        if (message.Msg == WindowMessageContextMenu &&
-            message.WParam == Handle &&
-            unchecked((int)message.LParam.ToInt64()) is var packed and not -1)
+        if (MenuPoint(message, Handle) is { } point)
         {
-            MenuRequested?.Invoke(new((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF)));
+            MenuRequested?.Invoke(point);
             return;
         }
 
         base.WndProc(ref message);
+    }
+
+    /// <summary>
+    /// Where on the screen <paramref name="window"/> was right-clicked, when
+    /// <paramref name="message"/> is the menu Windows asks it for after a right-click. From the
+    /// keyboard the menu has no point, and neither the strip nor a drop-down is ever focused to
+    /// be asked.
+    /// </summary>
+    internal static Point? MenuPoint(Message message, IntPtr window)
+    {
+        if (message.Msg != WindowMessageContextMenu ||
+            message.WParam != window ||
+            unchecked((int)message.LParam.ToInt64()) is not (var packed and not -1))
+        {
+            return null;
+        }
+
+        return new((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));
     }
 }

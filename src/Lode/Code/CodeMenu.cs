@@ -45,60 +45,35 @@ static class CodeMenu
         List<QuickMenu.Command?> commands =
         [
             null,
-            LodeActions.Command("gitFetch", () => Fetch(folders, settings.CodeDirectory)) with
-            {
-                NestedText = "Fetch"
-            },
-            LodeActions.Command("gitPull", () => Pull(folders, settings.CodeDirectory)) with
-            {
-                NestedText = "Pull"
-            }
+            LodeActions.Command("gitFetch", () => Fetch(folders, settings.CodeDirectory)),
+            LodeActions.Command("gitPull", () => Pull(folders, settings.CodeDirectory))
         ];
 
         // A folder only holding repositories may hold forks.
         if (!allInRepos ||
             repos.Any(_ => CodeCommands.IsFork(_!)))
         {
-            commands.Add(
-                LodeActions.Command("gitSyncFork", () => SyncFork(folders, settings.CodeDirectory)) with
-                {
-                    NestedText = "Sync fork"
-                });
+            commands.Add(LodeActions.Command("gitSyncFork", () => SyncFork(folders, settings.CodeDirectory)));
         }
 
         if (!onDefault)
         {
-            commands.Add(
-                LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)) with
-                {
-                    NestedText = "Switch to default branch"
-                });
+            commands.Add(LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)));
         }
 
         if (!nothingToPush)
         {
-            commands.Add(
-                LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…") with
-                {
-                    NestedText = "Push…"
-                });
+            commands.Add(LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…"));
         }
 
         if (!nothingToDiscard)
         {
-            commands.Add(
-                LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…") with
-                {
-                    NestedText = "Discard…"
-                });
+            commands.Add(LodeActions.Command("gitDiscard", () => Discard(owner, folders, settings.CodeDirectory), text: "Git discard…"));
         }
 
         commands.AddRange(
         [
-            LodeActions.Command("gitPurge", () => Purge(owner, settings, folders), text: "Git purge…") with
-            {
-                NestedText = "Purge…"
-            },
+            LodeActions.Command("gitPurge", () => Purge(owner, settings, folders), text: "Git purge…"),
             LodeActions.Command("updateNugets", () => UpdateNugets(folders)),
             LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folders))
         ]);

@@ -134,6 +134,16 @@ public class MenuTests
         await Verify(QuickMenu.Build(form.OverflowCommands(Point.Empty), null, _ => { }));
     }
 
+    // Right-clicking the actions bar's Git drop-down, which has every git action nested in it.
+    [Test]
+    public async Task BarMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture);
+
+        await Verify(QuickMenu.Build(form.BarMenuCommands("Git"), null, _ => { }));
+    }
+
     // The ⋯ menu at the right of the address bar.
     [Test]
     public async Task WindowMenu()

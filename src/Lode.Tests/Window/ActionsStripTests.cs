@@ -40,6 +40,47 @@ public class ActionsStripTests
         await Assert.That(clicked).IsEmpty();
     }
 
+    // So too in a parent's drop-down, open, where a right-click on an action greyed out is the
+    // list's to say, and a right-click on one that isn't doesn't run it.
+    [Test]
+    public async Task RightClickInADropDown()
+    {
+        using var form = new QuietForm
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000),
+            ClientSize = new(400, 100)
+        };
+        var strip = new ActionsStrip();
+        using var list = new ActionsDropDown();
+        var git = new ToolStripDropDownButton("Git")
+        {
+            DropDown = list
+        };
+        var pull = new ToolStripMenuItem("Pull");
+        var push = new ToolStripMenuItem("Push")
+        {
+            Enabled = false
+        };
+        git.DropDownItems.AddRange(pull, push);
+        strip.Items.Add(git);
+        form.Controls.Add(strip);
+        form.Show();
+        var clicked = new List<string>();
+        pull.Click += (_, _) => clicked.Add("Pull");
+        var requested = new List<string>();
+        list.MenuRequested += screen => requested.Add(list.GetItemAt(list.PointToClient(screen))?.Text ?? "nothing");
+        git.ShowDropDown();
+
+        RightClick(list, push);
+        RightClick(list, pull);
+        git.HideDropDown();
+
+        await Assert.That(requested).IsEquivalentTo(["Push", "Pull"], CollectionOrdering.Matching);
+        await Assert.That(clicked).IsEmpty();
+    }
+
     static void RightClick(ToolStrip strip, ToolStripItem item)
     {
         var point = new Point(item.Bounds.Left + 5, item.Bounds.Top + 5);
