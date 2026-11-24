@@ -299,6 +299,49 @@ public class FolderViewTests
         }
     }
 
+    // Sorted another way, the list scrolls to the item selected, which the sort has moved from
+    // the rows showing to the end, as Explorer's does. A large folder, sorted off the UI thread,
+    // scrolls once its rows are in their new order.
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task SortingScrollsToTheSelection(bool offThread)
+    {
+        using var fixture = Fixture.Create();
+        var folder = Directory.CreateDirectory(fixture.At("Many")).FullName;
+        for (var index = 0; index < 100; index++)
+        {
+            await File.WriteAllBytesAsync(Path.Combine(folder, $"item{index:D3}.txt"), new byte[index]);
+        }
+
+        using var form = Host();
+        var view = await OpenIn(form, folder);
+        view.SortBy(sizeColumn);
+        var picked = Names(view).IndexOf("item000.txt");
+        view.List.SelectedIndices.Add(picked);
+        view.List.Items[picked].Focused = true;
+        var from = FolderView.SortOffThreadFrom;
+        if (offThread)
+        {
+            FolderView.SortOffThreadFrom = 0;
+        }
+
+        try
+        {
+            view.SortBy(sizeColumn);
+            await Pump.Until(() => Names(view).IndexOf("item000.txt") == 99);
+        }
+        finally
+        {
+            FolderView.SortOffThreadFrom = from;
+        }
+
+        var row = view.List.GetItemRect(99);
+
+        await Assert.That(Selected(view)).IsEquivalentTo(["item000.txt"]);
+        await Assert.That(view.List.ClientRectangle.Contains(row)).IsTrue();
+    }
+
     [Test]
     public async Task SortByType()
     {

@@ -270,7 +270,10 @@ sealed class JumpList
 
                 try
                 {
-                    if (Description((ShellLink.IShellLinkW)entry) is { Length: > 0 } folder)
+                    if (Description((ShellLink.IShellLinkW)entry) is
+                        {
+                            Length: > 0
+                        } folder)
                     {
                         folders.Add(folder);
                     }

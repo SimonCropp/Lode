@@ -51,7 +51,11 @@ sealed record CommandLine(CommandKind Kind, IReadOnlyList<string> Paths, string?
         var switches = arguments.Where(IsSwitch).ToList();
         if (switches.Count == 0)
         {
-            return new(CommandKind.Open, arguments.Where(_ => !Locations.IsVirtual(_) && !IsLink(_)).ToList())
+            return new(
+                CommandKind.Open,
+                arguments
+                    .Where(_ => !Locations.IsVirtual(_) &&
+                                !IsLink(_)).ToList())
             {
                 ForExplorer = arguments.Where(Locations.IsVirtual).ToList(),
                 Links = arguments.Where(IsLink).ToList()

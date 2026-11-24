@@ -230,7 +230,14 @@ sealed class RepositoryLinks(
             var fullPath = $@"{schemePath}\{path}";
             using (var key = Registry.CurrentUser.OpenSubKey(fullPath))
             {
-                if (key is { SubKeyCount: > 0 } or { ValueCount: > 0 })
+                if (key is
+                    {
+                        SubKeyCount: > 0
+                    }
+                    or
+                    {
+                        ValueCount: > 0
+                    })
                 {
                     return;
                 }

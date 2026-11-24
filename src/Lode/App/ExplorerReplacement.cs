@@ -399,7 +399,12 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
         {
             using (var key = classes.OpenSubKey(path))
             {
-                if (key is { SubKeyCount: > 0 } or { ValueCount: > 0 })
+                if (key is {
+                        SubKeyCount: > 0
+                    } or
+                    {
+                        ValueCount: > 0
+                    })
                 {
                     return;
                 }

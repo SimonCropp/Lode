@@ -52,7 +52,10 @@ static class ActionLog
         /// </summary>
         public bool CanCancel =>
             State == State.Running &&
-            Cancellation is { IsCancellationRequested: false };
+            Cancellation is
+            {
+                IsCancellationRequested: false
+            };
 
         /// <summary>
         /// Asks the work to stop. It ends as failed, "Cancelled", with what it did till then.
@@ -286,7 +289,10 @@ static class ActionLog
         void Show(string value)
         {
             if (entry.State != State.Running ||
-                entry.Cancellation is { IsCancellationRequested: true })
+                entry.Cancellation is
+                {
+                    IsCancellationRequested: true
+                })
             {
                 return;
             }

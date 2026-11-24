@@ -3996,6 +3996,24 @@ sealed class FolderView : UserControl
         }
 
         Populate(true);
+        ScrollToSelection();
+    }
+
+    // Sorted, the list keeps its place by row, which then holds other items: the one focused, or
+    // else the first selected, is scrolled to where it can be seen, as in Explorer. With nothing
+    // selected the list stays where it is.
+    void ScrollToSelection()
+    {
+        if (list.FocusedItem is { Selected: true } focused)
+        {
+            focused.EnsureVisible();
+            return;
+        }
+
+        if (list.SelectedIndices.Count > 0)
+        {
+            list.EnsureVisible(list.SelectedIndices[0]);
+        }
     }
 
     // Which way a column is first sorted: Date modified newest first, as Explorer sorts it, the
@@ -4049,6 +4067,7 @@ sealed class FolderView : UserControl
         }
 
         Populate(true);
+        ScrollToSelection();
     }
 
     void OnListKeyDown(object? sender, KeyEventArgs args)
