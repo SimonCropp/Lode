@@ -25,25 +25,33 @@ class MainForm : Form
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
 
-    // Explorer's command bar, under the address bar: buttons for what is most often done to
-    // the selection in the tab showing.
-    ActionsBar actionsBar;
+    /// <summary>
+    /// Explorer's command bar, under the address bar: buttons for what is most often done to the
+    /// selection in the tab showing.
+    /// </summary>
+    internal ActionsBar ActionsBar { get; }
+
     FramedTextBox filterFrame = new();
     TextBox filterBox;
     PaneSplitContainer split = new();
     Settings settings;
     Places places;
-    FolderTree tree;
+    internal FolderTree Tree { get; }
     ActionsPanel actionsPanel = new();
-    ClosableTabControl tabs = new();
+    internal ClosableTabControl Tabs { get; } = new();
 
-    // The Changes and History panes, for the repository the tab showing is in, and the strip
-    // down the right edge they slide out from.
-    GitPanes gitPanes;
+    /// <summary>
+    /// The Changes and History panes, for the repository the tab showing is in, and the strip
+    /// down the right edge they slide out from.
+    /// </summary>
+    internal GitPanes GitPanes { get; }
 
-    // Where the file picked in a pane shows its changes: the Diff tab, over the folder list, or
-    // the diff window.
-    DiffHost diffHost;
+    /// <summary>
+    /// Where the file picked in a pane shows its changes: the Diff tab, over the folder list, or
+    /// the diff window.
+    /// </summary>
+    internal DiffHost DiffHost { get; }
+
     ToolStripStatusLabel statusLabel = new()
     {
         TextAlign = ContentAlignment.MiddleLeft
@@ -154,51 +162,28 @@ class MainForm : Form
     /// </summary>
     internal static TimeProvider Time { get; set; } = TimeProvider.System;
 
-    internal FolderTree Tree => tree;
-
-    public FolderView? ActiveView => tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
+    public FolderView? ActiveView => Tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
     // Every tab but Find Results and the Diff tab holds one.
     public IEnumerable<FolderView> Views =>
-        tabs.TabPages.Cast<TabPage>().SelectMany(_ => _.Controls.OfType<FolderView>());
+        Tabs.TabPages.Cast<TabPage>().SelectMany(_ => _.Controls.OfType<FolderView>());
 
     static bool HoldsFolder(TabPage page) =>
         page.Controls.OfType<FolderView>().Any();
 
-    /// <summary>
-    /// Where a file picked in a pane shows its changes. For tests.
-    /// </summary>
-    internal DiffHost DiffHost => diffHost;
-
-    /// <summary>
-    /// The actions bar. For tests.
-    /// </summary>
-    internal ActionsBar ActionsBar => actionsBar;
-
-    /// <summary>
-    /// The tabs. For tests.
-    /// </summary>
-    internal ClosableTabControl Tabs => tabs;
-
     // Find in Files: its strip along the bottom, and the tab its results are in, one a window,
     // made the first time something is searched for.
-    FindPanel findPanel;
+    internal FindPanel FindPanel { get; }
     TabPage? resultsPage;
-    FindResultsView? resultsView;
 
     /// <summary>
-    /// The Find Results tab's view, while there is one. For tests.
+    /// The Find Results tab's view, while there is one.
     /// </summary>
-    internal FindResultsView? ResultsView => resultsView;
-
-    /// <summary>
-    /// The find strip. For tests.
-    /// </summary>
-    internal FindPanel FindPanel => findPanel;
+    internal FindResultsView? ResultsView { get; private set; }
 
     bool ResultsShowing =>
         resultsPage != null &&
-        tabs.SelectedTab == resultsPage;
+        Tabs.SelectedTab == resultsPage;
 
     public MainForm(string[] arguments, Settings settings, Places places) :
         this(settings, places) =>
@@ -211,32 +196,32 @@ class MainForm : Form
         this.places = places;
         OpenSite = url => FileOperations.Open(this, url);
         ConfirmReplace = ShowReplacePrompt;
-        tree = new(settings, places);
+        Tree = new(settings, places);
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
-        findPanel = new(settings);
-        gitPanes = new(this, settings)
+        FindPanel = new(settings);
+        GitPanes = new(this, settings)
         {
             FocusList = () => ActiveView?.FocusList()
         };
-        gitPanes.ShowInFolderRequested += ShowInFolder;
-        gitPanes.OpenSiteRequested += url => OpenSite(url);
-        diffHost = new(this, settings, tabs, () => ActiveView, () => ActiveView?.FocusList());
-        gitPanes.DiffRequested += diffHost.Request;
-        gitPanes.ChangesRead += diffHost.ChangesRead;
-        gitPanes.PinnedChanged += ApplyPinnedInAllWindows;
-        gitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
-        actionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
-        findPanel.FindRequested += Find;
-        findPanel.ReplaceRequested += () => _ = Replace();
-        findPanel.StopRequested += () => resultsView?.Stop();
-        findPanel.Searching = () => resultsView?.IsSearching == true;
-        findPanel.CurrentFolder = SearchableFolder;
-        findPanel.CloseRequested += () =>
+        GitPanes.ShowInFolderRequested += ShowInFolder;
+        GitPanes.OpenSiteRequested += url => OpenSite(url);
+        DiffHost = new(this, settings, Tabs, () => ActiveView, () => ActiveView?.FocusList());
+        GitPanes.DiffRequested += DiffHost.Request;
+        GitPanes.ChangesRead += DiffHost.ChangesRead;
+        GitPanes.PinnedChanged += ApplyPinnedInAllWindows;
+        GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
+        ActionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
+        FindPanel.FindRequested += Find;
+        FindPanel.ReplaceRequested += () => _ = Replace();
+        FindPanel.StopRequested += () => ResultsView?.Stop();
+        FindPanel.Searching = () => ResultsView?.IsSearching == true;
+        FindPanel.CurrentFolder = SearchableFolder;
+        FindPanel.CloseRequested += () =>
         {
             if (ResultsShowing)
             {
-                resultsView?.FocusList();
+                ResultsView?.FocusList();
                 return;
             }
 
@@ -295,12 +280,12 @@ class MainForm : Form
 
         // Straight after the content, so it docks after the bars, the find strip and the status
         // bar have taken their edges: down the right between the command bar and the find strip.
-        Controls.Add(gitPanes.Strip);
-        Controls.Add(actionsBar.Strip);
+        Controls.Add(GitPanes.Strip);
+        Controls.Add(ActionsBar.Strip);
         Controls.Add(BuildNavigationBar());
 
         // Before the status bar, so it docks above it.
-        Controls.Add(findPanel);
+        Controls.Add(FindPanel);
         Controls.Add(BuildStatusBar());
         ResumeLayout(false);
         PerformLayout();
@@ -489,28 +474,28 @@ class MainForm : Form
                 Checked = settings.ShowSystem
             }
         };
-        if (gitPanes.Repo != null)
+        if (GitPanes.Repo != null)
         {
-            var changesPinned = gitPanes.IsPinned(GitPane.Changes);
-            var historyPinned = gitPanes.IsPinned(GitPane.History);
+            var changesPinned = GitPanes.IsPinned(GitPane.Changes);
+            var historyPinned = GitPanes.IsPinned(GitPane.History);
             commands.AddRange(
             [
                 null,
-                new("Changes", () => gitPanes.Toggle(GitPane.Changes))
+                new("Changes", () => GitPanes.Toggle(GitPane.Changes))
                 {
                     Glyph = Icons.Changes,
                     Shortcut = "Ctrl+Shift+G"
                 },
-                new("History", () => gitPanes.Toggle(GitPane.History))
+                new("History", () => GitPanes.Toggle(GitPane.History))
                 {
                     Glyph = Icons.History,
                     Shortcut = "Ctrl+Shift+H"
                 },
-                new("Pin changes", () => gitPanes.SetPinned(GitPane.Changes, !changesPinned))
+                new("Pin changes", () => GitPanes.SetPinned(GitPane.Changes, !changesPinned))
                 {
                     Checked = changesPinned
                 },
-                new("Pin history", () => gitPanes.SetPinned(GitPane.History, !historyPinned))
+                new("Pin history", () => GitPanes.SetPinned(GitPane.History, !historyPinned))
                 {
                     Checked = historyPinned
                 }
@@ -582,29 +567,29 @@ class MainForm : Form
 
     Control BuildContent()
     {
-        tree.Dock = DockStyle.Fill;
-        tree.PathSelected += _ => ActiveView?.Navigate(_);
-        tree.NewTabRequested += _ => AddTab(_, false);
-        tree.NewWindowRequested += NewWindow;
-        tree.NewRequested += (folder, type) => _ = CreateFromTree(folder, type);
+        Tree.Dock = DockStyle.Fill;
+        Tree.PathSelected += _ => ActiveView?.Navigate(_);
+        Tree.NewTabRequested += _ => AddTab(_, false);
+        Tree.NewWindowRequested += NewWindow;
+        Tree.NewRequested += (folder, type) => _ = CreateFromTree(folder, type);
 
-        tabs.Dock = DockStyle.Fill;
-        tabs.CloseRequested += CloseTab;
-        tabs.TabDraggedOff += OnTabDraggedOff;
-        tabs.TabDraggingOff += OnTabDraggingOff;
-        tabs.SelectedIndexChanged += (_, _) => diffHost.TabChanged();
-        tabs.SelectedIndexChanged += (_, _) => SyncToActiveView();
-        tabs.SelectedIndexChanged += (_, _) => SaveTabsSoon();
-        tabs.ControlAdded += (_, _) => SaveTabsSoon();
-        tabs.ControlRemoved += (_, _) => SaveTabsSoon();
-        tabs.MouseUp += OnTabsMouseUp;
+        Tabs.Dock = DockStyle.Fill;
+        Tabs.CloseRequested += CloseTab;
+        Tabs.TabDraggedOff += OnTabDraggedOff;
+        Tabs.TabDraggingOff += OnTabDraggingOff;
+        Tabs.SelectedIndexChanged += (_, _) => DiffHost.TabChanged();
+        Tabs.SelectedIndexChanged += (_, _) => SyncToActiveView();
+        Tabs.SelectedIndexChanged += (_, _) => SaveTabsSoon();
+        Tabs.ControlAdded += (_, _) => SaveTabsSoon();
+        Tabs.ControlRemoved += (_, _) => SaveTabsSoon();
+        Tabs.MouseUp += OnTabsMouseUp;
 
         split.Dock = DockStyle.Fill;
         split.FixedPanel = FixedPanel.Panel1;
         // Added after the tree so it is docked first, and the tree fills what is left above it.
-        split.Panel1.Controls.Add(tree);
+        split.Panel1.Controls.Add(Tree);
         split.Panel1.Controls.Add(actionsPanel);
-        gitPanes.Attach(split.Panel2, tabs);
+        GitPanes.Attach(split.Panel2, Tabs);
         return split;
     }
 
@@ -873,7 +858,7 @@ class MainForm : Form
             openingTabs = false;
         }
 
-        tabs.SelectedIndex = Math.Clamp(active, 0, tabs.TabCount - 1);
+        Tabs.SelectedIndex = Math.Clamp(active, 0, Tabs.TabCount - 1);
         SyncToActiveView();
 
         // Once the tab that was active is picked: before, the first tab, which showed while they
@@ -1010,7 +995,7 @@ class MainForm : Form
             .ToList();
         // Among the folders' tabs, which are all that open again: with Find Results showing, the
         // one before it.
-        settings.ActiveTab = Math.Max(0, TabPages.Take(tabs.SelectedIndex + 1).Count(HoldsFolder) - 1);
+        settings.ActiveTab = Math.Max(0, TabPages.Take(Tabs.SelectedIndex + 1).Count(HoldsFolder) - 1);
     }
 
     // The window used last: the one whose tabs are saved while Lode runs, as it is the one
@@ -1083,16 +1068,16 @@ class MainForm : Form
         view.StatusChanged += () => WindowOf(view)?.OnViewStatusChanged(view);
         view.NewTabRequested += _ => WindowOf(view)?.AddTab(_, false, intoZip: true);
         view.FindInFilesRequested += (find, regex) => WindowOf(view)?.FindInFiles(view, find, regex);
-        tabs.TabPages.Add(page);
+        Tabs.TabPages.Add(page);
         view.OpenAt(path, intoZip);
 
         if (activate)
         {
-            tabs.SelectedTab = page;
+            Tabs.SelectedTab = page;
             // In a window not shown yet, the tab control has no handle, so selecting a tab only
             // notes which, and nothing says it changed: the title, address bar, buttons and
             // tree are brought in line here instead.
-            if (!tabs.IsHandleCreated)
+            if (!Tabs.IsHandleCreated)
             {
                 SyncToActiveView();
             }
@@ -1134,7 +1119,7 @@ class MainForm : Form
             view.Reveal(path);
         }
 
-        tabs.SelectedTab = (TabPage)view.Parent!;
+        Tabs.SelectedTab = (TabPage)view.Parent!;
         view.FocusList();
         return true;
     }
@@ -1159,20 +1144,20 @@ class MainForm : Form
 
     internal void CloseTab(TabPage page)
     {
-        if (tabs.TabCount == 1)
+        if (Tabs.TabCount == 1)
         {
             Close();
             return;
         }
 
         RememberClosed(page);
-        diffHost.Leaving(page);
+        DiffHost.Leaving(page);
         LeaveTab(page);
-        tabs.TabPages.Remove(page);
+        Tabs.TabPages.Remove(page);
         if (page == resultsPage)
         {
             resultsPage = null;
-            resultsView = null;
+            ResultsView = null;
         }
 
         page.Dispose();
@@ -1186,21 +1171,21 @@ class MainForm : Form
     // read its folder and have the tree walk to it, on the way to the one wanted.
     void LeaveTab(TabPage page)
     {
-        if (tabs.SelectedTab != page)
+        if (Tabs.SelectedTab != page)
         {
             return;
         }
 
-        var index = tabs.TabPages.IndexOf(page);
-        if (index + 1 < tabs.TabCount)
+        var index = Tabs.TabPages.IndexOf(page);
+        if (index + 1 < Tabs.TabCount)
         {
-            tabs.SelectedIndex = index + 1;
+            Tabs.SelectedIndex = index + 1;
             return;
         }
 
         if (index > 0)
         {
-            tabs.SelectedIndex = index - 1;
+            Tabs.SelectedIndex = index - 1;
         }
     }
 
@@ -1289,7 +1274,7 @@ class MainForm : Form
         if (target != null &&
             target != this)
         {
-            MoveTab(page, target, target.tabs.DropIndex(screenLocation));
+            MoveTab(page, target, target.Tabs.DropIndex(screenLocation));
             target.Activate();
             return;
         }
@@ -1297,7 +1282,7 @@ class MainForm : Form
         // Dropped away from the tabs, in this window or off every window, it gets a window of
         // its own. Within this window counts too, as a maximized window leaves nowhere else to
         // drop it. A lone tab would only swap one window for another.
-        if (tabs.TabCount > 1)
+        if (Tabs.TabCount > 1)
         {
             MoveTabToNewWindow(page, screenLocation);
         }
@@ -1315,7 +1300,7 @@ class MainForm : Form
     public void MoveTab(TabPage page, MainForm target, int? index = null)
     {
         RemoveTab(page);
-        target.AdoptTab(page, index ?? target.tabs.TabCount);
+        target.AdoptTab(page, index ?? target.Tabs.TabCount);
     }
 
     /// <summary>
@@ -1324,8 +1309,8 @@ class MainForm : Form
     public MainForm MoveTabToNewWindow(TabPage page, Point screenLocation)
     {
         // Puts the new window's tab under the pointer, as if it had been carried there.
-        var firstTab = tabs.GetTabRect(0);
-        var firstTabOnScreen = tabs.PointToScreen(firstTab.Location);
+        var firstTab = Tabs.GetTabRect(0);
+        var firstTabOnScreen = Tabs.PointToScreen(firstTab.Location);
         var grab = new Size(
             firstTabOnScreen.X - Left + firstTab.Width / 2,
             firstTabOnScreen.Y - Top + firstTab.Height / 2);
@@ -1350,16 +1335,16 @@ class MainForm : Form
 
     void AdoptTab(TabPage page, int index)
     {
-        if (index < tabs.TabCount)
+        if (index < Tabs.TabCount)
         {
-            tabs.TabPages.Insert(index, page);
+            Tabs.TabPages.Insert(index, page);
         }
         else
         {
-            tabs.TabPages.Add(page);
+            Tabs.TabPages.Add(page);
         }
 
-        tabs.SelectedTab = page;
+        Tabs.SelectedTab = page;
         var view = page.Controls.OfType<FolderView>().First();
         OnViewPathChanged(view);
         SyncToActiveView();
@@ -1370,10 +1355,10 @@ class MainForm : Form
     // window when it was the last.
     void RemoveTab(TabPage page)
     {
-        diffHost.Leaving(page);
+        DiffHost.Leaving(page);
         LeaveTab(page);
-        tabs.TabPages.Remove(page);
-        if (tabs.TabCount == 0)
+        Tabs.TabPages.Remove(page);
+        if (Tabs.TabCount == 0)
         {
             Close();
             return;
@@ -1397,7 +1382,7 @@ class MainForm : Form
             return;
         }
 
-        diffHost.FolderChanged(view);
+        DiffHost.FolderChanged(view);
         SaveTabsSoon();
 
         if (view == ActiveView)
@@ -1435,7 +1420,7 @@ class MainForm : Form
 
         // Before the tab shows, so a tab in the background reads its folder once.
         view.Reveal(paths);
-        window.tabs.SelectedTab = (TabPage)view.Parent!;
+        window.Tabs.SelectedTab = (TabPage)view.Parent!;
         view.FocusList();
         window.ShowInFront();
     }
@@ -1466,7 +1451,7 @@ class MainForm : Form
             }
 
             page.ToolTipText = view.CurrentPath;
-            tabs.SetIcon(page, TabIcon(view.CurrentPath));
+            Tabs.SetIcon(page, TabIcon(view.CurrentPath));
         }
 
         if (ActiveView is { } active)
@@ -1518,20 +1503,20 @@ class MainForm : Form
         {
             // The Diff tab keeps the panes on the repository its diff is of, so the files listed
             // stay beside it, as in GitHub Desktop.
-            if (diffHost is { TabShowing: true, TabRepo: { } diffRepo })
+            if (DiffHost is { TabShowing: true, TabRepo: { } diffRepo })
             {
                 GitState? state = null;
-                if (ChangesPane.SameRepo(gitPanes.Repo, diffRepo))
+                if (ChangesPane.SameRepo(GitPanes.Repo, diffRepo))
                 {
-                    state = gitPanes.State;
+                    state = GitPanes.State;
                 }
 
-                gitPanes.ShowRepo(diffRepo, state);
+                GitPanes.ShowRepo(diffRepo, state);
                 Text = "Diff" + TitleSuffix;
                 return;
             }
 
-            gitPanes.ShowRepo(null, null);
+            GitPanes.ShowRepo(null, null);
             if (ResultsShowing)
             {
                 Text = "Find Results" + TitleSuffix;
@@ -1549,7 +1534,7 @@ class MainForm : Form
         backButton.Enabled = view.CanGoBack;
         forwardButton.Enabled = view.CanGoForward;
         upButton.Enabled = view.CanGoUp;
-        tree.SelectPath(view.CurrentPath);
+        Tree.SelectPath(view.CurrentPath);
         UpdateStatus(view);
     }
 
@@ -1558,7 +1543,7 @@ class MainForm : Form
     void UpdateStatus(FolderView view)
     {
         var selection = view.SelectedEntries();
-        actionsBar.Update(selection);
+        ActionsBar.Update(selection);
         statusLabel.Text = view.StatusFor(selection);
         var searchesInside = view.CanSearchInsideTheFiles;
         if (searchInsideLabel.Visible != searchesInside)
@@ -1603,7 +1588,7 @@ class MainForm : Form
             state = view.GitRepoState;
         }
 
-        gitPanes.ShowRepo(repo, state);
+        GitPanes.ShowRepo(repo, state);
     }
 
     /// <summary>
@@ -1651,17 +1636,12 @@ class MainForm : Form
         }
     }
 
-    /// <summary>
-    /// The Changes and History panes. For tests.
-    /// </summary>
-    internal GitPanes GitPanes => gitPanes;
-
     // Pinned or unpinned in one window, for a repository, in every window showing it.
     static void ApplyPinnedInAllWindows(string repo)
     {
         foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
         {
-            window.gitPanes.ApplyPinned(repo);
+            window.GitPanes.ApplyPinned(repo);
         }
     }
 
@@ -1670,7 +1650,7 @@ class MainForm : Form
     {
         foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
         {
-            window.gitPanes.ApplyStripLabels();
+            window.GitPanes.ApplyStripLabels();
         }
     }
 
@@ -1759,7 +1739,7 @@ class MainForm : Form
             view.Showing = showing;
         }
 
-        tree.Showing = windowShowing;
+        Tree.Showing = windowShowing;
     }
 
     // Shown and then hidden, to the tray, rather than not shown yet: a window being built reads
@@ -1891,11 +1871,11 @@ class MainForm : Form
         OpenWith.Forget();
         ShellIcons.ForgetDrives();
         TextEditors.ForgetTypes();
-        tree.RefreshDrives();
-        gitPanes.Reload();
+        Tree.RefreshDrives();
+        GitPanes.Reload();
         if (ResultsShowing)
         {
-            resultsView?.SearchAgain();
+            ResultsView?.SearchAgain();
             return;
         }
 
@@ -2109,7 +2089,7 @@ class MainForm : Form
         switch (change)
         {
             case SettingsChange.Actions:
-                actionsBar.Rebuild();
+                ActionsBar.Rebuild();
                 return;
             case SettingsChange.Listing:
                 foreach (var view in Views)
@@ -2125,7 +2105,7 @@ class MainForm : Form
             case SettingsChange.TreeSelection:
                 if (ActiveView is { } active)
                 {
-                    tree.SelectPath(active.CurrentPath);
+                    Tree.SelectPath(active.CurrentPath);
                 }
 
                 return;
@@ -2133,11 +2113,11 @@ class MainForm : Form
     }
 
     void RebuildTree() =>
-        SelectAfter(tree.Rebuild());
+        SelectAfter(Tree.Rebuild());
 
     // Quick access changed, a pin or an unpin say: only Pinned and Recent are made again.
     void RebuildPlaces() =>
-        SelectAfter(tree.RebuildPlaces());
+        SelectAfter(Tree.RebuildPlaces());
 
     // Not when the tree kept a pinned folder selected that was just moved, so moving it again
     // with the keyboard carries on from it.
@@ -2146,7 +2126,7 @@ class MainForm : Form
         if (!selectedMoved &&
             ActiveView is { } view)
         {
-            tree.SelectPath(view.CurrentPath);
+            Tree.SelectPath(view.CurrentPath);
         }
     }
 
@@ -2268,7 +2248,7 @@ class MainForm : Form
         {
             var menu = TabMenu(page);
             menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-            menu.Show(tabs, args.Location);
+            menu.Show(Tabs, args.Location);
         }
     }
 
@@ -2296,10 +2276,10 @@ class MainForm : Form
         }
 
         menu.Items.Add("Close tab", null, (_, _) => CloseTab(page));
-        var index = tabs.TabPages.IndexOf(page);
+        var index = Tabs.TabPages.IndexOf(page);
         menu.Items.Add("Close other tabs", null, (_, _) => CloseOtherTabs(page));
         menu.Items.Add(new ToolStripMenuItem("Close tabs to the left", null, (_, _) => CloseTabsToTheLeft(page)) { Enabled = index > 0 });
-        menu.Items.Add(new ToolStripMenuItem("Close tabs to the right", null, (_, _) => CloseTabsToTheRight(page)) { Enabled = index < tabs.TabCount - 1 });
+        menu.Items.Add(new ToolStripMenuItem("Close tabs to the right", null, (_, _) => CloseTabsToTheRight(page)) { Enabled = index < Tabs.TabCount - 1 });
         menu.Items.Add("Close all tabs", null, (_, _) => CloseAllTabs());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { Enabled = CanReopenClosedTab, ShortcutKeyDisplayString = "Ctrl+Shift+T" });
@@ -2329,8 +2309,8 @@ class MainForm : Form
     internal List<CommandPalette.Command> PaletteCommands()
     {
         var view = ActiveView;
-        var page = tabs.SelectedTab;
-        var index = tabs.SelectedIndex;
+        var page = Tabs.SelectedTab;
+        var index = Tabs.SelectedIndex;
         var commands = new List<CommandPalette.Command>();
 
         void Add(string name, Action action, string shortcut = "", bool enabled = true)
@@ -2351,12 +2331,12 @@ class MainForm : Form
         Add("New window", NewWindow, "Ctrl+N");
         Add("Find in files", OpenFind, "Ctrl+Shift+F");
         Add("Clone a repository…", ShowClone, "Ctrl+Shift+O");
-        if (gitPanes.Repo != null)
+        if (GitPanes.Repo != null)
         {
-            Add("Changes", () => gitPanes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
-            Add("History", () => gitPanes.Toggle(GitPane.History), "Ctrl+Shift+H");
-            Add(gitPanes.IsPinned(GitPane.Changes) ? "Unpin changes" : "Pin changes", () => gitPanes.SetPinned(GitPane.Changes, !gitPanes.IsPinned(GitPane.Changes)));
-            Add(gitPanes.IsPinned(GitPane.History) ? "Unpin history" : "Pin history", () => gitPanes.SetPinned(GitPane.History, !gitPanes.IsPinned(GitPane.History)));
+            Add("Changes", () => GitPanes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
+            Add("History", () => GitPanes.Toggle(GitPane.History), "Ctrl+Shift+H");
+            Add(GitPanes.IsPinned(GitPane.Changes) ? "Unpin changes" : "Pin changes", () => GitPanes.SetPinned(GitPane.Changes, !GitPanes.IsPinned(GitPane.Changes)));
+            Add(GitPanes.IsPinned(GitPane.History) ? "Unpin history" : "Pin history", () => GitPanes.SetPinned(GitPane.History, !GitPanes.IsPinned(GitPane.History)));
         }
 
         if (page != null)
@@ -2367,17 +2347,17 @@ class MainForm : Form
             }
 
             Add("Close tab", () => CloseTab(page), "Ctrl+W");
-            Add("Close other tabs", () => CloseOtherTabs(page), enabled: tabs.TabCount > 1);
+            Add("Close other tabs", () => CloseOtherTabs(page), enabled: Tabs.TabCount > 1);
             Add("Close tabs to the left", () => CloseTabsToTheLeft(page), enabled: index > 0);
-            Add("Close tabs to the right", () => CloseTabsToTheRight(page), enabled: index < tabs.TabCount - 1);
+            Add("Close tabs to the right", () => CloseTabsToTheRight(page), enabled: index < Tabs.TabCount - 1);
             Add("Close all tabs", CloseAllTabs);
         }
 
         Add("Reopen closed tab", ReopenClosedTab, "Ctrl+Shift+T", CanReopenClosedTab);
         Add(UndoHistory.Instance.UndoText, Undo, "Ctrl+Z", UndoHistory.Instance.CanUndo);
         Add(UndoHistory.Instance.RedoText, Redo, "Ctrl+Y", UndoHistory.Instance.CanRedo);
-        Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", tabs.TabCount > 1);
-        Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
+        Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", Tabs.TabCount > 1);
+        Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", Tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
         Add(settings.ShowSystem ? "Hide system files" : "Show system files", ToggleSystem);
         Add("Terminal", OpenTerminal, enabled: PinnablePath() != null);
@@ -2521,7 +2501,7 @@ class MainForm : Form
             findFolder = folder;
         }
 
-        findPanel.Open(folder);
+        FindPanel.Open(folder);
     }
 
     // From the search box, whose filter matched no names: the same, searched for inside the
@@ -2529,16 +2509,16 @@ class MainForm : Form
     void FindInFiles(FolderView view, string find, bool regex)
     {
         findFolder = view.CurrentPath;
-        findPanel.Open(view.CurrentPath);
-        findPanel.SetFind(find, regex);
+        FindPanel.Open(view.CurrentPath);
+        FindPanel.SetFind(find, regex);
         Find();
     }
 
     // What the strip says, searched for, in the Find Results tab, which it shows.
     internal void Find()
     {
-        var query = findPanel.ReadQuery();
-        findPanel.Remember(replacing: false);
+        var query = FindPanel.ReadQuery();
+        FindPanel.Remember(replacing: false);
         var view = ShowResultsTab();
         var where = SearchWhere.Parse(query.Where, SearchableFolder() ?? findFolder, OpenFolders(), out var error);
         Matcher? matcher = null;
@@ -2552,40 +2532,40 @@ class MainForm : Form
 
     FindResultsView ShowResultsTab()
     {
-        if (resultsView == null ||
+        if (ResultsView == null ||
             resultsPage == null)
         {
-            resultsView = new(settings)
+            ResultsView = new(settings)
             {
                 Dock = DockStyle.Fill
             };
-            resultsView.StateChanged += OnResultsChanged;
-            resultsView.ShowInFolderRequested += ShowInFolder;
+            ResultsView.StateChanged += OnResultsChanged;
+            ResultsView.ShowInFolderRequested += ShowInFolder;
             resultsPage = new()
             {
                 Padding = Padding.Empty,
                 Text = "Find Results",
                 ToolTipText = "Find in Files (Ctrl+Shift+F)"
             };
-            resultsPage.Controls.Add(resultsView);
-            tabs.TabPages.Add(resultsPage);
+            resultsPage.Controls.Add(ResultsView);
+            Tabs.TabPages.Add(resultsPage);
         }
 
-        tabs.SelectedTab = resultsPage;
-        return resultsView;
+        Tabs.SelectedTab = resultsPage;
+        return ResultsView;
     }
 
     // The tab says while it is searching, and the status bar how far it has got.
     void OnResultsChanged()
     {
         if (resultsPage == null ||
-            resultsView == null)
+            ResultsView == null)
         {
             return;
         }
 
         var text = "Find Results";
-        if (resultsView.IsSearching)
+        if (ResultsView.IsSearching)
         {
             text = "Find Results…";
         }
@@ -2610,14 +2590,14 @@ class MainForm : Form
         spaceLabel.Text = "";
         siteLabel.Visible = false;
         ShowGitParts(null);
-        actionsBar.Update();
+        ActionsBar.Update();
     }
 
     // Ten times a second while searching. Set once, and only when it says something else: the
     // status bar emptied, even for a moment, is shorter, and everything above it moves.
     void ShowResultsProgress()
     {
-        var summary = resultsView?.Results.SummaryLines() ?? [];
+        var summary = ResultsView?.Results.SummaryLines() ?? [];
         var text = "Find Results";
         if (summary.Count > 0)
         {
@@ -2708,12 +2688,12 @@ class MainForm : Form
     // runs in the Actions panel, and Find Results then shows each line replaced.
     internal async Task Replace()
     {
-        var query = findPanel.ReadQuery();
-        if (resultsView is not { IsSearching: false } view ||
+        var query = FindPanel.ReadQuery();
+        if (ResultsView is not { IsSearching: false } view ||
             !IsFinishedFor(view.Results, query))
         {
             Find();
-            view = resultsView!;
+            view = ResultsView!;
             await view.Searching;
             if (IsDisposed ||
                 !IsFinishedFor(view.Results, query))
@@ -2730,14 +2710,14 @@ class MainForm : Form
             return;
         }
 
-        var replacement = findPanel.ReplaceBox.Text;
+        var replacement = FindPanel.ReplaceBox.Text;
         if (!ConfirmReplace(results.Files.Sum(_ => _.MatchCount), files.Count, query.Find, replacement))
         {
             return;
         }
 
-        findPanel.Remember(replacing: true);
-        var preserveCase = findPanel.PreserveCase;
+        FindPanel.Remember(replacing: true);
+        var preserveCase = FindPanel.PreserveCase;
         var roots = SearchWhere.Parse(query.Where, SearchableFolder() ?? findFolder, OpenFolders(), out _)?.Roots ?? [query.Where];
         ReplaceInFiles.Outcome? done = null;
         await ActionLog.Run(
@@ -2768,7 +2748,7 @@ class MainForm : Form
             shown.Add(file);
         }
 
-        resultsView?.ShowReplaced(shown);
+        ResultsView?.ShowReplaced(shown);
     }
 
     static ActionLog.Outcome ReplaceOutcome(ReplaceInFiles.Outcome done)
@@ -2835,11 +2815,11 @@ class MainForm : Form
 
     TabPage? TabAt(Point location)
     {
-        for (var index = 0; index < tabs.TabCount; index++)
+        for (var index = 0; index < Tabs.TabCount; index++)
         {
-            if (tabs.GetTabRect(index).Contains(location))
+            if (Tabs.GetTabRect(index).Contains(location))
             {
-                return tabs.TabPages[index];
+                return Tabs.TabPages[index];
             }
         }
 
@@ -2859,14 +2839,14 @@ class MainForm : Form
     internal void CloseAllTabs() =>
         CloseTabs(TabPages);
 
-    IEnumerable<TabPage> TabPages => tabs.TabPages.Cast<TabPage>();
+    IEnumerable<TabPage> TabPages => Tabs.TabPages.Cast<TabPage>();
 
     // The selected tab among those going, the nearest one staying is selected first, so the
     // others going are not each shown, and their folders read, in turn.
     void CloseTabs(IEnumerable<TabPage> pages)
     {
         var closing = pages.ToList();
-        if (tabs.SelectedTab is { } selected &&
+        if (Tabs.SelectedTab is { } selected &&
             closing.Contains(selected))
         {
             var all = TabPages.ToList();
@@ -2878,7 +2858,7 @@ class MainForm : Form
                 .FirstOrDefault();
             if (staying != null)
             {
-                tabs.SelectedTab = staying;
+                Tabs.SelectedTab = staying;
             }
         }
 
@@ -2890,9 +2870,9 @@ class MainForm : Form
 
     void SelectAdjacentTab(int offset)
     {
-        if (tabs.TabCount > 1)
+        if (Tabs.TabCount > 1)
         {
-            tabs.SelectedIndex = (tabs.SelectedIndex + offset + tabs.TabCount) % tabs.TabCount;
+            Tabs.SelectedIndex = (Tabs.SelectedIndex + offset + Tabs.TabCount) % Tabs.TabCount;
             ActiveView?.FocusList();
         }
     }
@@ -2904,16 +2884,16 @@ class MainForm : Form
         var index = number - 1;
         if (number == 9)
         {
-            index = tabs.TabCount - 1;
+            index = Tabs.TabCount - 1;
         }
 
         if (index < 0 ||
-            index >= tabs.TabCount)
+            index >= Tabs.TabCount)
         {
             return;
         }
 
-        tabs.SelectedIndex = index;
+        Tabs.SelectedIndex = index;
         ActiveView?.FocusList();
     }
 
@@ -2965,7 +2945,7 @@ class MainForm : Form
                 NewTab();
                 return true;
             case Keys.Control | Keys.W:
-                if (tabs.SelectedTab is { } selected)
+                if (Tabs.SelectedTab is { } selected)
                 {
                     CloseTab(selected);
                 }
@@ -2995,10 +2975,10 @@ class MainForm : Form
                 return true;
             // With Find Results showing, which has no address, the next match and the one before.
             case Keys.F4 when ResultsShowing:
-                resultsView?.GoToMatch(true);
+                ResultsView?.GoToMatch(true);
                 return true;
             case Keys.Shift | Keys.F4 when ResultsShowing:
-                resultsView?.GoToMatch(false);
+                ResultsView?.GoToMatch(false);
                 return true;
             case Keys.Control | Keys.L:
             case Keys.Alt | Keys.D:
@@ -3019,10 +2999,10 @@ class MainForm : Form
                 ShowBranches();
                 return true;
             case Keys.Control | Keys.Shift | Keys.G:
-                gitPanes.Toggle(GitPane.Changes);
+                GitPanes.Toggle(GitPane.Changes);
                 return true;
             case Keys.Control | Keys.Shift | Keys.H:
-                gitPanes.Toggle(GitPane.History);
+                GitPanes.Toggle(GitPane.History);
                 return true;
             case Keys.Control | Keys.Shift | Keys.O:
                 ShowClone();
@@ -3038,7 +3018,7 @@ class MainForm : Form
         if (IsHandleCreated &&
             !IsDisposed)
         {
-            BeginInvoke(actionsBar.Update);
+            BeginInvoke(ActionsBar.Update);
         }
     }
 
@@ -3091,7 +3071,7 @@ class MainForm : Form
     void DrivesChanged()
     {
         ShellIcons.ForgetDrives();
-        tree.RefreshDrives();
+        Tree.RefreshDrives();
         foreach (var view in Views)
         {
             if (Locations.IsThisPC(view.CurrentPath))
@@ -3153,8 +3133,8 @@ class MainForm : Form
             UndoHistory.Instance.Changed -= OnUndoChanged;
             updates.Changed -= OnUpdatesChanged;
             ActionLog.Changed -= ReadGitState;
-            gitPanes.Dispose();
-            diffHost.Dispose();
+            GitPanes.Dispose();
+            DiffHost.Dispose();
             toolTip.Dispose();
             statusTip.Dispose();
             trayTimer.Dispose();
