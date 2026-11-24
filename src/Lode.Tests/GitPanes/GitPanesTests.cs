@@ -431,6 +431,157 @@ public class GitPanesTests
         await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([3]);
     }
 
+    // The newest commit is picked as the commits show, with its files under it; once the picked
+    // commit is clicked again to pick none, reading the commits again leaves none picked.
+    [Test]
+    public async Task NewestCommitPicked()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([0]);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
+
+        Click(list, 0);
+        PumpFor(TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200));
+        await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
+
+        pane.Reload();
+        await PaneStubs.Settled(form);
+        await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(0);
+    }
+
+    // A commit picked that is gone once the commits are read again, as an amended one is, gives
+    // way to the newest, with its files.
+    [Test]
+    public async Task PickedCommitGoneNewestPicked()
+    {
+        using var stubs = new PaneStubs();
+        var history = PaneStubs.History.ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _) => history.Skip(skip).Take(count).ToList();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        list.SelectedIndices.Add(2);
+        await PaneStubs.Settled(form);
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([2]);
+
+        history.RemoveAt(2);
+        pane.Reload();
+        await PaneStubs.Settled(form);
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([0]);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
+    }
+
+    // No commit picked, by clicking the picked one again, holds for that repository only: in
+    // another, the newest is picked.
+    [Test]
+    public async Task OtherRepoNewestPicked()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        Click(list, 0);
+        PumpFor(TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200));
+        await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
+
+        pane.Bind(fixture.At("Source"));
+        await PaneStubs.Settled(form);
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([0]);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
+    }
+
+    // The files a commit changed, scrolled down when the commit is clicked again to pick none,
+    // show from their top once it is picked again.
+    [Test]
+    public async Task FilesFromTopAfterNone()
+    {
+        using var stubs = new PaneStubs();
+        var many = Enumerable.Range(0, 40)
+            .Select(_ => new Change($"src/file{_:00}.cs", null, GitChange.Modified))
+            .ToList();
+        HistoryPane.ReadFiles = (_, _, _) => many;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var commits = pane.CommitList;
+        var files = pane.FileList;
+        await Assert.That(files.VirtualListSize).IsEqualTo(many.Count);
+        files.TopItem = files.Items[10];
+        await Assert.That(files.TopItem?.Index).IsEqualTo(10);
+
+        Click(commits, 0);
+        PumpFor(TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200));
+        await Assert.That(files.VirtualListSize).IsEqualTo(0);
+
+        Click(commits, 0);
+        await PaneStubs.Settled(form);
+        await Assert.That(files.VirtualListSize).IsEqualTo(many.Count);
+        await Assert.That(files.GetItemRect(0).Top).IsEqualTo(0);
+        await Assert.That(files.TopItem?.Index).IsEqualTo(0);
+    }
+
+    // A list scrolled down that loses all its rows, as the commits do in a folder outside a
+    // repository, shows them from its top once it has them again, not as far down as it had been
+    // scrolled, with nothing above them.
+    [Test]
+    public async Task RowsFromTopAfterNone()
+    {
+        using var stubs = new PaneStubs();
+        var history = Enumerable.Range(0, 40)
+            .Select(_ => new GitCommit($"{_:x40}", ["0000000000000000000000000000000000000000"], "Ada Lovelace", PaneStubs.Now, [], $"Commit {_}"))
+            .ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _) => history.Skip(skip).Take(count).ToList();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        list.TopItem = list.Items[10];
+        await Assert.That(list.TopItem?.Index).IsEqualTo(10);
+
+        pane.Bind(null);
+        pane.Bind(fixture.At("Docs"));
+        await PaneStubs.Settled(form);
+        await Assert.That(list.GetItemRect(0).Top).IsEqualTo(0);
+        await Assert.That(list.TopItem?.Index).IsEqualTo(0);
+    }
+
     // A click as Windows sends one: the button up waiting in the queue, for the list, which
     // doesn't come back from the press until the button is up, to find.
     static void Click(RowList list, int index)

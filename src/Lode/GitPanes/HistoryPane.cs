@@ -39,6 +39,9 @@ sealed class HistoryPane : UserControl
     int version;
     int filesVersion;
     GitCommit? selected;
+
+    // The picked commit was clicked again to pick none, so the newest isn't picked in its place.
+    bool unpicked;
     List<Change> changed = [];
 
     /// <summary>
@@ -186,6 +189,7 @@ sealed class HistoryPane : UserControl
         unpushed = [];
         more = false;
         selected = null;
+        unpicked = false;
         changed = [];
         commits.SetRows(0);
         files.SetRows(0);
@@ -333,7 +337,8 @@ sealed class HistoryPane : UserControl
         }
     }
 
-    // The commits as read, the one picked before picked again, by its sha, where it still is.
+    // The commits as read, the one picked before picked again, by its sha, where it still is,
+    // and otherwise the newest, unless none was picked by clicking the picked one again.
     void ShowCommits()
     {
         var keep = selected?.Sha;
@@ -354,6 +359,13 @@ sealed class HistoryPane : UserControl
         if (keep != null)
         {
             index = loaded.FindIndex(_ => _.Sha == keep);
+        }
+
+        if (index < 0 &&
+            !unpicked &&
+            loaded.Count > 0)
+        {
+            index = 0;
         }
 
         commits.EndUpdate();
@@ -393,6 +405,7 @@ sealed class HistoryPane : UserControl
             return;
         }
 
+        unpicked = false;
         var commit = loaded[index];
         if (selected?.Sha == commit.Sha &&
             files.VirtualListSize == changed.Count &&
@@ -414,6 +427,7 @@ sealed class HistoryPane : UserControl
     {
         filesVersion++;
         selected = null;
+        unpicked = true;
         changed = [];
         files.SetRows(0);
         heading.Invalidate();

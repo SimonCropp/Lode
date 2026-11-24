@@ -354,6 +354,16 @@ sealed class RowList : ListView
     /// </summary>
     public void SetRows(int count)
     {
+        // Back at the top before every row goes: a list scrolled down that loses them all is left
+        // as far above its first row as it was below it, its scrollbar at the top, and once it has
+        // rows again draws them that far down, or past the bottom, with nothing above them.
+        if (count == 0 &&
+            VirtualListSize > 0 &&
+            IsHandleCreated)
+        {
+            EnsureVisible(0);
+        }
+
         VirtualListSize = count;
         FitColumn();
     }
