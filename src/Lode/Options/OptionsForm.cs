@@ -1723,7 +1723,7 @@ class OptionsForm : Form
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ColumnCount = 1;
             Margin = Padding.Empty;
-            var header = new TableLayoutPanel
+            var header = new Headings(table)
             {
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
@@ -1770,6 +1770,17 @@ class OptionsForm : Form
                 },
                 0,
                 1);
+        }
+
+        // Over the table's columns, so as wide as the table, which is what they ask for. Their
+        // columns are set from the table's as it was last laid out, which on a screen above
+        // 100% for a page not shown yet is as the table was before the dialog was scaled up to
+        // the screen. Scaled up with it, they would ask for room for its text scaled a second
+        // time, and the dialog be wider until the page had shown.
+        sealed class Headings(Control table) : TableLayoutPanel
+        {
+            public override Size GetPreferredSize(Size proposedSize) =>
+                new(table.GetPreferredSize(Size.Empty).Width, base.GetPreferredSize(proposedSize).Height);
         }
 
         // Under the headings, asking for no more than maximumHeight, headings and all, and

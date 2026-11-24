@@ -1332,6 +1332,34 @@ public class OptionsFormTests
         await Assert.That(form.RectangleToClient(close.RectangleToScreen(close.ClientRectangle)).Bottom).IsLessThanOrEqualTo(form.ClientSize.Height);
     }
 
+    // On a screen set above 100%, the dialog is scaled up once it is built, as this one is for
+    // 125%. It is as wide whichever page shows, the Actions page before it has been shown as
+    // much as after.
+    [Test]
+    public async Task ScaledUpKeepsItsWidthAcrossPages()
+    {
+        using var scratch = new RegistryScratch();
+        // Shown as the app shows it, rather than with every control made first as Show does,
+        // which lays out the pages not shown yet, as nothing in the app does until they show.
+        using var form = new QuietForm(scratch.Replacement(), new(), TestUpdates.Build(), new(), 1.25f)
+        {
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000)
+        };
+        form.Show();
+        Application.DoEvents();
+        var opened = form.Width;
+
+        form.ShowPage("Actions");
+        Application.DoEvents();
+        var actions = form.Width;
+        form.ShowPage("General");
+        Application.DoEvents();
+
+        await Assert.That(actions).IsEqualTo(opened);
+        await Assert.That(form.Width).IsEqualTo(opened);
+    }
+
     // A build has nothing to update, and doesn't ask.
     [Test]
     public async Task ABuildHasNothingToUpdate()
@@ -1444,10 +1472,19 @@ public class OptionsFormTests
 
     sealed class QuietForm : OptionsForm
     {
-        public QuietForm(ExplorerReplacement replacement, Settings settings, Updates updates, WindowsSearchStub windowsSearch) :
-            base(replacement, settings, editors, updates, RegistryScratch.LinksFor(replacement.ClassesPath, replacement.Command), windowsSearch.Read) =>
+        /// <param name="scale">As Windows scales it on a screen set to that, 1.25 for 125%: once
+        /// built, as the tests run unscaled.</param>
+        public QuietForm(ExplorerReplacement replacement, Settings settings, Updates updates, WindowsSearchStub windowsSearch, float scale = 1) :
+            base(replacement, settings, editors, updates, RegistryScratch.LinksFor(replacement.ClassesPath, replacement.Command), windowsSearch.Read)
+        {
             // Never the real update, which would update Lode once the tests end.
             StartUpdate = () => UpdatesStarted++;
+            // Designed for less than the screen has, so scaled up by the difference.
+            if (scale != 1)
+            {
+                AutoScaleDimensions = new(96F / scale, 96F / scale);
+            }
+        }
 
         public int UpdatesStarted { get; private set; }
 
