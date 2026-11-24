@@ -453,24 +453,59 @@ class MainForm : Form
     void ShowBarMenu(Point screen) =>
         ShowBarMenu(screen, BarMenuCommands(actionsBar.GetItemAt(actionsBar.PointToClient(screen))));
 
-    void ShowBarMenu(Point screen, IReadOnlyList<QuickMenu.Command?> commands)
+    // The menu of an entry in a drop-down, <paramref name="dropDown"/>, is owned by an item of
+    // that drop-down, as a submenu is, so the drop-down stays open beneath it, as Windows' menus
+    // do: Escape closes only the menu, and choosing from it closes both. Not the entry itself:
+    // owned by a menu entry, a menu goes where that entry's own submenu would, which for one
+    // without is the top left of the screen. So the owner is a button, hidden, there only while
+    // the menu is open.
+    void ShowBarMenu(Point screen, IReadOnlyList<QuickMenu.Command?> commands, ToolStripDropDown? dropDown = null)
     {
         Action? chosen = null;
         var strip = QuickMenu.Build(commands, null, _ => chosen = _);
+        BarMenuShowing = strip;
+        ToolStripButton? owner = null;
         // Run the choice once the menu has closed: the bar is made again, and Customize opens a
         // dialog.
         strip.Closed += (_, _) => strip.BeginInvoke(
             () =>
             {
+                if (BarMenuShowing == strip)
+                {
+                    BarMenuShowing = null;
+                }
+
+                if (owner != null)
+                {
+                    owner.Owner?.Items.Remove(owner);
+                    owner.Dispose();
+                }
+
                 strip.Dispose();
                 chosen?.Invoke();
             });
-        strip.Show(actionsBar, actionsBar.PointToClient(screen));
+        if (dropDown == null)
+        {
+            strip.Show(actionsBar, actionsBar.PointToClient(screen));
+            return;
+        }
+
+        owner = new()
+        {
+            Available = false
+        };
+        dropDown.Items.Add(owner);
+        strip.OwnerItem = owner;
+        strip.Show(screen);
     }
 
+    /// <summary>
+    /// The bar's right-click menu, or an action's in a drop-down, while it is open, for tests.
+    /// </summary>
+    internal ContextMenuStrip? BarMenuShowing { get; private set; }
+
     // Right-clicking an action in a parent's drop-down, which lists them in their order, one
-    // each: what can be done to it, once the drop-down has closed, as whatever is chosen makes
-    // the bar again.
+    // each: what can be done to it.
     void ShowNestedMenu(ChevronDropDownButton dropDown, IReadOnlyList<LodeActions.Definition> nested, Point screen)
     {
         if (dropDown.DropDown.GetItemAt(dropDown.DropDown.PointToClient(screen)) is not { } item ||
@@ -480,9 +515,7 @@ class MainForm : Form
             return;
         }
 
-        var commands = NestedMenuCommands(nested[index].Id);
-        dropDown.HideDropDown();
-        BeginInvoke(() => ShowBarMenu(screen, commands));
+        ShowBarMenu(screen, NestedMenuCommands(nested[index].Id), dropDown.DropDown);
     }
 
     /// <summary>
@@ -559,7 +592,13 @@ class MainForm : Form
     /// What right-clicking the bar's item <paramref name="text"/> offers, for tests.
     /// </summary>
     internal List<QuickMenu.Command?> BarMenuCommands(string text) =>
-        BarMenuCommands(actionsBar.Items.OfType<ToolStripItem>().Single(_ => _.Text == text));
+        BarMenuCommands(BarItem(text));
+
+    /// <summary>
+    /// The bar's item <paramref name="text"/>, for tests.
+    /// </summary>
+    internal ToolStripItem BarItem(string text) =>
+        actionsBar.Items.OfType<ToolStripItem>().Single(_ => _.Text == text);
 
     // Each action a button or not, nested under its parent or not, staying where it is in the
     // right-click menus. Saved at once, as a change in Options is, and so in every window.

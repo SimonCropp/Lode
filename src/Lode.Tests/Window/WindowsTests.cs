@@ -1438,6 +1438,73 @@ public class WindowsTests
                 """);
     }
 
+    // An action's menu in its parent's drop-down opens where it was right-clicked, as a submenu
+    // of the drop-down, which stays open beneath it, as Windows' menus do, and Escape closes
+    // only the menu. Once it has closed the drop-down lists what it did.
+    [Test]
+    public async Task RightClickingANestedActionKeepsTheDropDownOpen()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        var git = (ToolStripDropDownItem)form.BarItem("Git");
+        git.ShowDropDown();
+        Application.DoEvents();
+        var listed = git.DropDownItems.Cast<ToolStripItem>().Select(_ => _.Text).ToList();
+        var pull = git.DropDownItems.Cast<ToolStripItem>().Single(_ => _.Text == "Pull");
+
+        var pointer = RightClick(git.DropDown, pull);
+        var menu = form.BarMenuShowing;
+        var whileOpen = new
+        {
+            gitOpen = git.DropDown.Visible,
+            menuOpen = menu?.Visible,
+            atPointer = menu?.Bounds.Location == git.DropDown.PointToScreen(pointer),
+            entries = menu?.Items.Cast<ToolStripItem>().Select(_ => _.Text).ToList()
+        };
+        menu!.Close(ToolStripDropDownCloseReason.Keyboard);
+        var openAfterEscape = git.DropDown.Visible;
+        await Pump.Until(() => form.BarMenuShowing == null);
+        var listedAfter = git.DropDownItems.Cast<ToolStripItem>().Select(_ => _.Text).ToList();
+        git.HideDropDown();
+
+        await Assert.That(listedAfter).IsEquivalentTo(listed, CollectionOrdering.Matching);
+        await Verify(
+                new
+                {
+                    whileOpen,
+                    openAfterEscape
+                })
+            .Snapshot(
+                """
+                {
+                  whileOpen: {
+                    gitOpen: true,
+                    menuOpen: true,
+                    atPointer: true,
+                    entries: [
+                      Hide button,
+                      Un-nest,
+                      ,
+                      Customize buttons…
+                    ]
+                  },
+                  openAfterEscape: true
+                }
+                """);
+    }
+
+    // Right-clicks the item, returning where, in the strip.
+    static Point RightClick(ToolStrip strip, ToolStripItem item)
+    {
+        const int rightButtonDown = 0x0204;
+        const int rightButtonUp = 0x0205;
+        var point = new Point(item.Bounds.Left + 10, item.Bounds.Top + 5);
+        var packed = (point.Y << 16) | (point.X & 0xFFFF);
+        NativeMethods.SendMessage(strip.Handle, rightButtonDown, 2, packed);
+        NativeMethods.SendMessage(strip.Handle, rightButtonUp, 0, packed);
+        return point;
+    }
+
     // Right-clicking anywhere on the bar but a button, See more say, offers only the Actions page
     // of Options.
     [Test]
