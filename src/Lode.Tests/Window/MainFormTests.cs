@@ -89,11 +89,11 @@ public class MainFormTests
         };
         form.Show();
         await Pump.Loaded(form.ActiveView!);
-        form.OpenFind();
-        form.FindPanel.FindBox.Text = "alpha";
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
 
-        form.Find();
-        await form.ResultsView!.Searching;
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
         form.ActiveControl = null;
         Application.DoEvents();
 

@@ -13,12 +13,12 @@ public class FindInFilesWindowTests
     {
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, new(), fixture.Root);
-        form.FindPanel.WhereBox.Text = @"C:\Elsewhere, *.aleph";
+        form.FindHost.Panel.WhereBox.Text = @"C:\Elsewhere, *.aleph";
 
-        form.OpenFind();
+        form.FindHost.Open();
 
-        await Assert.That(form.FindPanel.Visible).IsTrue();
-        await Assert.That(form.FindPanel.WhereBox.Text).IsEqualTo($"{fixture.Root}, *.aleph");
+        await Assert.That(form.FindHost.Panel.Visible).IsTrue();
+        await Assert.That(form.FindHost.Panel.WhereBox.Text).IsEqualTo($"{fixture.Root}, *.aleph");
     }
 
     // Results go in a tab of their own, which isn't a folder's: it isn't saved with the tabs,
@@ -30,12 +30,12 @@ public class FindInFilesWindowTests
         await File.WriteAllTextAsync(fixture.At("Docs", "notes.txt"), "alpha\nbeta\n");
         var settings = new Settings();
         using var form = await Show(fixture, settings, fixture.Root, fixture.At("Docs"));
-        form.OpenFind();
-        form.FindPanel.FindBox.Text = "alpha";
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
 
-        form.Find();
-        await form.ResultsView!.Searching;
-        var results = form.ResultsView.Results.ToText().Replace(fixture.Root, "{root}");
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
+        var results = form.FindHost.ResultsView.Results.ToText().Replace(fixture.Root, "{root}");
         var title = form.Text;
         var addressEnabled = form.Controls.Find("address", true)[0].Parent!.Enabled;
         form.Close();
@@ -86,24 +86,24 @@ public class FindInFilesWindowTests
         var file = fixture.At("Docs", "notes.txt");
         await File.WriteAllTextAsync(file, "alpha\nAlpha beta\n");
         using var form = await Show(fixture, new(), fixture.Root);
-        form.OpenFind();
-        form.FindPanel.FindBox.Text = "alpha";
-        form.FindPanel.ReplaceBox.Text = "omega";
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Panel.ReplaceBox.Text = "omega";
         var asked = new List<string>();
-        form.ConfirmReplace = (matches, files, find, replacement) =>
+        form.FindHost.ConfirmReplace = (matches, files, find, replacement) =>
         {
             asked.Add($"{matches} in {files}: {find} -> {replacement}");
             return true;
         };
 
-        await form.Replace();
+        await form.FindHost.Replace();
 
         await Verify(
             new
             {
                 asked,
                 file = await File.ReadAllTextAsync(file),
-                results = form.ResultsView!.Results.ToText().Replace(fixture.Root, "{root}")
+                results = form.FindHost.ResultsView!.Results.ToText().Replace(fixture.Root, "{root}")
             })
             .Snapshot(
                 """
@@ -142,16 +142,16 @@ public class FindInFilesWindowTests
         var emptyText = view.EmptyText;
 
         view.SearchInsideTheFiles();
-        await form.ResultsView!.Searching;
+        await form.FindHost.ResultsView!.Searching;
 
         await Verify(
             new
             {
                 emptyText,
-                find = form.FindPanel.FindBox.Text,
-                where = form.FindPanel.WhereBox.Text.Replace(fixture.Root, "{root}"),
-                form.FindPanel.ReadQuery().Regex,
-                results = form.ResultsView.Results.ToText().Replace(fixture.Root, "{root}")
+                find = form.FindHost.Panel.FindBox.Text,
+                where = form.FindHost.Panel.WhereBox.Text.Replace(fixture.Root, "{root}"),
+                form.FindHost.Panel.ReadQuery().Regex,
+                results = form.FindHost.ResultsView.Results.ToText().Replace(fixture.Root, "{root}")
             })
             .Snapshot(
                 """
@@ -186,15 +186,15 @@ public class FindInFilesWindowTests
         }
 
         using var form = await Show(fixture, new(), fixture.Root);
-        form.OpenFind();
-        form.FindPanel.FindBox.Text = "alpha";
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
         Application.DoEvents();
         var moves = new List<Rectangle>();
-        form.FindPanel.LocationChanged += (_, _) => moves.Add(form.FindPanel.Bounds);
-        form.FindPanel.SizeChanged += (_, _) => moves.Add(form.FindPanel.Bounds);
+        form.FindHost.Panel.LocationChanged += (_, _) => moves.Add(form.FindHost.Panel.Bounds);
+        form.FindHost.Panel.SizeChanged += (_, _) => moves.Add(form.FindHost.Panel.Bounds);
 
-        form.Find();
-        await form.ResultsView!.Searching;
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
         Application.DoEvents();
 
         await Assert.That(moves).IsEmpty();
@@ -218,7 +218,7 @@ public class FindInFilesWindowTests
         var found = view.Entries.Count;
 
         link.PerformClick();
-        await form.ResultsView!.Searching;
+        await form.FindHost.ResultsView!.Searching;
         Application.DoEvents();
 
         await Verify(
@@ -228,8 +228,8 @@ public class FindInFilesWindowTests
                 withFilter,
                 found,
                 onResults = link.Visible,
-                find = form.FindPanel.FindBox.Text,
-                results = form.ResultsView.Results.ToText().Replace(fixture.Root, "{root}")
+                find = form.FindHost.Panel.FindBox.Text,
+                results = form.FindHost.ResultsView.Results.ToText().Replace(fixture.Root, "{root}")
             })
             .Snapshot(
                 """
@@ -258,15 +258,15 @@ public class FindInFilesWindowTests
     {
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, new(), fixture.Root);
-        form.OpenFind();
-        form.FindPanel.FindBox.Text = "alpha";
-        form.Find();
-        await form.ResultsView!.Searching;
-        var page = (TabPage) form.ResultsView.Parent!;
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
+        var page = (TabPage) form.FindHost.ResultsView.Parent!;
 
         form.CloseTab(page);
 
-        await Assert.That(form.ResultsView).IsNull();
+        await Assert.That(form.FindHost.ResultsView).IsNull();
         await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.Root);
         await Assert.That(form.CanReopenClosedTab).IsFalse();
     }
