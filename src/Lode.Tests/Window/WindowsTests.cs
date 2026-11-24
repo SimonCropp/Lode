@@ -1166,6 +1166,230 @@ public class WindowsTests
                 """);
     }
 
+    // Right-clicking an action's button nests it under its parent, in a drop-down where it was,
+    // which takes in the next nested, or hides it, under See more. Where it is in the right-click
+    // menu stays as it was.
+    [Test]
+    public async Task RightClickingAButtonNestsOrHidesIt()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        using var form = await Show(fixture, settings, fixture.Root);
+        form.ActiveView!.Reveal(fixture.At("notes.aleph"));
+        await Pump.Loaded(form.ActiveView);
+        form.UpdateActions();
+        var renameMenu = form.BarMenuCommands("Rename").Select(DescribeCommand).ToList();
+
+        Choose(form.BarMenuCommands("Rename"), "Nest under File");
+        var fileMenu = form.BarMenuCommands("File").Select(DescribeCommand).ToList();
+        Choose(form.BarMenuCommands("Delete"), "Nest under File");
+        Choose(form.BarMenuCommands("Copy"), "Hide button");
+
+        await Verify(
+                new
+                {
+                    renameMenu,
+                    fileMenu,
+                    buttons = form.DescribeActions().ToList(),
+                    file = form.ParentEntries("File").Select(DescribeCommand).ToList(),
+                    copyUnderSeeMore = form.OverflowCommands(Point.Empty).Any(_ => _?.Text == "Copy"),
+                    copyInMenu = settings.ShowsInMenu("copy"),
+                    renameNestedInMenu = settings.NestsInMenu("rename")
+                })
+            .Snapshot(
+                """
+                {
+                  renameMenu: [
+                    Hide button,
+                    Nest under File,
+                    ----,
+                    Customize buttons…
+                  ],
+                  fileMenu: [
+                    Hide button,
+                    Un-nest,
+                    ----,
+                    Customize buttons…
+                  ],
+                  buttons: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Cut,
+                    Paste,
+                    File,
+                    ----,
+                    Edit (disabled),
+                    Open with,
+                    Terminal,
+                    Terminal (admin),
+                    AI,
+                    ----,
+                    Compress to ZIP file,
+                    Copy as path,
+                    Properties,
+                    ----,
+                    Git (disabled),
+                    ----,
+                    See more
+                  ],
+                  file: [
+                    Rename,
+                    Delete
+                  ],
+                  copyUnderSeeMore: true,
+                  copyInMenu: true,
+                  renameNestedInMenu: false
+                }
+                """);
+    }
+
+    // Right-clicking a parent's drop-down un-nests one of what is in it, a button of its own
+    // after the drop-down, or hides the drop-down, the rest going under See more, still nested
+    // there for when they are buttons again.
+    [Test]
+    public async Task RightClickingADropDownUnnestsOneOrHidesIt()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        // Room for the button un-nested, so it doesn't go under See more.
+        settings.SetPlacement("openWith", button: false, menu: true);
+        using var form = await Show(fixture, settings, fixture.Root);
+        var gitMenu = form.BarMenuCommands("Git");
+
+        Choose(gitMenu.Single(_ => _?.Text == "Un-nest one")!.Children!, "Git pull");
+        var unnested = form.DescribeActions().ToList();
+        Choose(form.BarMenuCommands("Git"), "Hide button");
+
+        await Verify(
+                new
+                {
+                    gitMenu = gitMenu.Select(DescribeCommand).ToList(),
+                    unnestOne = gitMenu.Single(_ => _?.Text == "Un-nest one")!.Children!.Select(DescribeCommand).ToList(),
+                    unnested = unnested.SkipWhile(_ => _ != "Properties").ToList(),
+                    hidden = form.DescribeActions().SkipWhile(_ => _ != "Properties").ToList(),
+                    fetch = new
+                    {
+                        button = settings.ShowsAsButton("gitFetch"),
+                        nested = settings.NestsButton("gitFetch"),
+                        nestedInMenu = settings.NestsInMenu("gitFetch")
+                    },
+                    pull = new
+                    {
+                        button = settings.ShowsAsButton("gitPull"),
+                        nested = settings.NestsButton("gitPull"),
+                        nestedInMenu = settings.NestsInMenu("gitPull")
+                    }
+                })
+            .Snapshot(
+                """
+                {
+                  gitMenu: [
+                    Hide button,
+                    Un-nest all,
+                    Un-nest one,
+                    ----,
+                    Customize buttons…
+                  ],
+                  unnestOne: [
+                    Git fetch,
+                    Git pull,
+                    Git sync fork,
+                    Git switch to default branch,
+                    Git push,
+                    Git discard,
+                    Git purge
+                  ],
+                  unnested: [
+                    Properties,
+                    ----,
+                    Git (disabled),
+                    Git pull (disabled),
+                    ----,
+                    See more
+                  ],
+                  hidden: [
+                    Properties,
+                    ----,
+                    Git pull (disabled),
+                    ----,
+                    See more
+                  ],
+                  fetch: {
+                    button: false,
+                    nested: true,
+                    nestedInMenu: true
+                  },
+                  pull: {
+                    button: true,
+                    nested: false,
+                    nestedInMenu: true
+                  }
+                }
+                """);
+    }
+
+    // Un-nest all puts each of a drop-down's actions back as a button of its own, where it was.
+    [Test]
+    public async Task RightClickingADropDownUnnestsAll()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        foreach (var id in new[] { "cut", "copy" })
+        {
+            settings.SetPlacement(id, button: true, menu: true, buttonNested: true);
+        }
+
+        using var form = await Show(fixture, settings, fixture.Root);
+        var nested = form.DescribeActions().ToList();
+
+        Choose(form.BarMenuCommands("Clipboard"), "Un-nest all");
+
+        await Verify(
+                new
+                {
+                    nested = nested.Take(6).ToList(),
+                    unnested = form.DescribeActions().Take(7).ToList()
+                })
+            .Snapshot(
+                """
+                {
+                  nested: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Clipboard (disabled),
+                    Paste
+                  ],
+                  unnested: [
+                    New,
+                    ----,
+                    Undo (disabled),
+                    Redo (disabled),
+                    Cut (disabled),
+                    Copy (disabled),
+                    Paste
+                  ]
+                }
+                """);
+    }
+
+    // Right-clicking anywhere on the bar but a button, See more say, offers only the Actions page
+    // of Options.
+    [Test]
+    public async Task RightClickingSeeMore()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+
+        await Assert.That(form.BarMenuCommands("See more").Select(DescribeCommand)).IsEquivalentTo(["Customize buttons…"]);
+    }
+
+    static void Choose(IEnumerable<QuickMenu.Command?> commands, string text) =>
+        commands.Single(_ => _?.Text == text)!.Action();
+
     // See more, at the end of the bar, lists the actions that are not buttons, greyed where
     // they do not apply: here, to a file.
     [Test]

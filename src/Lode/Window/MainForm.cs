@@ -24,7 +24,7 @@ class MainForm : Form
     };
     Breadcrumb breadcrumb = new();
     TextBox addressBox;
-    ToolStrip actionsBar = new();
+    ActionsStrip actionsBar = new();
 
     // The actions bar's buttons, by action id.
     Dictionary<string, ToolStripItem> actionButtons = [];
@@ -445,8 +445,101 @@ class MainForm : Form
         // Buttons that don't fit go under See more rather than a chevron of the strip's own.
         actionsBar.CanOverflow = false;
         actionsBar.SizeChanged += (_, _) => FitActionsBar();
+        actionsBar.MenuRequested += ShowBarMenu;
         RebuildActionsBar();
         return actionsBar;
+    }
+
+    void ShowBarMenu(Point screen)
+    {
+        var client = actionsBar.PointToClient(screen);
+        Action? chosen = null;
+        var strip = QuickMenu.Build(BarMenuCommands(actionsBar.GetItemAt(client)), null, _ => chosen = _);
+        // Run the choice once the menu has closed: the bar is made again, and Customize opens a
+        // dialog.
+        strip.Closed += (_, _) => strip.BeginInvoke(
+            () =>
+            {
+                strip.Dispose();
+                chosen?.Invoke();
+            });
+        strip.Show(actionsBar, client);
+    }
+
+    /// <summary>
+    /// What right-clicking <paramref name="item"/> on the bar offers. For an action's own button:
+    /// hide it, which puts it under See more, and nest it under its parent. For a parent's
+    /// drop-down: hide it, and un-nest what is in it, all or one, each a button of its own.
+    /// Then, wherever the bar is right-clicked, the Actions page of Options, for the rest and to
+    /// show again what was hidden. Each changes every window, as a tick on that page does.
+    /// </summary>
+    internal List<QuickMenu.Command?> BarMenuCommands(ToolStripItem? item)
+    {
+        var commands = new List<QuickMenu.Command?>();
+        var id = actionButtons
+            .Where(_ => _.Value == item)
+            .Select(_ => _.Key)
+            .FirstOrDefault();
+        if (id != null)
+        {
+            commands.Add(new("Hide button", () => PlaceButtons([id], shown: false, nested: false)));
+            if (LodeActions.Find(id)?.Parent is { } parent)
+            {
+                commands.Add(new($"Nest under {parent.Text}", () => PlaceButtons([id], shown: true, nested: true)));
+            }
+
+            commands.Add(null);
+        }
+
+        foreach (var (button, members) in parentButtons.Values)
+        {
+            if (button != item)
+            {
+                continue;
+            }
+
+            var ids = members.Select(_ => _.Id).ToList();
+            commands.Add(new("Hide button", () => PlaceButtons(ids, shown: false, nested: true)));
+            if (members.Count == 1)
+            {
+                commands.Add(new("Un-nest", () => PlaceButtons(ids, shown: true, nested: false)));
+            }
+            else
+            {
+                commands.Add(new("Un-nest all", () => PlaceButtons(ids, shown: true, nested: false)));
+                commands.Add(
+                    QuickMenu.Submenu(
+                        "Un-nest one",
+                        [
+                            .. members.Select(member =>
+                                new QuickMenu.Command(member.Text, () => PlaceButtons([member.Id], shown: true, nested: false)))
+                        ]));
+            }
+
+            commands.Add(null);
+        }
+
+        commands.Add(new("Customize buttons…", () => ShowOptions("Actions")));
+        return commands;
+    }
+
+    /// <summary>
+    /// What right-clicking the bar's item <paramref name="text"/> offers, for tests.
+    /// </summary>
+    internal List<QuickMenu.Command?> BarMenuCommands(string text) =>
+        BarMenuCommands(actionsBar.Items.OfType<ToolStripItem>().Single(_ => _.Text == text));
+
+    // Each action a button or not, nested under its parent or not, staying where it is in the
+    // right-click menus. Saved at once, as a change in Options is, and so in every window.
+    void PlaceButtons(IEnumerable<string> ids, bool shown, bool nested)
+    {
+        foreach (var id in ids)
+        {
+            settings.SetButtonPlacement(id, shown, nested);
+        }
+
+        settings.Save();
+        ApplySettingsToAllWindows(SettingsChange.Actions);
     }
 
     // The buttons Options asks for, in LodeActions' order, with a separator between groups, then

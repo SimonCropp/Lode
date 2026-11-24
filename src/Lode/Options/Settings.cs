@@ -125,6 +125,22 @@ sealed class Settings
             MenuNested = menuNested
         };
 
+    /// <summary>
+    /// Whether an action is a button on the bar, and nested under its parent there, as the bar's
+    /// own right-click menu changes it: where it shows in the right-click menus stays as it is.
+    /// <paramref name="nested"/> is ignored for an action without a parent.
+    /// </summary>
+    public void SetButtonPlacement(string id, bool button, bool nested)
+    {
+        if (LodeActions.Find(id)?.Parent == null)
+        {
+            SetPlacement(id, button, ShowsInMenu(id));
+            return;
+        }
+
+        SetPlacement(id, button, ShowsInMenu(id), nested, NestsInMenu(id));
+    }
+
     // The file list's columns hidden from its header's right-click menu: Date, Type, Size or Git.
     public List<string> HiddenColumns { get; set; } = [];
 
