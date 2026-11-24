@@ -1685,7 +1685,7 @@ public class WindowsTests
             List<string> offered =
             [
                 .. form.ActionsBar.OverflowCommands(Point.Empty).Select(DescribeCommand),
-                .. form.PaletteCommands().Select(_ => _.Name)
+                .. form.Commands.Palette().Select(_ => _.Name)
             ];
 
             await Assert.That(offered.Where(_ => _.Contains("Claude") || _.Contains("Coding agent"))).IsEmpty();
@@ -1723,7 +1723,7 @@ public class WindowsTests
                 opened.Clear();
                 form.ActiveView!.Reveal(fixture.At(selected));
                 await Pump.Loaded(form.ActiveView);
-                var commands = form.PaletteCommands();
+                var commands = form.Commands.Palette();
                 foreach (var name in new[] { "Terminal", "Terminal (admin)", "Open in Claude", "Coding agent: Agent" })
                 {
                     commands.Single(_ => _.Name == name).Action();
@@ -1777,7 +1777,7 @@ public class WindowsTests
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, fixture.Root);
 
-        await Verify(form.WindowCommands().Select(DescribeCommand))
+        await Verify(form.Commands.Menu().Select(DescribeCommand))
             .Snapshot(
                 """
                 [
@@ -1892,7 +1892,7 @@ public class WindowsTests
         using var form = await Show(fixture, fixture.Root, fixture.At("Docs"));
 
         // New's file types depend on what is installed.
-        var commands = form.PaletteCommands()
+        var commands = form.Commands.Palette()
             .Where(_ => !_.Name.StartsWith("New: ") || _.Name == "New: Folder")
             .Select(_ => _.Shortcut.Length == 0 ? _.Name : $"{_.Name} ({_.Shortcut})");
         await Verify(commands)

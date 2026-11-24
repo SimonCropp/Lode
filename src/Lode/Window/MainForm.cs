@@ -11,6 +11,12 @@ class MainForm : Form
     internal AddressBar AddressBar { get; }
 
     /// <summary>
+    /// The window's own commands: what the ⋯ menu and the command palette offer, and those only
+    /// they and the keys run.
+    /// </summary>
+    internal Commands Commands { get; }
+
+    /// <summary>
     /// Explorer's command bar, under the address bar: buttons for what is most often done to the
     /// selection in the tab showing.
     /// </summary>
@@ -63,6 +69,12 @@ class MainForm : Form
     /// Exit was chosen from a window's menu. The app otherwise keeps running in the tray.
     /// </summary>
     public static event Action? ExitRequested;
+
+    /// <summary>
+    /// Exit Lode, chosen from a window's menu or the command palette.
+    /// </summary>
+    internal static void RequestExit() =>
+        ExitRequested?.Invoke();
 
     /// <summary>
     /// When set, closing the last visible window hides it rather than closing it, so the app
@@ -125,7 +137,8 @@ class MainForm : Form
         GitPanes.ChangesRead += DiffHost.ChangesRead;
         GitPanes.PinnedChanged += ApplyPinnedInAllWindows;
         GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
-        AddressBar = new(this, () => ActiveView, Reload, NewTab, WindowCommands);
+        Commands = new(this, settings, places);
+        AddressBar = new(this, () => ActiveView, Reload, NewTab, Commands.Menu);
         ActionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
         StatusBar = new(this, settings, updates, () => ActiveView, ShowOptions, url => OpenSite(url), folder => AddTab(folder, true));
         FindHost.ProgressChanged += () => StatusBar.ShowProgress(FindHost.Progress);
@@ -182,115 +195,6 @@ class MainForm : Form
         Controls.Add(StatusBar.Strip);
         ResumeLayout(false);
         PerformLayout();
-    }
-
-    /// <summary>
-    /// What the ⋯ menu at the right of the address bar lists: Lode's own commands. A null entry
-    /// is a separator.
-    /// </summary>
-    internal List<QuickMenu.Command?> WindowCommands()
-    {
-        var commands = new List<QuickMenu.Command?>
-        {
-            new("New tab", NewTab)
-            {
-                Glyph = Icons.NewTab,
-                Shortcut = "Ctrl+T"
-            },
-            new("New window", NewWindow)
-            {
-                Glyph = Icons.NewWindow,
-                Shortcut = "Ctrl+N"
-            },
-            new("Reopen closed tab", ReopenClosedTab, CanReopenClosedTab)
-            {
-                Glyph = Icons.Reopen,
-                Shortcut = "Ctrl+Shift+T"
-            },
-            new("Command palette", ShowCommandPalette)
-            {
-                Glyph = Icons.CommandPalette,
-                Shortcut = "Ctrl+Shift+P"
-            },
-            new("Find in files", FindHost.Open)
-            {
-                Glyph = Icons.Search,
-                Shortcut = "Ctrl+Shift+F"
-            },
-            new("Clone a repository…", ShowClone)
-            {
-                Glyph = Icons.Clone,
-                Shortcut = "Ctrl+Shift+O"
-            },
-            null,
-            new("Show hidden items", ToggleHidden)
-            {
-                Glyph = Icons.ShowHidden,
-                Shortcut = "Ctrl+H",
-                Checked = settings.ShowHidden
-            },
-            new("Show system files", ToggleSystem)
-            {
-                Glyph = Icons.ShowSystem,
-                Checked = settings.ShowSystem
-            }
-        };
-        if (GitPanes.Repo != null)
-        {
-            var changesPinned = GitPanes.IsPinned(GitPane.Changes);
-            var historyPinned = GitPanes.IsPinned(GitPane.History);
-            commands.AddRange(
-            [
-                null,
-                new("Changes", () => GitPanes.Toggle(GitPane.Changes))
-                {
-                    Glyph = Icons.Changes,
-                    Shortcut = "Ctrl+Shift+G"
-                },
-                new("History", () => GitPanes.Toggle(GitPane.History))
-                {
-                    Glyph = Icons.History,
-                    Shortcut = "Ctrl+Shift+H"
-                },
-                new("Pin changes", () => GitPanes.SetPinned(GitPane.Changes, !changesPinned))
-                {
-                    Checked = changesPinned
-                },
-                new("Pin history", () => GitPanes.SetPinned(GitPane.History, !historyPinned))
-                {
-                    Checked = historyPinned
-                }
-            ]);
-        }
-
-        if (PinnablePath() is { } path)
-        {
-            var pinned = IsPinned(path);
-            commands.Add(
-                new(PinMenuText(path), TogglePinned)
-                {
-                    Glyph = pinned ? Icons.Unpin : Icons.Pin
-                });
-        }
-
-        commands.AddRange(
-        [
-            null,
-            new("Options…", ShowOptions)
-            {
-                Glyph = Icons.Options
-            },
-            new("About Lode", ShowAbout)
-            {
-                Glyph = Icons.About
-            },
-            null,
-            new("Exit Lode", () => ExitRequested?.Invoke())
-            {
-                Glyph = Icons.Exit
-            }
-        ]);
-        return commands;
     }
 
     /// <summary>
@@ -720,7 +624,7 @@ class MainForm : Form
         Activate();
     }
 
-    void NewTab() =>
+    internal void NewTab() =>
         AddTab(settings.StartLocation(), true);
 
     internal void CloseTab(TabPage page)
@@ -1138,51 +1042,6 @@ class MainForm : Form
         GitPanes.ShowRepo(repo, state);
     }
 
-    /// <summary>
-    /// Asks what to clone, and where to, then clones it in the Actions panel, opening a tab on
-    /// the clone once it is there. Tests answer for the user.
-    /// </summary>
-    internal Func<CloneDialog, DialogResult> ShowCloneDialog = dialog => dialog.ShowDialog(dialog.Owner);
-
-    void ShowClone()
-    {
-        // Into the code folder, or, without one, the folder open.
-        var parent = settings.CodeDirectory;
-        if (parent == null ||
-            !Directory.Exists(parent))
-        {
-            parent = PinnablePath() ?? Locations.Home;
-        }
-
-        using var dialog = new CloneDialog(settings, parent)
-        {
-            Owner = this
-        };
-        if (ShowCloneDialog(dialog) != DialogResult.OK)
-        {
-            return;
-        }
-
-        Clone(dialog.Remote, dialog.Destination);
-    }
-
-    async void Clone(string remote, string destination)
-    {
-        var entry = await ActionLog.Run(
-            "Git clone",
-            [destination],
-            async (progress, cancel) =>
-            {
-                var result = await Task.Run(() => RepositoryClone.Clone(remote, destination, null, progress.Report, cancel), cancel);
-                return CodeCommands.GitOutcome([result]);
-            });
-        if (entry.State == ActionLog.State.Succeeded &&
-            !IsDisposed)
-        {
-            AddTab(destination, true);
-        }
-    }
-
     // Pinned or unpinned in one window, for a repository, in every window showing it.
     static void ApplyPinnedInAllWindows(string repo)
     {
@@ -1383,7 +1242,7 @@ class MainForm : Form
 
     // Refresh also asks again what it otherwise remembers about files: their own icons, and
     // which types are text.
-    void Reload()
+    internal void Reload()
     {
         ShellIcons.ForgetFileIcons();
         ShellIcons.ForgetPlaceIcons();
@@ -1401,97 +1260,7 @@ class MainForm : Form
         ActiveView?.ReloadRows();
     }
 
-    void ToggleHidden()
-    {
-        settings.ShowHidden = !settings.ShowHidden;
-        ApplySettingsToAllWindows(SettingsChange.Listing);
-    }
-
-    void ToggleSystem()
-    {
-        settings.ShowSystem = !settings.ShowSystem;
-        ApplySettingsToAllWindows(SettingsChange.Listing);
-    }
-
-    void OpenTerminal() =>
-        OpenTerminal(admin: false);
-
-    void OpenAdminTerminal() =>
-        OpenTerminal(admin: true);
-
-    void OpenTerminal(bool admin)
-    {
-        if (ActiveView is {IsReadOnly: false} view)
-        {
-            FileOperations.OpenTerminal(view.CurrentPath, admin);
-        }
-    }
-
-    void OpenInClaude()
-    {
-        if (PinnablePath() is { } path)
-        {
-            ClaudeDesktop.Open(this, path);
-        }
-    }
-
-    void OpenAgent(CodingAgents.Agent agent)
-    {
-        if (PinnablePath() is { } path)
-        {
-            CodingAgents.Open(agent, [path]);
-        }
-    }
-
-    string? PinnablePath()
-    {
-        if (ActiveView is not { } view ||
-            Locations.IsThisPC(view.CurrentPath) ||
-            view.InArchive)
-        {
-            return null;
-        }
-
-        return view.CurrentPath;
-    }
-
-    /// <summary>
-    /// What the main menu's pin item says for the active folder, or null when it is hidden.
-    /// </summary>
-    internal string? PinMenuText()
-    {
-        if (PinnablePath() is not { } path)
-        {
-            return null;
-        }
-
-        return PinMenuText(path);
-    }
-
-    // "This folder": the one the tab shows, whatever is selected. Pin to Quick access, the
-    // action, is for the selection.
-    string PinMenuText(string path)
-    {
-        if (IsPinned(path))
-        {
-            return "Unpin this folder from Quick access";
-        }
-
-        return "Pin this folder to Quick access";
-    }
-
-    bool IsPinned(string path) =>
-        places.Pinned.Any(_ => Locations.Same(_, path));
-
-    void TogglePinned()
-    {
-        if (PinnablePath() is { } path)
-        {
-            ShellContextMenu.SetPinned(Handle, path, !IsPinned(path));
-        }
-    }
-
-    void NewWindow() =>
+    internal void NewWindow() =>
         NewWindow(ActiveView?.CurrentPath ?? settings.StartLocation());
 
     // In this process rather than a new one, so tabs can be dragged between the two.
@@ -1516,7 +1285,7 @@ class MainForm : Form
         }
     }
 
-    void ShowOptions() =>
+    internal void ShowOptions() =>
         ShowOptions(null);
 
     void ShowOptions(string? page)
@@ -1567,7 +1336,7 @@ class MainForm : Form
     }
 
     // Settings are shared by every window, so a change shows in all of them.
-    static void ApplySettingsToAllWindows(SettingsChange change)
+    internal static void ApplySettingsToAllWindows(SettingsChange change)
     {
         foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
         {
@@ -1623,42 +1392,6 @@ class MainForm : Form
         }
     }
 
-    const string projectUrl = "https://github.com/SimonCropp/Lode";
-
-    // Not a URL: the issue's is built when clicked, with the version and OS in its body.
-    const string raiseIssue = "raise-issue";
-
-    void ShowAbout()
-    {
-        var version = typeof(MainForm).Assembly.GetName().Version?.ToString(3);
-        var page = new TaskDialogPage
-        {
-            Caption = "About Lode",
-            Heading = $"Lode {version}",
-            Text = $"""
-                    A tabbed file manager with the classic Windows context menu.
-
-                    <a href="{projectUrl}">{projectUrl}</a>
-
-                    <a href="{raiseIssue}">Raise an issue</a>
-                    """,
-            EnableLinks = true,
-            Icon = TaskDialogIcon.Information,
-            Buttons = { TaskDialogButton.OK }
-        };
-        page.LinkClicked += (_, args) =>
-        {
-            if (args.LinkHref == raiseIssue)
-            {
-                IssueLauncher.Launch();
-                return;
-            }
-
-            IssueLauncher.OpenUrl(args.LinkHref);
-        };
-        TaskDialog.ShowDialog(this, page);
-    }
-
     void OnTabsMouseUp(object? sender, MouseEventArgs args)
     {
         var page = TabAt(args.Location);
@@ -1694,7 +1427,7 @@ class MainForm : Form
             var path = view.CurrentPath;
             if (!Locations.IsThisPC(path))
             {
-                var pinned = IsPinned(path);
+                var pinned = Commands.IsPinned(path);
                 var pinText = pinned ? "Unpin from Quick access" : "Pin to Quick access";
                 menu.Items.Add(pinText, null, (_, _) => ShellContextMenu.SetPinned(Handle, path, !pinned));
             }
@@ -1711,182 +1444,6 @@ class MainForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { Enabled = CanReopenClosedTab, ShortcutKeyDisplayString = "Ctrl+Shift+T" });
         return menu;
-    }
-
-    void ShowCommandPalette() =>
-        CommandPalette.Show(this, PaletteCommands());
-
-    // Shortcuts of the view's own commands, which its menus do not show.
-    static Dictionary<string, string> viewShortcuts = new()
-    {
-        ["Cut"] = "Ctrl+X",
-        ["Copy"] = "Ctrl+C",
-        ["Paste"] = "Ctrl+V",
-        ["Rename"] = "F2",
-        ["Delete"] = "Delete",
-        ["Properties"] = "Alt+Enter",
-        ["New: Folder"] = "Ctrl+Shift+N"
-    };
-
-    /// <summary>
-    /// What the command palette offers: the window's commands, then those the right-click menu
-    /// would show for the selection, or for the folder when nothing is selected. Commands that
-    /// cannot run now are left out.
-    /// </summary>
-    internal List<CommandPalette.Command> PaletteCommands()
-    {
-        var view = ActiveView;
-        var page = Tabs.SelectedTab;
-        var index = Tabs.SelectedIndex;
-        var commands = new List<CommandPalette.Command>();
-
-        void Add(string name, Action action, string shortcut = "", bool enabled = true)
-        {
-            if (enabled)
-            {
-                commands.Add(new(name, action, shortcut));
-            }
-        }
-
-        Add("Back", () => ActiveView?.GoBack(), "Alt+Left", view?.CanGoBack == true);
-        Add("Forward", () => ActiveView?.GoForward(), "Alt+Right", view?.CanGoForward == true);
-        Add("Up", () => ActiveView?.GoUp(), "Alt+Up", view?.CanGoUp == true);
-        Add("Refresh", Reload, "F5");
-        Add("Go to address", AddressBar.FocusAddress, "Ctrl+L");
-        Add("Search this folder", AddressBar.FocusFilter, "Ctrl+F");
-        Add("New tab", NewTab, "Ctrl+T");
-        Add("New window", NewWindow, "Ctrl+N");
-        Add("Find in files", FindHost.Open, "Ctrl+Shift+F");
-        Add("Clone a repository…", ShowClone, "Ctrl+Shift+O");
-        if (GitPanes.Repo != null)
-        {
-            Add("Changes", () => GitPanes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
-            Add("History", () => GitPanes.Toggle(GitPane.History), "Ctrl+Shift+H");
-            Add(GitPanes.IsPinned(GitPane.Changes) ? "Unpin changes" : "Pin changes", () => GitPanes.SetPinned(GitPane.Changes, !GitPanes.IsPinned(GitPane.Changes)));
-            Add(GitPanes.IsPinned(GitPane.History) ? "Unpin history" : "Pin history", () => GitPanes.SetPinned(GitPane.History, !GitPanes.IsPinned(GitPane.History)));
-        }
-
-        if (page != null)
-        {
-            if (view != null)
-            {
-                Add("Duplicate tab", () => AddTab(view.CurrentPath, true, intoZip: true));
-            }
-
-            Add("Close tab", () => CloseTab(page), "Ctrl+W");
-            Add("Close other tabs", () => CloseOtherTabs(page), enabled: Tabs.TabCount > 1);
-            Add("Close tabs to the left", () => CloseTabsToTheLeft(page), enabled: index > 0);
-            Add("Close tabs to the right", () => CloseTabsToTheRight(page), enabled: index < Tabs.TabCount - 1);
-            Add("Close all tabs", CloseAllTabs);
-        }
-
-        Add("Reopen closed tab", ReopenClosedTab, "Ctrl+Shift+T", CanReopenClosedTab);
-        var history = UndoHistory.Instance;
-        Add(history.UndoText, Undo, "Ctrl+Z", history.CanUndo);
-        Add(history.RedoText, Redo, "Ctrl+Y", history.CanRedo);
-        Add("Next tab", () => SelectAdjacentTab(1), "Ctrl+Tab", Tabs.TabCount > 1);
-        Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", Tabs.TabCount > 1);
-        Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
-        Add(settings.ShowSystem ? "Hide system files" : "Show system files", ToggleSystem);
-        Add("Terminal", OpenTerminal, enabled: PinnablePath() != null);
-        Add("Terminal (admin)", OpenAdminTerminal, enabled: PinnablePath() != null);
-        if (ClaudeDesktop.IsInstalled())
-        {
-            Add("Open in Claude", OpenInClaude, enabled: PinnablePath() != null);
-        }
-
-        // Named as the folder's own would be, which these stand in for when a file is selected.
-        foreach (var agent in CodingAgents.Installed())
-        {
-            Add($"Coding agent: {agent.Name}", () => OpenAgent(agent), enabled: PinnablePath() != null);
-        }
-
-        if (PinMenuText() is { } pinText)
-        {
-            Add(pinText, TogglePinned);
-        }
-
-        if (view != null)
-        {
-            var selection = view.SelectedEntries();
-            List<QuickMenu.Command?> viewCommands;
-            if (selection.Count > 0)
-            {
-                viewCommands = view.ItemCommands(selection);
-            }
-            else if (!view.ListsPlaces)
-            {
-                viewCommands = view.BackgroundCommands(FileOperations.ReadClipboard() != null);
-            }
-            else
-            {
-                viewCommands = [];
-            }
-
-            var selectionCommands = new List<CommandPalette.Command>();
-            AddViewCommands(selectionCommands, view, viewCommands, "");
-
-            // The window's Terminal, Open in Claude and Coding agent open in the tab's folder.
-            // Where the selection has its own, that one stands in, in the window's place, so it
-            // opens in the folder selected, as the right-click menu and the actions bar do.
-            for (var position = 0; position < commands.Count; position++)
-            {
-                if (OpensInTheFolder(commands[position].Name) &&
-                    selectionCommands.FirstOrDefault(_ => SameName(_, commands[position])) is { } own)
-                {
-                    commands[position] = own;
-                }
-            }
-
-            commands.AddRange(selectionCommands);
-        }
-
-        Add("Options…", ShowOptions);
-        Add("About Lode", ShowAbout);
-        Add("Exit Lode", () => ExitRequested?.Invoke());
-
-        // A view command named as a window one (New folder, say) would only repeat it.
-        return commands
-            .DistinctBy(_ => _.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-    }
-
-    static bool OpensInTheFolder(string name) =>
-        name is "Terminal" or "Terminal (admin)" or "Open in Claude" ||
-        name.StartsWith("Coding agent: ", StringComparison.Ordinal);
-
-    static bool SameName(CommandPalette.Command command, CommandPalette.Command other) =>
-        string.Equals(command.Name, other.Name, StringComparison.CurrentCultureIgnoreCase);
-
-    // A submenu's entries are named after it: "New: Text Document", "Open with: Notepad".
-    static void AddViewCommands(List<CommandPalette.Command> commands, FolderView view, IReadOnlyList<QuickMenu.Command?> viewCommands, string prefix)
-    {
-        foreach (var command in viewCommands)
-        {
-            if (command is not { Enabled: true })
-            {
-                continue;
-            }
-
-            var name = prefix + command.Text;
-            if (command.Children != null)
-            {
-                AddViewCommands(commands, view, command.Children, $"{name}: ");
-                continue;
-            }
-
-            var action = command.Action;
-            commands.Add(
-                new(
-                    name,
-                    () =>
-                    {
-                        // Back on the list first, so Rename has an item to edit.
-                        view.FocusList();
-                        action();
-                    },
-                    viewShortcuts.GetValueOrDefault(name, "")));
-        }
     }
 
     // As Find Results shows: what was found so far in the status bar, and none of what is a
@@ -1911,7 +1468,7 @@ class MainForm : Form
 
     // Ctrl+Z and Ctrl+Y: through the tab's view, which says when one can't be done; with Find
     // Results showing, which has none, the window says.
-    void Undo()
+    internal void Undo()
     {
         if (ActiveView is { } view)
         {
@@ -1922,7 +1479,7 @@ class MainForm : Form
         RunUndo(UndoHistory.Instance.Undo);
     }
 
-    void Redo()
+    internal void Redo()
     {
         if (ActiveView is { } view)
         {
@@ -1998,7 +1555,7 @@ class MainForm : Form
         }
     }
 
-    void SelectAdjacentTab(int offset)
+    internal void SelectAdjacentTab(int offset)
     {
         if (Tabs.TabCount > 1)
         {
@@ -2095,7 +1652,7 @@ class MainForm : Form
                 ReopenClosedTab();
                 return true;
             case Keys.Control | Keys.Shift | Keys.P:
-                ShowCommandPalette();
+                Commands.ShowPalette();
                 return true;
             case Keys.Control | Keys.Tab:
                 SelectAdjacentTab(1);
@@ -2123,7 +1680,7 @@ class MainForm : Form
                 NewWindow();
                 return true;
             case Keys.Control | Keys.H:
-                ToggleHidden();
+                Commands.ToggleHidden();
                 return true;
             case Keys.Control | Keys.B:
                 StatusBar.ShowBranches();
@@ -2135,7 +1692,7 @@ class MainForm : Form
                 GitPanes.Toggle(GitPane.History);
                 return true;
             case Keys.Control | Keys.Shift | Keys.O:
-                ShowClone();
+                Commands.ShowClone();
                 return true;
         }
 

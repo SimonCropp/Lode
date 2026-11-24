@@ -151,7 +151,7 @@ public class MenuTests
         using var fixture = Fixture.Create();
         using var form = await Show(fixture);
 
-        await Verify(QuickMenu.Build(form.WindowCommands(), null, _ => { }));
+        await Verify(QuickMenu.Build(form.Commands.Menu(), null, _ => { }));
     }
 
     // Right-clicking a column header, with Size hidden.
@@ -178,7 +178,7 @@ public class MenuTests
         using var form = await Show(fixture);
         form.AddTab(fixture.At("Docs"), true);
         form.AddTab(fixture.At("Source"), false);
-        using var palette = new CommandPalette(form.PaletteCommands())
+        using var palette = new CommandPalette(form.Commands.Palette())
         {
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000),
