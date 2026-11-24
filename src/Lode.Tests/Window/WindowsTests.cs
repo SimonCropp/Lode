@@ -861,16 +861,16 @@ public class WindowsTests
     {
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, fixture.Root);
-        var nothingSelected = form.DescribeActions().ToList();
+        var nothingSelected = form.ActionsBar.Describe().ToList();
         form.ActiveView!.Reveal(fixture.At("notes.aleph"));
         await Pump.Loaded(form.ActiveView);
-        form.UpdateActions();
+        form.ActionsBar.Update();
 
         await Verify(
             new
             {
                 nothingSelected,
-                fileSelected = form.DescribeActions().ToList()
+                fileSelected = form.ActionsBar.Describe().ToList()
             })
             .Snapshot(
                 """
@@ -939,7 +939,7 @@ public class WindowsTests
 
         await Verify(
                 new[] { "New", "Open with", "AI", "Git", "Copy", "Terminal", "See more" }
-                    .Select(_ => $"{_}: {form.BarItem(_).ToolTipText ?? "none"}"))
+                    .Select(_ => $"{_}: {form.ActionsBar.Item(_).ToolTipText ?? "none"}"))
             .Snapshot(
                 """
                 [
@@ -1016,10 +1016,10 @@ public class WindowsTests
         using var form = await Show(fixture, settings, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("Docs"));
         await Pump.Loaded(form.ActiveView);
-        form.UpdateActions();
-        var buttons = form.DescribeActions().ToList();
+        form.ActionsBar.Update();
+        var buttons = form.ActionsBar.Describe().ToList();
 
-        form.RunAction("openInNewTab");
+        form.ActionsBar.Run("openInNewTab");
         await Pump.Loaded(form.Views.Last());
 
         await Verify(
@@ -1081,13 +1081,13 @@ public class WindowsTests
         using var form = await Show(fixture, settings, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("Docs"));
         await Pump.Loaded(form.ActiveView);
-        form.UpdateActions();
+        form.ActionsBar.Update();
 
         await Verify(
             new
             {
-                buttons = form.DescribeActions().ToList(),
-                clipboard = form.ParentEntries("Clipboard").Select(DescribeCommand).ToList()
+                buttons = form.ActionsBar.Describe().ToList(),
+                clipboard = form.ActionsBar.ParentEntries("Clipboard").Select(DescribeCommand).ToList()
             })
             .Snapshot(
                 """
@@ -1142,13 +1142,13 @@ public class WindowsTests
         using var form = await Show(fixture, settings, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("Docs"));
         await Pump.Loaded(form.ActiveView);
-        form.UpdateActions();
+        form.ActionsBar.Update();
 
         await Verify(
             new
             {
-                buttons = form.DescribeActions().ToList(),
-                git = form.ParentEntries("Git").Select(DescribeCommand).ToList()
+                buttons = form.ActionsBar.Describe().ToList(),
+                git = form.ActionsBar.ParentEntries("Git").Select(DescribeCommand).ToList()
             })
             .Snapshot(
                 """
@@ -1202,22 +1202,22 @@ public class WindowsTests
         using var form = await Show(fixture, settings, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("notes.aleph"));
         await Pump.Loaded(form.ActiveView);
-        form.UpdateActions();
-        var renameMenu = form.BarMenuCommands("Rename").Select(DescribeCommand).ToList();
+        form.ActionsBar.Update();
+        var renameMenu = form.ActionsBar.MenuCommands("Rename").Select(DescribeCommand).ToList();
 
-        Choose(form.BarMenuCommands("Rename"), "Nest under File");
-        var fileMenu = form.BarMenuCommands("File").Select(DescribeCommand).ToList();
-        Choose(form.BarMenuCommands("Delete"), "Nest under File");
-        Choose(form.BarMenuCommands("Copy"), "Hide button");
+        Choose(form.ActionsBar.MenuCommands("Rename"), "Nest under File");
+        var fileMenu = form.ActionsBar.MenuCommands("File").Select(DescribeCommand).ToList();
+        Choose(form.ActionsBar.MenuCommands("Delete"), "Nest under File");
+        Choose(form.ActionsBar.MenuCommands("Copy"), "Hide button");
 
         await Verify(
                 new
                 {
                     renameMenu,
                     fileMenu,
-                    buttons = form.DescribeActions().ToList(),
-                    file = form.ParentEntries("File").Select(DescribeCommand).ToList(),
-                    copyUnderSeeMore = form.OverflowCommands(Point.Empty).Any(_ => _?.Text == "Copy"),
+                    buttons = form.ActionsBar.Describe().ToList(),
+                    file = form.ActionsBar.ParentEntries("File").Select(DescribeCommand).ToList(),
+                    copyUnderSeeMore = form.ActionsBar.OverflowCommands(Point.Empty).Any(_ => _?.Text == "Copy"),
                     copyInMenu = settings.ShowsInMenu("copy"),
                     renameNestedInMenu = settings.NestsInMenu("rename")
                 })
@@ -1281,11 +1281,11 @@ public class WindowsTests
         // Room for the button un-nested, so it doesn't go under See more.
         settings.SetPlacement("openWith", button: false, menu: true);
         using var form = await Show(fixture, settings, fixture.Root);
-        var gitMenu = form.BarMenuCommands("Git");
+        var gitMenu = form.ActionsBar.MenuCommands("Git");
 
         Choose(gitMenu.Single(_ => _?.Text == "Un-nest one")!.Children!, "Git pull");
-        var unnested = form.DescribeActions().ToList();
-        Choose(form.BarMenuCommands("Git"), "Hide button");
+        var unnested = form.ActionsBar.Describe().ToList();
+        Choose(form.ActionsBar.MenuCommands("Git"), "Hide button");
 
         await Verify(
                 new
@@ -1293,7 +1293,7 @@ public class WindowsTests
                     gitMenu = gitMenu.Select(DescribeCommand).ToList(),
                     unnestOne = gitMenu.Single(_ => _?.Text == "Un-nest one")!.Children!.Select(DescribeCommand).ToList(),
                     unnested = unnested.SkipWhile(_ => _ != "Properties").ToList(),
-                    hidden = form.DescribeActions().SkipWhile(_ => _ != "Properties").ToList(),
+                    hidden = form.ActionsBar.Describe().SkipWhile(_ => _ != "Properties").ToList(),
                     fetch = new
                     {
                         button = settings.ShowsAsButton("gitFetch"),
@@ -1367,15 +1367,15 @@ public class WindowsTests
         }
 
         using var form = await Show(fixture, settings, fixture.Root);
-        var nested = form.DescribeActions().ToList();
+        var nested = form.ActionsBar.Describe().ToList();
 
-        Choose(form.BarMenuCommands("Clipboard"), "Un-nest all");
+        Choose(form.ActionsBar.MenuCommands("Clipboard"), "Un-nest all");
 
         await Verify(
                 new
                 {
                     nested = nested.Take(6).ToList(),
-                    unnested = form.DescribeActions().Take(7).ToList()
+                    unnested = form.ActionsBar.Describe().Take(7).ToList()
                 })
             .Snapshot(
                 """
@@ -1414,17 +1414,17 @@ public class WindowsTests
         // Room for the button un-nested, so it doesn't go under See more.
         settings.SetPlacement("openWith", button: false, menu: true);
         using var form = await Show(fixture, settings, fixture.Root);
-        var pullMenu = form.NestedMenuCommands("gitPull").Select(DescribeCommand).ToList();
+        var pullMenu = form.ActionsBar.NestedMenuCommands("gitPull").Select(DescribeCommand).ToList();
 
-        Choose(form.NestedMenuCommands("gitPull"), "Un-nest");
-        Choose(form.NestedMenuCommands("gitFetch"), "Hide button");
+        Choose(form.ActionsBar.NestedMenuCommands("gitPull"), "Un-nest");
+        Choose(form.ActionsBar.NestedMenuCommands("gitFetch"), "Hide button");
 
         await Verify(
                 new
                 {
                     pullMenu,
-                    buttons = form.DescribeActions().SkipWhile(_ => _ != "Properties").ToList(),
-                    git = form.ParentEntries("Git").Select(_ => _!.Text).ToList(),
+                    buttons = form.ActionsBar.Describe().SkipWhile(_ => _ != "Properties").ToList(),
+                    git = form.ActionsBar.ParentEntries("Git").Select(_ => _!.Text).ToList(),
                     fetch = new
                     {
                         button = settings.ShowsAsButton("gitFetch"),
@@ -1471,14 +1471,14 @@ public class WindowsTests
     {
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, fixture.Root);
-        var git = (ToolStripDropDownItem)form.BarItem("Git");
+        var git = (ToolStripDropDownItem)form.ActionsBar.Item("Git");
         git.ShowDropDown();
         Application.DoEvents();
         var listed = git.DropDownItems.Cast<ToolStripItem>().Select(_ => _.Text).ToList();
         var pull = git.DropDownItems.Cast<ToolStripItem>().Single(_ => _.Text == "Pull");
 
         var pointer = RightClick(git.DropDown, pull);
-        var menu = form.BarMenuShowing;
+        var menu = form.ActionsBar.MenuShowing;
         var whileOpen = new
         {
             gitOpen = git.DropDown.Visible,
@@ -1488,7 +1488,7 @@ public class WindowsTests
         };
         menu!.Close(ToolStripDropDownCloseReason.Keyboard);
         var openAfterEscape = git.DropDown.Visible;
-        await Pump.Until(() => form.BarMenuShowing == null);
+        await Pump.Until(() => form.ActionsBar.MenuShowing == null);
         var listedAfter = git.DropDownItems.Cast<ToolStripItem>().Select(_ => _.Text).ToList();
         git.HideDropDown();
 
@@ -1538,7 +1538,7 @@ public class WindowsTests
         using var fixture = Fixture.Create();
         using var form = await Show(fixture, fixture.Root);
 
-        await Assert.That(form.BarMenuCommands("See more").Select(DescribeCommand)).IsEquivalentTo(["Customize buttons…"]);
+        await Assert.That(form.ActionsBar.MenuCommands("See more").Select(DescribeCommand)).IsEquivalentTo(["Customize buttons…"]);
     }
 
     static void Choose(IEnumerable<QuickMenu.Command?> commands, string text) =>
@@ -1554,7 +1554,7 @@ public class WindowsTests
         form.ActiveView!.Reveal(fixture.At("notes.aleph"));
         await Pump.Loaded(form.ActiveView);
 
-        await Verify(form.OverflowCommands(Point.Empty).Select(DescribeCommand))
+        await Verify(form.ActionsBar.OverflowCommands(Point.Empty).Select(DescribeCommand))
             .Snapshot(
                 """
                 [
@@ -1585,16 +1585,16 @@ public class WindowsTests
         using var form = await Show(fixture, fixture.Root);
         form.ActiveView!.Reveal(fixture.At("notes.aleph"));
         await Pump.Loaded(form.ActiveView);
-        form.UpdateActions();
-        var wide = form.DescribeActions().ToList();
+        form.ActionsBar.Update();
+        var wide = form.ActionsBar.Describe().ToList();
         var width = form.Width;
 
         form.Width = 700;
-        var buttons = form.DescribeActions().ToList();
-        var seeMore = form.OverflowCommands(Point.Empty).Select(DescribeCommand).ToList();
+        var buttons = form.ActionsBar.Describe().ToList();
+        var seeMore = form.ActionsBar.OverflowCommands(Point.Empty).Select(DescribeCommand).ToList();
         Widen(form, width);
 
-        await Assert.That(form.DescribeActions().ToList()).IsEquivalentTo(wide);
+        await Assert.That(form.ActionsBar.Describe().ToList()).IsEquivalentTo(wide);
         await Verify(
             new
             {
@@ -1684,7 +1684,7 @@ public class WindowsTests
         {
             List<string> offered =
             [
-                .. form.OverflowCommands(Point.Empty).Select(DescribeCommand),
+                .. form.ActionsBar.OverflowCommands(Point.Empty).Select(DescribeCommand),
                 .. form.PaletteCommands().Select(_ => _.Name)
             ];
 
