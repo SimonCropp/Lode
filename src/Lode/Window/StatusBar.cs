@@ -8,7 +8,6 @@ sealed class StatusBar : IDisposable
     Form window;
     Settings settings;
     Func<FolderView?> activeView;
-    Action<string> openSite;
     Action<string> openTab;
 
     // The instance the bar listens to, so it stops listening to that one when the window closes.
@@ -101,7 +100,6 @@ sealed class StatusBar : IDisposable
         this.settings = settings;
         this.updates = updates;
         this.activeView = activeView;
-        this.openSite = openSite;
         this.openTab = openTab;
 
         // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
