@@ -182,17 +182,20 @@ static class ShellIcons
         return bitmap;
     }
 
-    // SHIL_LARGE and SHIL_EXTRALARGE, and IImageList, whose pointer is the HIMAGELIST.
+    // SHIL_LARGE, SHIL_EXTRALARGE and SHIL_JUMBO, and IImageList, whose pointer is the
+    // HIMAGELIST.
     const int largeList = 0;
     const int extraLargeList = 2;
+    const int jumboList = 4;
     static Guid imageListInterface = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
 
     // The system image lists, smallest first, for drawing an icon at a size other than the
-    // small one's: a monitor at another scale than the one Windows started on.
+    // small one's: a monitor at another scale than the one Windows started on, or a drag's
+    // picture.
     static Lazy<IntPtr[]> imageLists = new(() =>
     {
         var lists = new List<IntPtr> { SmallImageList };
-        foreach (var size in (int[])[largeList, extraLargeList])
+        foreach (var size in (int[])[largeList, extraLargeList, jumboList])
         {
             if (SHGetImageList(size, imageListInterface, out var list) >= 0 &&
                 list != IntPtr.Zero)

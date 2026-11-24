@@ -3565,6 +3565,27 @@ sealed class FolderView : UserControl
         return "";
     }
 
+    // An item's icon in the system image list, and the overlay drawn over it. A shortcut's icon
+    // is what it points at, with the shell's arrow over it, as Explorer has it. A file promoted
+    // to a repository's root is as good as a shortcut to it, so has the arrow too. In a zip there
+    // is no file to read for one, so each has its type's. One whose own icon isn't read yet has
+    // its type's until it is, when known is called.
+    static (int Icon, int Overlay) IconOf(FileEntry entry, Action known)
+    {
+        if (entry.InArchive)
+        {
+            return (ShellIcons.GetTypeIcon(entry.Name, entry.IsDirectory), 0);
+        }
+
+        var overlay = ShellIcons.ShortcutOverlay;
+        if (!entry.Promoted)
+        {
+            overlay = ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory);
+        }
+
+        return (ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified, known), overlay);
+    }
+
     // Programs' and shortcuts' own icons arrive one by one, read off the UI thread as their
     // rows are first made. The rows are made again for them once, after as many as have come.
     bool fileIconsArriving;
@@ -3690,28 +3711,8 @@ sealed class FolderView : UserControl
             Cell(entry, typeColumn),
             Cell(entry, sizeColumn)
         ];
-        // A shortcut's icon is what it points at, with the shell's arrow over it, as Explorer has it.
-        // A file promoted to a repository's root is as good as a shortcut to it, so has the arrow
-        // too. In a zip there is no file to read for one, so each has its type's.
-        int icon;
-        if (entry.InArchive)
-        {
-            icon = ShellListView.PaddedIcon(ShellIcons.GetTypeIcon(entry.Name, entry.IsDirectory));
-        }
-        else
-        {
-            var overlay = ShellIcons.ShortcutOverlay;
-            if (!entry.Promoted)
-            {
-                overlay = ShellIcons.GetOverlay(entry.FullPath, entry.IsDirectory);
-            }
-
-            icon = ShellListView.PaddedIcon(
-                ShellIcons.GetIcon(entry.FullPath, entry.IsDirectory, entry.Modified, FileIconKnown),
-                overlay);
-        }
-
-        var item = new ListViewItem(ShownCells(cells), icon) {Tag = entry};
+        var (shellIcon, overlay) = IconOf(entry, FileIconKnown);
+        var item = new ListViewItem(ShownCells(cells), ShellListView.PaddedIcon(shellIcon, overlay)) {Tag = entry};
         if (entry.IsHidden)
         {
             item.ForeColor = SystemColors.GrayText;
@@ -5130,7 +5131,19 @@ sealed class FolderView : UserControl
         }
 
         var data = new DataObject(DataFormats.FileDrop, paths);
-        list.DoDragDrop(data, effects);
+        SetDragImage(data, selection);
+        DragImage.Drag(list, data, effects);
+    }
+
+    // A picture of what is dragged, of the icons the list shows them with, as Explorer's drags
+    // have. One not yet read, a program's own say, is its type's, so the drag doesn't wait on it.
+    void SetDragImage(DataObject data, List<FileEntry> dragged)
+    {
+        var icons = dragged
+            .Take(3)
+            .Select(_ => IconOf(_, static () => { }))
+            .ToList();
+        DragImage.Set(data, icons, dragged.Count, DeviceDpi);
     }
 
     // What is in a zip is dragged as copies extracted to the temp folder, there and then, as the
@@ -5156,7 +5169,8 @@ sealed class FolderView : UserControl
         }
 
         var data = new DataObject(DataFormats.FileDrop, extracted.ToArray());
-        list.DoDragDrop(data, DragDropEffects.Copy);
+        SetDragImage(data, selection);
+        DragImage.Drag(list, data, DragDropEffects.Copy);
     }
 
     string? DropDestination(DragEventArgs args)
@@ -5181,23 +5195,28 @@ sealed class FolderView : UserControl
 
     /// <summary>
     /// What a drag over the list would do, with the folder it would go into highlighted, as
-    /// Explorer highlights it. Not the folder open, which is the list as a whole.
+    /// Explorer highlights it, and said beside the drag's picture, in Explorer's words. Not the
+    /// folder open, which is the list as a whole.
     /// </summary>
     internal void OnDragOver(object? sender, DragEventArgs args)
     {
         rightDrag = FileOperations.RightButton(args);
         args.Effect = FileOperations.GetDropEffect(args, DropDestination(args));
         var target = -1;
+        string? into = null;
         if (args.Effect != DragDropEffects.None)
         {
+            into = Locations.DisplayName(CurrentPath);
             var point = list.PointToClient(new(args.X, args.Y));
-            if (list.GetItemAt(point.X, point.Y) is {Tag: FileEntry {IsDirectory: true, InArchive: false}} item)
+            if (list.GetItemAt(point.X, point.Y) is {Tag: FileEntry {IsDirectory: true, InArchive: false} folder} item)
             {
                 target = item.Index;
+                into = DisplayName(folder);
             }
         }
 
         list.DropTarget = target;
+        DragImage.Describe(args, args.Effect, into);
     }
 
     void OnDragDrop(object? sender, DragEventArgs args)

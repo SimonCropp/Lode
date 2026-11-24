@@ -2207,6 +2207,29 @@ public class FolderViewTests
         await Assert.That(overFile).IsEqualTo((false, false));
     }
 
+    // Beside a drag's picture is what a drop would do, in Explorer's words: move into the folder
+    // under it, or, over a file, into the folder open.
+    [Test]
+    public async Task WhatADropWouldDoIsSaidBesideThePicture()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("Archive", "dragged.txt"), "");
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root);
+        var list = view.List;
+        string Said(string name)
+        {
+            var bounds = list.GetItemRect(view.Entries.ToList().FindIndex(_ => _.Name == name));
+            var screen = list.PointToScreen(new(bounds.Left + 20, bounds.Top + bounds.Height / 2));
+            var args = new DragEventArgs(new DataObject(DataFormats.FileDrop, new[] { fixture.At("Archive", "dragged.txt") }), 0, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move, DragDropEffects.None);
+            view.OnDragOver(null, args);
+            return $"{args.DropImageType}: {args.Message?.Replace("%1", args.MessageReplacementToken)}";
+        }
+
+        await Assert.That(Said("Docs")).IsEqualTo("Move: Move to Docs");
+        await Assert.That(Said("notes.aleph")).IsEqualTo("Move: Move to Projects");
+    }
+
     // What is cut, by Lode or Explorer, is dimmed, as Explorer dims it: the list asks as it draws
     // each row, and is told so for those on the clipboard as cut, and not once they are pasted
     // or something else is copied.

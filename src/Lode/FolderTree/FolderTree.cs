@@ -121,7 +121,7 @@ sealed class FolderTree : TreeView
         SetPinned = (path, pin) => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, path, pin);
         Pin = _ => SetPinned(_, true);
         MovePinnedToEnd = _ => ShellContextMenu.MoveToEnd(FindForm()?.Handle ?? Handle, _);
-        StartDrag = (data, allowed) => DoDragDrop(data, allowed);
+        StartDrag = (data, allowed) => DragImage.Drag(this, data, allowed);
         DeleteFolder = (path, permanent) => FileOperations.Delete(FindForm()?.Handle ?? Handle, [path], permanent);
         HideSelection = false;
         ShowLines = false;
@@ -547,7 +547,7 @@ sealed class FolderTree : TreeView
     /// Starts the drag of a node: a pinned folder, with the left button, up or down the Pinned
     /// list; any other folder out of the tree, to the list, Explorer or another app, as Explorer's
     /// pane allows, a drive or share as a shortcut only. This PC, a heading or a machine on the
-    /// network isn't dragged.
+    /// network isn't dragged. Each carries a picture of the node's icon, as Explorer's drags do.
     /// </summary>
     internal void DragNode(TreeNode node, MouseButtons button)
     {
@@ -556,6 +556,7 @@ sealed class FolderTree : TreeView
         {
             var pinned = new DataObject();
             pinned.SetData(pinnedFormat, (string) node.Tag!);
+            DragImage.Set(pinned, [(node.ImageIndex, 0)], 1, DeviceDpi);
             StartDrag(pinned, DragDropEffects.Move);
             ClearInsertMark();
             return;
@@ -575,7 +576,9 @@ sealed class FolderTree : TreeView
             allowed = DragDropEffects.Link;
         }
 
-        StartDrag(new(DataFormats.FileDrop, new[] { path }), allowed);
+        var data = new DataObject(DataFormats.FileDrop, new[] { path });
+        DragImage.Set(data, [(node.ImageIndex, 0)], 1, DeviceDpi);
+        StartDrag(data, allowed);
         ClearInsertMark();
         HighlightDrop(null);
     }
@@ -2402,7 +2405,8 @@ sealed class FolderTree : TreeView
 
     /// <summary>
     /// What a drag over the tree would do, shown as it goes: the folder it would go into
-    /// highlighted, or where it would be pinned marked.
+    /// highlighted, or where it would be pinned marked, and said beside the drag's picture, in
+    /// Explorer's words.
     /// </summary>
     internal DragDropEffects DropEffect(DragEventArgs args)
     {
@@ -2420,10 +2424,12 @@ sealed class FolderTree : TreeView
                     ShowInsertMark(target.Node, target.After);
                 }
 
+                DragImage.Describe(args, DropImageType.Move, "Move here", null);
                 return DragDropEffects.Move;
             }
 
             ClearInsertMark();
+            DragImage.Describe(args, DragDropEffects.None, null);
             return DragDropEffects.None;
         }
 
@@ -2439,6 +2445,8 @@ sealed class FolderTree : TreeView
                 ClearInsertMark();
             }
 
+            // Pinned is Quick access's pins.
+            DragImage.Describe(args, DropImageType.Link, "Pin to %1", "Quick access");
             return DragDropEffects.Link;
         }
 
@@ -2451,6 +2459,7 @@ sealed class FolderTree : TreeView
         }
 
         HighlightDrop(into);
+        DragImage.Describe(args, effect, into?.Text);
         return effect;
     }
 

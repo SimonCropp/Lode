@@ -1357,7 +1357,8 @@ public class FolderTreeTests
 
     // A folder drags out of the tree, to the list, Explorer or another app, as Explorer's pane
     // allows; a drive as a shortcut only. A pinned folder dragged with the left button goes up
-    // or down the Pinned list, with the right, out. This PC and the headings don't drag.
+    // or down the Pinned list, with the right, out. This PC and the headings don't drag. Each
+    // drag carries a picture, as Explorer's do.
     [Test]
     public async Task FoldersDragOutOfTheTree()
     {
@@ -1372,7 +1373,7 @@ public class FolderTreeTests
                 what = string.Join(",", paths.Select(_ => Path.GetFileName(_.TrimEnd('\\'))));
             }
 
-            drags.Add($"{what}: {allowed}");
+            drags.Add($"{what}: {allowed}, picture {DragImage.SizeOf(data)?.Width}");
         };
         var pinnedHeading = tree.Nodes[0];
         var pinned = pinnedHeading.Nodes[0];
@@ -1391,9 +1392,13 @@ public class FolderTreeTests
         tree.DragNode(pinnedHeading, MouseButtons.Left);
 
         await Assert.That(drags.Take(beforeDrive)).IsEquivalentTo(
-            ["pinned: Move", "Docs: Copy, Move, Link", $"{Path.GetFileName(fixture.Root)}: Copy, Move, Link"],
+            [
+                "pinned: Move, picture 96",
+                "Docs: Copy, Move, Link, picture 96",
+                $"{Path.GetFileName(fixture.Root)}: Copy, Move, Link, picture 96"
+            ],
             CollectionOrdering.Matching);
-        await Assert.That(drags.Skip(beforeDrive).Single()).EndsWith(": Link");
+        await Assert.That(drags.Skip(beforeDrive).Single()).EndsWith(": Link, picture 96");
     }
 
     // A tab on a share has its place in the tree, as in Explorer: under the machine it is on,

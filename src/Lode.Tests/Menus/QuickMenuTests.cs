@@ -1203,6 +1203,33 @@ public class QuickMenuTests
         await Assert.That(pinning).IsNull();
     }
 
+    // Beside a drag's picture is what a drop would do, in Explorer's words: move into the folder
+    // under it, pin to Quick access, whose pins Pinned is, or, for a pinned folder dragged up or
+    // down Pinned, move there.
+    [Test]
+    public async Task WhatADropWouldDoIsSaidBesideThePicture()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = CreateTree([fixture.At("Docs"), fixture.At("Archive")], []);
+        var archive = tree.Nodes[0].Nodes[1];
+        var aboveArchive = tree.PointToScreen(new(archive.Bounds.Left + 10, archive.Bounds.Top + 1));
+        DataObject? pinnedFolder = null;
+        tree.StartDrag = (data, _) => pinnedFolder = data;
+        tree.DragNode(tree.Nodes[0].Nodes[0], MouseButtons.Left);
+        string Said(DataObject data, Point screen)
+        {
+            var args = new DragEventArgs(data, 0, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, DragDropEffects.None);
+            tree.DropEffect(args);
+            return $"{args.DropImageType}: {args.Message?.Replace("%1", args.MessageReplacementToken)}";
+        }
+
+        var folder = new DataObject(DataFormats.FileDrop, new[] { fixture.At("Source") });
+
+        await Assert.That(Said(folder, Over(tree, archive))).IsEqualTo("Move: Move to Archive");
+        await Assert.That(Said(folder, aboveArchive)).IsEqualTo("Link: Pin to Quick access");
+        await Assert.That(Said(pinnedFolder!, aboveArchive)).IsEqualTo("Move: Move here");
+    }
+
     // Recent's header is not a place to pin to; the drop is left to the caller.
     [Test]
     public async Task DroppingElsewhereIsNotHandled()
