@@ -67,6 +67,11 @@ sealed class ExplorerReplacement(string classesPath, string command, bool notify
     internal string Command => command;
 
     /// <summary>
+    /// Whether changes are told to Explorer: only for the real classes.
+    /// </summary>
+    internal bool NotifiesShell => notifyShell;
+
+    /// <summary>
     /// True when folders open in a Lode, this copy or another.
     /// </summary>
     public bool IsActive

@@ -147,6 +147,10 @@ static partial class NativeMethods
     [LibraryImport("shlwapi.dll", EntryPoint = "AssocQueryStringW", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int AssocQueryString(int flags, int what, string association, string? extra, IntPtr output, ref int length);
 
+    // Reads a string given as "@file.dll,-id", as an app's registration may name itself.
+    [LibraryImport("shlwapi.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int SHLoadIndirectString(string source, [Out] char[] output, uint size, IntPtr reserved);
+
     [LibraryImport("uxtheme.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int SetWindowTheme(IntPtr window, string? application, string? idList);
 

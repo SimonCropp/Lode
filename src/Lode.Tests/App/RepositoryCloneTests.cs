@@ -294,7 +294,11 @@ public class RepositoryCloneTests
     // The dialog answered by answer, with forward as the command of the app the link was for.
     static string? OfferAnswering(string link, string codeFolder, string? forward, Action<TaskDialogPage> answer)
     {
-        var links = new RepositoryLinks(@"Software\Lode.Tests.NotTaken", "lode", association: (_, _) => forward);
+        var links = new RepositoryLinks(
+            @"Software\Lode.Tests.NotTaken",
+            "lode",
+            @"Software\Lode.Tests.NotTaken.Associations",
+            (_, _) => forward);
         RepositoryClone.PageShown = answer;
         try
         {

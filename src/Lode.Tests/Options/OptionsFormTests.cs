@@ -80,36 +80,42 @@ public class OptionsFormTests
                     {
                       status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them.,
                       takeEnabled: true,
-                      revertEnabled: false
+                      revertEnabled: false,
+                      chooseEnabled: false
                     },
                     {
                       status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
                       takeEnabled: true,
-                      revertEnabled: false
+                      revertEnabled: false,
+                      chooseEnabled: false
                     }
                   ],
                   gitHubDesktop: [
                     {
-                      status: GitHub's Open with GitHub Desktop: Lode opens them.,
+                      status: GitHub's Open with GitHub Desktop: Lode opens them. GitHub Desktop takes them back each time it starts, unless Lode is chosen for x-github-client links in Windows' Default apps.,
                       takeEnabled: false,
-                      revertEnabled: true
+                      revertEnabled: true,
+                      chooseEnabled: true
                     },
                     {
                       status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
                       takeEnabled: true,
-                      revertEnabled: false
+                      revertEnabled: false,
+                      chooseEnabled: false
                     }
                   ],
                   both: [
                     {
-                      status: GitHub's Open with GitHub Desktop: Lode opens them.,
+                      status: GitHub's Open with GitHub Desktop: Lode opens them. GitHub Desktop takes them back each time it starts, unless Lode is chosen for x-github-client links in Windows' Default apps.,
                       takeEnabled: false,
-                      revertEnabled: true
+                      revertEnabled: true,
+                      chooseEnabled: true
                     },
                     {
                       status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Lode opens them.,
                       takeEnabled: false,
-                      revertEnabled: true
+                      revertEnabled: true,
+                      chooseEnabled: true
                     }
                   ],
                   registry: {
@@ -120,12 +126,23 @@ public class OptionsFormTests
                         open\: {
                           command\: {
                             (default): "C:\Tools\lode.exe" "%1",
+                            LodeCommand: "C:\Tools\lode.exe" "%1",
                             LodeForwardCommand: "C:\Apps\Visual Studio.exe" "%1"
                           }
                         }
                       },
                       TakenBy: Lode,
                       URL Protocol: 
+                    },
+                    Lode.RepositoryLink\: {
+                      (default): Lode repository link,
+                      shell\: {
+                        open\: {
+                          command\: {
+                            (default): "C:\Tools\lode.exe" "%1"
+                          }
+                        }
+                      }
                     },
                     x-github-client\: {
                       (default): URL:x-github-client,
@@ -134,6 +151,7 @@ public class OptionsFormTests
                         open\: {
                           command\: {
                             (default): "C:\Tools\lode.exe" "%1",
+                            LodeCommand: "C:\Tools\lode.exe" "%1",
                             LodeForwardCommand: "C:\Apps\GitHub Desktop.exe" "%1"
                           }
                         }
@@ -146,16 +164,104 @@ public class OptionsFormTests
                     {
                       status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them.,
                       takeEnabled: true,
-                      revertEnabled: false
+                      revertEnabled: false,
+                      chooseEnabled: false
                     },
                     {
                       status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
                       takeEnabled: true,
-                      revertEnabled: false
+                      revertEnabled: false,
+                      chooseEnabled: false
                     }
                   ]
                 }
                 """);
+    }
+
+    // GitHub Desktop took its links back as it started: it opens them, not another copy of Lode,
+    // and they can be opened in Lode again.
+    [Test]
+    public async Task RepositoryLinksTakenBack()
+    {
+        using var scratch = new RegistryScratch();
+        scratch.Links().Take(RepositoryLinks.GitHubDesktop);
+        scratch.Set(@"x-github-client\shell\open\command", null, "\"C:\\Apps\\GitHub Desktop.exe\" --protocol-launcher \"%1\"");
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("Links");
+
+        await Verify(DescribeLinks(form))
+            .Snapshot(
+                """
+                [
+                  {
+                    status: GitHub's Open with GitHub Desktop: GitHub Desktop opens them. It takes them back from Lode each time it starts, unless Lode is chosen for x-github-client links in Windows' Default apps.,
+                    takeEnabled: true,
+                    revertEnabled: true,
+                    chooseEnabled: true
+                  },
+                  {
+                    status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Visual Studio opens them.,
+                    takeEnabled: true,
+                    revertEnabled: false,
+                    chooseEnabled: false
+                  }
+                ]
+                """);
+    }
+
+    // Lode chosen for GitHub Desktop's links in Default apps: they stay with Lode, whatever
+    // GitHub Desktop writes as it starts, and there is nothing more to choose. Visual Studio's,
+    // taken but not chosen, can still be chosen, on Lode's page of Default apps.
+    [Test]
+    public async Task RepositoryLinksChosenInDefaultApps()
+    {
+        using var scratch = new RegistryScratch();
+        var links = scratch.Links();
+        links.Take(RepositoryLinks.GitHubDesktop);
+        links.Take(RepositoryLinks.VisualStudio);
+        scratch.Choose("x-github-client", "Lode.RepositoryLink");
+        scratch.Set(@"x-github-client\shell\open\command", null, "\"C:\\Apps\\GitHub Desktop.exe\" --protocol-launcher \"%1\"");
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("Links");
+        var shown = DescribeLinks(form);
+
+        Click(form, "chooseLinks.visualStudio");
+
+        await Assert.That(form.SettingsOpened).IsEquivalentTo(["ms-settings:defaultapps?registeredAppUser=Lode"]);
+        await Verify(shown)
+            .Snapshot(
+                """
+                [
+                  {
+                    status: GitHub's Open with GitHub Desktop: Lode opens them. Lode is chosen for x-github-client links in Windows' Default apps, so they stay with it.,
+                    takeEnabled: false,
+                    revertEnabled: true,
+                    chooseEnabled: false
+                  },
+                  {
+                    status: GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Lode opens them.,
+                    takeEnabled: false,
+                    revertEnabled: true,
+                    chooseEnabled: true
+                  }
+                ]
+                """);
+    }
+
+    // Visual Studio chosen for its links in Default apps comes ahead of Lode's command, and is
+    // named as Visual Studio registers itself.
+    [Test]
+    public async Task RepositoryLinksWithAnotherAppChosen()
+    {
+        using var scratch = new RegistryScratch();
+        scratch.RegisterApp("VisualStudio.e6eba60c", "git-client", "VisualStudio.git-client.e6eba60c", "Microsoft Visual Studio");
+        scratch.Links().Take(RepositoryLinks.VisualStudio);
+        scratch.Choose("git-client", "VisualStudio.git-client.e6eba60c");
+        using var form = Show(scratch.Replacement());
+        form.ShowPage("Links");
+
+        await Assert.That(form.Controls.Find("linkStatus.visualStudio", true)[0].Text)
+            .IsEqualTo("GitHub's Open with Visual Studio and Azure DevOps' Clone in Visual Studio: Lode opens them. But Windows' Default apps has Microsoft Visual Studio chosen for git-client links, which comes first, so they still open there.");
     }
 
     static object DescribeLinks(Form form) =>
@@ -163,7 +269,8 @@ public class OptionsFormTests
             {
                 status = form.Controls.Find($"linkStatus.{_.Id}", true)[0].Text,
                 takeEnabled = form.Controls.Find($"takeLinks.{_.Id}", true)[0].Enabled,
-                revertEnabled = form.Controls.Find($"revertLinks.{_.Id}", true)[0].Enabled
+                revertEnabled = form.Controls.Find($"revertLinks.{_.Id}", true)[0].Enabled,
+                chooseEnabled = form.Controls.Find($"chooseLinks.{_.Id}", true)[0].Enabled
             })
             .ToList();
 
@@ -1586,6 +1693,8 @@ public class OptionsFormTests
         {
             // Never the real update, which would update Lode once the tests end.
             StartUpdate = () => UpdatesStarted++;
+            // Never the real Settings.
+            OpenSettings = SettingsOpened.Add;
             // Designed for less than the screen has, so scaled up by the difference.
             if (scale != 1)
             {
@@ -1594,6 +1703,8 @@ public class OptionsFormTests
         }
 
         public int UpdatesStarted { get; private set; }
+
+        public List<string> SettingsOpened { get; } = [];
 
         protected override bool ShowWithoutActivation => true;
 

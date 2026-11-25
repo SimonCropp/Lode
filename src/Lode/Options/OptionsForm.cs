@@ -272,8 +272,20 @@ class OptionsForm : Form
 
     RepositoryLinks repositoryLinks;
 
-    // For each kind of link, what opens it now, and the buttons that take it over and revert it.
-    List<(RepositoryLinks.Handler Handler, Label Status, Button Take, Button Revert)> linkRows = [];
+    // For each kind of link, what opens it now, and the buttons that take it over, revert it, and
+    // open Windows' Default apps to choose Lode for it.
+    List<(RepositoryLinks.Handler Handler, Label Status, Button Take, Button Revert, Button Choose)> linkRows = [];
+
+    /// <summary>
+    /// Opens a Settings page. Replaced in tests, which must never open Settings.
+    /// </summary>
+    internal Action<string> OpenSettings = page =>
+    {
+        using var process = Process.Start(new ProcessStartInfo(page)
+        {
+            UseShellExecute = true
+        });
+    };
 
     Updates updates;
 
@@ -1001,7 +1013,8 @@ class OptionsForm : Form
                 "it to a desktop app, with the file the link names selected. A link for a " +
                 "repository that isn't in the code folder offers to clone it there, or to hand " +
                 "the link to the app it was for. " +
-                "Revert gives the links back to that app. This applies to your Windows account only.",
+                "Revert gives the links back to that app. Choose in Default apps keeps them with " +
+                "Lode when that app takes them back. This applies to your Windows account only.",
                 new(3, 0, 3, 3))
         };
         foreach (var handler in RepositoryLinks.All)
@@ -1026,11 +1039,20 @@ class OptionsForm : Form
                 AutoSize = true,
                 Padding = new(6, 0, 6, 0)
             };
+            var choose = new Button
+            {
+                Name = $"chooseLinks.{handler.Id}",
+                Text = "Choose in Default apps",
+                AccessibleName = $"Choose Lode for {handler.Buttons} links in Windows' Default apps",
+                AutoSize = true,
+                Padding = new(6, 0, 6, 0)
+            };
             take.Click += (_, _) => ChangeLinks(() => repositoryLinks.Take(handler));
             revert.Click += (_, _) => ChangeLinks(() => repositoryLinks.GiveBack(handler));
-            linkRows.Add((handler, status, take, revert));
+            choose.Click += (_, _) => OnChooseLinks();
+            linkRows.Add((handler, status, take, revert, choose));
             controls.Add(status);
-            controls.Add(Row(take, revert));
+            controls.Add(Row(take, revert, choose));
         }
 
         return controls.ToArray();
@@ -1055,12 +1077,33 @@ class OptionsForm : Form
         UpdateLinkState();
     }
 
+    // Settings opens on Lode's page of Default apps. The choice made there is only seen once
+    // Options is back in front.
+    void OnChooseLinks()
+    {
+        try
+        {
+            OpenSettings(RepositoryLinks.DefaultAppsPage);
+        }
+        catch (Win32Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        UpdateLinkState();
+    }
+
     void UpdateLinkState()
     {
-        foreach (var (handler, status, take, revert) in linkRows)
+        foreach (var (handler, status, take, revert, choose) in linkRows)
         {
             var taken = repositoryLinks.IsTaken(handler);
             var here = repositoryLinks.IsTakenHere(handler);
+            var chosen = repositoryLinks.IsChosen(handler);
             string opens;
             if (here)
             {
@@ -1073,23 +1116,45 @@ class OptionsForm : Form
             else if (repositoryLinks.CurrentApp(handler) is { } app)
             {
                 opens = $"{app} opens them.";
+                if (repositoryLinks.IsTakenBack(handler))
+                {
+                    if (handler.TakesBack)
+                    {
+                        opens += $" It takes them back from Lode each time it starts, unless Lode is chosen for {handler.Scheme} links in Windows' Default apps.";
+                    }
+                    else
+                    {
+                        opens += " It took them back from Lode.";
+                    }
+                }
             }
             else
             {
                 opens = "No app opens them.";
             }
 
+            if (chosen)
+            {
+                opens += $" Lode is chosen for {handler.Scheme} links in Windows' Default apps, so they stay with it.";
+            }
+            else if (handler.TakesBack &&
+                     taken)
+            {
+                opens += $" {handler.App} takes them back each time it starts, unless Lode is chosen for {handler.Scheme} links in Windows' Default apps.";
+            }
+
             // An app picked in Windows' own settings is asked for the links ahead of the
             // command Lode writes.
             if (taken &&
-                repositoryLinks.ChosenInWindows(handler) is { } chosen)
+                repositoryLinks.OtherChosenAppName(handler) is { } other)
             {
-                opens += $" But Windows' Default apps has {chosen} chosen for {handler.Scheme} links, which comes first, so they still open there.";
+                opens += $" But Windows' Default apps has {other} chosen for {handler.Scheme} links, which comes first, so they still open there.";
             }
 
             status.Text = $"{handler.Buttons}: {opens}";
             take.Enabled = !here;
-            revert.Enabled = taken;
+            revert.Enabled = taken || repositoryLinks.IsRegistered(handler);
+            choose.Enabled = repositoryLinks.IsRegistered(handler) && !chosen;
         }
     }
 

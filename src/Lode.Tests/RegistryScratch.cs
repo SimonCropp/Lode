@@ -11,6 +11,11 @@ sealed class RegistryScratch : IDisposable
 
     public string ClassesPath => $@"{path}\Classes";
 
+    /// <summary>
+    /// The scratch's own key, which stands in for Software.
+    /// </summary>
+    public string Root => path;
+
     public RegistryScratch() =>
         Registry.CurrentUser.CreateSubKey(ClassesPath).Dispose();
 
@@ -128,6 +133,49 @@ sealed class RegistryScratch : IDisposable
     {
         using var classes = Registry.CurrentUser.OpenSubKey(ClassesPath)!;
         return Dump(classes);
+    }
+
+    /// <summary>
+    /// Everything in the scratch: the classes, and what goes beside them, such as an app's
+    /// registration for Default apps and Windows' own choices.
+    /// </summary>
+    public Dictionary<string, object> DumpAll()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(path)!;
+        return Dump(key);
+    }
+
+    /// <summary>
+    /// What Windows' Default apps leaves when the user picks an app for a link scheme.
+    /// </summary>
+    public void Choose(string scheme, string progId)
+    {
+        using var key = Registry.CurrentUser.CreateSubKey($@"{AssociationsPath}\{scheme}\UserChoice");
+        key.SetValue("ProgId", progId);
+        key.SetValue("Hash", "AAAAAAAAAAA=");
+    }
+
+    /// <summary>
+    /// What an app installs to be offered in Default apps for a link scheme, as Visual Studio
+    /// does: its capabilities, naming the ProgId it opens the scheme with, and the entry pointing
+    /// at them. With no applicationName, the capabilities give none.
+    /// </summary>
+    public void RegisterApp(string registered, string scheme, string progId, string? applicationName)
+    {
+        var capabilitiesPath = $@"{path}\{registered}\Capabilities";
+        using (var capabilities = Registry.CurrentUser.CreateSubKey(capabilitiesPath))
+        {
+            if (applicationName != null)
+            {
+                capabilities.SetValue("ApplicationName", applicationName);
+            }
+
+            using var associations = capabilities.CreateSubKey("URLAssociations");
+            associations.SetValue(scheme, progId);
+        }
+
+        using var applications = Registry.CurrentUser.CreateSubKey($@"{path}\RegisteredApplications");
+        applications.SetValue(registered, capabilitiesPath);
     }
 
     static Dictionary<string, object> Dump(RegistryKey key)
