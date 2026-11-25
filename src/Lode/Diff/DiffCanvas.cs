@@ -6,7 +6,8 @@
 /// an uncommitted change can be picked to commit by clicking or dragging down their numbers, the
 /// numbers of those picked blue; the strip beside the numbers picks a run of changes at once.
 /// Rows are one height, and long lines scroll sideways, so only the rows showing are drawn,
-/// however long the diff. Rows clicked are copied with Ctrl+C.
+/// however long the diff. The text is selected as an editor's is, from a character to another,
+/// by dragging, a word by a double-click, a line by a third click, and copied with Ctrl+C.
 /// </summary>
 sealed class DiffCanvas : Control
 {
@@ -15,6 +16,9 @@ sealed class DiffCanvas : Control
     const int handleWidth = 10;
     const int textInset = 8;
     const int rowPadding = 4;
+
+    // How much of the selection's blue shows over a line, the colours under it showing through.
+    const int selectionAlpha = 0x55;
 
     const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping;
 
@@ -40,12 +44,26 @@ sealed class DiffCanvas : Control
     Part hoverPart;
     bool hoverRight;
 
-    // The rows clicked, from the first clicked to the last, for Ctrl+C, and the side, side by
-    // side.
-    int anchor = -1;
-    int active = -1;
+    // The text selected, for Ctrl+C: from where the drag started to where it is now, each a row
+    // and a character of its line, nothing while they are the same place; and, side by side,
+    // the side, which a drag stays on.
+    TextPlace? anchor;
+    TextPlace active;
     bool selectRight;
     bool selecting;
+
+    // Scrolls while a drag selecting is past the text, to where the pointer is.
+    Timer scrollTimer = new()
+    {
+        Interval = 50
+    };
+
+    Point selectPoint;
+
+    // The last double-click, as Environment.TickCount64, and where: a third click there selects
+    // the line.
+    long doubleClickedAt = long.MinValue / 2;
+    Point doubleClickPoint;
 
     // Numbers dragged down to pick lines: from where, which side, picking or not, and what was
     // picked before.
@@ -67,6 +85,25 @@ sealed class DiffCanvas : Control
     }
 
     /// <summary>
+    /// A place in the text: a row, and the character of its line it is before.
+    /// </summary>
+    internal readonly record struct TextPlace(int Row, int Column) : IComparable<TextPlace>
+    {
+        public int CompareTo(TextPlace other)
+        {
+            if (Row != other.Row)
+            {
+                return Row.CompareTo(other.Row);
+            }
+
+            return Column.CompareTo(other.Column);
+        }
+    }
+
+    // The characters of a row's line selected, and whether the newline after them is.
+    readonly record struct Selected(int Start, int End, bool Newline);
+
+    /// <summary>
     /// The lines picked to commit changed, by a click or drag here.
     /// </summary>
     public event Action<LinePicks>? PicksChanged;
@@ -86,6 +123,7 @@ sealed class DiffCanvas : Control
         horizontal.Scroll += (_, _) => Invalidate();
         vertical.ValueChanged += (_, _) => Invalidate();
         horizontal.ValueChanged += (_, _) => Invalidate();
+        scrollTimer.Tick += (_, _) => ScrollWhileSelecting();
         foreach (var bar in (ScrollBar[]) [vertical, horizontal])
         {
             bar.TabStop = false;
@@ -188,8 +226,6 @@ sealed class DiffCanvas : Control
 
         unexpanded = start;
         hunks = start;
-        anchor = -1;
-        active = -1;
         dragging = false;
         BuildRows();
         if (keepPlace)
@@ -238,8 +274,11 @@ sealed class DiffCanvas : Control
         Invalidate();
     }
 
+    // The rows made again, which the selection was a place in.
     void BuildRows()
     {
+        anchor = null;
+        StopSelecting();
         rows = DiffRows.Build(hunks, split);
         widest = 0;
         foreach (var hunk in hunks)
@@ -469,7 +508,6 @@ sealed class DiffCanvas : Control
             return;
         }
 
-        var selected = IsSelected(index);
         if (!split)
         {
             var line = row.After ?? row.Before!;
@@ -478,11 +516,11 @@ sealed class DiffCanvas : Control
             var (background, gutterColour, inner) = Colours(line.Kind);
             DrawGutter(graphics, index, line, gutter, gutterColour, false, row.Before?.OldNumber, row.After?.NewNumber, columns.NumberWidth);
             DrawHandle(graphics, index, line, Rectangle.FromLTRB(columns.HandleLeft, bounds.Top, columns.TextLeft, bounds.Bottom), background);
-            DrawText(graphics, line, changed, Rectangle.FromLTRB(columns.TextLeft, bounds.Top, columns.TextRight, bounds.Bottom), background, inner, selected);
+            DrawText(graphics, line, changed, Rectangle.FromLTRB(columns.TextLeft, bounds.Top, columns.TextRight, bounds.Bottom), background, inner, SelectedOn(index, false));
             return;
         }
 
-        DrawSide(graphics, index, row.Before, row.BeforeChanged, false, Rectangle.FromLTRB(bounds.Left, bounds.Top, columns.TextRight, bounds.Bottom), columns.NumberWidth, selected && !selectRight);
+        DrawSide(graphics, index, row.Before, row.BeforeChanged, false, Rectangle.FromLTRB(bounds.Left, bounds.Top, columns.TextRight, bounds.Bottom), columns.NumberWidth);
         var handleLine = row.Before;
         if (handleLine is not { IsChange: true })
         {
@@ -495,12 +533,12 @@ sealed class DiffCanvas : Control
             DrawHandle(graphics, index, handleLine, Rectangle.FromLTRB(columns.HandleLeft, bounds.Top, columns.RightNumberLeft, bounds.Bottom), handleBackground);
         }
 
-        DrawSide(graphics, index, row.After, row.AfterChanged, true, Rectangle.FromLTRB(columns.RightNumberLeft, bounds.Top, columns.RightTextRight, bounds.Bottom), columns.NumberWidth, selected && selectRight);
+        DrawSide(graphics, index, row.After, row.AfterChanged, true, Rectangle.FromLTRB(columns.RightNumberLeft, bounds.Top, columns.RightTextRight, bounds.Bottom), columns.NumberWidth);
     }
 
     // One side of a row side by side: the line's number and text, or, with no line, the grey of
     // a side with nothing on it.
-    void DrawSide(Graphics graphics, int index, DiffLine? line, ChangedRange? changed, bool right, Rectangle bounds, int numberWidth, bool selected)
+    void DrawSide(Graphics graphics, int index, DiffLine? line, ChangedRange? changed, bool right, Rectangle bounds, int numberWidth)
     {
         if (line == null)
         {
@@ -518,7 +556,7 @@ sealed class DiffCanvas : Control
         }
 
         DrawGutter(graphics, index, line, gutter, gutterColour, right, number, null, numberWidth);
-        DrawText(graphics, line, changed, Rectangle.FromLTRB(gutter.Right, bounds.Top, bounds.Right, bounds.Bottom), background, inner, selected);
+        DrawText(graphics, line, changed, Rectangle.FromLTRB(gutter.Right, bounds.Top, bounds.Right, bounds.Bottom), background, inner, SelectedOn(index, right));
     }
 
     static (Color Background, Color Gutter, Color Inner) Colours(DiffLineKind kind) =>
@@ -612,16 +650,13 @@ sealed class DiffCanvas : Control
         graphics.FillRectangle(brush, bounds);
     }
 
-    void DrawText(Graphics graphics, DiffLine line, ChangedRange? changed, Rectangle bounds, Color background, Color inner, bool selected)
+    // A line's text, the part that changed darker, and what of it is selected in the selection's
+    // blue over that, its newline as a space after it.
+    void DrawText(Graphics graphics, DiffLine line, ChangedRange? changed, Rectangle bounds, Color background, Color inner, Selected? selected)
     {
         if (bounds.Width <= 0)
         {
             return;
-        }
-
-        if (selected)
-        {
-            background = ExplorerStyle.Blend(background, DiffStyle.Selected, 0.2f);
         }
 
         using (var brush = new SolidBrush(background))
@@ -652,18 +687,38 @@ sealed class DiffCanvas : Control
 
         var textLeft = x + charWidth * 2;
         var content = ExpandTabs(line.Content, out var columns);
+
+        // Where the part that changed starts and ends in the line with its tabs as spaces, and
+        // across.
+        (int Start, int End, int Left, int Right)? changedAt = null;
         if (changed is { } range &&
             range.Start + range.Length <= line.Content.Length)
         {
             var start = columns[range.Start];
             var end = columns[range.Start + range.Length];
-            var left = textLeft + Measured(graphics, content[..start]);
-            var right = textLeft + Measured(graphics, content[..end]);
+            changedAt = (start, end, textLeft + Measured(graphics, content[..start]), textLeft + Measured(graphics, content[..end]));
             using var highlight = new SolidBrush(inner);
-            graphics.FillRectangle(highlight, left, bounds.Top, Math.Max(1, right - left), bounds.Height);
-            TextRenderer.DrawText(graphics, content[..start], codeFont, new Point(textLeft, y), ink, flags);
-            TextRenderer.DrawText(graphics, content[start..end], codeFont, new Point(left, y), DiffStyle.InnerText(ink), flags);
-            TextRenderer.DrawText(graphics, content[end..], codeFont, new Point(right, y), ink, flags);
+            graphics.FillRectangle(highlight, changedAt.Value.Left, bounds.Top, Math.Max(1, changedAt.Value.Right - changedAt.Value.Left), bounds.Height);
+        }
+
+        if (selected is { } chosen)
+        {
+            var left = textLeft + Measured(graphics, content[..columns[chosen.Start]]);
+            var right = textLeft + Measured(graphics, content[..columns[chosen.End]]);
+            if (chosen.Newline)
+            {
+                right += charWidth;
+            }
+
+            using var selection = new SolidBrush(Color.FromArgb(selectionAlpha, DiffStyle.Selected));
+            graphics.FillRectangle(selection, left, bounds.Top, Math.Max(1, right - left), bounds.Height);
+        }
+
+        if (changedAt is { } at)
+        {
+            TextRenderer.DrawText(graphics, content[..at.Start], codeFont, new Point(textLeft, y), ink, flags);
+            TextRenderer.DrawText(graphics, content[at.Start..at.End], codeFont, new Point(at.Left, y), DiffStyle.InnerText(ink), flags);
+            TextRenderer.DrawText(graphics, content[at.End..], codeFont, new Point(at.Right, y), ink, flags);
         }
         else
         {
@@ -676,6 +731,17 @@ sealed class DiffCanvas : Control
         }
 
         graphics.Restore(state);
+    }
+
+    // Off the screen's, outside painting: where the pointer is in the text.
+    int Measured(string text)
+    {
+        if (text.Length == 0)
+        {
+            return 0;
+        }
+
+        return TextRenderer.MeasureText(text, codeFont, Size.Empty, flags).Width;
     }
 
     int Measured(Graphics graphics, string text)
@@ -821,16 +887,237 @@ sealed class DiffCanvas : Control
         return DiffStyle.HunkText;
     }
 
-    bool IsSelected(int index)
+    // The selection, its first place and its last. Null with nothing selected.
+    (TextPlace Start, TextPlace End)? Selection
     {
-        if (anchor < 0 ||
-            active < 0)
+        get
         {
-            return false;
+            if (anchor is not { } from ||
+                from == active)
+            {
+                return null;
+            }
+
+            if (from.CompareTo(active) < 0)
+            {
+                return (from, active);
+            }
+
+            return (active, from);
+        }
+    }
+
+    // What of the line on a side of a row is selected: from the selection's start on its first
+    // row, to its end on its last, the newline after each line but the last. Null for none, a
+    // hunk's heading, or the other side.
+    Selected? SelectedOn(int index, bool right)
+    {
+        if (Selection is not { } selection ||
+            index < selection.Start.Row ||
+            index > selection.End.Row ||
+            (split && right != selectRight) ||
+            LineAt(index, right) is not { } line)
+        {
+            return null;
         }
 
-        return index >= Math.Min(anchor, active) &&
-               index <= Math.Max(anchor, active);
+        var length = line.Content.Length;
+        var start = 0;
+        if (index == selection.Start.Row)
+        {
+            start = Math.Min(selection.Start.Column, length);
+        }
+
+        var end = length;
+        if (index == selection.End.Row)
+        {
+            end = Math.Min(selection.End.Column, length);
+        }
+
+        var newline = index < selection.End.Row;
+        if (start >= end &&
+            !newline)
+        {
+            return null;
+        }
+
+        return new(start, end, newline);
+    }
+
+    // Where a side's characters start across, as scrolled: after the room before the text, and
+    // the +, - or space with the gap after it.
+    int CharactersLeft(bool right)
+    {
+        var columns = Current;
+        var left = columns.TextLeft;
+        if (split && right)
+        {
+            left = columns.RightTextLeft;
+        }
+
+        return left + LogicalToDeviceUnits(textInset) - horizontal.Value + charWidth * 2;
+    }
+
+    // The text of a side across, between the numbers and the side's edge.
+    (int Left, int Right) SideText(bool right)
+    {
+        var columns = Current;
+        if (split && right)
+        {
+            return (columns.RightTextLeft, columns.RightTextRight);
+        }
+
+        return (columns.TextLeft, columns.TextRight);
+    }
+
+    // The character of a line a point across is over, as measured, not counted, so a wide one
+    // or a tab is found too: the line's length past its end, 0 before its start.
+    int CharacterAt(DiffLine line, int x, bool right)
+    {
+        var offset = x - CharactersLeft(right);
+        if (offset <= 0)
+        {
+            return 0;
+        }
+
+        // The last character starting at or before the point, the widths growing with each.
+        var content = ExpandTabs(line.Content, out var columns);
+        var low = 0;
+        var high = line.Content.Length;
+        while (low < high)
+        {
+            var middle = (low + high + 1) / 2;
+            if (Measured(content[..columns[middle]]) <= offset)
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        return low;
+    }
+
+    // The place between characters of a line nearest a point across: where a click there puts
+    // the selection's end.
+    int ColumnAt(DiffLine line, int x, bool right)
+    {
+        var character = CharacterAt(line, x, right);
+        if (character >= line.Content.Length)
+        {
+            return character;
+        }
+
+        var content = ExpandTabs(line.Content, out var columns);
+        var offset = x - CharactersLeft(right);
+        var before = Measured(content[..columns[character]]);
+        var after = Measured(content[..columns[character + 1]]);
+        if (offset - before > after - offset)
+        {
+            return character + 1;
+        }
+
+        return character;
+    }
+
+    // The row a point down is on, kept to those showing, for a drag past the top or the bottom.
+    int RowAt(int y)
+    {
+        var top = vertical.Value;
+        var last = Math.Min(rows.Count - 1, top + Math.Max(0, TextHeight - 1) / rowHeight);
+        return Math.Clamp(top + (int) Math.Floor(y / (double) rowHeight), top, Math.Max(top, last));
+    }
+
+    // The place in the text on a side nearest a point: past the last row, the end of its line.
+    TextPlace PlaceAt(Point point, bool right)
+    {
+        var row = RowAt(point.Y);
+        if (LineAt(row, right) is not { } line)
+        {
+            return new(row, 0);
+        }
+
+        var below = (row - vertical.Value + 1) * rowHeight <= point.Y;
+        if (below &&
+            row == rows.Count - 1)
+        {
+            return new(row, line.Content.Length);
+        }
+
+        return new(row, ColumnAt(line, point.X, right));
+    }
+
+    /// <summary>
+    /// Where in the control a place in the text on a side is: in the middle of its row, just
+    /// after the gap before the character. For tests.
+    /// </summary>
+    internal Point PointOf(TextPlace place, bool right)
+    {
+        var line = LineAt(place.Row, right)!;
+        var content = ExpandTabs(line.Content, out var columns);
+        var x = CharactersLeft(right) + Measured(content[..columns[Math.Min(place.Column, line.Content.Length)]]);
+        return new(x + 1, (place.Row - vertical.Value) * rowHeight + rowHeight / 2);
+    }
+
+    /// <summary>
+    /// The word a character of a line is in, as a double-click selects it, from its first
+    /// character to after its last: a run of letters, digits and underscores, or of whitespace,
+    /// or else the one character.
+    /// </summary>
+    internal static (int Start, int End) WordAt(string content, int character)
+    {
+        if (content.Length == 0)
+        {
+            return (0, 0);
+        }
+
+        var at = Math.Clamp(character, 0, content.Length - 1);
+        var kind = KindOf(content[at]);
+        if (kind == CharacterKind.Other)
+        {
+            return (at, at + 1);
+        }
+
+        var start = at;
+        while (start > 0 &&
+               KindOf(content[start - 1]) == kind)
+        {
+            start--;
+        }
+
+        var end = at + 1;
+        while (end < content.Length &&
+               KindOf(content[end]) == kind)
+        {
+            end++;
+        }
+
+        return (start, end);
+    }
+
+    enum CharacterKind
+    {
+        Word,
+        Space,
+        Other
+    }
+
+    static CharacterKind KindOf(char character)
+    {
+        if (char.IsLetterOrDigit(character) ||
+            character == '_')
+        {
+            return CharacterKind.Word;
+        }
+
+        if (char.IsWhiteSpace(character))
+        {
+            return CharacterKind.Space;
+        }
+
+        return CharacterKind.Other;
     }
 
     // What is at a point: the row, the part of it, and, side by side, whether on the right.
@@ -993,11 +1280,13 @@ sealed class DiffCanvas : Control
             return;
         }
 
-        if (selecting &&
-            index >= 0)
+        if (selecting)
         {
-            active = index;
-            Invalidate();
+            selectPoint = args.Location;
+            SelectTo(args.Location);
+            scrollTimer.Enabled = PastText(args.Location);
+            Cursor = Cursors.IBeam;
+            return;
         }
 
         if (index != hoverRow ||
@@ -1026,7 +1315,178 @@ sealed class DiffCanvas : Control
             return Cursors.Hand;
         }
 
+        if (part == Part.Text &&
+            rows[index].Kind != DiffRowKind.Hunk)
+        {
+            return Cursors.IBeam;
+        }
+
         return Cursors.Default;
+    }
+
+    // The selection's end moved to the place nearest a point, on the side it is on.
+    void SelectTo(Point point)
+    {
+        if (anchor == null ||
+            rows.Count == 0)
+        {
+            return;
+        }
+
+        var place = PlaceAt(point, selectRight);
+        if (place == active)
+        {
+            return;
+        }
+
+        active = place;
+        Invalidate();
+    }
+
+    // Whether a point is above or below the rows showing, or either side of the side's text, as
+    // far as it scrolls that way: a drag selecting there scrolls.
+    bool PastText(Point point)
+    {
+        if (point.Y < 0)
+        {
+            return TopRow > 0;
+        }
+
+        if (point.Y >= TextHeight)
+        {
+            return TopRow < MaxTop;
+        }
+
+        var (left, right) = SideText(selectRight);
+        if (point.X < left)
+        {
+            return horizontal.Value > 0;
+        }
+
+        return horizontal.Visible &&
+               point.X >= Math.Min(right, TextWidth);
+    }
+
+    // A drag selecting past the text: a row at a time up or down, a few characters sideways, the
+    // selection following.
+    void ScrollWhileSelecting()
+    {
+        if (!selecting ||
+            !PastText(selectPoint))
+        {
+            scrollTimer.Stop();
+            return;
+        }
+
+        var (left, right) = SideText(selectRight);
+        if (selectPoint.Y < 0)
+        {
+            TopRow--;
+        }
+        else if (selectPoint.Y >= TextHeight)
+        {
+            TopRow++;
+        }
+        else if (selectPoint.X < left)
+        {
+            ScrollSideways(-charWidth * 2);
+        }
+        else if (selectPoint.X >= Math.Min(right, TextWidth))
+        {
+            ScrollSideways(charWidth * 2);
+        }
+
+        SelectTo(selectPoint);
+    }
+
+    void StopSelecting()
+    {
+        selecting = false;
+        scrollTimer.Stop();
+    }
+
+    // The text pressed: the selection starts there, or, with Shift, ends there; a word for a
+    // double-click, the line for a third click. Side by side, it stays on the side pressed.
+    void StartSelecting(MouseEventArgs args, bool right)
+    {
+        var extend = (ModifierKeys & Keys.Shift) != 0 &&
+                     anchor != null &&
+                     (!split || right == selectRight);
+        if (!extend)
+        {
+            selectRight = right;
+        }
+
+        var place = PlaceAt(args.Location, selectRight);
+        if (args.Clicks == 2)
+        {
+            doubleClickedAt = Environment.TickCount64;
+            doubleClickPoint = args.Location;
+            SelectWord(place.Row, args.Location.X);
+            return;
+        }
+
+        if (IsThirdClick(args.Location))
+        {
+            doubleClickedAt = long.MinValue / 2;
+            SelectLine(place.Row);
+            return;
+        }
+
+        if (!extend)
+        {
+            anchor = place;
+        }
+
+        active = place;
+        selecting = true;
+        selectPoint = args.Location;
+        Capture = true;
+        Invalidate();
+    }
+
+    bool IsThirdClick(Point point)
+    {
+        var size = SystemInformation.DoubleClickSize;
+        return Environment.TickCount64 - doubleClickedAt <= SystemInformation.DoubleClickTime &&
+               Math.Abs(point.X - doubleClickPoint.X) <= size.Width / 2 &&
+               Math.Abs(point.Y - doubleClickPoint.Y) <= size.Height / 2;
+    }
+
+    // The word under a point across on a row selected, on the side the selection is on.
+    void SelectWord(int row, int x)
+    {
+        if (LineAt(row, selectRight) is not { } line)
+        {
+            return;
+        }
+
+        var (start, end) = WordAt(line.Content, CharacterAt(line, x, selectRight));
+        anchor = new(row, start);
+        active = new(row, end);
+        Invalidate();
+    }
+
+    // A row's line selected, with its newline: to the start of the row after, or the end of the
+    // line on the last row.
+    void SelectLine(int row)
+    {
+        if (LineAt(row, selectRight) is not { } line)
+        {
+            return;
+        }
+
+        anchor = new(row, 0);
+        if (row + 1 < rows.Count)
+        {
+            active = new(row + 1, 0);
+        }
+        else
+        {
+            active = new(row, line.Content.Length);
+        }
+
+        Invalidate();
     }
 
     protected override void OnMouseLeave(EventArgs args)
@@ -1073,16 +1533,7 @@ sealed class DiffCanvas : Control
                 PickRun(index);
                 return;
             case Part.Text:
-                if ((ModifierKeys & Keys.Shift) == 0 ||
-                    anchor < 0)
-                {
-                    anchor = index;
-                }
-
-                active = index;
-                selectRight = right;
-                selecting = true;
-                Invalidate();
+                StartSelecting(args, right);
                 return;
         }
     }
@@ -1090,7 +1541,12 @@ sealed class DiffCanvas : Control
     protected override void OnMouseUp(MouseEventArgs args)
     {
         base.OnMouseUp(args);
-        selecting = false;
+        if (selecting)
+        {
+            StopSelecting();
+            Capture = false;
+        }
+
         if (args.Button == MouseButtons.Right)
         {
             ShowMenu(args.Location);
@@ -1241,8 +1697,6 @@ sealed class DiffCanvas : Control
 
         var top = vertical.Value;
         hunks = expanded;
-        anchor = -1;
-        active = -1;
         BuildRows();
         TopRow = top;
     }
@@ -1267,7 +1721,7 @@ sealed class DiffCanvas : Control
     void ShowMenu(Point location)
     {
         var commands = new List<QuickMenu.Command?>();
-        if (anchor >= 0)
+        if (Selection != null)
         {
             commands.Add(
                 new("Copy", Copy)
@@ -1292,47 +1746,67 @@ sealed class DiffCanvas : Control
     }
 
     /// <summary>
-    /// The text of the rows clicked: one above the other, each line's; side by side, those of
-    /// the side clicked.
+    /// The text selected, as the lines have it, without the +, - or space before each: side by
+    /// side, of the side it is on. Hunks' headings, and rows the side has no line on, are left
+    /// out.
     /// </summary>
     internal string SelectedText()
     {
-        if (anchor < 0 ||
-            active < 0)
+        if (Selection is not { } selection)
         {
             return "";
         }
 
-        var lines = new List<string>();
-        for (var index = Math.Min(anchor, active); index <= Math.Max(anchor, active) && index < rows.Count; index++)
+        var builder = new StringBuilder();
+        for (var index = selection.Start.Row; index <= selection.End.Row; index++)
         {
-            var row = rows[index];
-            if (row.Kind == DiffRowKind.Hunk)
+            if (SelectedOn(index, selectRight) is not { } selected)
             {
                 continue;
             }
 
-            DiffLine? line;
-            if (!split)
+            builder.Append(LineAt(index, selectRight)!.Content, selected.Start, selected.End - selected.Start);
+            if (selected.Newline)
             {
-                line = row.After ?? row.Before;
-            }
-            else if (selectRight)
-            {
-                line = row.After;
-            }
-            else
-            {
-                line = row.Before;
-            }
-
-            if (line != null)
-            {
-                lines.Add(line.Content);
+                builder.Append(Environment.NewLine);
             }
         }
 
-        return string.Join(Environment.NewLine, lines);
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Selects from one place in the text to another, on a side, as a drag would. For tests.
+    /// </summary>
+    internal void Select(TextPlace from, TextPlace to, bool right)
+    {
+        selectRight = right;
+        anchor = from;
+        active = to;
+        Invalidate();
+    }
+
+    /// <summary>
+    /// Ctrl+A: everything, from the start of the first row to the end of the last line, on the
+    /// side the selection was on, rather than to the heading of more of the file after it.
+    /// </summary>
+    internal void SelectAll()
+    {
+        var last = rows.Count - 1;
+        while (last >= 0 &&
+               LineAt(last, selectRight) == null)
+        {
+            last--;
+        }
+
+        if (last < 0)
+        {
+            return;
+        }
+
+        anchor = new(0, 0);
+        active = new(last, LineAt(last, selectRight)!.Content.Length);
+        Invalidate();
     }
 
     void Copy()
@@ -1384,9 +1858,7 @@ sealed class DiffCanvas : Control
                 Copy();
                 break;
             case Keys.Control | Keys.A:
-                anchor = 0;
-                active = rows.Count - 1;
-                Invalidate();
+                SelectAll();
                 break;
             default:
                 handled = false;
@@ -1449,6 +1921,7 @@ sealed class DiffCanvas : Control
     {
         if (disposing)
         {
+            scrollTimer.Dispose();
             tip.Dispose();
             codeFont.Dispose();
         }

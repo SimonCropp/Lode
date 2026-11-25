@@ -118,6 +118,133 @@ public class DiffViewTests
             CollectionOrdering.Matching);
     }
 
+    // Dragged across, the text from the character pressed to the one let go, as an editor
+    // selects it, not the whole lines; without the + or - before each.
+    [Test]
+    public async Task DraggingSelectsFromACharacterToAnother()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var canvas = view.Canvas;
+        var options = Row(canvas, "        var options = BuildOptions();");
+
+        Press(canvas, leftButtonDown, canvas.PointOf(new(options, 12), right: false));
+        Press(canvas, mouseMove, canvas.PointOf(new(options + 3, 20), right: false));
+        Press(canvas, leftButtonUp, canvas.PointOf(new(options + 3, 20), right: false));
+
+        await Assert.That(canvas.SelectedText()).IsEqualTo(
+            string.Join(
+                Environment.NewLine,
+                "options = BuildOptions();",
+                "        var start = document.Reader.Position;",
+                "        var written = document.Written;",
+                "        var previous"));
+
+        // Pressed again without dragging, nothing.
+        Press(canvas, leftButtonDown, canvas.PointOf(new(options, 4), right: false));
+        Press(canvas, leftButtonUp, canvas.PointOf(new(options, 4), right: false));
+        await Assert.That(canvas.SelectedText()).IsEqualTo("");
+    }
+
+    // A double-click selects the word under it; a third click, the line, with its newline.
+    [Test]
+    public async Task DoubleAndTripleClicks()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var canvas = view.Canvas;
+        var options = Row(canvas, "        var options = BuildOptions();");
+        var inWord = canvas.PointOf(new(options, 14), right: false);
+
+        Press(canvas, leftButtonDown, inWord);
+        Press(canvas, leftButtonUp, inWord);
+        Press(canvas, leftButtonDoubleClick, inWord);
+        Press(canvas, leftButtonUp, inWord);
+        await Assert.That(canvas.SelectedText()).IsEqualTo("options");
+
+        Press(canvas, leftButtonDown, inWord);
+        Press(canvas, leftButtonUp, inWord);
+        await Assert.That(canvas.SelectedText()).IsEqualTo("        var options = BuildOptions();" + Environment.NewLine);
+    }
+
+    // Side by side, the selection is of the side dragged on, the old line or the new.
+    [Test]
+    public async Task SplitSelectsOneSide()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        view.SetSplit(true);
+        var canvas = view.Canvas;
+        var modified = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Modified);
+
+        Press(canvas, leftButtonDown, canvas.PointOf(new(modified, 8), right: true));
+        Press(canvas, mouseMove, canvas.PointOf(new(modified, 14), right: true));
+        Press(canvas, leftButtonUp, canvas.PointOf(new(modified, 14), right: true));
+        await Assert.That(canvas.SelectedText()).IsEqualTo("// The");
+
+        Press(canvas, leftButtonDown, canvas.PointOf(new(modified, 8), right: false));
+        Press(canvas, mouseMove, canvas.PointOf(new(modified, 16), right: false));
+        Press(canvas, leftButtonUp, canvas.PointOf(new(modified, 16), right: false));
+        await Assert.That(canvas.SelectedText()).IsEqualTo("document");
+    }
+
+    // Ctrl+A: every line, the hunks' headings left out, with no newline after the last.
+    [Test]
+    public async Task SelectAll()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var canvas = view.Canvas;
+
+        canvas.SelectAll();
+
+        var lines = canvas.Rows
+            .Where(_ => _.Kind != DiffRowKind.Hunk)
+            .Select(_ => (_.After ?? _.Before)!.Content);
+        await Assert.That(canvas.SelectedText()).IsEqualTo(string.Join(Environment.NewLine, lines));
+    }
+
+    // A double-click's word: letters, digits and underscores together, or spaces, or else the
+    // one character.
+    [Test]
+    public async Task Words()
+    {
+        const string line = "    var my_name2 = a.b;";
+
+        static string WordAt(int character)
+        {
+            var (start, end) = DiffCanvas.WordAt(line, character);
+            return line[start..end];
+        }
+
+        await Assert.That(WordAt(10)).IsEqualTo("my_name2");
+        await Assert.That(WordAt(1)).IsEqualTo("    ");
+        await Assert.That(WordAt(20)).IsEqualTo(".");
+        await Assert.That(WordAt(99)).IsEqualTo(";");
+        await Assert.That(DiffCanvas.WordAt("", 0)).IsEqualTo((0, 0));
+    }
+
+    const int mouseMove = 0x0200;
+    const int leftButtonDown = 0x0201;
+    const int leftButtonUp = 0x0202;
+    const int leftButtonDoubleClick = 0x0203;
+
+    // The row a line is drawn on, one above the other.
+    static int Row(DiffCanvas canvas, string content) =>
+        canvas.Rows.ToList().FindIndex(_ => (_.After ?? _.Before)?.Content == content);
+
+    // The button held for all but its letting go, as a drag has it.
+    static void Press(DiffCanvas canvas, int message, Point point)
+    {
+        var held = 0;
+        if (message != leftButtonUp)
+        {
+            held = 1;
+        }
+
+        NativeMethods.SendMessage(canvas.Handle, message, held, (point.Y << 16) | (point.X & 0xFFFF));
+    }
+
     // As GitHub Desktop says it of a diff with nothing in it.
     [Test]
     public async Task EmptyMessages()
