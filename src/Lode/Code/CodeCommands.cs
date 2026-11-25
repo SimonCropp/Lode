@@ -1077,7 +1077,8 @@ static class CodeCommands
 
     // Only one update at a time. Two over the same files, as a folder and a repository in it
     // are, would race to write them, and two builds of a solution fight over its obj folder.
-    static SemaphoreSlim nugetGate = new(1, 1);
+    // Purge NuGet cache waits its turn too, as it deletes the packages an update restores.
+    internal static SemaphoreSlim NugetGate = new(1, 1);
 
     /// <summary>
     /// Updates the NuGet packages and dotnet tools of every solution in the folder, with
@@ -1086,7 +1087,7 @@ static class CodeCommands
     /// </summary>
     public static async Task<ActionLog.Outcome> UpdateNugets(string folder, IProgress<string>? progress = null, bool build = false)
     {
-        await nugetGate.WaitAsync();
+        await NugetGate.WaitAsync();
         UpdateResult result;
         try
         {
@@ -1098,7 +1099,7 @@ static class CodeCommands
         }
         finally
         {
-            nugetGate.Release();
+            NugetGate.Release();
         }
 
         return NugetOutcome(folder, result.Changes, result.Problems);
@@ -1119,7 +1120,7 @@ static class CodeCommands
 
         var changes = new List<PackageChange>();
         var problems = new List<UpdateProblem>();
-        await nugetGate.WaitAsync();
+        await NugetGate.WaitAsync();
         try
         {
             for (var index = 0; index < folders.Count; index++)
@@ -1140,7 +1141,7 @@ static class CodeCommands
         }
         finally
         {
-            nugetGate.Release();
+            NugetGate.Release();
         }
 
         return NugetOutcome(CommonFolder(folders), changes, problems);

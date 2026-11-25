@@ -3,7 +3,7 @@
 /// right of the address bar lists, what the command palette offers and what the keys do, and
 /// those of them only they run: Undo and Redo, going to the next tab or one by its number,
 /// showing hidden items and system files, Terminal, Open in Claude, the coding agents, pinning
-/// the folder open to Quick access, cloning a repository, and About.
+/// the folder open to Quick access, cloning a repository, purging the NuGet cache, and About.
 /// </summary>
 sealed class Commands
 {
@@ -74,6 +74,10 @@ sealed class Commands
             {
                 Glyph = Icons.Clone,
                 Shortcut = "Ctrl+Shift+O"
+            },
+            new("Purge NuGet cache", PurgeNugetCache)
+            {
+                Glyph = Icons.Purge
             },
             null,
             new("Show hidden items", ToggleHidden)
@@ -179,6 +183,7 @@ sealed class Commands
         Add("New window", window.NewWindow, "Ctrl+N");
         Add("Find in files", window.FindHost.Open, "Ctrl+Shift+F");
         Add("Clone a repository…", ShowClone, "Ctrl+Shift+O");
+        Add("Purge NuGet cache", PurgeNugetCache);
         if (panes.Repo != null)
         {
             Add("Changes", () => panes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
@@ -652,6 +657,11 @@ sealed class Commands
             window.AddTab(destination, true);
         }
     }
+
+    // In the Actions panel, as Update NuGets is: deleting every package restored takes a while,
+    // and fails where one is open, in a build or Visual Studio say.
+    static void PurgeNugetCache() =>
+        _ = ActionLog.Run("Purge NuGet cache", [NuGetCache.PackagesFolder()], NuGetCache.Purge);
 
     void ShowAbout()
     {

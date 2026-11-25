@@ -1787,6 +1787,7 @@ public class WindowsTests
                   Command palette,
                   Find in files,
                   Clone a repository…,
+                  Purge NuGet cache,
                   ----,
                   Show hidden items,
                   Show system files,
@@ -1798,6 +1799,40 @@ public class WindowsTests
                   Exit Lode
                 ]
                 """);
+    }
+
+    // Purge NuGet cache, from the ⋯ menu, runs in the Actions panel, as Update NuGets does,
+    // naming where restore puts packages. Dotnet is replaced, so this machine's caches are left
+    // alone.
+    [Test]
+    public async Task PurgeNugetCacheFromTheMenu()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        var run = NuGetCache.Run;
+        var started = new List<string>();
+        NuGetCache.Run = startInfo =>
+        {
+            started.Add(string.Join(" ", startInfo.ArgumentList));
+            return (0, "Local resources cleared.");
+        };
+        ActionLog.Reset();
+        try
+        {
+            form.Commands.Menu().Single(_ => _?.Text == "Purge NuGet cache")!.Action();
+            await Pump.Until(() => ActionLog.Entries is [{ State: not ActionLog.State.Running }]);
+
+            var entry = ActionLog.Entries.Single();
+            await Assert.That(entry.Title).IsEqualTo("Purge NuGet cache");
+            await Assert.That(entry.Where).IsEqualTo(NuGetCache.PackagesFolder());
+            await Assert.That(entry.Summary).IsEqualTo("Cleared");
+            await Assert.That(started).IsEquivalentTo(["nuget locals all --clear"]);
+        }
+        finally
+        {
+            NuGetCache.Run = run;
+            ActionLog.Reset();
+        }
     }
 
     static string DescribeCommand(QuickMenu.Command? command)
@@ -1907,6 +1942,7 @@ public class WindowsTests
                   New window (Ctrl+N),
                   Find in files (Ctrl+Shift+F),
                   Clone a repository… (Ctrl+Shift+O),
+                  Purge NuGet cache,
                   Duplicate tab,
                   Close tab (Ctrl+W),
                   Close other tabs,

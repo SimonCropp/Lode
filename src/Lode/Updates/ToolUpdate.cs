@@ -141,7 +141,7 @@ sealed class ToolUpdate(string shim, string outcome)
         return Path.Combine(tools, $"{command}.exe");
     }
 
-    static string RunningDotnet()
+    internal static string RunningDotnet()
     {
         // The runtime is {root}\shared\Microsoft.NETCore.App\{version}\, and the muxer is in {root}.
         var root = Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", ".."));
