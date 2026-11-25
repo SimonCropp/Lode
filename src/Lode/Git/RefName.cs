@@ -11,7 +11,7 @@ static partial class RefName
     private static partial Regex Refused();
 
     // Git takes a name starting with - or + as an option.
-    [GeneratedRegex(@"^[-+]+")]
+    [GeneratedRegex("^[-+]+")]
     private static partial Regex Leading();
 
     /// <summary>
