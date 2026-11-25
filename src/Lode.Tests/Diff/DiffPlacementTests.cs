@@ -51,6 +51,58 @@ public class DiffPlacementTests
         await Assert.That(host.TabShowing).IsTrue();
     }
 
+    // The status bar stays as the folder's tab had it while the Diff tab shows, and acts on what
+    // it says there too: the commits ahead clicked offer to push them.
+    [Test]
+    public async Task StatusBarActsWhileTheTabShows()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Tab;
+        settings.SetPinnedPanes(fixture.Root, true, false);
+        using var form = await Show(fixture.Root, settings);
+        await Pick(form, 0);
+        await Pump.Until(() => form.DiffHost.TabShowing);
+
+        var ask = GitStatusActions.Ask;
+        GitStatusActions.Question? asked = null;
+        GitStatusActions.Ask = (_, question) =>
+        {
+            asked = question;
+            return null;
+        };
+        try
+        {
+            var ahead = form.StatusBar.Strip.Items["gitAhead"]!;
+            await Assert.That(ahead.Text).IsEqualTo("1 ahead");
+            ahead.PerformClick();
+            await Pump.Until(() => asked != null);
+        }
+        finally
+        {
+            GitStatusActions.Ask = ask;
+        }
+
+        await Assert.That(asked!.Caption).IsEqualTo("Git push");
+        await Assert.That(asked.Heading).StartsWith("main is 1 commit ahead of ");
+
+        // And the branch clicked opens the branches, to switch to.
+        var branch = form.StatusBar.Strip.Items["git"]!;
+        await Assert.That(branch.Text).IsEqualTo("main");
+        branch.PerformClick();
+        var picker = form.OwnedForms.OfType<BranchPicker>().SingleOrDefault();
+        try
+        {
+            await Assert.That(picker).IsNotNull();
+        }
+        finally
+        {
+            picker?.Close();
+        }
+    }
+
     // Several picked: said so, in the tab already showing a diff.
     [Test]
     public async Task SeveralPicked()

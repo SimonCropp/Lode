@@ -60,6 +60,12 @@ sealed class StatusBar : IDisposable
     // to do about, then the changes, to commit or discard, and the commits to push and to pull.
     Dictionary<GitState.PartKind, (ToolStripStatusLabel Dot, ToolStripItem Item)> gitParts = [];
 
+    // The repository the branch and the parts after it are about, and its state as they say it:
+    // what clicking them acts on. Kept while the Diff tab shows, which leaves the bar as the
+    // folder's tab had it, and has no folder of its own to ask.
+    string? gitRepo;
+    GitState? gitState;
+
     // After the branch: the site the repository's origin is on, GitHub say, which it opens.
     ToolStripStatusLabel siteLabel = new()
     {
@@ -185,7 +191,7 @@ sealed class StatusBar : IDisposable
             searchInsideLabel.ToolTipText = $"Search for \"{view.Filter}\" in what the files hold, with Find in Files (Ctrl+Enter)";
         }
 
-        ShowGitParts(view.GitRepoState);
+        ShowGitParts(view.GitRepo, view.GitRepoState);
         var site = view.GitSite;
         siteLabel.Tag = site;
         siteLabel.Visible = site != null;
@@ -208,7 +214,7 @@ sealed class StatusBar : IDisposable
         searchInsideLabel.Visible = false;
         spaceLabel.Text = "";
         siteLabel.Visible = false;
-        ShowGitParts(null);
+        ShowGitParts(null, null);
     }
 
     /// <summary>
@@ -264,6 +270,7 @@ sealed class StatusBar : IDisposable
     {
         var button = new ToolStripButton
         {
+            Name = $"git{kind}",
             Margin = new(0, 1, 0, 0),
             AutoToolTip = false,
             ToolTipText = toolTip
@@ -273,20 +280,24 @@ sealed class StatusBar : IDisposable
     }
 
     // The changes, ahead, behind or behind upstream clicked: asks what to do about them, pull
-    // say.
+    // say. Those of the repository the bar shows, which is the Diff tab's too while it shows.
     void ActOnGit(GitState.PartKind kind)
     {
-        if (activeView() is { GitRepo: { } repo, GitRepoState: { } state })
+        if (gitRepo is { } repo &&
+            gitState is { } state)
         {
             GitStatusActions.Act(window, kind, repo, state, settings.CodeDirectory);
         }
     }
 
-    // A part for each of what the state says, the last spaced from what follows. Each is set
-    // once, to what it is to be: hidden and shown again, the bar would be laid out again for
-    // every status update, each change of selection say, closing a tooltip open over it.
-    void ShowGitParts(GitState? state)
+    // A part for each of what the state of the repository says, the last spaced from what
+    // follows. Each is set once, to what it is to be: hidden and shown again, the bar would be
+    // laid out again for every status update, each change of selection say, closing a tooltip
+    // open over it.
+    void ShowGitParts(string? repo, GitState? state)
     {
+        gitRepo = repo;
+        gitState = state;
         var parts = state?.Parts() ?? [];
         var texts = parts.ToDictionary(_ => _.Kind, _ => _.Text);
         ToolStripItem? last = null;
@@ -343,20 +354,20 @@ sealed class StatusBar : IDisposable
     }
 
     /// <summary>
-    /// Ctrl+B, or the branch clicked: the branches of the repository the folder is in, above the
+    /// Ctrl+B, or the branch clicked: the branches of the repository the bar shows, above the
     /// branch, found as they open. Outside a repository, nothing.
     /// </summary>
     public void ShowBranches()
     {
         if (!gitButton.Visible ||
             gitButton.Owner == null ||
-            activeView() is not { GitRepo: { } repo } view ||
+            gitRepo is not { } repo ||
             Environment.TickCount64 - branchesClosedAt < 500)
         {
             return;
         }
 
-        var state = view.GitRepoState;
+        var state = gitState;
         var picker = BranchPicker.Show(
             window,
             gitButton.Owner.RectangleToScreen(gitButton.Bounds),
