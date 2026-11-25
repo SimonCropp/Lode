@@ -90,6 +90,34 @@ public class DiffViewTests
         await Assert.That(view.Canvas.Rows.Count(_ => _.Kind == DiffRowKind.Modified)).IsEqualTo(1);
     }
 
+    // Along the header, as GitHub Desktop has them: the file, what happened to it over its status
+    // icon, and how many lines were added and deleted over each count.
+    [Test]
+    public async Task HeaderTips()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var size = view.HeaderSize;
+        var tips = new List<string>();
+        for (var x = 0; x < size.Width; x++)
+        {
+            if (view.HeaderTipAt(new(x, size.Height / 2)) is { } tip &&
+                (tips.Count == 0 || tips[^1] != tip))
+            {
+                tips.Add(tip);
+            }
+        }
+
+        await Assert.That(tips).IsEquivalentTo(
+            [
+                "src/Scripting/ScriptRunner.cs, modified",
+                "Modified",
+                "8 lines added",
+                "1 line deleted"
+            ],
+            CollectionOrdering.Matching);
+    }
+
     // As GitHub Desktop says it of a diff with nothing in it.
     [Test]
     public async Task EmptyMessages()

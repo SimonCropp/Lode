@@ -77,6 +77,13 @@ sealed class DiffView : UserControl
     internal DiffCanvas Canvas => canvas;
 
     /// <summary>
+    /// The header's tooltip at a point of it, and how wide it is. For tests.
+    /// </summary>
+    internal string? HeaderTipAt(Point point) => header.TipAt(point);
+
+    internal Size HeaderSize => header.Size;
+
+    /// <summary>
     /// What it says instead of a diff, when it does. For tests.
     /// </summary>
     internal string? MessageText
@@ -412,6 +419,7 @@ sealed class DiffView : UserControl
         };
 
         ToolTip tip = new();
+        RowTip headerTip;
         Change? file;
         int added;
         int deleted;
@@ -433,6 +441,7 @@ sealed class DiffView : UserControl
             tip.SetToolTip(close, "Close the diff (Esc)");
             Controls.Add(options);
             Controls.Add(close);
+            headerTip = new(this, TipAt);
         }
 
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -465,7 +474,28 @@ sealed class DiffView : UserControl
                 return;
             }
 
-            const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter;
+            var parts = Measure(graphics);
+            if (counts)
+            {
+                TextRenderer.DrawText(graphics, DeletedText, Font, parts.Deleted, DiffStyle.DeletedCount, flags);
+                TextRenderer.DrawText(graphics, AddedText, Font, parts.Added, DiffStyle.AddedCount, flags);
+            }
+
+            ChangeRows.Draw(graphics, this, Font, parts.File, file, DesktopStyle.Text, DesktopStyle.SecondaryText, false);
+        }
+
+        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter;
+
+        string AddedText => $"+{added:N0}";
+
+        string DeletedText => $"−{deleted:N0}";
+
+        /// <summary>
+        /// Where the counts are, right of the file, and the room left for the file, its status
+        /// icon at the room's right. The counts are empty when there are none.
+        /// </summary>
+        HeaderParts Measure(IDeviceContext graphics)
+        {
             var inset = LogicalToDeviceUnits(DesktopStyle.Inset);
             var right = Width - Padding.Right;
             foreach (Control control in Controls)
@@ -477,28 +507,78 @@ sealed class DiffView : UserControl
             }
 
             var room = Rectangle.FromLTRB(inset, 0, right - inset, Height - 1);
-            if (counts)
+            if (!counts)
             {
-                var removed = $"−{deleted:N0}";
-                var plus = $"+{added:N0}";
-                var gap = LogicalToDeviceUnits(6);
-                var removedWidth = TextRenderer.MeasureText(graphics, removed, Font, Size.Empty, flags).Width;
-                var plusWidth = TextRenderer.MeasureText(graphics, plus, Font, Size.Empty, flags).Width;
-                var removedLeft = room.Right - removedWidth;
-                var plusLeft = removedLeft - gap - plusWidth;
-                TextRenderer.DrawText(graphics, removed, Font, new Rectangle(removedLeft, room.Top, removedWidth, room.Height), DiffStyle.DeletedCount, flags);
-                TextRenderer.DrawText(graphics, plus, Font, new Rectangle(plusLeft, room.Top, plusWidth, room.Height), DiffStyle.AddedCount, flags);
-                room = Rectangle.FromLTRB(room.Left, room.Top, plusLeft - gap * 2, room.Bottom);
+                return new(room, Rectangle.Empty, Rectangle.Empty);
             }
 
-            ChangeRows.Draw(graphics, this, Font, room, file, DesktopStyle.Text, DesktopStyle.SecondaryText, false);
+            var gap = LogicalToDeviceUnits(6);
+            var removedWidth = TextRenderer.MeasureText(graphics, DeletedText, Font, Size.Empty, flags).Width;
+            var plusWidth = TextRenderer.MeasureText(graphics, AddedText, Font, Size.Empty, flags).Width;
+            var removedLeft = room.Right - removedWidth;
+            var plusLeft = removedLeft - gap - plusWidth;
+            return new(
+                Rectangle.FromLTRB(room.Left, room.Top, plusLeft - gap * 2, room.Bottom),
+                new(plusLeft, room.Top, plusWidth, room.Height),
+                new(removedLeft, room.Top, removedWidth, room.Height));
         }
+
+        /// <summary>
+        /// The tooltip at a point of the header, as GitHub Desktop has one: what the status icon
+        /// stands for over it, how many lines were added or deleted over each count, and the file
+        /// and what happened to it over its name, which may be cut short. Null elsewhere.
+        /// </summary>
+        internal string? TipAt(Point point)
+        {
+            if (file == null)
+            {
+                return null;
+            }
+
+            using var graphics = CreateGraphics();
+            var parts = Measure(graphics);
+            if (parts.Added.Contains(point))
+            {
+                return Lines(added, "added");
+            }
+
+            if (parts.Deleted.Contains(point))
+            {
+                return Lines(deleted, "deleted");
+            }
+
+            if (!parts.File.Contains(point))
+            {
+                return null;
+            }
+
+            // The icon, and the gap between it and the counts.
+            if (point.X >= ChangeRows.StatusBounds(this, parts.File).Left)
+            {
+                return ChangeRows.Meaning(file);
+            }
+
+            return ChangeRows.Describe(file);
+        }
+
+        static string Lines(int count, string what)
+        {
+            if (count == 1)
+            {
+                return $"1 line {what}";
+            }
+
+            return $"{count:N0} lines {what}";
+        }
+
+        record struct HeaderParts(Rectangle File, Rectangle Added, Rectangle Deleted);
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
                 tip.Dispose();
+                headerTip.Dispose();
             }
 
             base.Dispose(disposing);
