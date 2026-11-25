@@ -235,7 +235,7 @@ static class CodeMenu
             name,
             "Create branch",
             [],
-            isTagName: true);
+            namedAs: "Will be created as");
         if (await form.ShowDialogAsync(owner) != DialogResult.OK)
         {
             return;
@@ -273,7 +273,7 @@ static class CodeMenu
             description += $" The branch it tracks, {branch.Upstream}, keeps its name.";
         }
 
-        using var form = new GitTextForm("Rename branch", description, "Name:", branch.Name, "Rename", [], isTagName: true);
+        using var form = new GitTextForm("Rename branch", description, "Name:", branch.Name, "Rename", [], namedAs: "Will be renamed to");
         if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
             form.Value == branch.Name)
         {
@@ -454,7 +454,7 @@ static class CodeMenu
             "",
             "Tag",
             [],
-            isTagName: true);
+            namedAs: "Will be created as");
         if (await form.ShowDialogAsync(owner) != DialogResult.OK)
         {
             return;
@@ -639,16 +639,33 @@ static class CodeMenu
 
     /// <summary>
     /// Asks for the text a git action needs: Push's commit message, or a tag. With
-    /// <paramref name="choices"/>, a drop-down of them, which can still be typed in.
+    /// <paramref name="choices"/>, a drop-down of them, which can still be typed in. With
+    /// <paramref name="namedAs"/>, "Will be created as" say, a new branch's or tag's name: what is
+    /// typed is made a name git takes, as GitHub Desktop makes it, a line under the box saying
+    /// what it will be where that isn't what was typed.
     /// </summary>
     internal sealed class GitTextForm : Form
     {
         Control input;
+        string? namedAs;
 
-        public string Value => input.Text.Trim();
-
-        public GitTextForm(string title, string description, string prompt, string text, string accept, IReadOnlyList<string> choices, bool isTagName = false)
+        public string Value
         {
+            get
+            {
+                var typed = input.Text.Trim();
+                if (namedAs == null)
+                {
+                    return typed;
+                }
+
+                return RefName.Sanitized(typed);
+            }
+        }
+
+        public GitTextForm(string title, string description, string prompt, string text, string accept, IReadOnlyList<string> choices, bool isTagName = false, string? namedAs = null)
+        {
+            this.namedAs = namedAs;
             if (choices.Count > 0)
             {
                 var combo = new ComboBox
@@ -704,10 +721,36 @@ static class CodeMenu
             };
             AcceptButton = push;
             CancelButton = cancel;
+            var note = new Label
+            {
+                Name = "note",
+                AutoSize = true,
+                MaximumSize = new(380, 0),
+                Margin = new(3, 6, 3, 0),
+                Visible = false
+            };
 
             // Git refuses an empty commit message, and a tag with a space in it.
-            input.TextChanged += (_, _) => push.Enabled = IsValid(Value, isTagName);
-            push.Enabled = IsValid(Value, isTagName);
+            input.TextChanged += (_, _) => Changed();
+            Changed();
+
+            void Changed()
+            {
+                push.Enabled = IsValid(Value, isTagName);
+                if (namedAs == null)
+                {
+                    return;
+                }
+
+                // Set only when it says something else: the form is laid out again for it.
+                var text = NameNote(input.Text.Trim(), namedAs);
+                if (note.Text != text)
+                {
+                    note.Text = text;
+                }
+
+                note.Visible = text.Length > 0;
+            }
 
             var buttons = new FlowLayoutPanel
             {
@@ -729,8 +772,31 @@ static class CodeMenu
             };
             layout.Controls.Add(label);
             layout.Controls.Add(input);
+            layout.Controls.Add(note);
             layout.Controls.Add(buttons);
             Controls.Add(layout);
+        }
+
+        /// <summary>
+        /// What the line under the box says of <paramref name="typed"/>, as GitHub Desktop says
+        /// it: the name it will be, after <paramref name="namedAs"/>, where that isn't what was
+        /// typed, or that no name can be made of it. Nothing where it is a name git takes as it
+        /// is, or nothing is typed.
+        /// </summary>
+        internal static string NameNote(string typed, string namedAs)
+        {
+            var name = RefName.Sanitized(typed);
+            if (name == typed)
+            {
+                return "";
+            }
+
+            if (name.Length == 0)
+            {
+                return $"{typed} is not a valid name.";
+            }
+
+            return $"{namedAs} {name}.";
         }
 
         internal static bool IsValid(string value, bool isTagName)

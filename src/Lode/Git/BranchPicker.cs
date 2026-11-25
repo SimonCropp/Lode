@@ -475,10 +475,10 @@ sealed class BranchPicker : Form
 
     /// <summary>
     /// What was typed made into a branch's name, as GitHub Desktop does: words joined by dashes,
-    /// as a branch's name can't have spaces.
+    /// as a branch's name can't have spaces, nor anything else git refuses in one.
     /// </summary>
     internal static string SuggestedName(string typed) =>
-        string.Join('-', typed.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        RefName.Sanitized(typed.Trim());
 
     // Deactivating while closing would close it again.
     void CloseOnce()
