@@ -364,12 +364,62 @@ public class GitPanesTests
             return new(row.Right - list.LogicalToDeviceUnits(fromRight), row.Top + row.Height / 2);
         }
 
-        await Assert.That(pane.CommitTipAt(Right(0, 26))).IsEqualTo("Not pushed yet");
+        await Assert.That(pane.CommitTipAt(Right(0, 26))).IsEqualTo("Not pushed yet. Click to push");
         await Assert.That(pane.CommitTipAt(Right(1, 30))).IsEqualTo("Tag 0.25.0");
         await Assert.That(pane.CommitTipAt(Right(4, 30))).IsEqualTo("Tag stable");
         var subject = list.GetItemRect(0);
         await Assert.That(pane.CommitTipAt(new(subject.Left + list.LogicalToDeviceUnits(40), subject.Top + subject.Height / 2))).IsNull();
         await Assert.That(pane.CommitTipAt(Right(2, 30))).IsNull();
+    }
+
+    // The arrow of a commit not pushed clicked asks to push, as the status bar's commits ahead
+    // do, leaving the commit picked as it was: a button, not part of the row. A tag clicked
+    // picks its commit, as the rest of the row does.
+    [Test]
+    public async Task ClickingTheArrowAsksToPush()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var list = form.GitPanes.HistoryPane.CommitList;
+        var picked = list.SelectedIndices.Cast<int>().ToList();
+
+        Point Right(int index, int fromRight)
+        {
+            var row = list.GetItemRect(index);
+            row.Width = list.Columns[0].Width;
+            return new(row.Right - list.LogicalToDeviceUnits(fromRight), row.Top + row.Height / 2);
+        }
+
+        var ask = GitStatusActions.Ask;
+        GitStatusActions.Question? asked = null;
+        GitStatusActions.Ask = (_, question) =>
+        {
+            asked = question;
+            return null;
+        };
+        try
+        {
+            ClickAt(list, Right(0, 26));
+            await Pump.Until(() => asked != null);
+        }
+        finally
+        {
+            GitStatusActions.Ask = ask;
+        }
+
+        await Assert.That(asked!.Caption).IsEqualTo("Git push");
+        await Assert.That(asked.Heading).StartsWith("main is 1 commit ahead of ");
+        await Assert.That(list.SelectedIndices.Cast<int>()).IsEquivalentTo(picked);
+
+        ClickAt(list, Right(1, 30));
+        await Assert.That(list.SelectedIndices.Cast<int>()).IsEquivalentTo([1]);
     }
 
     // The picked commit's heading draws the line between it and the commits itself, with a
@@ -651,6 +701,14 @@ public class GitPanesTests
         var point = (IntPtr) ((row.Top + row.Height / 2) << 16 | (row.Left + list.LogicalToDeviceUnits(40)));
         PostMessage(list.Handle, 0x0202, keys, point);
         NativeMethods.SendMessage(list.Handle, 0x0201, 1 | keys, point);
+        Application.DoEvents();
+    }
+
+    static void ClickAt(RowList list, Point at)
+    {
+        var point = (IntPtr) (at.Y << 16 | at.X);
+        PostMessage(list.Handle, 0x0202, 0, point);
+        NativeMethods.SendMessage(list.Handle, 0x0201, 1, point);
         Application.DoEvents();
     }
 

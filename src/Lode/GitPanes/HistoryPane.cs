@@ -9,7 +9,7 @@ sealed class HistoryPane : UserControl
     // Pixels at 100% scale.
     const int inset = DesktopStyle.Inset;
 
-    const string notPushed = "Not pushed yet";
+    const string notPushed = "Not pushed yet. Click to push";
 
     PaneHeader header = new("History", Icons.History);
     PaneSplitContainer split = new();
@@ -69,6 +69,11 @@ sealed class HistoryPane : UserControl
     public event Action? EscapePressed;
 
     /// <summary>
+    /// The arrow of a commit not pushed clicked: for the commits ahead to be pushed, once asked.
+    /// </summary>
+    public event Action? PushRequested;
+
+    /// <summary>
     /// A file of the picked commit picked, or several, or none, or one asked to be shown: for the
     /// diff to show it.
     /// </summary>
@@ -120,6 +125,7 @@ sealed class HistoryPane : UserControl
         commits.SelectedIndexChanged += (_, _) => OnCommitPicked();
         commits.RetrieveVirtualItem += (_, args) => NearEnd(args.ItemIndex);
         commits.MouseUp += OnCommitsMouseUp;
+        commits.ButtonAt = ButtonAt;
         commits.GotFocus += (_, _) => commits.Invalidate();
         commits.LostFocus += (_, _) => commits.Invalidate();
         commitTip = new(commits, CommitTipAt);
@@ -782,7 +788,11 @@ sealed class HistoryPane : UserControl
     /// The tooltip at a point of the list of commits: what a tag or the arrow under it is. Null
     /// elsewhere.
     /// </summary>
-    internal string? CommitTipAt(Point point)
+    internal string? CommitTipAt(Point point) =>
+        IndicatorAt(point)?.Tip;
+
+    // The tag or arrow at a point of the list of commits, null elsewhere.
+    (Rectangle Bounds, string? Tag, string Tip)? IndicatorAt(Point point)
     {
         if (commits.HitTest(point).Item is not { } item ||
             item.Index >= loaded.Count)
@@ -796,8 +806,20 @@ sealed class HistoryPane : UserControl
         {
             if (indicator.Bounds.Contains(point))
             {
-                return indicator.Tip;
+                return indicator;
             }
+        }
+
+        return null;
+    }
+
+    // The arrow of a commit not pushed is a button: clicked, it asks to push, as the status
+    // bar's commits ahead do. A tag is only a label.
+    Action? ButtonAt(Point point)
+    {
+        if (IndicatorAt(point) is { Tag: null })
+        {
+            return () => PushRequested?.Invoke();
         }
 
         return null;

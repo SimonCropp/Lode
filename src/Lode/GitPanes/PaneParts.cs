@@ -488,6 +488,65 @@ sealed class RowList : ListView
     /// </summary>
     public event Action? Deselected;
 
+    /// <summary>
+    /// What a click does at a point of a row that is a button rather than part of the row, the
+    /// arrow of a commit not pushed say: null where there is none. Pressed and let go on it, it
+    /// does that, and the row is neither picked nor put away.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Func<Point, Action?>? ButtonAt { get; set; }
+
+    // The row whose button was pressed, to act once the button comes up on it. -1 while none.
+    int pressedButton = -1;
+
+    // A press, let go or double-click on a button, kept from the list, so it picks nothing. A
+    // double-click is a second press, which acts on nothing, else two clicks asked twice.
+    bool OnButton(int message, Point point)
+    {
+        if (ButtonAt == null)
+        {
+            return false;
+        }
+
+        if (message == leftButtonUp)
+        {
+            var pressed = pressedButton;
+            pressedButton = -1;
+            if (pressed < 0)
+            {
+                return false;
+            }
+
+            if (HitTest(point).Item?.Index == pressed &&
+                ButtonAt(point) is { } act)
+            {
+                act();
+            }
+
+            return true;
+        }
+
+        if (message != leftButtonDown &&
+            message != leftButtonDoubleClick)
+        {
+            return false;
+        }
+
+        pressedButton = -1;
+        if (ButtonAt(point) == null ||
+            HitTest(point).Item is not { } item)
+        {
+            return false;
+        }
+
+        if (message == leftButtonDown)
+        {
+            pressedButton = item.Index;
+        }
+
+        return true;
+    }
+
     const int leftButtonDoubleClick = 0x0203;
     const int timerMessage = 0x0113;
 
@@ -519,6 +578,12 @@ sealed class RowList : ListView
             {
                 SetWindowLong(Handle, WindowStyle, style & ~WindowStyleHorizontalScroll);
             }
+        }
+
+        if (message.Msg is leftButtonDown or leftButtonUp or leftButtonDoubleClick &&
+            OnButton(message.Msg, PointOf(message.LParam)))
+        {
+            return;
         }
 
         if (!DeselectsOnClick)

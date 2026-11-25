@@ -129,6 +129,7 @@ sealed class GitPanes : IDisposable
         changes.ShowInFolderRequested += _ => ShowInFolderRequested?.Invoke(_);
         history.ShowInFolderRequested += _ => ShowInFolderRequested?.Invoke(_);
         history.OpenSiteRequested += _ => OpenSiteRequested?.Invoke(_);
+        history.PushRequested += Push;
 
         // A commit is in History straight away, not once the watch hears of it.
         changes.Committed += history.Reload;
@@ -259,6 +260,27 @@ sealed class GitPanes : IDisposable
         {
             history.Reload();
         }
+    }
+
+    // History's arrow clicked: asks what to do about the commits ahead, as the status bar's
+    // commits ahead do, pull first say where the branch has diverged. With the state read again,
+    // which the panes may not have, and the arrows may be newer than.
+    async void Push()
+    {
+        if (repo is not { } asked)
+        {
+            return;
+        }
+
+        var read = await Task.Run(() => FolderView.ReadGit(asked, Cancel.None));
+        if (disposed ||
+            read == null ||
+            !ChangesPane.SameRepo(repo, asked))
+        {
+            return;
+        }
+
+        GitStatusActions.Act(window, GitState.PartKind.Ahead, asked, read, settings.CodeDirectory);
     }
 
     /// <summary>
