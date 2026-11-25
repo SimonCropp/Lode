@@ -8,6 +8,10 @@ sealed class ClosableTabControl : TabControl
     const int leftButtonDownMessage = 0x0201;
     const int leftButtonDoubleClickMessage = 0x0203;
 
+    // What the arrows at the end of the row send it, with the tab to start the row at.
+    const int horizontalScrollMessage = 0x0114;
+    const int scrollToPosition = 4;
+
     // Pixels at 100% scale.
     const int crossBoxSize = 20;
     const int crossSize = 8;
@@ -174,7 +178,65 @@ sealed class ClosableTabControl : TabControl
         if (ItemSize != size)
         {
             ItemSize = size;
+            ScrollToSelected();
         }
+    }
+
+    protected override void OnSizeChanged(EventArgs args)
+    {
+        base.OnSizeChanged(args);
+        ScrollToSelected();
+    }
+
+    // Windows brings the tab selected into view as it is selected, and not again: wider tabs, as
+    // a longer name makes them all, or a narrower row, can leave it off past the arrows at the
+    // end of the row. The Diff tab, named for its file once it is selected, was. The row is
+    // scrolled as the arrows scroll it, and as Windows scrolls it to a tab selected: a tab past
+    // the arrows comes in at the end of the row, one off to the left at its start.
+    void ScrollToSelected()
+    {
+        var selected = SelectedIndex;
+        if (!IsHandleCreated ||
+            selected < 0 ||
+            selected >= TabCount)
+        {
+            return;
+        }
+
+        var arrows = NativeMethods.FindWindowEx(Handle, IntPtr.Zero, "msctls_updown32", null);
+        if (arrows == IntPtr.Zero ||
+            (NativeMethods.GetWindowLong(arrows, NativeMethods.WindowStyle) & NativeMethods.WindowStyleVisible) == 0)
+        {
+            return;
+        }
+
+        NativeMethods.GetWindowRect(arrows, out var bounds);
+        var end = PointToClient(new(bounds.Left, bounds.Top)).X;
+        var tab = GetTabRect(selected);
+        if (tab.Left >= 0 &&
+            tab.Right <= end)
+        {
+            return;
+        }
+
+        // The first tab in view, unless the tab selected is before it. Tabs scrolled off to the
+        // left are left of the row's start.
+        var first = 0;
+        while (first < selected &&
+               GetTabRect(first).Left < 0)
+        {
+            first++;
+        }
+
+        var start = GetTabRect(first).Left;
+        var target = first;
+        while (target < selected &&
+               tab.Right - (GetTabRect(target).Left - start) > end)
+        {
+            target++;
+        }
+
+        NativeMethods.SendMessage(Handle, horizontalScrollMessage, (target << 16) | scrollToPosition, IntPtr.Zero);
     }
 
     // Checked on every paint, since a tab's text changes without a layout. Resizing tabs from

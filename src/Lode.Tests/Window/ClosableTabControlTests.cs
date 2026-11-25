@@ -205,6 +205,52 @@ public class ClosableTabControlTests
         await Assert.That(tabs.DropIndex(Screen(first.Left + 2, 250))).IsEqualTo(3);
     }
 
+    // Renamed once it is selected, as the Diff tab is for the file it shows, a tab widens every
+    // tab, which pushed it off past the arrows at the end of the row.
+    [Test]
+    public async Task ATabWidenedOutOfViewIsScrolledTo()
+    {
+        using var tabs = Create(out _);
+        var diff = new TabPage("Diff");
+        tabs.TabPages.Add(diff);
+        tabs.SelectedTab = diff;
+
+        diff.Text = "Diff: Directory.Packages.props";
+        Application.DoEvents();
+
+        await AssertSelectedInView(tabs);
+    }
+
+    // Narrowed, the row can leave the tab selected off past the arrows too.
+    [Test]
+    public async Task ATabNarrowedOutOfViewIsScrolledTo()
+    {
+        using var tabs = Create(out _);
+        Application.DoEvents();
+        tabs.SelectedIndex = 2;
+
+        tabs.Width = tabs.GetTabRect(2).Right - 10;
+
+        await AssertSelectedInView(tabs);
+    }
+
+    // The tab selected is whole between the start of the row and the arrows, and the row is
+    // scrolled no further than that takes, as Windows scrolls it to a tab selected: one more tab
+    // before it would push it past them.
+    static async Task AssertSelectedInView(ClosableTabControl tabs)
+    {
+        var arrows = NativeMethods.FindWindowEx(tabs.Handle, IntPtr.Zero, "msctls_updown32", null);
+        await Assert.That(arrows).IsNotEqualTo(IntPtr.Zero);
+        await Assert.That(NativeMethods.GetWindowLong(arrows, NativeMethods.WindowStyle) & NativeMethods.WindowStyleVisible).IsNotEqualTo(0);
+
+        NativeMethods.GetWindowRect(arrows, out var bounds);
+        var end = tabs.PointToClient(new(bounds.Left, bounds.Top)).X;
+        var tab = tabs.GetTabRect(tabs.SelectedIndex);
+        await Assert.That(tab.Left).IsGreaterThanOrEqualTo(0);
+        await Assert.That(tab.Right).IsLessThanOrEqualTo(end);
+        await Assert.That(tab.Right + tab.Width).IsGreaterThan(end);
+    }
+
     static List<string> Texts(TabControl tabs) =>
         tabs.TabPages.Cast<TabPage>().Select(_ => _.Text).ToList();
 

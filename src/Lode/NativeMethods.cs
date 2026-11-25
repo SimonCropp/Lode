@@ -236,6 +236,7 @@ static partial class NativeMethods
     public static partial bool RedrawWindow(IntPtr window, IntPtr updateRect, IntPtr updateRegion, uint flags);
 
     public const int WindowStyle = -16;
+    public const int WindowStyleVisible = 0x10000000;
     public const int WindowStyleHorizontalScroll = 0x00100000;
     public const int ScrollBarHorizontal = 0;
     public const uint ScrollInfoRange = 0x0001;
@@ -282,6 +283,14 @@ static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     public static partial IntPtr GetFocus();
+
+    [LibraryImport("user32.dll", EntryPoint = "FindWindowExW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial IntPtr FindWindowEx(IntPtr parent, IntPtr after, string? className, string? title);
+
+    // On the screen.
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetWindowRect(IntPtr window, out NativeRect rect);
 
     [LibraryImport("user32.dll")]
     public static unsafe partial int GetClassNameW(IntPtr window, char* name, int length);
