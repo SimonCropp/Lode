@@ -32,7 +32,7 @@ sealed class WindowContext : ApplicationContext
         menu.Items.Add(open);
         menu.Items.Add("New window", null, (_, _) => OpenWindow([settings.StartLocation()]));
         menu.Items.Add(new ToolStripSeparator());
-        var update = new ToolStripMenuItem("", null, (_, _) => ApplyUpdate());
+        var update = new ToolStripMenuItem("", null, (_, _) => OnUpdateItem());
         menu.Items.Add(update);
         menu.Items.Add("Exit", null, (_, _) => Exit());
         // Looked at each time the menu opens, rather than as checks end, since the menu is only
@@ -42,6 +42,7 @@ sealed class WindowContext : ApplicationContext
             var text = UpdateItemText(Updates.Instance);
             update.Visible = text != null;
             update.Text = text;
+            update.Enabled = !Updates.Instance.Checking;
         };
         tray = new()
         {
@@ -116,17 +117,81 @@ sealed class WindowContext : ApplicationContext
     }
 
     /// <summary>
-    /// The tray menu's update item, or null for none, which is when no newer Lode is known, as
-    /// for a build's output, which never knows of one.
+    /// The tray menu's update item: the update once a newer Lode is known, otherwise a check for
+    /// one, which is off while it runs. Null for none, which is for a build's output, as it has
+    /// nothing to update.
     /// </summary>
     internal static string? UpdateItemText(Updates updates)
     {
-        if (updates.Available is not { } available)
+        if (updates.Tool == null)
         {
             return null;
         }
 
-        return $"Update to Lode {available.ToNormalizedString()}";
+        if (updates.Checking)
+        {
+            return "Checking for updates…";
+        }
+
+        if (updates.Available is { } available)
+        {
+            return $"Update to Lode {available.ToNormalizedString()}";
+        }
+
+        return "Check for updates";
+    }
+
+    void OnUpdateItem()
+    {
+        if (Updates.Instance.Available != null)
+        {
+            ApplyUpdate();
+            return;
+        }
+
+        _ = CheckForUpdates();
+    }
+
+    // The menu is gone by the time NuGet answers, so a balloon says what it found.
+    async Task CheckForUpdates()
+    {
+        await Updates.Instance.Check();
+        // Not once Lode is exiting, which hides the icon.
+        if (!tray.Visible)
+        {
+            return;
+        }
+
+        var notice = CheckNotice(Updates.Instance);
+        tray.ShowBalloonTip(10000, notice.Title, notice.Message, notice.Icon);
+    }
+
+    /// <summary>
+    /// What the tray says once a check from its menu ends.
+    /// </summary>
+    internal static UpdateNotice CheckNotice(Updates updates)
+    {
+        if (updates.Available is { } available)
+        {
+            var version = available.ToNormalizedString();
+            return new(
+                $"Lode {version} is available",
+                $"Update to Lode {version} is in this icon's menu.",
+                ToolTipIcon.Info);
+        }
+
+        if (updates.Error is { } error)
+        {
+            return new(
+                "Couldn't check for updates",
+                error,
+                ToolTipIcon.Warning);
+        }
+
+        return new(
+            "Lode is up to date",
+            $"Lode {updates.Current.ToNormalizedString()} is the newest version.",
+            ToolTipIcon.Info);
     }
 
     void Track(MainForm window)

@@ -22,30 +22,81 @@ public class WindowContextTests
                 }
                 """);
 
-    // Only a newer version has an item: newest and build are none, so leave the snapshot.
+    // A build has no item, so it is left out of the snapshot.
     [Test]
-    public Task UpdateItemText() =>
-        Verify(
-            new
-            {
-                available = WindowContext.UpdateItemText(
-                    TestUpdates.Installed(
-                        new()
-                        {
-                            AvailableUpdate = "0.4.0-beta.2"
-                        })),
-                newest = WindowContext.UpdateItemText(TestUpdates.Installed(new())),
-                build = WindowContext.UpdateItemText(
-                    TestUpdates.Build(
-                        new()
-                        {
-                            AvailableUpdate = "0.4.0"
-                        }))
-            })
+    public async Task UpdateItemText()
+    {
+        var answer = new TaskCompletionSource<NuGetVersion?>();
+        var checking = TestUpdates.Installed(new(), _ => answer.Task);
+        var check = checking.Check();
+        var checkingText = WindowContext.UpdateItemText(checking);
+        answer.SetResult(null);
+        await check;
+
+        await Verify(
+                new
+                {
+                    available = WindowContext.UpdateItemText(
+                        TestUpdates.Installed(
+                            new()
+                            {
+                                AvailableUpdate = "0.4.0-beta.2"
+                            })),
+                    newest = WindowContext.UpdateItemText(TestUpdates.Installed(new())),
+                    checking = checkingText,
+                    build = WindowContext.UpdateItemText(
+                        TestUpdates.Build(
+                            new()
+                            {
+                                AvailableUpdate = "0.4.0"
+                            }))
+                })
             .Snapshot(
                 """
                 {
-                  available: Update to Lode 0.4.0-beta.2
+                  available: Update to Lode 0.4.0-beta.2,
+                  newest: Check for updates,
+                  checking: Checking for updates…
                 }
                 """);
+    }
+
+    [Test]
+    public async Task CheckNotice()
+    {
+        var available = TestUpdates.Installed(new(), "0.4.0");
+        await available.Check();
+        var newest = TestUpdates.Installed(new(), "0.3.0");
+        await newest.Check();
+        var failed = TestUpdates.Installed(new(), _ => throw new HttpRequestException("No such host is known."));
+        await failed.Check();
+
+        await Verify(
+                new
+                {
+                    available = WindowContext.CheckNotice(available),
+                    newest = WindowContext.CheckNotice(newest),
+                    failed = WindowContext.CheckNotice(failed)
+                })
+            .Snapshot(
+                """
+                {
+                  available: {
+                    Title: Lode 0.4.0 is available,
+                    Message: Update to Lode 0.4.0 is in this icon's menu.,
+                    Icon: Info
+                  },
+                  newest: {
+                    Title: Lode is up to date,
+                    Message: Lode 0.3.0 is the newest version.,
+                    Icon: Info
+                  },
+                  failed: {
+                    Title: Couldn't check for updates,
+                    Message: No such host is known.,
+                    Icon: Warning
+                  }
+                }
+                """);
+    }
 }
