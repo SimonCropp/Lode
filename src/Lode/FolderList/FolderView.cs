@@ -5373,7 +5373,7 @@ sealed class FolderView : UserControl
                 NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
                 changes.Raise,
                 subfolders: true,
-                changedAt: path =>
+                changedAt: (path, _) =>
                 {
                     if (promotedPatterns is { } current &&
                         current.Promotes(root, path))

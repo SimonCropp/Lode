@@ -17,7 +17,7 @@ sealed class FolderWatcher : IDisposable
     Action changed;
     Action<string, string>? renamed;
     bool subfolders;
-    Action<string>? changedAt;
+    Action<string, WatcherChangeTypes>? changedAt;
     Lock gate = new();
     IDisposable removal;
     FileSystemWatcher? watcher;
@@ -33,10 +33,11 @@ sealed class FolderWatcher : IDisposable
     /// <param name="renamed">Called on a background thread, from where and to where, for
     /// something renamed in the folder, before <paramref name="changed"/> is.</param>
     /// <param name="subfolders">Everything beneath the folder, not just what is in it.</param>
-    /// <param name="changedAt">Called on a background thread with the path of each change, in
-    /// place of <paramref name="changed"/>, which is then only for when anything may have
-    /// changed: too many changes to keep track of, or watching again after a time without.</param>
-    public FolderWatcher(string path, NotifyFilters filter, Action changed, string? name = null, Action<string, string>? renamed = null, bool subfolders = false, Action<string>? changedAt = null)
+    /// <param name="changedAt">Called on a background thread with the path of each change, and
+    /// what the change was, in place of <paramref name="changed"/>, which is then only for when
+    /// anything may have changed: too many changes to keep track of, or watching again after a
+    /// time without.</param>
+    public FolderWatcher(string path, NotifyFilters filter, Action changed, string? name = null, Action<string, string>? renamed = null, bool subfolders = false, Action<string, WatcherChangeTypes>? changedAt = null)
     {
         this.path = path;
         this.filter = filter;
@@ -102,14 +103,14 @@ sealed class FolderWatcher : IDisposable
 
         if (changedAt is { } at)
         {
-            started.Created += (_, args) => at(args.FullPath);
-            started.Deleted += (_, args) => at(args.FullPath);
-            started.Changed += (_, args) => at(args.FullPath);
+            started.Created += (_, args) => at(args.FullPath, args.ChangeType);
+            started.Deleted += (_, args) => at(args.FullPath, args.ChangeType);
+            started.Changed += (_, args) => at(args.FullPath, args.ChangeType);
             started.Renamed += (_, args) =>
             {
                 renamed?.Invoke(args.OldFullPath, args.FullPath);
-                at(args.OldFullPath);
-                at(args.FullPath);
+                at(args.OldFullPath, args.ChangeType);
+                at(args.FullPath, args.ChangeType);
             };
         }
         else

@@ -824,6 +824,16 @@ static class GitCache
         Locations.IsWithin(inside, "fsmonitor--daemon") ||
         inside.EndsWith(".lock", StringComparison.OrdinalIgnoreCase);
 
+    // A .git folder told of as changed, not made, deleted or renamed: only its time, which moves
+    // whenever something in it comes or goes, and that is told of on its own, the index or HEAD
+    // written, or a lock taken and let go of for a read, which is noise. Counted, each read that
+    // took a lock was the reason for the next. A worktree's or a submodule's .git is a file,
+    // saying where its git folder is, and its changing is a change.
+    static bool IsGitFoldersTime(string path, WatcherChangeTypes change) =>
+        change == WatcherChangeTypes.Changed &&
+        path.EndsWith(@"\.git", StringComparison.OrdinalIgnoreCase) &&
+        Directory.Exists(path);
+
     // Whether the path is in a .git folder, and where in it. A worktree's and a submodule's own
     // are in the .git of the repository they are of.
     static bool InGit(CharSpan path, out CharSpan inside)
@@ -842,8 +852,13 @@ static class GitCache
     // On a background thread, for everything changed in the code folder, so as little as it can
     // be. Stale at once, so a view going to it reads it; the views showing it are told once its
     // changes stop.
-    internal static void ChangedAt(string path)
+    internal static void ChangedAt(string path, WatcherChangeTypes change = WatcherChangeTypes.Changed)
     {
+        if (IsGitFoldersTime(path, change))
+        {
+            return;
+        }
+
         lock (gate)
         {
             // Nothing is made for a change, not a string for each folder above it either: there

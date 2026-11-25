@@ -451,6 +451,7 @@ public class GitPanesTests
         await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
 
         Click(list, 0);
+        await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
         PumpFor(TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200));
         await Assert.That(list.SelectedIndices.Count).IsEqualTo(0);
 

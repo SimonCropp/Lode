@@ -82,32 +82,40 @@ static partial class DragImage
     /// <summary>
     /// The picture a drag of these shows, before the shell frames it.
     /// </summary>
-    internal static Bitmap Picture(IReadOnlyList<(int Icon, int Overlay)> icons, int count, int dpi)
+    internal static Bitmap Picture(IReadOnlyList<(int Icon, int Overlay)> icons, int count, int dpi) =>
+        Picture(icons.Count, count, dpi, (index, size) => ShellIcons.Render(icons[index].Icon, new(size, size), Point.Empty, icons[index].Overlay, size));
+
+    /// <summary>
+    /// The picture a drag of so many icons shows, each drawn by <paramref name="render"/> from
+    /// its index, as big as it says. Tests give icons of their own: the shell's are the
+    /// machine's, drawn as its icon cache has them at the time.
+    /// </summary>
+    internal static Bitmap Picture(int icons, int count, int dpi, Func<int, int, Bitmap> render)
     {
         var size = side * dpi / 96;
         var picture = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var graphics = Graphics.FromImage(picture);
         if (count == 1)
         {
-            Draw(graphics, icons[0], Point.Empty, size);
+            Draw(graphics, render, 0, Point.Empty, size);
             return picture;
         }
 
         // A quarter smaller, those behind up and to the right of the first.
         var iconSize = size * 3 / 4;
         var step = (size - iconSize) / 2;
-        for (var index = Math.Min(icons.Count, 3) - 1; index >= 0; index--)
+        for (var index = Math.Min(icons, 3) - 1; index >= 0; index--)
         {
-            Draw(graphics, icons[index], new(step * index, size - iconSize - step * index), iconSize);
+            Draw(graphics, render, index, new(step * index, size - iconSize - step * index), iconSize);
         }
 
         DrawCount(graphics, count, size, dpi);
         return picture;
     }
 
-    static void Draw(Graphics graphics, (int Icon, int Overlay) icon, Point location, int size)
+    static void Draw(Graphics graphics, Func<int, int, Bitmap> render, int index, Point location, int size)
     {
-        using var drawn = ShellIcons.Render(icon.Icon, new(size, size), Point.Empty, icon.Overlay, size);
+        using var drawn = render(index, size);
         graphics.DrawImage(drawn, location);
     }
 

@@ -3147,12 +3147,12 @@ public class FolderViewTests
     // Which of two repositories a change at path is a change to, as the cache counts their
     // changes. Not whether each is still fresh after it, which also asks whether the watch is
     // listening just then, and takes in whatever else the watch has heard meanwhile.
-    static async Task<(bool, bool)> ChangeAt(string path, string first, string second)
+    static async Task<(bool, bool)> ChangeAt(string path, string first, string second, WatcherChangeTypes change = WatcherChangeTypes.Changed)
     {
         await Quiet(first, second);
         var firstBefore = GitCache.Changes(first);
         var secondBefore = GitCache.Changes(second);
-        GitCache.ChangedAt(path);
+        GitCache.ChangedAt(path, change);
         return (GitCache.Changes(first) != firstBefore, GitCache.Changes(second) != secondBefore);
     }
 
@@ -3229,6 +3229,34 @@ public class FolderViewTests
 
         await Assert.That(itsHead).IsEqualTo((true, true));
         await Assert.That(itsObjects).IsEqualTo((false, false));
+    }
+
+    // A .git folder told of as changed is only its time, which moves as a lock comes and goes
+    // for a read: no change, or each read that took a lock would be the reason for the next.
+    // Made or deleted it is one. So is a worktree's .git changing, a file saying where its git
+    // folder is.
+    [Test]
+    public async Task AGitFoldersTimeIsNoChange()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var main = code.CreateRepo("Main");
+        var tree = code.At("Tree");
+        var own = Path.Combine(main, ".git", "worktrees", "Tree");
+        Directory.CreateDirectory(own);
+        Directory.CreateDirectory(tree);
+        await File.WriteAllTextAsync(Path.Combine(own, "commondir"), "../..");
+        await File.WriteAllTextAsync(Path.Combine(tree, ".git"), $"gitdir: {own.Replace('\\', '/')}");
+        GitCache.Watch(code.Root);
+
+        var itsTime = await ChangeAt(Path.Combine(main, ".git"), main, tree);
+        var made = await ChangeAt(Path.Combine(main, ".git"), main, tree, WatcherChangeTypes.Created);
+        var deleted = await ChangeAt(Path.Combine(main, ".git"), main, tree, WatcherChangeTypes.Deleted);
+        var theWorktrees = await ChangeAt(Path.Combine(tree, ".git"), main, tree);
+
+        await Assert.That(itsTime).IsEqualTo((false, false));
+        await Assert.That(made).IsEqualTo((true, false));
+        await Assert.That(deleted).IsEqualTo((true, false));
+        await Assert.That(theWorktrees).IsEqualTo((false, true));
     }
 
     // A repository that ignores bin and obj, with nothing to commit.
