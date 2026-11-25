@@ -1506,7 +1506,7 @@ sealed class FolderView : UserControl
         // With much of the list selected, everything say, a search for each costs more than
         // going through the rows once: each of its steps is a comparison, which is a call into
         // Windows, where going through is a lookup a row.
-        if ((long)probes.Count * BitOperations.Log2((uint)Math.Max(displayed.Count, 2)) > displayed.Count)
+        if ((long) probes.Count * BitOperations.Log2((uint) Math.Max(displayed.Count, 2)) > displayed.Count)
         {
             return false;
         }
@@ -2766,6 +2766,7 @@ sealed class FolderView : UserControl
         // is gone into: listing starts git, and one after another, a folder of repositories
         // was a wait on each in turn.
         var listers = new SemaphoreSlim(Math.Clamp(Environment.ProcessorCount, 2, 8));
+
         async Task<GitScope?> ListSoon(string top)
         {
             await listers.WaitAsync(cancel);
@@ -4004,7 +4005,7 @@ sealed class FolderView : UserControl
     // selected the list stays where it is.
     void ScrollToSelection()
     {
-        if (list.FocusedItem is { Selected: true } focused)
+        if (list.FocusedItem is {Selected: true} focused)
         {
             focused.EnsureVisible();
             return;
@@ -4940,10 +4941,11 @@ sealed class FolderView : UserControl
         },
         null,
         .. NewItems(types)
-            .Select(_ => new QuickMenu.Command(_.Label, () => createFile(_.Type))
-            {
-                ShellIcon = _.Icon
-            })
+            .Select(_ =>
+                new QuickMenu.Command(_.Label, () => createFile(_.Type))
+                {
+                    ShellIcon = _.Icon
+                })
     ];
 
     /// <summary>
@@ -5163,7 +5165,9 @@ sealed class FolderView : UserControl
     {
         var icons = dragged
             .Take(3)
-            .Select(_ => IconOf(_, static () => { }))
+            .Select(_ => IconOf(_, static () =>
+            {
+            }))
             .ToList();
         DragImage.Set(data, icons, dragged.Count, DeviceDpi);
     }
