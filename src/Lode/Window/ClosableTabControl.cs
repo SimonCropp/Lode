@@ -203,14 +203,14 @@ sealed class ClosableTabControl : TabControl
             return;
         }
 
-        var arrows = NativeMethods.FindWindowEx(Handle, IntPtr.Zero, "msctls_updown32", null);
+        var arrows = FindWindowEx(Handle, IntPtr.Zero, "msctls_updown32", null);
         if (arrows == IntPtr.Zero ||
-            (NativeMethods.GetWindowLong(arrows, NativeMethods.WindowStyle) & NativeMethods.WindowStyleVisible) == 0)
+            (GetWindowLong(arrows, WindowStyle) & WindowStyleVisible) == 0)
         {
             return;
         }
 
-        NativeMethods.GetWindowRect(arrows, out var bounds);
+        GetWindowRect(arrows, out var bounds);
         var end = PointToClient(new(bounds.Left, bounds.Top)).X;
         var tab = GetTabRect(selected);
         if (tab.Left >= 0 &&
@@ -236,7 +236,7 @@ sealed class ClosableTabControl : TabControl
             target++;
         }
 
-        NativeMethods.SendMessage(Handle, horizontalScrollMessage, (target << 16) | scrollToPosition, IntPtr.Zero);
+        SendMessage(Handle, horizontalScrollMessage, (target << 16) | scrollToPosition, IntPtr.Zero);
     }
 
     // Checked on every paint, since a tab's text changes without a layout. Resizing tabs from
