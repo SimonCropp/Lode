@@ -39,6 +39,14 @@ static class Pump
     }
 
     /// <summary>
+    /// Until no Shift, Ctrl or Alt reads as held, before a key is sent that WinForms adds them to.
+    /// The test thread can read the real keyboard's: a key held in another window while the tests
+    /// run would otherwise go with it, Escape becoming Ctrl+Escape.
+    /// </summary>
+    public static Task NoModifiersHeld() =>
+        Until(() => Control.ModifierKeys == Keys.None);
+
+    /// <summary>
     /// Until the tree shows every folder it was reading: those it expanded, or went through to
     /// select one.
     /// </summary>

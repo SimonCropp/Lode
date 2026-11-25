@@ -472,6 +472,10 @@ sealed class RowList : ListView
     const int leftButtonDown = 0x0201;
     const int leftButtonUp = 0x0202;
 
+    // A mouse message's MK_SHIFT and MK_CONTROL: the keys held with the button.
+    const nint shiftHeld = 0x0004;
+    const nint controlHeld = 0x0008;
+
     /// <summary>
     /// Whether a click on the row already picked, the only one, picks none, as in History, where
     /// that puts the commit's files away. Not with Ctrl or Shift held, which pick as they always do.
@@ -554,7 +558,10 @@ sealed class RowList : ListView
 
         pressedPicked = -1;
         unpicked = false;
-        if (ModifierKeys == Keys.None &&
+        // Ctrl and Shift as they were when the button went down, which the press carries. Read
+        // from the keyboard instead, they could be a key held in another window, and the click
+        // left the commit picked.
+        if ((message.WParam & (controlHeld | shiftHeld)) == 0 &&
             HitTest(point).Item is { } item &&
             SelectedIndices.Count == 1 &&
             SelectedIndices.Contains(item.Index))

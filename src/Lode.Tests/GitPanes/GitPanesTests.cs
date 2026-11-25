@@ -262,6 +262,7 @@ public class GitPanesTests
         pane.FilterBox.Text = "Deep";
 
         // Escape as the box gets it, through the keys of each control it is in.
+        await Pump.NoModifiersHeld();
         var escape = Message.Create(pane.FilterBox.Handle, 0x0100, (IntPtr) Keys.Escape, IntPtr.Zero);
         pane.FilterBox.PreProcessMessage(ref escape);
         await Assert.That(pane.Filtering).IsFalse();
@@ -307,6 +308,7 @@ public class GitPanesTests
         await Assert.That(pane.SummaryBox.Focused).IsTrue();
 
         pane.DescribeButton.PerformClick();
+        await Pump.NoModifiersHeld();
         var escape = Message.Create(box.Handle, 0x0100, (IntPtr) Keys.Escape, IntPtr.Zero);
         box.PreProcessMessage(ref escape);
         await Assert.That(pane.Describing).IsFalse();
@@ -429,6 +431,33 @@ public class GitPanesTests
         Click(list, 3);
         await PaneStubs.Settled(form);
         await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([3]);
+    }
+
+    // A click on the picked commit with Ctrl held picks as a click always does, leaving it picked
+    // with its files: Ctrl as the press has it, not as the window's thread reads the keyboard
+    // when it is handled, which can be the real keyboard's, a key pressed in another window.
+    [Test]
+    public async Task CtrlClickOnPickedCommitKeepsIt()
+    {
+        const int controlHeld = 0x0008;
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([0]);
+
+        Click(list, 0, controlHeld);
+        PumpFor(TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200));
+
+        await Assert.That(list.SelectedIndices.Cast<int>().ToList()).IsEquivalentTo([0]);
+        await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
     }
 
     // The newest commit is picked as the commits show, with its files under it; once the picked
@@ -615,12 +644,13 @@ public class GitPanesTests
 
     // A click as Windows sends one: the button up waiting in the queue, for the list, which
     // doesn't come back from the press until the button is up, to find.
-    static void Click(RowList list, int index)
+    // A click on the row, with the keys, MK_CONTROL or MK_SHIFT, held with it.
+    static void Click(RowList list, int index, int keys = 0)
     {
         var row = list.GetItemRect(index);
         var point = (IntPtr) ((row.Top + row.Height / 2) << 16 | (row.Left + list.LogicalToDeviceUnits(40)));
-        PostMessage(list.Handle, 0x0202, IntPtr.Zero, point);
-        NativeMethods.SendMessage(list.Handle, 0x0201, 1, point);
+        PostMessage(list.Handle, 0x0202, keys, point);
+        NativeMethods.SendMessage(list.Handle, 0x0201, 1 | keys, point);
         Application.DoEvents();
     }
 
