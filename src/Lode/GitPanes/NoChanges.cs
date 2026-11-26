@@ -133,8 +133,11 @@ sealed class NoChanges : Panel
             return null;
         }
 
-        if (state.Behind > 0 &&
-            state.Ahead > 0)
+        if (state is
+            {
+                Behind: > 0,
+                Ahead: > 0
+            })
         {
             return new(
                 $"{GitState.CountOf(state.Behind, "commit")} to pull, and {GitState.CountOf(state.Ahead, "commit")} here to push after them, as of the last fetch.",

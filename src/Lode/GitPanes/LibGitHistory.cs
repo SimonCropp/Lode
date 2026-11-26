@@ -71,7 +71,7 @@ static class LibGitHistory
     /// repository can't be read.
     /// </summary>
     public static HashSet<string>? Unpushed(string repo, Cancel cancel) =>
-        Open<HashSet<string>?>(repo, cancel, Unpushed, null);
+        Open(repo, cancel, Unpushed, null);
 
     /// <summary>
     /// The files <paramref name="commit"/> changed, against its first parent, as
