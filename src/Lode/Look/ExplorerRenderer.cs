@@ -143,15 +143,14 @@ sealed class ExplorerRenderer : ToolStripSystemRenderer
 
     protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs args)
     {
+        var color = ExplorerStyle.Window;
         if (args.ToolStrip is ToolStripDropDown)
         {
-            using var brush = new SolidBrush(ExplorerStyle.MenuBackground);
-            args.Graphics.FillRectangle(brush, args.AffectedBounds);
-            return;
+            color = ExplorerStyle.MenuBackground;
         }
 
-        using var window = new SolidBrush(ExplorerStyle.Window);
-        args.Graphics.FillRectangle(window, args.AffectedBounds);
+        using var brush = new SolidBrush(color);
+        args.Graphics.FillRectangle(brush, args.AffectedBounds);
     }
 
     // In place of the raised edge Windows draws round a toolbar, and the frame round a menu,
