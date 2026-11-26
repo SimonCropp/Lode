@@ -1,5 +1,3 @@
-using System.Drawing.Text;
-
 /// <summary>
 /// The toolbar and address bar icons: glyphs of Segoe Fluent Icons, the icon font Windows 11
 /// and File Explorer use, so no images ship with Lode. Windows 10 has no Segoe Fluent Icons;

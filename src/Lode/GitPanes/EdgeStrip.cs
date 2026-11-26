@@ -390,7 +390,7 @@ sealed class EdgeStrip : Control
             graphics.DrawLine(divider, 0, 0, 0, Height);
         }
 
-        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         foreach (var (pane, bounds) in Tabs())
         {
             var inner = Rectangle.Inflate(bounds, -LogicalToDeviceUnits(3), 0);

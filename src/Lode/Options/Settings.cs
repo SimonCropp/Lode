@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 sealed class Settings
 {
     static JsonSerializerOptions serializerOptions = new()
@@ -656,50 +654,4 @@ sealed class Settings
             IssueLauncher.LaunchForException("Failed to save settings", exception);
         }
     }
-}
-
-/// <summary>
-/// How a folder is sorted: by which of the file list's columns, by its key, and which way.
-/// </summary>
-sealed record FolderSort(string Folder, string Column, bool Ascending);
-
-/// <summary>
-/// Where a file's changes show when picked in the Changes or History pane.
-/// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<DiffPlacement>))]
-enum DiffPlacement
-{
-    // A tab of their own beside the folders' tabs, the panes staying beside it.
-    Tab,
-
-    // A window of their own, with the files changed down its left.
-    Window,
-
-    // Over the folder list of the tab showing, till the file is no longer picked.
-    Folder,
-
-    // The text editor, VS Code say, or git's diff tool.
-    Editor
-}
-
-/// <summary>
-/// Which of the Changes and History panes are pinned for a repository.
-/// </summary>
-sealed record PinnedPanes(string Repo, bool Changes, bool History);
-
-/// <summary>
-/// Whether an action shows as a button on the actions bar, in the right-click menu, or both, and
-/// in each, whether under its parent.
-/// </summary>
-sealed class ActionPlacement
-{
-    public bool Button { get; set; }
-    public bool Menu { get; set; }
-
-    // Null takes LodeActions' default, as a placement saved before actions had parents does.
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? ButtonNested { get; set; }
-
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public bool? MenuNested { get; set; }
 }

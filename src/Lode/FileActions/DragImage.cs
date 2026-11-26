@@ -1,4 +1,3 @@
-using System.Drawing.Text;
 using ComDataObject = System.Runtime.InteropServices.ComTypes.IDataObject;
 using ComFormat = System.Runtime.InteropServices.ComTypes.FORMATETC;
 using ComMedium = System.Runtime.InteropServices.ComTypes.STGMEDIUM;

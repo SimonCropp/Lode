@@ -10,7 +10,7 @@ enum GitPane
 /// <summary>
 /// How the tabs on the strip down the window's right edge are labelled.
 /// </summary>
-[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<StripLabels>))]
+[JsonConverter(typeof(JsonStringEnumConverter<StripLabels>))]
 enum StripLabels
 {
     // The pane's icon, and its name written down the strip, as Visual Studio has them.
