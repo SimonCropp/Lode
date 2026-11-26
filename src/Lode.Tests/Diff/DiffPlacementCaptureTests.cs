@@ -19,7 +19,15 @@ public class DiffPlacementCaptureTests
 
     // A window of its own, the files changed down its left.
     [Test]
-    public async Task Window()
+    public Task Window() =>
+        CaptureDiffWindow(PaneStubs.CommitFiles, 1, PaneStubs.History[1]);
+
+    // A window of its own for what is uncommitted: its heading says so, and the repository.
+    [Test]
+    public Task WindowUncommitted() =>
+        CaptureDiffWindow(PaneStubs.Files, 0, null);
+
+    static async Task CaptureDiffWindow(IReadOnlyList<Change> files, int picked, GitCommit? commit)
     {
         using var stubs = new PaneStubs();
         using var diff = DiffSample.Stub();
@@ -27,9 +35,9 @@ public class DiffPlacementCaptureTests
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = DiffPlacement.Window;
         using var form = await Show(fixture, settings);
-        var source = new DiffSource(fixture.Root, PaneStubs.CommitFiles[1], PaneStubs.History[1]);
+        var source = new DiffSource(fixture.Root, files[picked], commit);
 
-        form.DiffHost.Request(new(fixture.Root, source, PaneStubs.CommitFiles, PaneStubs.History[1], 1, Open: true));
+        form.DiffHost.Request(new(fixture.Root, source, files, commit, 1, Open: true));
 
         using var window = form.DiffHost.Window!;
         window.Location = new(-20000, -20000);

@@ -58,6 +58,20 @@ public class DiffViewCaptureTests
             new(DiffSample.Repo, new("data.bin", null, GitChange.Modified), Commit()),
             diff: new BinaryDiff());
 
+    // Too big to show straight away: what is said, with the button under it that shows it anyway.
+    [Test]
+    public Task TooBig() =>
+        Capture(
+            new(DiffSample.Repo, new("data.json", null, GitChange.Modified), Commit()),
+            diff: new LargeDiff(""));
+
+    // What git said when it couldn't show the changes, long enough to wrap onto more lines.
+    [Test]
+    public Task Failed() =>
+        Capture(
+            new(DiffSample.Repo, DiffSample.File, Commit()),
+            diff: new FailedDiff("fatal: unable to read tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904: the object file is empty or corrupt, as an interrupted fetch can leave it. Run git fsck to find which objects are damaged, then fetch them again from the remote."));
+
     static GitCommit Commit() =>
         new("abc", ["def"], "Ada Lovelace", DateTimeOffset.UnixEpoch, [], "Improve the scripts");
 

@@ -81,6 +81,40 @@ public class GitPanesCaptureTests
                 commits.SelectedIndices.Add(1);
             });
 
+    // No commit picked, the one picked clicked again: the heading says to pick one, with no files
+    // under it. Once the double-click time has passed, when the list would pick the row again
+    // unless stopped.
+    [Test]
+    public Task HistoryNonePicked() =>
+        Capture(
+            PaneLayout.Medium,
+            GitPane.History,
+            form =>
+            {
+                var commits = form.GitPanes.HistoryPane.CommitList;
+                Click(commits, commits.SelectedIndices[0]);
+                var started = Stopwatch.GetTimestamp();
+                while (Stopwatch.GetElapsedTime(started) < TimeSpan.FromMilliseconds(SystemInformation.DoubleClickTime * 2 + 200))
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(10);
+                }
+            });
+
+    // A click on a row as Windows sends one: the button up waiting in the queue, for the list,
+    // which doesn't come back from the press until the button is up, to find.
+    static void Click(RowList list, int index)
+    {
+        var row = list.GetItemRect(index);
+        var point = (IntPtr) ((row.Top + row.Height / 2) << 16 | (row.Left + list.LogicalToDeviceUnits(40)));
+        PostMessage(list.Handle, 0x0202, 0, point);
+        NativeMethods.SendMessage(list.Handle, 0x0201, 1, point);
+        Application.DoEvents();
+    }
+
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
     // Compare to branch: the commits behind the branch compared with, how many each way, and
     // the button merging them in.
     [Test]
