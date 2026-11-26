@@ -38,6 +38,19 @@ public class GitPanesCaptureTests
             history: false,
             form => form.GitPanes.ChangesPane.ShowDescription(true, focus: false));
 
+    // A merge left part way by conflicts: the bar over the files, each in conflict saying how it
+    // is left to settle, the summary as git's message, and Commit merge held back.
+    [Test]
+    public Task ChangesConflicted() =>
+        Capture(
+            changes: true,
+            history: false,
+            form =>
+            {
+                ChangesPane.Read = (_, _) => PaneStubs.Conflicted;
+                form.GitPanes.ChangesPane.Reload();
+            });
+
     [Test]
     public Task ChangesPinned() =>
         Capture(changes: true, history: false);

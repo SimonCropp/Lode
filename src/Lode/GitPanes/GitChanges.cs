@@ -1,10 +1,18 @@
 /// <summary>
 /// A file with changes not yet committed, as the Changes pane lists it, or one a commit changed,
 /// as History lists it: its path from the top of the repository, with forward slashes, and, for a
-/// rename, where it was.
+/// rename, where it was. One in conflict says how it is left to settle.
 /// </summary>
-sealed record Change(string Path, string? OldPath, GitChange Kind)
+sealed record Change(string Path, string? OldPath, GitChange Kind, Conflict? Conflict = null)
 {
+    /// <summary>
+    /// A file in conflict whose conflicts are all settled in its text, no markers left, so it can
+    /// go in the commit of the merge as it is.
+    /// </summary>
+    public bool Settled =>
+        Kind == GitChange.Conflicted &&
+        Conflict is { Manual: false, Markers: 0 };
+
     /// <summary>
     /// The paths a commit of it takes in: a rename both where it is and where it was, so the old
     /// path goes in the same commit.
@@ -21,6 +29,35 @@ sealed record Change(string Path, string? OldPath, GitChange Kind)
 }
 
 /// <summary>
+/// How a file in conflict is left to settle: how many conflicts git marked in its text, and,
+/// where one side deleted it, or it isn't text, that its markers can't settle it, so one side's
+/// file is to be picked, as GitHub Desktop has a side picked for one.
+/// </summary>
+sealed record Conflict(int Markers, bool Manual, bool OursDeleted = false, bool TheirsDeleted = false)
+{
+    /// <summary>
+    /// What the row says of it, as GitHub Desktop says it.
+    /// </summary>
+    public string Note
+    {
+        get
+        {
+            if (Manual)
+            {
+                return "Pick a side";
+            }
+
+            if (Markers == 0)
+            {
+                return "No conflicts left";
+            }
+
+            return GitState.CountOf(Markers, "conflict");
+        }
+    }
+}
+
+/// <summary>
 /// A file only some of whose changed lines are to be committed, with the patch of those lines
 /// against the last commit, as <see cref="LinePatch"/> writes it.
 /// </summary>
@@ -32,14 +69,24 @@ sealed record PartialChange(Change File, string Patch);
 /// branch, null when detached, whether there is a commit yet, and whether a merge, cherry pick or
 /// revert is part way, when git commits everything or nothing.
 /// </summary>
-sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files)
+/// <param name="MergingFrom">Part way through a merge, the branch being merged in, feature say,
+/// as git's message for the merge names it; null where it can't be told.</param>
+/// <param name="MergeSummary">Part way through a merge, the first line of git's message for it,
+/// to start the summary with.</param>
+sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null)
 {
     public static GitChanges Empty { get; } = new(null, true, false, []);
 
     /// <summary>
-    /// Whether a file is left to resolve, which git won't commit until it is.
+    /// Whether a file is left to resolve, which git won't commit until it is: one in conflict
+    /// with markers still in it, or a side yet to pick.
     /// </summary>
-    public bool Conflicted => Files.Any(_ => _.Kind == GitChange.Conflicted);
+    public bool Conflicted => ConflictsLeft > 0;
+
+    /// <summary>
+    /// How many files are left to resolve.
+    /// </summary>
+    public int ConflictsLeft => Files.Count(_ => _.Kind == GitChange.Conflicted && !_.Settled);
 
     /// <summary>
     /// Reads what is uncommitted. Null when git can't, no git installed say.
@@ -65,7 +112,147 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             return null;
         }
 
-        return Parse(result.Output, IsMerging(repo));
+        var merging = IsMerging(repo);
+        var parsed = Parse(result.Output, merging);
+        var files = parsed.Files
+            .Select(_ => WithMarkers(repo, _))
+            .ToList();
+        var (from, summary) = MergeMessage(repo, merging);
+        return parsed with
+        {
+            Files = files,
+            MergingFrom = from,
+            MergeSummary = summary
+        };
+    }
+
+    // A file in conflict with how many conflicts are still marked in it, read from the file as
+    // it is: git marks each with a line starting <<<<<<<. One gone, or that isn't text, a NUL in
+    // it, markers can't settle: a side is to be picked.
+    static Change WithMarkers(string repo, Change change)
+    {
+        if (change.Conflict is not { Manual: false } conflict)
+        {
+            return change;
+        }
+
+        try
+        {
+            var path = Path.Combine(repo, change.Path.Replace('/', '\\'));
+            if (!File.Exists(path))
+            {
+                return change with
+                {
+                    Conflict = conflict with
+                    {
+                        Manual = true
+                    }
+                };
+            }
+
+            var text = File.ReadAllText(path);
+            if (text.Contains('\0'))
+            {
+                return change with
+                {
+                    Conflict = conflict with
+                    {
+                        Manual = true
+                    }
+                };
+            }
+
+            return change with
+            {
+                Conflict = conflict with
+                {
+                    Markers = CountMarkers(text)
+                }
+            };
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return change;
+        }
+    }
+
+    /// <summary>
+    /// How many conflicts git marked in <paramref name="text"/>: lines starting <<<<<<<.
+    /// </summary>
+    internal static int CountMarkers(string text)
+    {
+        var count = 0;
+        foreach (var line in text.AsSpan().EnumerateLines())
+        {
+            if (line.StartsWith("<<<<<<<", StringComparison.Ordinal))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    // The branch being merged in and the first line of git's message for the merge, from the
+    // message git keeps while it is part way: "Merge branch 'feature'", "Merge branch 'feature'
+    // of https://...", or "Merge remote-tracking branch 'origin/main'".
+    static (string? From, string? Summary) MergeMessage(string repo, bool merging)
+    {
+        if (!merging ||
+            CodeCommands.GitDirectory(repo) is not { } git)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var path = Path.Combine(git, "MERGE_MSG");
+            if (!File.Exists(path))
+            {
+                return (null, null);
+            }
+
+            var first = File.ReadLines(path).FirstOrDefault()?.Trim();
+            return (MergedBranch(first), first);
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// The branch git's message for a merge names, the first quoted, or null.
+    /// </summary>
+    internal static string? MergedBranch(string? message)
+    {
+        if (message == null ||
+            !message.StartsWith("Merge ", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var start = message.IndexOf('\'');
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var end = message.IndexOf('\'', start + 1);
+        if (end < 0)
+        {
+            return null;
+        }
+
+        return message[(start + 1)..end];
     }
 
     /// <summary>
@@ -158,7 +345,11 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
 
             if (entry.StartsWith("u ", StringComparison.Ordinal))
             {
-                files.Add(new(PathAfter(entry, 10), null, GitChange.Conflicted));
+                // "u XY ...": D where a side deleted it, DU deleted by us, UD by them. Taken to
+                // have a conflict marked until the file is read, so it isn't settled unread.
+                var oursDeleted = entry[2] == 'D';
+                var theirsDeleted = entry[3] == 'D';
+                files.Add(new(PathAfter(entry, 10), null, GitChange.Conflicted, new(1, oursDeleted || theirsDeleted, oursDeleted, theirsDeleted)));
                 continue;
             }
 
@@ -379,6 +570,63 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
 
         File.WriteAllText(file, text.ToString(), new UTF8Encoding(false));
         return file;
+    }
+
+    /// <summary>
+    /// Settles a file in conflict with one side's file whole, as GitHub Desktop's Use the
+    /// modified file from main does: the branch checked out's with <paramref name="ours"/>,
+    /// otherwise the branch merged in's. Where that side deleted it, it is deleted.
+    /// </summary>
+    public static CodeCommands.RepoResult UseSide(string repo, Change change, bool ours, Cancel cancel)
+    {
+        var deleted = change.Conflict is { } conflict &&
+                      (ours ? conflict.OursDeleted : conflict.TheirsDeleted);
+        if (deleted)
+        {
+            return CodeCommands.GitToItsEnd(repo, cancel, "--literal-pathspecs", "rm", "--quiet", "--", change.Path);
+        }
+
+        var side = "--theirs";
+        if (ours)
+        {
+            side = "--ours";
+        }
+
+        var checkout = CodeCommands.GitToItsEnd(repo, cancel, "--literal-pathspecs", "checkout", side, "--", change.Path);
+        if (!checkout.Succeeded)
+        {
+            return checkout;
+        }
+
+        return CodeCommands.GitToItsEnd(repo, cancel, "--literal-pathspecs", "add", "--", change.Path);
+    }
+
+    /// <summary>
+    /// Takes files in conflict as they are now, settled: as edited, or gone where deleted.
+    /// </summary>
+    public static CodeCommands.RepoResult MarkResolved(string repo, IReadOnlyList<Change> changes, Cancel cancel) =>
+        CodeCommands.GitToItsEnd(repo, cancel, ["--literal-pathspecs", "add", "--all", "--", .. changes.Select(_ => _.Path)]);
+
+    /// <summary>
+    /// Gives up the merge, cherry pick or revert part way, the branch and its files as they were
+    /// before it, as GitHub Desktop's Abort merge does.
+    /// </summary>
+    public static CodeCommands.RepoResult Abort(string repo, Cancel cancel)
+    {
+        var command = "merge";
+        if (CodeCommands.GitDirectory(repo) is { } git)
+        {
+            if (File.Exists(Path.Combine(git, "CHERRY_PICK_HEAD")))
+            {
+                command = "cherry-pick";
+            }
+            else if (File.Exists(Path.Combine(git, "REVERT_HEAD")))
+            {
+                command = "revert";
+            }
+        }
+
+        return CodeCommands.GitToItsEnd(repo, cancel, command, "--abort");
     }
 
     /// <summary>

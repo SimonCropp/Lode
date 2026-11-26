@@ -161,6 +161,119 @@ public class GitChangesTests
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
     }
 
+    // A merge left part way by conflicts, as Changes reads it: each file in conflict with how
+    // many conflicts are marked in it, the branch merged in, and git's message for the merge;
+    // one a side deleted has a side to pick.
+    [Test]
+    public async Task ReadsConflicts()
+    {
+        using var scratch = new Scratch();
+        var repo = await Conflicting(scratch);
+
+        var changes = GitChanges.Read(repo, Cancel.None)!;
+
+        await Assert.That((changes.Merging, changes.MergingFrom, changes.MergeSummary, changes.ConflictsLeft)).IsEqualTo((true, "feature", "Merge branch 'feature'", 2));
+        await Assert.That(changes.Files.Select(_ => $"{_.Path}: {_.Conflict?.Note}"))
+            .IsEquivalentTo(["gone.txt: Pick a side", "tracked.txt: 2 conflicts"]);
+        await Assert.That(ChangesPane.MergeBarText(changes)).IsEqualTo("Merging feature into main: 2 conflicted files left. Right-click one to pick a side, or settle its markers in the editor.");
+    }
+
+    // Settled in its text, no markers left, a file can go in the commit as it is; one side's
+    // file picked, or a deletion, settles it with git; the merge then commits.
+    [Test]
+    public async Task SettlesConflictsAndCommitsTheMerge()
+    {
+        using var scratch = new Scratch();
+        var repo = await Conflicting(scratch);
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "settled\n");
+        var read = GitChanges.Read(repo, Cancel.None)!;
+        await Assert.That((read.ConflictsLeft, read.Files.Single(_ => _.Path == "tracked.txt").Settled)).IsEqualTo((1, true));
+
+        var gone = read.Files.Single(_ => _.Path == "gone.txt");
+        var deleted = GitChanges.UseSide(repo, gone, ours: false, Cancel.None);
+        var settled = GitChanges.Read(repo, Cancel.None)!;
+
+        await Assert.That(deleted.Succeeded).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(repo, "gone.txt"))).IsFalse();
+        await Assert.That((settled.Conflicted, ChangesPane.MergeBarText(settled))).IsEqualTo((false, "Merging feature into main: no conflicts left. Commit the merge."));
+
+        var commit = GitChanges.Commit(repo, settled.Files, merging: true, "Merge branch 'feature'", Cancel.None);
+
+        await Assert.That(commit.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "rev-list", "--parents", "-n", "1", "HEAD").Split(' ').Length).IsEqualTo(3);
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("settled\n");
+    }
+
+    // The branch checked out's file whole, or the branch merged in's, and Mark as resolved
+    // taking a file as it is.
+    [Test]
+    public async Task UsesEitherSidesFile()
+    {
+        using var scratch = new Scratch();
+        var repo = await Conflicting(scratch);
+        var read = GitChanges.Read(repo, Cancel.None)!;
+        var tracked = read.Files.Single(_ => _.Path == "tracked.txt");
+
+        var theirs = GitChanges.UseSide(repo, tracked, ours: false, Cancel.None);
+        var afterTheirs = await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"));
+        var gone = read.Files.Single(_ => _.Path == "gone.txt");
+        var ours = GitChanges.UseSide(repo, gone, ours: true, Cancel.None);
+
+        await Assert.That((theirs.Succeeded, ours.Succeeded)).IsEqualTo((true, true));
+        await Assert.That(afterTheirs).IsEqualTo("feature one\na\nb\nc\nd\nfeature two\n");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "gone.txt"))).IsEqualTo("main changed it\n");
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Conflicted).IsFalse();
+        await Assert.That(Git(repo, "diff", "--name-only", "--diff-filter=U")).IsEqualTo("");
+    }
+
+    // Abort merge puts the branch and its files back as they were before it.
+    [Test]
+    public async Task AbortsTheMerge()
+    {
+        using var scratch = new Scratch();
+        var repo = await Conflicting(scratch);
+        var head = Git(repo, "rev-parse", "HEAD");
+
+        var result = GitChanges.Abort(repo, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Merging).IsFalse();
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
+        await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(head);
+    }
+
+    [Test]
+    public async Task CountsMarkersAndNamesTheBranch()
+    {
+        await Assert.That(GitChanges.CountMarkers("a\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> x\n<<<<<<< HEAD\n")).IsEqualTo(2);
+        await Assert.That(GitChanges.CountMarkers("no <<<<<<< at the start\n")).IsEqualTo(0);
+        await Assert.That(GitChanges.MergedBranch("Merge remote-tracking branch 'origin/main'")).IsEqualTo("origin/main");
+        await Assert.That(GitChanges.MergedBranch("Merge branch 'feature' of https://example.com/repo")).IsEqualTo("feature");
+        await Assert.That(GitChanges.MergedBranch("Revert \"x\"")).IsNull();
+    }
+
+    // Main and feature both changed tracked.txt, twice apart, and feature deleted gone.txt that
+    // main changed, then feature merged into main, left part way.
+    static async Task<string> Conflicting(Scratch scratch)
+    {
+        var repo = scratch.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "one\na\nb\nc\nd\ntwo\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "gone.txt"), "gone\n");
+        Git(repo, "add", ".");
+        Git(repo, "commit", "-m", "Base");
+        Git(repo, "switch", "-q", "-c", "feature");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "feature one\na\nb\nc\nd\nfeature two\n");
+        Git(repo, "rm", "-q", "gone.txt");
+        Git(repo, "commit", "-am", "Feature");
+        Git(repo, "switch", "-q", "main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "main one\na\nb\nc\nd\nmain two\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "gone.txt"), "main changed it\n");
+        Git(repo, "commit", "-am", "Main");
+        var merge = GitMerging.Merge(repo, "feature", squash: false, Cancel.None);
+        await Assert.That(merge.Output).StartsWith("Merging feature left 2 conflicted files, to settle in Changes");
+        return repo;
+    }
+
     // Puts tracked files back as committed, takes a staged new file out of the index, and
     // leaves a file git doesn't track to the Recycle Bin, which the pane sends it to.
     [Test]

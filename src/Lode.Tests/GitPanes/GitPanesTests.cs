@@ -663,6 +663,49 @@ public class GitPanesTests
         await Assert.That(list.TopItem?.Index).IsEqualTo(0);
     }
 
+    // Part way through a merge with conflicts, as GitHub Desktop's: a bar over the files saying
+    // what is merging and how many files are left, the summary starting as git's message, a
+    // file's right-click entries picking a side, and Commit merge held back until none are left.
+    [Test]
+    public async Task ChangesSettleAMergesConflicts()
+    {
+        using var stubs = new PaneStubs();
+        ChangesPane.Read = (_, _) => PaneStubs.Conflicted;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        string Entries(Change change) =>
+            string.Join(
+                ", ",
+                pane.ConflictCommands([change]).Select(_ =>
+                {
+                    if (_ == null)
+                    {
+                        return "----";
+                    }
+
+                    if (_.Enabled)
+                    {
+                        return _.Text;
+                    }
+
+                    return $"{_.Text} (disabled)";
+                }));
+
+        await Assert.That(pane.MergeText).IsEqualTo("Merging feature into main: 2 conflicted files left. Right-click one to pick a side, or settle its markers in the editor.");
+        await Assert.That(pane.SummaryBox.Text).IsEqualTo("Merge branch 'feature'");
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Commit merge", false));
+        await Assert.That(Entries(PaneStubs.Conflicted.Files[0])).IsEqualTo("Use the file from main, Use the deletion from feature, Mark as resolved, ----");
+        await Assert.That(Entries(PaneStubs.Conflicted.Files[1])).IsEqualTo("Use the file from main, Use the file from feature, Mark as resolved (disabled), ----");
+        await Assert.That(pane.ConflictCommands([PaneStubs.Conflicted.Files[2]])).IsEmpty();
+    }
+
     // Compare to branch, as GitHub Desktop's: the commits the branch has that the one checked
     // out hasn't, behind, first, with how many each way; Ahead lists the others; closed, the
     // branch's own commits again. Not for a repository the panes aren't about.

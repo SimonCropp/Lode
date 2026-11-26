@@ -226,7 +226,16 @@ static class CodeMenu
             title = $"Git squash and merge {picked} into {current}";
         }
 
-        _ = RunOnBranch(title, repo, cancel => GitMerging.Merge(repo, picked, squash, cancel));
+        await RunOnBranch(title, repo, cancel => GitMerging.Merge(repo, picked, squash, cancel));
+
+        // Left part way by conflicts, Changes slides out, where they are settled.
+        if (!owner.IsDisposed &&
+            owner.FindForm() is MainForm window &&
+            GitChanges.IsMerging(repo) &&
+            ChangesPane.SameRepo(window.GitPanes.Repo, repo))
+        {
+            window.GitPanes.Float(GitPane.Changes, focus: true);
+        }
     }
 
     /// <summary>

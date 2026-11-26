@@ -44,10 +44,11 @@ public class GitMergingTests
         await Assert.That(Preview(repo, "main", "feature", GitMerging.Kind.Merge)).IsEqualTo(new GitMerging.Preview("main is already up to date with feature.", false));
     }
 
-    // Found before merging, as git would merge them, without touching the folder; merged
-    // anyway, it is undone, the folder as it was.
+    // Found before merging, as git would merge them, without touching the folder. A merge is
+    // left part way, for them to be settled in Changes; a squash, which leaves no merge under way
+    // there, can't be pressed, and done anyway is undone, the folder as it was.
     [Test]
-    public async Task AMergeThatWouldConflictIsFoundAndUndone()
+    public async Task AMergeThatWouldConflictIsLeftToSettle()
     {
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
@@ -55,21 +56,26 @@ public class GitMergingTests
         await Commit(repo, "tracked.txt", "main");
         var head = Git(repo, "rev-parse", "HEAD");
 
-        var preview = Preview(repo, "main", "feature", GitMerging.Kind.Merge);
+        var merge = Preview(repo, "main", "feature", GitMerging.Kind.Merge);
+        var squash = Preview(repo, "main", "feature", GitMerging.Kind.Squash);
 
-        await Assert.That(preview.CanGo).IsFalse();
-        await Assert.That(preview.Text).IsEqualTo("There will be 1 conflicted file when merging feature into main, so it can't be merged here: merge it yourself, settling them.\ntracked.txt");
+        await Assert.That(merge).IsEqualTo(new GitMerging.Preview("There will be 1 conflicted file when merging feature into main, to settle in Changes before committing the merge.\ntracked.txt", true));
+        await Assert.That(squash).IsEqualTo(new GitMerging.Preview("There will be 1 conflicted file when squashing feature into main, so it can't be squashed here: merge it instead, settling them in Changes.\ntracked.txt", false));
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
 
-        var merged = GitMerging.Merge(repo, "feature", squash: false, Cancel.None);
         var squashed = GitMerging.Merge(repo, "feature", squash: true, Cancel.None);
 
-        await Assert.That((merged.Succeeded, squashed.Succeeded)).IsEqualTo((false, false));
-        await Assert.That(merged.Output).StartsWith("Merging feature would conflict. The merge was undone");
+        await Assert.That(squashed.Succeeded).IsFalse();
         await Assert.That(squashed.Output).StartsWith("Squashing feature would conflict. It was undone");
-        await Assert.That(squashed.Output).Contains("tracked.txt");
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
         await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(head);
+
+        var merged = GitMerging.Merge(repo, "feature", squash: false, Cancel.None);
+
+        await Assert.That(merged.Succeeded).IsFalse();
+        await Assert.That(merged.Output).StartsWith("Merging feature left 1 conflicted file, to settle in Changes");
+        await Assert.That(GitChanges.IsMerging(repo)).IsTrue();
+        await Assert.That(Git(repo, "diff", "--name-only", "--diff-filter=U")).IsEqualTo("tracked.txt");
     }
 
     // The branch's commits as one commit, with git's message for it, listing them.

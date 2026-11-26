@@ -1,10 +1,11 @@
 /// <summary>
 /// Bringing another branch into the one checked out, as GitHub Desktop's Branch menu does:
 /// merging it, squashed into one commit or not, rebasing onto it, and bringing in the default
-/// branch. None leaves git part way through: a merge or rebase that conflicts is undone, saying
-/// which files were in conflict, as the Changes pane has no way to mark them settled. Each
-/// refuses with changes to tracked files, which undoing it could take with it. Nothing is
-/// pushed, but for a rebase asked to force push.
+/// branch. A merge that conflicts is left part way, for the conflicts to be settled in the
+/// Changes pane and the merge committed, or given up there. A squash, rebase or update from the
+/// default branch that conflicts is undone, saying which files, as Changes has no squash or
+/// rebase under way to settle. Each refuses with changes to tracked files, which giving it up
+/// could take with it. Nothing is pushed, but for a rebase asked to force push.
 /// </summary>
 static class GitMerging
 {
@@ -60,9 +61,17 @@ static class GitMerging
                 .Skip(1)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
-            return new(
-                $"There will be {GitState.CountOf(conflicted.Count, "conflicted file")} when merging {branch} into {current}, so it can't be merged here: merge it yourself, settling them.\n{string.Join('\n', conflicted)}",
-                false);
+            var files = string.Join('\n', conflicted);
+            var count = GitState.CountOf(conflicted.Count, "conflicted file");
+
+            // A merge is left part way for them to be settled in Changes; a squash leaves no
+            // merge under way there, so can't be.
+            if (kind == Kind.Squash)
+            {
+                return new($"There will be {count} when squashing {branch} into {current}, so it can't be squashed here: merge it instead, settling them in Changes.\n{files}", false);
+            }
+
+            return new($"There will be {count} when merging {branch} into {current}, to settle in Changes before committing the merge.\n{files}", true);
         }
 
         if (!tree.Succeeded)
@@ -126,6 +135,18 @@ static class GitMerging
             if (merge.Succeeded)
             {
                 return merge;
+            }
+
+            // Stopped by conflicts, it is left part way, for them to be settled in Changes.
+            var conflicted = CodeCommands.Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
+            if (conflicted.Length > 0)
+            {
+                var count = conflicted.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+                return merge with
+                {
+                    Succeeded = false,
+                    Output = $"Merging {branch} left {GitState.CountOf(count, "conflicted file")}, to settle in Changes: pick a side for each, or settle its markers in the editor, then commit the merge. Abort merge there puts the branch back.\nIn conflict:\n{conflicted}"
+                };
             }
 
             return CodeCommands.UndoMerge(repo, branch, merge, pushing: false);

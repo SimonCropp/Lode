@@ -40,6 +40,32 @@ sealed class ChangesPane : UserControl
     bool describing;
     AccentButton commitButton = new();
     ToolTip tip = new();
+
+    // Part way through a merge, as GitHub Desktop's banner has it: what is being merged, how many
+    // files are left to settle, and a button giving the merge up.
+    TableLayoutPanel mergeBar = new()
+    {
+        Dock = DockStyle.Top,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        ColumnCount = 2,
+        RowCount = 1,
+        Visible = false
+    };
+    Label mergeText = new()
+    {
+        AutoSize = true,
+        Anchor = AnchorStyles.Left,
+        UseMnemonic = false,
+        Margin = new(0, 3, 6, 3)
+    };
+    Button abortButton = new()
+    {
+        Name = "abortMerge",
+        Text = "Abort merge",
+        AutoSize = true,
+        Anchor = AnchorStyles.Right
+    };
     RowTip rowTip;
     Settings settings;
 
@@ -197,11 +223,26 @@ sealed class ChangesPane : UserControl
         commitArea.Controls.Add(descriptionSpacer);
         commitArea.Controls.Add(summaryRow);
 
+        mergeBar.Padding = new(inset, 6, inset, 6);
+        mergeBar.BackColor = DesktopStyle.AltBackground;
+        mergeBar.ColumnStyles.Add(new(SizeType.Percent, 100));
+        mergeBar.ColumnStyles.Add(new(SizeType.AutoSize));
+        mergeBar.Controls.Add(mergeText, 0, 0);
+        mergeBar.Controls.Add(abortButton, 1, 0);
+        mergeBar.SizeChanged += (_, _) => mergeText.MaximumSize = new(Math.Max(1, mergeBar.ClientSize.Width - abortButton.Width - mergeBar.Padding.Horizontal - 12), 0);
+        mergeBar.Paint += (_, args) =>
+        {
+            using var pen = new Pen(DesktopStyle.Border);
+            args.Graphics.DrawLine(pen, 0, mergeBar.Height - 1, mergeBar.Width, mergeBar.Height - 1);
+        };
+        abortButton.Click += (_, _) => AbortMerge();
+
         // The list fills what the rest leave.
         Controls.Add(list);
         Controls.Add(commitArea);
         Controls.Add(tickRow);
         Controls.Add(filterRow);
+        Controls.Add(mergeBar);
         Controls.Add(header);
         ShowCommitButton();
     }
@@ -548,6 +589,14 @@ sealed class ChangesPane : UserControl
 
             changes = read ?? GitChanges.Empty;
 
+            // Part way through a merge, the summary starts as git's message for it, as GitHub
+            // Desktop's does, unless something is typed already.
+            if (changes is { Merging: true, MergeSummary: { } summary } &&
+                summaryFrame.Box.TextLength == 0)
+            {
+                summaryFrame.Box.Text = summary;
+            }
+
             // Unticked files no longer changed are forgotten: changed again, they start ticked.
             draft.Keep(changes.Files.Select(_ => _.Path));
             ShowRows();
@@ -602,7 +651,51 @@ sealed class ChangesPane : UserControl
         list.Invalidate();
         tickRow.Invalidate();
         header.Count = changes.Files.Count;
+        ShowMergeBar();
         ShowCommitButton();
+    }
+
+    /// <summary>
+    /// What the bar over the files says part way through a merge. For tests.
+    /// </summary>
+    internal string MergeText => mergeText.Text;
+
+    internal bool MergeBarShown => changes.Merging;
+
+    void ShowMergeBar()
+    {
+        mergeBar.Visible = changes.Merging;
+        if (!changes.Merging)
+        {
+            return;
+        }
+
+        mergeText.Text = MergeBarText(changes);
+    }
+
+    /// <summary>
+    /// What the bar says: what is being merged into what, and how many files are left to
+    /// settle, or that the merge is ready to commit.
+    /// </summary>
+    internal static string MergeBarText(GitChanges changes)
+    {
+        var what = "Merging";
+        if (changes.MergingFrom is { } from)
+        {
+            what = $"Merging {from}";
+            if (changes.Branch is { } branch)
+            {
+                what += $" into {branch}";
+            }
+        }
+
+        var left = changes.ConflictsLeft;
+        if (left == 0)
+        {
+            return $"{what}: no conflicts left. Commit the merge.";
+        }
+
+        return $"{what}: {GitState.CountOf(left, "conflicted file")} left. Right-click one to pick a side, or settle its markers in the editor.";
     }
 
     // Whether any of the file goes in the commit: all of it, or the lines picked.
@@ -855,6 +948,95 @@ sealed class ChangesPane : UserControl
         return (GitChanges.Commit(repo, whole, merging, message, cancel, partial), null);
     }
 
+    /// <summary>
+    /// For files in conflict, as GitHub Desktop offers them: one file settled with the branch
+    /// checked out's file whole, or the branch merged in's, or a deletion where that side deleted
+    /// it; then files taken as they are now, once no markers are left in them. None otherwise.
+    /// </summary>
+    internal List<QuickMenu.Command?> ConflictCommands(IReadOnlyList<Change> selected)
+    {
+        if (selected.Count == 0 ||
+            selected.Any(_ => _.Kind != GitChange.Conflicted))
+        {
+            return [];
+        }
+
+        var commands = new List<QuickMenu.Command?>();
+        if (selected is [var one])
+        {
+            var ours = changes.Branch ?? "the branch checked out";
+            var theirs = changes.MergingFrom ?? "the branch merged in";
+            commands.Add(new(SideText(one.Conflict?.OursDeleted == true, ours), () => Settle($"Git use {ours}'s {one.Path}", (repo, cancel) => GitChanges.UseSide(repo, one, ours: true, cancel))));
+            commands.Add(new(SideText(one.Conflict?.TheirsDeleted == true, theirs), () => Settle($"Git use {theirs}'s {one.Path}", (repo, cancel) => GitChanges.UseSide(repo, one, ours: false, cancel))));
+        }
+
+        // Markers left in a file would go into the commit as they are.
+        var noMarkers = selected.All(_ => _.Conflict is not { Manual: false, Markers: > 0 });
+        commands.Add(new("Mark as resolved", () => Settle("Git mark as resolved", (repo, cancel) => GitChanges.MarkResolved(repo, selected, cancel)), noMarkers));
+        commands.Add(null);
+        return commands;
+
+        static string SideText(bool deleted, string branch)
+        {
+            if (deleted)
+            {
+                return $"Use the deletion from {branch}";
+            }
+
+            return $"Use the file from {branch}";
+        }
+    }
+
+    // A file in conflict settled, or the merge given up, in the Actions panel, then read again.
+    async void Settle(string title, Func<string, Cancel, CodeCommands.RepoResult> work)
+    {
+        if (repo is not { } settlingIn)
+        {
+            return;
+        }
+
+        await ActionLog.Run(
+            title,
+            [settlingIn],
+            async (_, cancel) =>
+            {
+                var result = await Task.Run(() => work(settlingIn, cancel), cancel);
+                GitCache.MarkStale([settlingIn]);
+                return CodeCommands.GitOutcome([result]);
+            });
+        if (!IsDisposed)
+        {
+            Reload();
+            Committed?.Invoke();
+        }
+    }
+
+    // Abort merge: having asked, the branch and its files go back to how they were before the
+    // merge began.
+    void AbortMerge()
+    {
+        if (repo == null ||
+            !changes.Merging ||
+            AskAbort(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        Settle("Git abort merge", GitChanges.Abort);
+    }
+
+    /// <summary>
+    /// Asks whether to abort the merge. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, DialogResult> AskAbort { get; set; } = owner =>
+        MessageBox.Show(
+            owner,
+            "Abort the merge?\n\nThe branch and its files go back to how they were before it began, and any conflicts settled are lost.",
+            "Abort merge",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+
     // Puts the files back as the last commit has them, having asked, the files as they are going
     // to the Recycle Bin first.
     async void Discard(IReadOnlyList<Change> discarding)
@@ -1096,13 +1278,12 @@ sealed class ChangesPane : UserControl
 
     List<QuickMenu.Command?> MenuFor(string menuRepo, IReadOnlyList<Change> selected)
     {
-        var commands = new List<QuickMenu.Command?>
-        {
+        var commands = ConflictCommands(selected);
+        commands.Add(
             new("Discard changes…", () => Discard(selected))
             {
                 Glyph = Icons.Discard
-            }
-        };
+            });
         if (selected is [var one])
         {
             var path = FullPath(menuRepo, one.Path);

@@ -27,6 +27,23 @@ sealed class PaneStubs : IDisposable
         new("Source/main.aleph", null, GitChange.Modified)
     ];
 
+    /// <summary>
+    /// Feature merged into main, left part way by conflicts: one a side deleted, one with two
+    /// conflicts marked, one settled in its text, and a file the merge brought in cleanly.
+    /// </summary>
+    public static GitChanges Conflicted { get; } = new(
+        "main",
+        true,
+        true,
+        [
+            new("Docs/guide.aleph", null, GitChange.Conflicted, new(0, true, TheirsDeleted: true)),
+            new("Source/main.aleph", null, GitChange.Conflicted, new(2, false)),
+            new("notes.aleph", null, GitChange.Modified),
+            new("Source/Deep/leaf.aleph", null, GitChange.Conflicted, new(0, false))
+        ],
+        "feature",
+        "Merge branch 'feature'");
+
     public static List<GitCommit> History { get; } =
     [
         Commit("e5f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9", "Rename several items at once", "Ada Lovelace", TimeSpan.FromHours(2)),

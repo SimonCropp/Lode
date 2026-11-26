@@ -34,7 +34,7 @@ static class ChangeRows
             GitChange.Deleted => "Deleted",
             GitChange.Renamed => $"Renamed from {change.OldPath}",
             GitChange.Untracked => "Untracked: new to git",
-            GitChange.Conflicted => "Conflicted: left to resolve",
+            GitChange.Conflicted => $"Conflicted: {change.Conflict?.Note ?? "left to resolve"}",
             _ => "Modified"
         };
 
@@ -91,6 +91,22 @@ static class ChangeRows
         StatusIcons.Draw(graphics, icon, change.Kind, iconColour);
 
         var room = Rectangle.FromLTRB(bounds.Left, bounds.Top, status.Left - gap, bounds.Bottom);
+
+        // In conflict, how it is left to settle, before the icon, as GitHub Desktop says it: how
+        // many conflicts, none left, or a side to pick. The name has what room it leaves.
+        if (change.Conflict is { } conflict)
+        {
+            var note = conflict.Note;
+            var noteWidth = Math.Min(room.Width / 2, TextRenderer.MeasureText(graphics, note, font, Size.Empty, flags).Width);
+            var noteColour = iconColour;
+            if (conflict is { Manual: false, Markers: 0 })
+            {
+                noteColour = secondary;
+            }
+
+            TextRenderer.DrawText(graphics, note, font, Rectangle.FromLTRB(room.Right - noteWidth, room.Top, room.Right, room.Bottom), noteColour, flags | TextFormatFlags.EndEllipsis);
+            room = Rectangle.FromLTRB(room.Left, room.Top, room.Right - noteWidth - control.LogicalToDeviceUnits(10), room.Bottom);
+        }
 
         // A renamed file: where it was, an arrow, then where it is, as Desktop shows one.
         if (change is
