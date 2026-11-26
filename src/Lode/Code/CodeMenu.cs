@@ -416,14 +416,15 @@ static class CodeMenu
     };
 
     // Looking for the repositories reads two levels of folders, so that is off the UI thread, as
-    // Pull's is, and Discard's. Then it asks for the commit message.
+    // Pull's is, and Discard's. Then it asks for the commit message, where there is anything to
+    // commit, or only whether to push, where there isn't.
     internal static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var (repos, newFiles) = await Task.Run(
+        var (repos, newFiles, changed) = await Task.Run(
             () =>
             {
                 var found = CodeCommands.FindRepos(folders, codeFolder);
-                return (found, CodeCommands.NewFiles(found));
+                return (found, CodeCommands.NewFiles(found), CodeCommands.AnyChanges(found));
             });
         if (repos.Count == 0)
         {
@@ -436,8 +437,16 @@ static class CodeMenu
             return;
         }
 
-        var message = AskCommitMessage(owner, repos, newFiles);
-        if (message == null)
+        string? message = null;
+        if (changed)
+        {
+            message = AskCommitMessage(owner, repos, newFiles);
+            if (message == null)
+            {
+                return;
+            }
+        }
+        else if (MessageBox.Show(owner, PushOnlyQuestion(repos), "Git push", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
         {
             return;
         }
@@ -721,7 +730,7 @@ static class CodeMenu
     {
         using var form = new GitTextForm(
             "Git tag",
-            $"Tag {commit.ShortSha} in {Path.GetFileName(repo)}, and push the tag to origin.",
+            TagCommitQuestion(repo, commit),
             "Tag:",
             "",
             "Tag",
@@ -743,6 +752,18 @@ static class CodeMenu
                 return CodeCommands.GitOutcome(results);
             });
     }
+
+    /// <summary>
+    /// What History's Tag asks: the commit picked, its short SHA and subject.
+    /// </summary>
+    internal static string TagCommitQuestion(string repo, GitCommit commit) =>
+        $"Tag this commit in {Path.GetFileName(repo)}, and push the tag to origin:\n{commit.ShortSha} {commit.Subject}";
+
+    /// <summary>
+    /// What History's Delete tag asks: the commit picked, its short SHA and subject.
+    /// </summary>
+    internal static string DeleteTagQuestion(string repo, GitCommit commit) =>
+        $"Delete a tag of this commit from {Path.GetFileName(repo)}, and from origin:\n{commit.ShortSha} {commit.Subject}\n\nThis cannot be undone.";
 
     /// <summary>
     /// History's Revert commit: asks, then commits what undoes the commit picked, on the branch
@@ -786,7 +807,7 @@ static class CodeMenu
 
         using var form = new GitTextForm(
             "Git delete tag",
-            $"Delete a tag of {commit.ShortSha} from {Path.GetFileName(repo)}, and from origin. This cannot be undone.",
+            DeleteTagQuestion(repo, commit),
             "Tag:",
             first,
             "Delete",
@@ -938,6 +959,13 @@ static class CodeMenu
     }
 
     /// <summary>
+    /// What Push asks where nothing is uncommitted: only whether to push, there being nothing
+    /// for a message to commit.
+    /// </summary>
+    internal static string PushOnlyQuestion(IReadOnlyList<string> repos) =>
+        $"Push {Describe(repos)} to origin?\n\nNothing is uncommitted, so only what is committed goes.";
+
+    /// <summary>
     /// Asks for the text a git action needs: Push's commit message, or a tag. With
     /// <paramref name="choices"/>, a drop-down of them, which can still be typed in. With
     /// <paramref name="namedAs"/>, "Will be created as" say, a new branch's or tag's name: what is
@@ -999,12 +1027,17 @@ static class CodeMenu
             Padding = new(9);
 
             input.Text = text;
+            // Selectable, for a SHA, subject or tag in it to be copied.
+            var question = new SelectableText(description, 380)
+            {
+                Name = "question",
+                Margin = new(3, 3, 3, 6)
+            };
             var label = new Label
             {
                 AutoSize = true,
-                MaximumSize = new(380, 0),
-                Margin = new(3, 3, 3, 6),
-                Text = $"{description}\n\n{prompt}"
+                Margin = new(3, 6, 3, 6),
+                Text = prompt
             };
             var push = new Button
             {
@@ -1070,6 +1103,7 @@ static class CodeMenu
                 ColumnCount = 1,
                 Location = new(Padding.Left, Padding.Top)
             };
+            layout.Controls.Add(question);
             layout.Controls.Add(label);
             layout.Controls.Add(input);
             layout.Controls.Add(note);

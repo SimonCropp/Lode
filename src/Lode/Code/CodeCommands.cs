@@ -629,6 +629,13 @@ static class CodeCommands
         return new($"HEAD:{merge.Output.Trim()}", false, null);
     }
 
+    /// <summary>
+    /// Whether any of the repositories has anything to commit, for Push to ask for a message
+    /// only then.
+    /// </summary>
+    public static bool AnyChanges(IReadOnlyList<string> repos) =>
+        repos.Any(HasChanges);
+
     // Anything to commit: a change, staged or not, or a file git doesn't track nor ignores, as
     // Push adds them.
     static bool HasChanges(string repo)
@@ -718,15 +725,21 @@ static class CodeCommands
 
     /// <summary>
     /// Commits every change with the message, new files included, as the Changes pane commits
-    /// them, though not what git ignores, then pushes to origin.
+    /// them, though not what git ignores, then pushes to origin. With no message, where nothing
+    /// was uncommitted as it asked, it only pushes.
     /// </summary>
-    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string message, IProgress<string>? progress = null, Cancel cancel = default) =>
+    public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string? message, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
             repos,
             progress,
             cancel,
             repo =>
             {
+                if (message == null)
+                {
+                    return Git(repo, cancel, network: true, "push", "origin");
+                }
+
                 var commit = CommitAll(repo, message, "nothing was committed or pushed", cancel);
                 if (!commit.Succeeded)
                 {

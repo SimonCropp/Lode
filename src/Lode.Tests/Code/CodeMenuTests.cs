@@ -330,6 +330,27 @@ public class CodeMenuTests
         await Assert.That(question.GetPositionFromCharIndex(question.TextLength - 1).Y).IsLessThan(question.ClientSize.Height);
     }
 
+    // History's Tag and Delete tag say which commit, its SHA and subject, selectable as Tag's is.
+    [Test]
+    public async Task HistorysTagQuestionsCanBeSelected()
+    {
+        var repo = @"C:\Code\Lode";
+        var commit = new GitCommit("eaae4361234", [], "Ada", DateTimeOffset.UnixEpoch, ["v1.0"], "refs or cleanup");
+
+        await Assert.That(CodeMenu.TagCommitQuestion(repo, commit)).IsEqualTo("Tag this commit in Lode, and push the tag to origin:\neaae436 refs or cleanup");
+        await Assert.That(CodeMenu.DeleteTagQuestion(repo, commit)).IsEqualTo("Delete a tag of this commit from Lode, and from origin:\neaae436 refs or cleanup\n\nThis cannot be undone.");
+
+        using var form = new CodeMenu.GitTextForm("Git delete tag", CodeMenu.DeleteTagQuestion(repo, commit), "Tag:", "v1.0", "Delete", commit.Tags, isTagName: true);
+        _ = form.Handle;
+        var question = (TextBox) form.Controls.Find("question", true).Single();
+        _ = question.Handle;
+        question.SelectAll();
+
+        await Assert.That(question.ReadOnly).IsTrue();
+        await Assert.That(question.SelectedText).Contains("eaae436 refs or cleanup");
+        await Assert.That(question.GetPositionFromCharIndex(question.TextLength - 1).Y).IsLessThan(question.ClientSize.Height);
+    }
+
 #if DEBUG
     [Test]
     public async Task TagsQuestion()

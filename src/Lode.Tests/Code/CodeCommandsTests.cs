@@ -294,6 +294,27 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
     }
 
+    // Push asks for a message only where there is something to commit, a new file included;
+    // with none, it only pushes.
+    [Test]
+    public async Task PushWithoutAMessageOnlyPushes()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        Scratch.Git(repo, "commit", "-am", "Earlier");
+
+        await Assert.That(CodeCommands.AnyChanges([repo])).IsFalse();
+        var results = await CodeCommands.Push([repo], null);
+
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
+
+        await File.WriteAllTextAsync(Path.Combine(repo, "new.txt"), "new");
+        await Assert.That(CodeCommands.AnyChanges([repo])).IsTrue();
+        await Assert.That(CodeMenu.PushOnlyQuestion([repo])).IsEqualTo("Push Repo to origin?\n\nNothing is uncommitted, so only what is committed goes.");
+    }
+
     // New files go in too, as the Changes pane commits them, though not what git ignores, even
     // with nothing else changed.
     [Test]
