@@ -188,54 +188,80 @@ sealed class DiffWindow : Form
     /// Along the top: the commit's subject, semibold, and under it who made it and its SHA; or
     /// that the changes are uncommitted, and in which repository. How many files changed beneath.
     /// </summary>
-    sealed class Heading : Control
+    sealed class Heading : Panel
     {
         Font title;
-        GitCommit? commit;
-        string repo = "";
-        int count;
+
+        Label subject = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            UseMnemonic = false,
+            ForeColor = DesktopStyle.Text
+        };
+
+        Label details = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            UseMnemonic = false,
+            ForeColor = DesktopStyle.SecondaryText
+        };
 
         public Heading(Control owner)
         {
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
             Dock = DockStyle.Top;
             title = DesktopStyle.Semibold(owner.Font, owner.Font.SizeInPoints * 7 / 6);
+            subject.Font = title;
             Height = title.Height + owner.Font.Height + owner.LogicalToDeviceUnits(24);
             BackColor = DesktopStyle.AltBackground;
+            Controls.Add(subject);
+            Controls.Add(details);
         }
 
         public void Show(GitCommit? shown, string shownRepo, int files)
         {
-            commit = shown;
-            repo = shownRepo;
-            count = files;
-            Invalidate();
+            var name = Path.GetFileName(shownRepo.TrimEnd('\\'));
+            subject.Text = "Uncommitted changes";
+            var said = name;
+            if (shown != null)
+            {
+                subject.Text = shown.Subject;
+                said = $"{shown.Author} · {shown.ShortSha} · {name}";
+            }
+
+            details.Text = $"{said} · {GitState.CountOf(files, "changed file")}";
         }
 
-        protected override void OnPaint(PaintEventArgs args)
+        // The subject, then the details under it, across all but the inset either side, each
+        // text starting at the inset.
+        protected override void OnLayout(LayoutEventArgs args)
         {
-            var graphics = args.Graphics;
-            graphics.Clear(DesktopStyle.AltBackground);
-            using (var pen = new Pen(DesktopStyle.Border))
-            {
-                graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
-            }
-
-            const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis;
+            base.OnLayout(args);
             var inset = LogicalToDeviceUnits(DesktopStyle.Inset);
             var top = LogicalToDeviceUnits(10);
-            var name = Path.GetFileName(repo.TrimEnd('\\'));
-            var subject = "Uncommitted changes";
-            var details = name;
-            if (commit != null)
-            {
-                subject = commit.Subject;
-                details = $"{commit.Author} · {commit.ShortSha} · {name}";
-            }
+            Place(subject, inset, top, title.Height);
+            Place(details, inset, subject.Bottom + LogicalToDeviceUnits(2), Font.Height);
+        }
 
-            details = $"{details} · {GitState.CountOf(count, "changed file")}";
-            TextRenderer.DrawText(graphics, subject, title, new Rectangle(inset, top, Width - inset * 2, title.Height), DesktopStyle.Text, flags);
-            TextRenderer.DrawText(graphics, details, Font, new Rectangle(inset, top + title.Height + LogicalToDeviceUnits(2), Width - inset * 2, Font.Height), DesktopStyle.SecondaryText, flags);
+        void Place(Label label, int inset, int top, int height)
+        {
+            var padding = DesktopStyle.LabelPadding(label.Font);
+            label.SetBounds(inset - padding, top, Math.Max(0, Width - inset * 2 + padding * 2), height);
+        }
+
+        // The line along the foot.
+        protected override void OnPaint(PaintEventArgs args)
+        {
+            base.OnPaint(args);
+            using var pen = new Pen(DesktopStyle.Border);
+            args.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+        }
+
+        protected override void OnResize(EventArgs args)
+        {
+            base.OnResize(args);
+            Invalidate();
         }
 
         protected override void Dispose(bool disposing)

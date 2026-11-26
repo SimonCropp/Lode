@@ -586,11 +586,20 @@ sealed class DiffView : UserControl
     }
 
     /// <summary>
-    /// What is said instead of a diff, in the middle, with a button beneath when there is one to
-    /// press.
+    /// What is said instead of a diff, in the middle, wrapping to fit, with a button beneath when
+    /// there is one to press.
     /// </summary>
     sealed class MessagePanel : Panel
     {
+        // Its last line just above the middle, the button just below it.
+        Label label = new()
+        {
+            AutoSize = false,
+            UseMnemonic = false,
+            TextAlign = ContentAlignment.BottomCenter,
+            ForeColor = DesktopStyle.SecondaryText
+        };
+
         AccentButton button = new()
         {
             Visible = false,
@@ -601,40 +610,33 @@ sealed class DiffView : UserControl
 
         public MessagePanel()
         {
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
             BackColor = DiffStyle.Background;
             button.Click += (_, _) => ButtonClicked?.Invoke();
+            Controls.Add(label);
             Controls.Add(button);
         }
 
         public void Show(string text, string? buttonText)
         {
             Text = text;
+            label.Text = text;
             button.Visible = buttonText != null;
             button.Text = buttonText ?? "";
-            PlaceButton();
-            Invalidate();
+            Place();
         }
 
         protected override void OnLayout(LayoutEventArgs levent)
         {
             base.OnLayout(levent);
-            PlaceButton();
+            Place();
         }
 
-        void PlaceButton()
+        void Place()
         {
+            var inset = LogicalToDeviceUnits(24);
+            label.Bounds = Rectangle.FromLTRB(inset, inset, Math.Max(inset, Width - inset), Math.Max(inset, Height / 2 + LogicalToDeviceUnits(8)));
             var width = Math.Max(LogicalToDeviceUnits(160), TextRenderer.MeasureText(button.Text, button.Font).Width + LogicalToDeviceUnits(32));
             button.SetBounds((Width - width) / 2, Height / 2 + LogicalToDeviceUnits(20), width, LogicalToDeviceUnits(28));
-        }
-
-        protected override void OnPaint(PaintEventArgs args)
-        {
-            base.OnPaint(args);
-            const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.HorizontalCenter | TextFormatFlags.Bottom;
-            var inset = LogicalToDeviceUnits(24);
-            var bounds = Rectangle.FromLTRB(inset, inset, Width - inset, Height / 2 + LogicalToDeviceUnits(8));
-            TextRenderer.DrawText(args.Graphics, Text, Font, bounds, DesktopStyle.SecondaryText, flags);
         }
     }
 }

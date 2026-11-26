@@ -95,6 +95,23 @@ static class DesktopStyle
         };
 
     /// <summary>
+    /// How far a Label pads its text at the left, as TextRenderer does unless told not to, for the
+    /// overhang of a glyph's slant: a sixth of the font's height, rounded up, with more at the
+    /// right. What a Label is moved left by for its text to start where text drawn without the
+    /// padding does.
+    /// </summary>
+    public static int LabelPadding(Font font) =>
+        (int) Math.Ceiling(font.Height / 6.0);
+
+    /// <summary>
+    /// How far a Label pads its text at the right, more than at the left (see
+    /// <see cref="LabelPadding"/>): what it is widened by, with that, for text centred in it to be
+    /// centred as text drawn without the padding is.
+    /// </summary>
+    public static int LabelPaddingRight(Font font) =>
+        TextRenderer.MeasureText("x", font).Width - TextRenderer.MeasureText("x", font, Size.Empty, TextFormatFlags.NoPadding).Width - LabelPadding(font);
+
+    /// <summary>
     /// <paramref name="font"/> in its semibold face, as Desktop sets a commit's summary: Segoe UI
     /// Semibold for Segoe UI. Bold where the family has no semibold face.
     /// </summary>

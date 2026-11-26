@@ -268,7 +268,7 @@ sealed class HistoryPane : UserControl
         commits.SetRows(0);
         files.SetRows(0);
         PickedChanged();
-        heading.Invalidate();
+        heading.ShowPicked();
     }
 
     // What is listed: HEAD's commits, or, comparing, those behind or ahead of the branch.
@@ -336,7 +336,7 @@ sealed class HistoryPane : UserControl
         commits.SetRows(0);
         files.SetRows(0);
         PickedChanged();
-        heading.Invalidate();
+        heading.ShowPicked();
         stale = true;
         if (showing)
         {
@@ -532,7 +532,7 @@ sealed class HistoryPane : UserControl
             selected = null;
             changed = [];
             files.SetRows(0);
-            heading.Invalidate();
+            heading.ShowPicked();
             PickedChanged();
         }
 
@@ -568,7 +568,7 @@ sealed class HistoryPane : UserControl
         }
 
         selected = commit;
-        heading.Invalidate();
+        heading.ShowPicked();
         ReadingFiles = ReadFilesAsync(commit);
     }
 
@@ -583,7 +583,7 @@ sealed class HistoryPane : UserControl
         unpicked = true;
         changed = [];
         files.SetRows(0);
-        heading.Invalidate();
+        heading.ShowPicked();
         PickedChanged();
     }
 
@@ -608,7 +608,7 @@ sealed class HistoryPane : UserControl
         files.Invalidate();
 
         // How many files it changed, which said none until they were read.
-        heading.Invalidate();
+        heading.ShowPicked();
         PickedChanged();
     }
 
@@ -1150,47 +1150,135 @@ sealed class HistoryPane : UserControl
     }
 
     // Above the files, as Desktop shows a commit picked: its summary, larger and semibold, then
-    // its author, its sha and when, smaller, and a grey bar saying how many files it changed. A line along its top, between it and the commits: with the commits cut
-    // off part way through a row, above that row's own line, nothing else stands between them.
-    sealed class CommitHeading : Control
+    // its author, its sha and when, smaller, and a grey bar saying how many files it changed; with
+    // none picked, saying to pick one. A line along its top, between it and the commits: with the
+    // commits cut off part way through a row, above that row's own line, nothing else stands
+    // between them.
+    sealed class CommitHeading : Panel
     {
         // Pixels at 100% scale.
         const int barHeight = 30;
 
         HistoryPane pane;
 
+        Label prompt = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            UseMnemonic = false,
+            ForeColor = DesktopStyle.SecondaryText,
+            Text = "Pick a commit to see the files it changed"
+        };
+
+        Label subject = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            UseMnemonic = false,
+            ForeColor = DesktopStyle.Text
+        };
+
+        Label meta = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            UseMnemonic = false,
+            ForeColor = DesktopStyle.SecondaryText
+        };
+
+        // In the grey bar, between its lines.
+        Label count = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            UseMnemonic = false,
+            TextAlign = ContentAlignment.TopCenter,
+            ForeColor = DesktopStyle.Text,
+            BackColor = DesktopStyle.AltBackground
+        };
+
         public CommitHeading(HistoryPane pane)
         {
             this.pane = pane;
-            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
             Dock = DockStyle.Top;
             Height = 10 + pane.title.Height + 5 + pane.small.Height + 10 + barHeight;
             BackColor = DesktopStyle.Background;
+            subject.Font = pane.title;
+            meta.Font = pane.small;
+            Controls.Add(prompt);
+            Controls.Add(subject);
+            Controls.Add(meta);
+            Controls.Add(count);
+            ShowPicked();
         }
 
+        /// <summary>
+        /// Says what the pane has picked, and how many files it changed, or to pick one.
+        /// </summary>
+        public void ShowPicked()
+        {
+            var picked = pane.selected;
+            prompt.Visible = picked == null;
+            subject.Visible = picked != null;
+            meta.Visible = picked != null;
+            count.Visible = picked != null;
+            if (picked != null)
+            {
+                subject.Text = picked.Subject;
+                meta.Text = $"{picked.Author} • {picked.ShortSha} • {picked.When.ToLocalTime():g}";
+                count.Text = GitState.CountOf(pane.changed.Count, "changed file");
+            }
+
+            Invalidate();
+        }
+
+        // Each text from the inset, the subject, then the rest under it, and the count in the bar
+        // along the foot.
+        protected override void OnLayout(LayoutEventArgs args)
+        {
+            base.OnLayout(args);
+            var left = LogicalToDeviceUnits(inset);
+
+            // A line of text tall, half way down, as a single line is centred.
+            var line = TextHeight(prompt.Font);
+            Place(prompt, left, (Height - line) / 2, line);
+            var top = LogicalToDeviceUnits(10);
+            Place(subject, left, top, pane.title.Height);
+            Place(meta, left, top + pane.title.Height + LogicalToDeviceUnits(5), pane.small.Height);
+
+            // Half way down the bar, and across it, widened by its padding either side, so the
+            // count is centred on it.
+            var bar = Height - LogicalToDeviceUnits(barHeight);
+            var countLine = TextHeight(count.Font);
+            var padding = DesktopStyle.LabelPadding(count.Font);
+            count.SetBounds(-padding, bar + (Height - bar - countLine) / 2, Width + padding + DesktopStyle.LabelPaddingRight(count.Font), countLine);
+        }
+
+        // How tall a single line of text is, as it is centred by.
+        static int TextHeight(Font font) =>
+            TextRenderer.MeasureText("x", font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Height;
+
+        void Place(Label label, int left, int top, int height)
+        {
+            var padding = DesktopStyle.LabelPadding(label.Font);
+            label.SetBounds(left - padding, top, Math.Max(0, Width - left * 2 + padding * 2), height);
+        }
+
+        // The line along the top, and, with a commit picked, the bar along the foot, a line above
+        // it and below.
         protected override void OnPaint(PaintEventArgs args)
         {
+            base.OnPaint(args);
             var graphics = args.Graphics;
-            graphics.Clear(BackColor);
             using (var divider = new Pen(ExplorerStyle.Divider))
             {
                 graphics.DrawLine(divider, 0, 0, Width, 0);
             }
 
-            const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis;
-            var left = LogicalToDeviceUnits(inset);
-            if (pane.selected is not { } commit)
+            if (pane.selected == null)
             {
-                TextRenderer.DrawText(graphics, "Pick a commit to see the files it changed", Font, Rectangle.FromLTRB(left, 0, Width - left, Height), DesktopStyle.SecondaryText, flags | TextFormatFlags.VerticalCenter);
                 return;
             }
-
-            var top = LogicalToDeviceUnits(10);
-            TextRenderer.DrawText(graphics, commit.Subject, pane.title, Rectangle.FromLTRB(left, top, Width - left, top + pane.title.Height), DesktopStyle.Text, flags);
-
-            var metaTop = top + pane.title.Height + LogicalToDeviceUnits(5);
-            var meta = $"{commit.Author} • {commit.ShortSha} • {commit.When.ToLocalTime():g}";
-            TextRenderer.DrawText(graphics, meta, pane.small, Rectangle.FromLTRB(left, metaTop, Width - left, metaTop + pane.small.Height), DesktopStyle.SecondaryText, flags);
 
             var bar = Rectangle.FromLTRB(0, Height - LogicalToDeviceUnits(barHeight), Width, Height);
             using (var fill = new SolidBrush(DesktopStyle.AltBackground))
@@ -1198,14 +1286,15 @@ sealed class HistoryPane : UserControl
                 graphics.FillRectangle(fill, bar);
             }
 
-            using (var pen = new Pen(DesktopStyle.Border))
-            {
-                graphics.DrawLine(pen, 0, bar.Top, Width, bar.Top);
-                graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
-            }
+            using var pen = new Pen(DesktopStyle.Border);
+            graphics.DrawLine(pen, 0, bar.Top, Width, bar.Top);
+            graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+        }
 
-            var count = GitState.CountOf(pane.changed.Count, "changed file");
-            TextRenderer.DrawText(graphics, count, Font, bar, DesktopStyle.Text, flags | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        protected override void OnResize(EventArgs args)
+        {
+            base.OnResize(args);
+            Invalidate();
         }
     }
 }
