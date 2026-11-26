@@ -714,7 +714,7 @@ public class GitPanesTests
     {
         using var stubs = new PaneStubs();
         var ranges = new List<string>();
-        HistoryPane.ReadRange = (_, range, skip, count, _) =>
+        HistoryPane.ReadRange = (_, range, _, _, _) =>
         {
             ranges.Add(range);
             if (range.StartsWith("HEAD..", StringComparison.Ordinal))

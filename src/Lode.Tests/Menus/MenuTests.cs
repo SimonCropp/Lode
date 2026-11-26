@@ -43,7 +43,8 @@ public class MenuTests
     public async Task BranchMenu()
     {
         using var owner = new Control();
-        GitBranches.Branch Branch(string name) =>
+
+        static GitBranches.Branch Branch(string name) =>
             new(name, false, null, false);
         var feature = Branch("feature/pin-network-folders");
         var listing = new GitBranches.Listing("main", Branch("main"), [feature], []);

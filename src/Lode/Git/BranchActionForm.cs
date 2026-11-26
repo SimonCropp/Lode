@@ -20,7 +20,7 @@ class BranchActionForm : Form
     // Whether force push is asked: its box is hidden once the dialog closes, so its own
     // Visible says nothing then.
     bool forceOffered;
-    CancellationTokenSource? previewCancel;
+    CancelSource? previewCancel;
 
     /// <summary>
     /// The name of the branch picked, origin/feature for one only on origin.
@@ -290,8 +290,8 @@ class BranchActionForm : Form
 
     async Task ShowPreview(string name)
     {
-        previewCancel?.Cancel();
-        var source = new CancellationTokenSource();
+        var stale = previewCancel;
+        var source = new CancelSource();
         previewCancel = source;
         var asked = ++previewVersion;
         accept.Enabled = false;
@@ -299,7 +299,12 @@ class BranchActionForm : Form
         GitMerging.Preview read;
         try
         {
-            read = await Task.Run(() => previewOf(name, source.Token));
+            if (stale != null)
+            {
+                await stale.CancelAsync();
+            }
+
+            read = await Task.Run(() => previewOf(name, source.Token), source.Token);
         }
         catch (OperationCanceledException)
         {

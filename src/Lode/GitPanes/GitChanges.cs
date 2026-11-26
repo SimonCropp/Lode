@@ -86,7 +86,12 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// <summary>
     /// How many files are left to resolve.
     /// </summary>
-    public int ConflictsLeft => Files.Count(_ => _.Kind == GitChange.Conflicted && !_.Settled);
+    public int ConflictsLeft => Files
+        .Count(_ => _ is
+        {
+            Kind: GitChange.Conflicted,
+            Settled: false
+        });
 
     /// <summary>
     /// Reads what is uncommitted. Null when git can't, no git installed say.

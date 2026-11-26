@@ -1047,7 +1047,6 @@ sealed class HistoryPane : UserControl
     // each with how many, the one listed pressed, and, behind, a button to merge them in.
     sealed class CompareBar : TableLayoutPanel
     {
-        HistoryPane pane;
         Label title = new()
         {
             AutoSize = false,
@@ -1086,7 +1085,6 @@ sealed class HistoryPane : UserControl
 
         public CompareBar(HistoryPane pane)
         {
-            this.pane = pane;
             Dock = DockStyle.Top;
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
