@@ -67,6 +67,14 @@ public class GitStatusActionsTests
                 trackedOnly = Ask(GitState.PartKind.Changes, State(modified: 1)),
                 // Nowhere to push from a detached HEAD.
                 detached = Ask(GitState.PartKind.Changes, State(modified: 1, branch: null)),
+                // Part way through a merge: it can be aborted, and Push refuses with files in
+                // conflict.
+                merging = AskMerging(
+                    new GitState("main", commit, 0, 0, [new("src/0.cs", GitChange.Conflicted), new("src/1.cs", GitChange.Modified)])
+                    {
+                        Upstream = true
+                    }),
+                mergingSettled = AskMerging(State(modified: 1)),
                 noCommits = Ask(GitState.PartKind.NoCommits, new("main", null, 0, 0, [])),
                 nothingBehind = Ask(GitState.PartKind.Behind, State()),
                 forkBehind = AskInFork(GitState.PartKind.ForkBehind, State() with { ForkBehind = 12 }),
@@ -93,7 +101,7 @@ public class GitStatusActionsTests
                   divergedBehind:
                 [Git pull] main has diverged from origin/main
                 2 commits here aren't on origin/main, and 14 commits there aren't here, as of the last fetch.
-                  -> Pull: Fetch, then bring origin/main into main, merging or rebasing as your git config says: the 14 commits known now, and any since.
+                  -> Pull: Fetch, then bring origin/main into main, merging or rebasing as your git config says: the 14 commits known now, and any since. Should they conflict, nothing is pulled.
                   -> Pull, then push: Then send the 2 commits here to origin/main.
                   -> Fetch: See what origin has now, without changing main.,
                   ahead:
@@ -106,7 +114,7 @@ public class GitStatusActionsTests
                   divergedAhead:
                 [Git push] main has diverged from origin/main
                 2 commits here aren't on origin/main, and 14 commits there aren't here, as of the last fetch.
-                  -> Pull, then push: origin/main would refuse the push while it has commits main hasn't: bring those in first, then send the 2 commits.
+                  -> Pull, then push: origin/main would refuse the push while it has commits main hasn't: bring those in first, then send the 2 commits. Should they conflict, nothing is pulled or pushed.
                   -> Fetch: See what origin has now, without changing main.,
                   changes:
                 [Uncommitted changes] 3 uncommitted changes on main
@@ -125,6 +133,19 @@ public class GitStatusActionsTests
                   files: Modified: src/0.cs,
                   detached:
                 [Uncommitted changes] 1 uncommitted change here
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  files: Modified: src/0.cs,
+                  merging:
+                [Uncommitted changes] 2 uncommitted changes on main
+                Part way through a merge, with 1 file in conflict: settle them in Changes and commit it, or abort it.
+                  -> Abort merge…: Put the branch and its files back as they were before the merge began. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  files: Conflicted: src/0.cs; Modified: src/1.cs,
+                  mergingSettled:
+                [Uncommitted changes] 1 uncommitted change on main
+                Part way through a merge: commit it in Changes, or abort it.
+                  -> Commit and push…: Commit every change, with a message you give, and push.
+                  -> Abort merge…: Put the branch and its files back as they were before the merge began. Asks again first.
                   -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
                   files: Modified: src/0.cs,
                   noCommits: (nothing to ask),
@@ -151,6 +172,9 @@ public class GitStatusActionsTests
                   nothingBehindUpstream: (nothing to ask)
                 }
                 """);
+
+    static string AskMerging(GitState state) =>
+        Describe(GitStatusActions.QuestionFor(GitState.PartKind.Changes, state, "origin/main", merging: true));
 
     static string AskInFork(GitState.PartKind part, GitState state) =>
         Describe(GitStatusActions.QuestionFor(part, state, "origin/main", "upstream/main"));

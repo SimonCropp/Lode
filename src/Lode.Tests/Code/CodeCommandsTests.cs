@@ -408,6 +408,113 @@ public class CodeCommandsTests
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("from elsewhere");
     }
 
+    // The repository and origin each changed the same line since they last agreed, as a
+    // package bumped both here and on origin is: a pull would conflict, merging or rebasing as
+    // pull.rebase says.
+    static string Conflicting(Scratch code, string pullRebase)
+    {
+        var repo = code.CreateRepo("Repo");
+        var other = code.Clone("Repo", "Other");
+        File.WriteAllText(Path.Combine(other, "tracked.txt"), "theirs");
+        Scratch.Git(other, "commit", "-am", "Theirs");
+        Scratch.Git(other, "push");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "ours");
+        Scratch.Git(repo, "commit", "-am", "Ours");
+        Scratch.Git(repo, "config", "pull.rebase", pullRebase);
+        return repo;
+    }
+
+    // The merge or rebase the pull began is undone, so the repository isn't left part way
+    // through one, its Push refused till it is settled.
+    [Test]
+    [Arguments("false", "merge")]
+    [Arguments("true", "rebase")]
+    public async Task PullUndoesAPullThatWouldConflict(string pullRebase, string unfinished)
+    {
+        using var code = new Scratch();
+        var repo = Conflicting(code, pullRebase);
+        var ours = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var result = (await CodeCommands.Pull([repo])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains($"Pulling origin/main would conflict, so nothing was pulled. The {unfinished} was undone: pull it yourself, settling the conflicts.");
+        await Assert.That(result.Output).EndsWith("In conflict:\ntracked.txt");
+        await Assert.That(CodeCommands.Unfinished(repo)).IsNull();
+        await Assert.That(Scratch.Git(repo, "branch", "--show-current")).IsEqualTo("main");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(ours);
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
+    // Nothing goes to origin once the pull is undone.
+    [Test]
+    public async Task PullThenPushPushesNothingWhenThePullWouldConflict()
+    {
+        using var code = new Scratch();
+        var repo = Conflicting(code, "false");
+        var origin = Scratch.Git(code.Origin("Repo"), "rev-parse", "main");
+
+        var result = (await CodeCommands.PullThenPush([repo])).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("Pulling origin/main would conflict, so nothing was pulled or pushed. The merge was undone");
+        await Assert.That(CodeCommands.Unfinished(repo)).IsNull();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(origin);
+    }
+
+    // Part way through a merge of the user's own, its conflicts settled, waiting to be
+    // committed: undoing the pull would undo that too, so there is no pull, and the merge stays
+    // as it was.
+    [Test]
+    public async Task PullLeavesAMergeNotFinished()
+    {
+        using var code = new Scratch();
+        var repo = Conflicting(code, "false");
+        Scratch.Git(repo, "fetch");
+        var merge = CodeCommands.Git(repo, "merge", "origin/main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "settled");
+        Scratch.Git(repo, "add", "tracked.txt");
+
+        var result = (await CodeCommands.Pull([repo])).Single();
+
+        await Assert.That(merge.Succeeded).IsFalse();
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).IsEqualTo("It is part way through a merge, so nothing was pulled. Settle its conflicts in Changes and commit it, or abort it there.");
+        await Assert.That(CodeCommands.Unfinished(repo)).IsEqualTo("merge");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("settled");
+    }
+
+    // Push refusing files in conflict says what to do about the merge they are from.
+    [Test]
+    public async Task PushSaysHowToSettleAMerge()
+    {
+        using var code = new Scratch();
+        var repo = Conflicting(code, "false");
+        Scratch.Git(repo, "fetch");
+        CodeCommands.Git(repo, "merge", "origin/main");
+
+        var result = (await CodeCommands.Push([repo], "Tidy up")).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).IsEqualTo("Files in it are still in conflict, from a merge not finished, so nothing was committed or pushed. Settle its conflicts in Changes and commit it, or abort it there.");
+    }
+
+    // Changes has no rebase to go on with, so a rebase is left to git.
+    [Test]
+    public async Task PushSaysHowToSettleARebase()
+    {
+        using var code = new Scratch();
+        var repo = Conflicting(code, "true");
+        Scratch.Git(repo, "fetch");
+        CodeCommands.Git(repo, "rebase", "origin/main");
+
+        var result = (await CodeCommands.Push([repo], "Tidy up")).Single();
+
+        await Assert.That(CodeCommands.Unfinished(repo)).IsEqualTo("rebase");
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).IsEqualTo("Files in it are still in conflict, from a rebase not finished, so nothing was committed or pushed. Go on with it once its conflicts are settled, git rebase --continue, or give it up, git rebase --abort.");
+    }
+
     // A fork's Fetch learns what upstream has too, as GitHub Desktop's does.
     [Test]
     public async Task FetchInAForkFetchesUpstreamToo()
@@ -494,6 +601,30 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(origin);
     }
 
+    // As Pull: part way through a merge of the user's own, its conflicts settled, the merge git
+    // then refuses to begin would be undone, taking that one with it.
+    [Test]
+    public async Task SyncForkLeavesAMergeNotFinished()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        await File.WriteAllTextAsync(Path.Combine(fork, "tracked.txt"), "mine");
+        Scratch.Git(fork, "commit", "-am", "Mine");
+        code.CommitUpstream("Repo", "tracked.txt", "theirs");
+        Scratch.Git(fork, "fetch", "upstream");
+        var merge = CodeCommands.Git(fork, "merge", "upstream/main");
+        await File.WriteAllTextAsync(Path.Combine(fork, "tracked.txt"), "settled");
+        Scratch.Git(fork, "add", "tracked.txt");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(merge.Succeeded).IsFalse();
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).IsEqualTo("It is part way through a merge, so nothing was merged or pushed. Settle its conflicts in Changes and commit it, or abort it there.");
+        await Assert.That(CodeCommands.Unfinished(fork)).IsEqualTo("merge");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(fork, "tracked.txt"))).IsEqualTo("settled");
+    }
+
     // Git won't merge over an uncommitted change to a file the merge changes: nothing is
     // merged, and the change stays.
     [Test]
@@ -556,7 +687,7 @@ public class CodeCommandsTests
         var result = (await CodeCommands.SyncFork([fork])).Single();
 
         await Assert.That(result.Succeeded).IsFalse();
-        await Assert.That(result.Output).Contains("diverged from origin/main");
+        await Assert.That(result.Output).Contains("diverged from origin/main: 1 commit here aren't there");
         await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(mine);
     }
 

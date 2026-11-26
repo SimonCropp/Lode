@@ -331,11 +331,12 @@ static class GitMerging
     }
 
     // Why it is not to merge or rebase here, or null where it can: files in conflict, or no
-    // branch checked out, as Push won't commit then, or changes to tracked files, which undoing a
-    // merge or rebase that conflicted could take with it. Files git doesn't track yet stay.
+    // branch checked out, as Push won't commit then, a merge or rebase under way already, or
+    // changes to tracked files, which undoing a merge or rebase that conflicted could take with
+    // it. Files git doesn't track yet stay.
     static string? WhyNot(string repo, string notDone)
     {
-        if (CodeCommands.WhyNotChange(repo, notDone) is { } why)
+        if (CodeCommands.WhyNotMerge(repo, notDone) is { } why)
         {
             return why;
         }

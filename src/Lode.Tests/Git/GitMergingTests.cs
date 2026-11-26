@@ -78,6 +78,28 @@ public class GitMergingTests
         await Assert.That(Git(repo, "diff", "--name-only", "--diff-filter=U")).IsEqualTo("tracked.txt");
     }
 
+    // Part way through a merge already, its conflicts settled, another would be refused by git,
+    // and that one undone with it: it says what to do with the one under way instead.
+    [Test]
+    public async Task MergeLeavesAMergeNotFinished()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        await Branch(repo, file: "tracked.txt", text: "feature");
+        await Branch(repo, branch: "other", file: "other.txt", text: "other");
+        await Commit(repo, "tracked.txt", "main");
+        GitMerging.Merge(repo, "feature", squash: false, Cancel.None);
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "settled");
+        Git(repo, "add", "tracked.txt");
+
+        var result = GitMerging.Merge(repo, "other", squash: false, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).IsEqualTo("It is part way through a merge, so nothing was merged. Settle its conflicts in Changes and commit it, or abort it there.");
+        await Assert.That(GitChanges.IsMerging(repo)).IsTrue();
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("settled");
+    }
+
     // The branch's commits as one commit, with git's message for it, listing them.
     [Test]
     public async Task SquashMakesOneCommit()

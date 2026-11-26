@@ -14,7 +14,8 @@ static class GitStatusActions
         Push,
         CommitAndPush,
         Discard,
-        SyncFork
+        SyncFork,
+        AbortMerge
     }
 
     /// <summary>
@@ -42,9 +43,9 @@ static class GitStatusActions
     {
         // Named in the question, origin/main and upstream/main say: more git, so off the UI
         // thread.
-        var (upstream, fork) = await Task.Run(() => (UpstreamOf(repo), ForkParentOf(repo)));
+        var (upstream, fork, merging) = await Task.Run(() => (UpstreamOf(repo), ForkParentOf(repo), GitChanges.IsMerging(repo)));
         if (owner.IsDisposed ||
-            QuestionFor(part, state, upstream, fork) is not { } question ||
+            QuestionFor(part, state, upstream, fork, merging) is not { } question ||
             Ask(owner, question) is not { } choice)
         {
             return;
@@ -85,16 +86,17 @@ static class GitStatusActions
     /// <summary>
     /// What clicking <paramref name="part"/> asks, for a branch tracking
     /// <paramref name="upstream"/>, in a fork made from <paramref name="fork"/>, upstream/main
-    /// say, where it is one. Null for a part with nothing to do.
+    /// say, where it is one, <paramref name="merging"/> where it is part way through a merge, as
+    /// Changes settles one. Null for a part with nothing to do.
     /// </summary>
-    internal static Question? QuestionFor(GitState.PartKind part, GitState state, string upstream, string? fork = null)
+    internal static Question? QuestionFor(GitState.PartKind part, GitState state, string upstream, string? fork = null, bool merging = false)
     {
         var branch = state.Branch ?? "this commit";
         return part switch
         {
             GitState.PartKind.Behind when state.Behind > 0 => BehindQuestion(state, branch, upstream, fork),
             GitState.PartKind.Ahead when state.Ahead > 0 => AheadQuestion(state, branch, upstream, fork),
-            GitState.PartKind.Changes when state.Changes > 0 => ChangesQuestion(state, branch),
+            GitState.PartKind.Changes when state.Changes > 0 => ChangesQuestion(state, branch, merging),
             GitState.PartKind.ForkBehind when state.ForkBehind > 0 => ForkQuestion(state, branch, fork ?? "upstream"),
             _ => null
         };
@@ -135,7 +137,7 @@ static class GitStatusActions
         var pullNote = $"Fetch, then bring {upstream} into {branch}: the {commits} known now, and any since.";
         if (state.Ahead > 0)
         {
-            pullNote = $"Fetch, then bring {upstream} into {branch}, merging or rebasing as your git config says: the {commits} known now, and any since.";
+            pullNote = $"Fetch, then bring {upstream} into {branch}, merging or rebasing as your git config says: the {commits} known now, and any since. Should they conflict, nothing is pulled.";
         }
 
         if (state.Changes > 0)
@@ -176,7 +178,7 @@ static class GitStatusActions
                     new(
                         Choice.PullThenPush,
                         "Pull, then push",
-                        $"{upstream} would refuse the push while it has commits {branch} hasn't: bring those in first, then send the {commits}."),
+                        $"{upstream} would refuse the push while it has commits {branch} hasn't: bring those in first, then send the {commits}. Should they conflict, nothing is pulled or pushed."),
                     FetchOption(branch, upstream, fork)
                 ]);
         }
@@ -188,15 +190,17 @@ static class GitStatusActions
             [new(Choice.Push, "Push", $"Send the {commits} to {upstream}.")]);
     }
 
-    static Question ChangesQuestion(GitState state, string branch)
+    static Question ChangesQuestion(GitState state, string branch, bool merging)
     {
         var untracked = state.Files.Count(_ => _.Change == GitChange.Untracked);
+        var conflicted = state.Files.Count(_ => _.Change == GitChange.Conflicted);
         var options = new List<Option>();
 
         // Push adds every change before it commits, new files included, as the Changes pane
         // commits them, though not what git ignores, which isn't a change at all. Detached,
-        // nowhere to push.
-        if (state.Branch != null)
+        // nowhere to push; with files in conflict, Push refuses.
+        if (state.Branch != null &&
+            conflicted == 0)
         {
             var note = "Commit every change, with a message you give, and push.";
             if (untracked > 0)
@@ -205,6 +209,18 @@ static class GitStatusActions
             }
 
             options.Add(new(Choice.CommitAndPush, "Commit and push…", note));
+        }
+
+        // Aborted as Changes' bar aborts it.
+        var text = "";
+        if (merging)
+        {
+            options.Add(new(Choice.AbortMerge, "Abort merge…", "Put the branch and its files back as they were before the merge began. Asks again first."));
+            text = "Part way through a merge: commit it in Changes, or abort it.";
+            if (conflicted > 0)
+            {
+                text = $"Part way through a merge, with {GitState.CountOf(conflicted, "file")} in conflict: settle them in Changes and commit it, or abort it.";
+            }
         }
 
         options.Add(new(Choice.Discard, "Discard…", "Undo every uncommitted change, and delete the files git doesn't track. Asks again first."));
@@ -217,7 +233,7 @@ static class GitStatusActions
         return new(
             "Uncommitted changes",
             $"{GitState.CountOf(state.Changes, "uncommitted change")} {where}",
-            "",
+            text,
             options,
             FileList(state.Files));
     }
@@ -324,7 +340,8 @@ static class GitStatusActions
     }
 
     // Each in the Actions panel. Committing and discarding ask as they do from the right-click
-    // menu: for the message, and whether to discard, which can't be undone.
+    // menu: for the message, and whether to discard, which can't be undone. Aborting a merge asks
+    // as Changes' Abort merge does.
     static void Run(Control owner, Choice choice, string repo, string? codeFolder)
     {
         switch (choice)
@@ -349,6 +366,16 @@ static class GitStatusActions
                 return;
             case Choice.SyncFork:
                 Start("Git sync fork", repo, CodeCommands.SyncFork);
+                return;
+            case Choice.AbortMerge:
+                if (ChangesPane.AskAbort(owner) == DialogResult.OK)
+                {
+                    Start(
+                        "Git abort merge",
+                        repo,
+                        (repos, progress, cancel) => CodeCommands.ForEach(repos, progress, cancel, _ => GitChanges.Abort(_, cancel)));
+                }
+
                 return;
         }
     }

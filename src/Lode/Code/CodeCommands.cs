@@ -170,8 +170,51 @@ static class CodeCommands
         return Directory.Exists(git) || File.Exists(git);
     }
 
+    /// <summary>
+    /// Brings in what the branch's own on origin has, as git pull does, merging or rebasing as
+    /// the user's git config says. One that would conflict is undone, as Sync fork's merge is, so
+    /// that none is left part way through a merge or a rebase; nor is one pulled into that is part
+    /// way through one already.
+    /// </summary>
     public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
-        ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, "pull"));
+        ForEach(repos, progress, cancel, repo => Pull(repo, cancel, "nothing was pulled"));
+
+    // A pull git refused before it began, as where it would have to overwrite an uncommitted
+    // change, changed nothing, and is left as git said it; one that stopped part way, at a
+    // conflict, is undone. Run on a folder of repositories, one left part way would be found only
+    // later, its Push refused till it was settled. Part way through a merge or a rebase of the
+    // user's own already, which git would refuse to pull into, nothing is pulled: undoing the pull
+    // would undo that too, its conflicts settled perhaps, waiting to be committed.
+    static RepoResult Pull(string repo, Cancel cancel, string notDone)
+    {
+        if (Unfinished(repo) is { } before)
+        {
+            return new(repo, false, PartWay(before, notDone));
+        }
+
+        var pull = Git(repo, cancel, network: true, "pull");
+        if (pull.Succeeded ||
+            Unfinished(repo) is not { } unfinished)
+        {
+            return pull;
+        }
+
+        var undone = Undo(repo, unfinished, Pulling, notDone, "pull it yourself");
+        return pull with
+        {
+            Output = $"{pull.Output}\n{undone}".Trim()
+        };
+
+        string Pulling()
+        {
+            if (TrackedBranch(repo) is { } tracked)
+            {
+                return $"Pulling {tracked}";
+            }
+
+            return "Pulling";
+        }
+    }
 
     /// <summary>
     /// Learns what origin has now, its branches and their commits, changing nothing checked
@@ -205,14 +248,15 @@ static class CodeCommands
     /// origin and upstream have, brings in what origin has that the branch hasn't, merges
     /// upstream's default branch into the branch checked out, then pushes the branch to origin.
     /// A branch that has diverged from origin is left as it is, as is one whose merge would
-    /// conflict: the merge is undone, so none is left part way through one.
+    /// conflict: the merge is undone, so none is left part way through one. Nor is one merged
+    /// into that is part way through a merge or a rebase already.
     /// </summary>
     public static Task<List<RepoResult>> SyncFork(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(repos, progress, cancel, repo => SyncFork(repo, cancel));
 
     static RepoResult SyncFork(string repo, Cancel cancel)
     {
-        if (WhyNotChange(repo, "nothing was merged or pushed") is { } why)
+        if (WhyNotMerge(repo, "nothing was merged or pushed") is { } why)
         {
             return new(repo, false, why);
         }
@@ -274,9 +318,7 @@ static class CodeCommands
     // diverged fails, changing nothing, as there is no telling how it is to be settled.
     static RepoResult? CatchUpWithOrigin(string repo, Cancel cancel)
     {
-        var tracked = Git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
-        if (!tracked.Succeeded ||
-            tracked.Output.Length == 0)
+        if (TrackedBranch(repo) is not { } tracked)
         {
             return null;
         }
@@ -298,10 +340,27 @@ static class CodeCommands
             return new(
                 repo,
                 false,
-                $"The branch has diverged from {tracked.Output}: {GitState.CountOf(ahead, "commit")} here aren't there, and {GitState.CountOf(behind, "commit")} there aren't here. Pull, then sync again. Nothing was merged or pushed.");
+                $"The branch has diverged from {tracked}: {GitState.CountOf(ahead, "commit")} here aren't there, and {GitState.CountOf(behind, "commit")} there aren't here. Pull, then sync again. Nothing was merged or pushed.");
         }
 
         return GitToItsEnd(repo, cancel, "merge", "--ff-only", "@{upstream}");
+    }
+
+    // The branch the one checked out tracks, origin/main say, or null where it tracks none, or
+    // none is checked out, as part way through a rebase.
+    static string? TrackedBranch(string repo)
+    {
+        var tracked = Git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+        if (tracked is
+            {
+                Succeeded: true,
+                Output.Length: > 0
+            })
+        {
+            return tracked.Output;
+        }
+
+        return null;
     }
 
     // A merge that failed: refused before it began, uncommitted changes in the way say, which
@@ -310,12 +369,6 @@ static class CodeCommands
     // be pushed, it says nothing of pushing, and what git said of one refused.
     internal static RepoResult UndoMerge(string repo, string from, RepoResult merge, bool pushing = true)
     {
-        var notPushed = "";
-        if (pushing)
-        {
-            notPushed = ", so nothing was pushed";
-        }
-
         if (!Git(repo, "rev-parse", "--quiet", "--verify", "MERGE_HEAD").Succeeded)
         {
             if (!pushing)
@@ -332,30 +385,49 @@ static class CodeCommands
             };
         }
 
+        string? notPushed = null;
+        if (pushing)
+        {
+            notPushed = "nothing was pushed";
+        }
+
+        return merge with
+        {
+            Succeeded = false,
+            Output = Undo(repo, "merge", () => $"Merging {from}", notPushed, "merge it yourself")
+        };
+    }
+
+    // A merge or a pull that stopped part way, at a conflict say, undone, the branch and its
+    // files as they were before it. What it says starts with what was being done, asked once it
+    // is undone, as part way through a rebase no branch is checked out to say what it tracks,
+    // and what that leaves not done, where it leaves anything, and ends with the files that would
+    // conflict.
+    static string Undo(string repo, string unfinished, Func<string> doing, string? notDone, string yourself)
+    {
         var conflicted = Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
-        var abort = Git(repo, "merge", "--abort");
-        var undone = "The merge was undone: merge it yourself, settling the conflicts.";
+        var abort = Git(repo, unfinished, "--abort");
+        var undone = $"The {unfinished} was undone: {yourself}, settling the conflicts.";
         if (!abort.Succeeded)
         {
-            undone = $"The merge couldn't be undone: settle the conflicts, or git merge --abort.\n{abort.Output}";
+            undone = $"The {unfinished} couldn't be undone: settle the conflicts, or git {unfinished} --abort.\n{abort.Output}";
+        }
+
+        var action = doing();
+        var so = "";
+        if (notDone != null)
+        {
+            so = $", so {notDone}";
         }
 
         // Stopped other than by a conflict, as by a commit git couldn't make, there are no files
         // to name.
         if (conflicted.Length == 0)
         {
-            return merge with
-            {
-                Succeeded = false,
-                Output = $"Merging {from} stopped part way{notPushed}. {undone}"
-            };
+            return $"{action} stopped part way{so}. {undone}";
         }
 
-        return merge with
-        {
-            Succeeded = false,
-            Output = $"Merging {from} would conflict{notPushed}. {undone}\nIn conflict:\n{conflicted}"
-        };
+        return $"{action} would conflict{so}. {undone}\nIn conflict:\n{conflicted}";
     }
 
     /// <summary>
@@ -366,7 +438,8 @@ static class CodeCommands
 
     /// <summary>
     /// Pulls, then pushes: a branch that has diverged from the one it tracks, which origin would
-    /// refuse a push to until it has origin's commits too. A pull that fails pushes nothing.
+    /// refuse a push to until it has origin's commits too. A pull that fails pushes nothing, and
+    /// one that would conflict is undone, as Pull's is.
     /// </summary>
     public static Task<List<RepoResult>> PullThenPush(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
@@ -375,7 +448,7 @@ static class CodeCommands
             cancel,
             repo =>
             {
-                var pull = Git(repo, cancel, network: true, "pull");
+                var pull = Pull(repo, cancel, "nothing was pulled or pushed");
                 if (!pull.Succeeded)
                 {
                     return pull;
@@ -811,6 +884,11 @@ static class CodeCommands
                 Output.Length: > 0
             })
         {
+            if (Unfinished(repo) is { } unfinished)
+            {
+                return $"Files in it are still in conflict, from a {unfinished} not finished, so {notDone}. {Settle(unfinished)}";
+            }
+
             return $"Files in it are still in conflict, from a merge or a rebase not finished, so {notDone}.";
         }
 
@@ -822,6 +900,86 @@ static class CodeCommands
         }
 
         return null;
+    }
+
+    // Why Sync fork, or a merge, squash, rebase or update from the default branch, is not to
+    // merge in a repository, or null where it can: as for a change, and where it is part way
+    // through a merge or a rebase already, its conflicts settled perhaps, waiting to be
+    // committed, which is said first, as part way through a rebase no branch is checked out. Git
+    // would refuse to merge into it, and the merge then undone, as one that stopped part way is,
+    // would undo the user's own with it. Push, which doesn't merge, commits such a merge, as
+    // Commit merge would.
+    internal static string? WhyNotMerge(string repo, string notDone)
+    {
+        if (Unfinished(repo) is { } unfinished)
+        {
+            return PartWay(unfinished, notDone);
+        }
+
+        return WhyNotChange(repo, notDone);
+    }
+
+    static string PartWay(string unfinished, string notDone) =>
+        $"It is part way through a {unfinished}, so {notDone}. {Settle(unfinished)}";
+
+    // What can be done about what it is part way through, for a refusal to end with. Changes
+    // settles and commits a merge, a cherry-pick or a revert, or aborts it, but has no rebase to
+    // go on with.
+    static string Settle(string unfinished)
+    {
+        if (unfinished == "rebase")
+        {
+            return "Go on with it once its conflicts are settled, git rebase --continue, or give it up, git rebase --abort.";
+        }
+
+        return "Settle its conflicts in Changes and commit it, or abort it there.";
+    }
+
+    /// <summary>
+    /// What git is part way through in the repository, as the command that started it is named,
+    /// whose --abort undoes it: merge, rebase, cherry-pick or revert. Null where it is part way
+    /// through none. Read from the files git keeps while it is, as the Changes pane reads them.
+    /// </summary>
+    internal static string? Unfinished(string repo)
+    {
+        try
+        {
+            if (GitDirectory(repo) is not { } git)
+            {
+                return null;
+            }
+
+            if (Directory.Exists(Path.Combine(git, "rebase-merge")) ||
+                Directory.Exists(Path.Combine(git, "rebase-apply")))
+            {
+                return "rebase";
+            }
+
+            if (File.Exists(Path.Combine(git, "MERGE_HEAD")))
+            {
+                return "merge";
+            }
+
+            if (File.Exists(Path.Combine(git, "CHERRY_PICK_HEAD")))
+            {
+                return "cherry-pick";
+            }
+
+            if (File.Exists(Path.Combine(git, "REVERT_HEAD")))
+            {
+                return "revert";
+            }
+
+            return null;
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     // Whether the commit had nothing to commit: everything added, nothing staged. Asked of git,
