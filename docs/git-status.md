@@ -1,6 +1,6 @@
 # How Git state is detected
 
-Lode shows the git state of repositories in the code folder: in the **Git** column, and in the status bar of a folder inside a repository. This page explains how that state is read, kept, and brought up to date.
+Lode shows the git state of repositories in the code folder: in the **Git** column of a folder listing them, in the colours of changed files' names and the marks after them inside one, and in the status bar of a folder inside a repository. This page explains how that state is read, kept, and brought up to date.
 
 The short version: each repository is read once and cached. One watch on the code folder reports every change in it, and a change in a repository marks it stale. Once its changes have stopped for a moment, the views showing it read it again. Most of the code is about not reading when there is no need to.
 

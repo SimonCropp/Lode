@@ -3737,15 +3737,37 @@ public class FolderViewTests
         await Assert.That(view.GitRepo).IsEqualTo(code.At("Changed"));
     }
 
-    // In a repository, each file says what has become of it, and each folder how many changes
-    // it holds. One unchanged says nothing.
+    // In a repository, each file's name is marked with what has become of it, as a letter, and
+    // each folder's with how many changes it holds, the Git column hidden. One unchanged has
+    // none. Shown from the header's menu, the column says it instead, there in every view, and
+    // kept.
     [Test]
-    public async Task GitColumnShowsEachFile()
+    public async Task NamesMarkedWithEachChange()
     {
         using var code = Changes();
-        using var view = await Open(code.At("Repo"), InCode(code));
+        var settings = InCode(code);
+        using var view = await Open(code.At("Repo"), settings);
         await GitRead(view);
 
+        await Assert.That(view.ColumnTitles)
+            .IsEquivalentTo(["Name", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
+        await Assert.That(Marks(view))
+            .IsEquivalentTo(
+                [
+                    "New: U",
+                    "src: 2",
+                    "Unchanged: ",
+                    "added.txt: A",
+                    "loose.txt: U",
+                    "same.txt: ",
+                    "tracked.txt: M"
+                ],
+                CollectionOrdering.Matching);
+        await Assert.That(view.GitText).IsEqualTo("main · 6 changes · 1 ahead");
+
+        view.SetColumnShown(FolderView.gitColumn, true);
+
+        await Assert.That(settings.GitColumnInRepository).IsTrue();
         await Assert.That(view.ColumnTitles)
             .IsEquivalentTo(["Name", "Git", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
         await Assert.That(GitCells(view))
@@ -3760,16 +3782,37 @@ public class FolderViewTests
                     "tracked.txt: Modified"
                 ],
                 CollectionOrdering.Matching);
-        await Assert.That(view.GitText).IsEqualTo("main · 6 changes · 1 ahead");
+        await Assert.That(Marks(view).All(_ => _.EndsWith(": ", StringComparison.Ordinal))).IsTrue();
+        await Assert.That(settings.HiddenColumns).IsEmpty();
     }
 
-    // Each in the colour for what has become of it, a folder holding changes as Modified, and
-    // one unchanged in the gray of every other detail.
+    // Each name in the colour for what has become of it, a folder holding changes as Modified,
+    // and one unchanged as the list's text.
+    [Test]
+    public async Task NamesColouredForEachChange()
+    {
+        using var code = Changes();
+        using var view = await Open(code.At("Repo"), InCode(code));
+        await GitRead(view);
+        var unchanged = NameColor(view, "same.txt");
+
+        await Assert.That(NameColor(view, "tracked.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Modified));
+        await Assert.That(NameColor(view, "loose.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Untracked));
+        await Assert.That(NameColor(view, "added.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Added));
+        await Assert.That(NameColor(view, "src")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Modified));
+        await Assert.That(unchanged).IsNotEqualTo(ExplorerStyle.ChangeColor(GitChange.Modified));
+        await Assert.That(NameColor(view, "Unchanged")).IsEqualTo(unchanged);
+    }
+
+    // With the Git column shown, each cell in the colour for what has become of it, a folder
+    // holding changes as Modified, and one unchanged in the gray of every other detail.
     [Test]
     public async Task GitColumnColoursEachChange()
     {
         using var code = Changes();
-        using var view = await Open(code.At("Repo"), InCode(code));
+        var settings = InCode(code);
+        settings.GitColumnInRepository = true;
+        using var view = await Open(code.At("Repo"), settings);
         await GitRead(view);
 
         await Assert.That(GitColor(view, "tracked.txt")).IsEqualTo(ExplorerStyle.ChangeColor(GitChange.Modified));
@@ -3781,19 +3824,20 @@ public class FolderViewTests
 
     // Deeper in, a file is found by its path from the top of the repository.
     [Test]
-    public async Task GitColumnInAFolderOfTheRepository()
+    public async Task MarksInAFolderOfTheRepository()
     {
         using var code = Changes();
         using var view = await Open(code.At("Repo", "src"), InCode(code));
         await GitRead(view);
 
-        await Assert.That(GitCells(view))
-            .IsEquivalentTo(["Deep: 1 change", "changed.cs: Modified", "same.cs: "], CollectionOrdering.Matching);
+        await Assert.That(Marks(view))
+            .IsEquivalentTo(["Deep: 1", "changed.cs: M", "same.cs: "], CollectionOrdering.Matching);
     }
 
-    // A search in a repository says what has become of what it finds in the folders below.
+    // A search in a repository marks what it finds in the folders below with what has become of
+    // it.
     [Test]
-    public async Task GitColumnInASearch()
+    public async Task MarksInASearch()
     {
         using var code = Changes();
         using var view = await Open(code.At("Repo"), InCode(code));
@@ -3802,10 +3846,10 @@ public class FolderViewTests
         view.Filter = "*.cs";
         await Pump.Loaded(view);
 
-        await Assert.That(view.ColumnTitles.Take(3))
-            .IsEquivalentTo(["Name", "Git", "Folder"], CollectionOrdering.Matching);
-        await Assert.That(GitCells(view))
-            .IsEquivalentTo(["changed.cs: Modified", "deeper.cs: Modified", "same.cs: "], CollectionOrdering.Matching);
+        await Assert.That(view.ColumnTitles.Take(2))
+            .IsEquivalentTo(["Name", "Folder"], CollectionOrdering.Matching);
+        await Assert.That(Marks(view))
+            .IsEquivalentTo(["changed.cs: M", "deeper.cs: M", "same.cs: "], CollectionOrdering.Matching);
     }
 
     // Sorted by Git in a repository, what has changed comes together, by what has become of it.
@@ -3860,6 +3904,12 @@ public class FolderViewTests
         return view.CellColor(index, 1);
     }
 
+    static Color NameColor(FolderView view, string name)
+    {
+        var index = view.Entries.ToList().FindIndex(_ => _.Name == name);
+        return view.CellColor(index, 0);
+    }
+
     // Outside the code folder, as the git actions aren't offered there, nothing is read.
     [Test]
     public async Task NoGitOutsideTheCodeFolder()
@@ -3900,6 +3950,12 @@ public class FolderViewTests
         await Pump.Until(() => view.GitReading.IsCompleted);
         await view.GitReading;
     }
+
+    // Each row's name, and the mark after it.
+    static List<string> Marks(FolderView view) =>
+        view.Entries
+            .Select((entry, index) => $"{entry.Name}: {view.MarkOf(index)}")
+            .ToList();
 
     // Each row's name, and what its Git cell says.
     static List<string> GitCells(FolderView view) =>

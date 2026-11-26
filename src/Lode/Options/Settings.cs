@@ -226,6 +226,12 @@ sealed class Settings
     // The file list's columns hidden from its header's right-click menu: Date, Type, Size or Git.
     public List<string> HiddenColumns { get; set; } = [];
 
+    // Whether the Git column shows inside a repository, where it says what has become of each
+    // item, which the names' colours and the marks after them say anyway. Hidden unless shown
+    // from the header's right-click menu there. In a folder of repositories it follows
+    // HiddenColumns, as the other columns do.
+    public bool GitColumnInRepository { get; set; }
+
     // How wide each of the file list's columns is, at 100% scale, for those widened or narrowed:
     // one for every tab and window. The rest are as wide as FolderView makes them.
     public Dictionary<string, int> ColumnWidths { get; set; } = [];

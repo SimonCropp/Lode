@@ -293,6 +293,65 @@ sealed class ShellListView : ListView
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Func<int, bool>? IsCut { get; set; }
 
+    /// <summary>
+    /// A short mark at the right of a row's name, in a colour of its own: a changed file's
+    /// letter, say. Null for none. Asked as each row is drawn.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Func<int, NameMark?>? NameMarkOf { get; set; }
+
+    /// <summary>
+    /// A mark after a row's name: the name, to see whether it leaves room, and what the mark
+    /// says, in what colour.
+    /// </summary>
+    public sealed record NameMark(string Name, string Text, Color Color);
+
+    // NM_CUSTOMDRAW, as the list draws: before anything, asked to be told of each row; before a
+    // row, asked to be told once it is drawn; and after, to draw over it. NMCUSTOMDRAW is NMHDR,
+    // then the stage, the device context, the row's bounds and its index, each pointer on a
+    // pointer's boundary.
+    const int customDraw = -12;
+    const int drawPrePaint = 0x1;
+    const int drawItemPrePaint = 0x10001;
+    const int drawItemPostPaint = 0x10002;
+    const int notifyItemDraw = 0x20;
+    const int notifyPostPaint = 0x10;
+    static int drawStageOffset = IntPtr.Size == 8 ? 24 : 12;
+    static int drawContextOffset = IntPtr.Size == 8 ? 32 : 16;
+    static int drawItemOffset = IntPtr.Size == 8 ? 56 : 36;
+
+    // Pixels at 100% scale: how far in from the column's edge the mark ends, how far the list
+    // draws a name in from where its label starts, and the least gap between the two.
+    const int markInset = 8;
+    const int nameIndent = 6;
+    const int markGap = 8;
+
+    // The mark at the right of the name's cell, drawn over the row once the list has drawn it,
+    // so over its highlight too. Only where the whole name leaves room: one cut short is left
+    // with its colour alone, rather than drawn over.
+    void DrawNameMark(int index, IntPtr context)
+    {
+        if (index < 0 ||
+            index >= VirtualListSize ||
+            NameMarkOf?.Invoke(index) is not { } mark)
+        {
+            return;
+        }
+
+        var label = GetItemRect(index, ItemBoundsPortion.Label);
+        using var graphics = Graphics.FromHdc(context);
+        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter;
+        var markWidth = TextRenderer.MeasureText(graphics, mark.Text, Font, Size.Empty, flags).Width;
+        var nameWidth = TextRenderer.MeasureText(graphics, mark.Name, Font, Size.Empty, flags).Width;
+        var left = label.Right - LogicalToDeviceUnits(markInset) - markWidth;
+        if (label.Left + LogicalToDeviceUnits(nameIndent) + nameWidth + LogicalToDeviceUnits(markGap) > left)
+        {
+            return;
+        }
+
+        TextRenderer.DrawText(graphics, mark.Text, Font, new Rectangle(left, label.Top, markWidth, label.Height), mark.Color, flags);
+    }
+
     int dropTarget = -1;
 
     /// <summary>
@@ -411,6 +470,34 @@ sealed class ShellListView : ListView
 
     protected override void WndProc(ref Message message)
     {
+        // Drawn as Windows Forms draws it, the items' colours with it, then asked to be told
+        // once each row is drawn, to draw its mark over it.
+        if (message.Msg == reflectedNotify &&
+            NameMarkOf != null &&
+            Marshal.ReadInt32(message.LParam, notificationCodeOffset) == customDraw)
+        {
+            var stage = Marshal.ReadInt32(message.LParam, drawStageOffset);
+            if (stage == drawItemPostPaint)
+            {
+                DrawNameMark((int) Marshal.ReadIntPtr(message.LParam, drawItemOffset), Marshal.ReadIntPtr(message.LParam, drawContextOffset));
+                message.Result = IntPtr.Zero;
+                return;
+            }
+
+            base.WndProc(ref message);
+            if (stage == drawPrePaint)
+            {
+                message.Result |= notifyItemDraw;
+            }
+
+            if (stage == drawItemPrePaint)
+            {
+                message.Result |= notifyPostPaint;
+            }
+
+            return;
+        }
+
         if (message.Msg == reflectedNotify &&
             Marshal.ReadInt32(message.LParam, notificationCodeOffset) == listViewGetDisplayInfo)
         {

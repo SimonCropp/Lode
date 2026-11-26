@@ -75,6 +75,7 @@ public class SettingsTests
                   "ExpandToOpenFolder": true,
                   "Actions": {},
                   "HiddenColumns": [],
+                  "GitColumnInRepository": false,
                   "ColumnWidths": {
                     "Name": 420
                   },
@@ -157,6 +158,7 @@ public class SettingsTests
                   ShowSystem: false,
                   ShowRecent: true,
                   ExpandToOpenFolder: true,
+                  GitColumnInRepository: false,
                   ColumnWidths: {
                     Type: 140
                   },
@@ -368,6 +370,7 @@ public class SettingsTests
                   ShowSystem: false,
                   ShowRecent: true,
                   ExpandToOpenFolder: true,
+                  GitColumnInRepository: false,
                   DiffSplit: false,
                   DiffHideWhitespace: false,
                   PurgePermanently: false,

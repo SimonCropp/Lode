@@ -1,8 +1,9 @@
 /// <summary>
 /// What the Git and Tag columns say of each item. In a folder of repositories, the code folder
 /// say, each repository's state, and its most recent tag. In a repository, what has happened to
-/// a file, or how many changes a folder holds. Made afresh each time the states change, and not
-/// changed after, so a folder can be sorted by it off the UI thread.
+/// a file, or how many changes a folder holds, which the name's colour and the mark after it say
+/// too. Made afresh each time the states change, and not changed after, so a folder can be
+/// sorted by it off the UI thread.
 /// </summary>
 sealed class GitCells
 {
@@ -87,8 +88,42 @@ sealed class GitCells
     }
 
     /// <summary>
-    /// The change the item's cell is coloured for: its own, or Modified for a folder holding
-    /// changes. Null for one with none, and for a repository, whose cell is a state.
+    /// What follows the item's name where the Git column doesn't show: a file's change as a
+    /// letter, M for Modified say, as an editor marks it, or how many changes a folder holds.
+    /// Null for one with none, and for a repository.
+    /// </summary>
+    public string? Mark(FileEntry entry)
+    {
+        var path = FromRoot(entry);
+        if (path == null)
+        {
+            return null;
+        }
+
+        if (files.TryGetValue(path, out var change))
+        {
+            return LetterOf(change);
+        }
+
+        if (entry.IsDirectory &&
+            folders.TryGetValue(path, out var count))
+        {
+            return count.ToString("N0", CultureInfo.CurrentCulture);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The first letter of the word the Git column has for a change.
+    /// </summary>
+    internal static string LetterOf(GitChange change) =>
+        change.ToString()[..1];
+
+    /// <summary>
+    /// The change the item's name, and its Git cell, are coloured for: its own, or Modified for a
+    /// folder holding changes. Null for one with none, and for a repository, whose cell is a
+    /// state.
     /// </summary>
     public GitChange? Change(FileEntry entry)
     {

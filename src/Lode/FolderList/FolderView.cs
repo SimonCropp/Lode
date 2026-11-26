@@ -454,6 +454,7 @@ sealed class FolderView : UserControl
         list.IsCut = index =>
             index < displayed.Count &&
             CutItems.Contains(displayed[index].FullPath);
+        list.NameMarkOf = NameMark;
         CutItems.Changed += OnCutChanged;
         // After Control's constructor, which puts Windows Forms' in place on a new thread.
         madeOn = SynchronizationContext.Current;
@@ -3176,6 +3177,12 @@ sealed class FolderView : UserControl
             return false;
         }
 
+        if (column == gitColumn &&
+            GitColumnForChanges)
+        {
+            return settings.GitColumnInRepository;
+        }
+
         if (column == tagColumn &&
             !HasTagColumn)
         {
@@ -3184,6 +3191,12 @@ sealed class FolderView : UserControl
 
         return !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
     }
+
+    // Inside a repository, where the Git column says only what has become of each item, which
+    // the names' colours and the marks after them say too: shown only when asked for. Not in a
+    // folder in one that lists repositories as well, whose states it says.
+    bool GitColumnForChanges => containingRepo != null &&
+                                (repos.Count == 0 || IsSearch);
 
     // Git is for a folder in a repository, its items' changes, a search's from all through it
     // included, and for one listing repositories, their states. A search of that one finds items
@@ -3335,6 +3348,13 @@ sealed class FolderView : UserControl
         Row(index).SubItems[shown].ForeColor;
 
     /// <summary>
+    /// The mark after a row's name, by where the row is in what is displayed, or "" for none.
+    /// For tests.
+    /// </summary>
+    internal string MarkOf(int index) =>
+        NameMark(index)?.Text ?? "";
+
+    /// <summary>
     /// The image a row shows, by where it is in what is displayed, as an index into the lists'
     /// shared images. For tests.
     /// </summary>
@@ -3367,6 +3387,15 @@ sealed class FolderView : UserControl
         if (column == nameColumn ||
             IsColumnShown(column) == shown)
         {
+            return;
+        }
+
+        if (column == gitColumn &&
+            GitColumnForChanges)
+        {
+            settings.GitColumnInRepository = shown;
+            RefreshColumns();
+            ColumnsChanged?.Invoke();
             return;
         }
 
@@ -3732,15 +3761,43 @@ sealed class FolderView : UserControl
     }
 
     // What has become of a file in a repository, in the colour for it, hidden or not: amber,
-    // green or red stands out from the gray beside it, as the change is what to see first.
+    // green or red stands out from the gray beside it, as the change is what to see first. On its
+    // name, as an editor colours a changed file's, and in the Git column where that shows.
     void ColorChange(ListViewItem item, FileEntry entry)
     {
-        var shown = shownColumns.IndexOf(gitColumn);
-        if (shown >= 0 &&
-            gitCells.Change(entry) is { } change)
+        if (gitCells.Change(entry) is not { } change)
         {
-            item.SubItems[shown].ForeColor = ExplorerStyle.ChangeColor(change);
+            return;
         }
+
+        var color = ExplorerStyle.ChangeColor(change);
+        item.ForeColor = color;
+        var shown = shownColumns.IndexOf(gitColumn);
+        if (shown >= 0)
+        {
+            item.SubItems[shown].ForeColor = color;
+        }
+    }
+
+    // After a changed item's name, where the Git column doesn't show, its letter, or how many
+    // changes a folder holds, in the name's colour: so the change is told by more than colour.
+    ShellListView.NameMark? NameMark(int index)
+    {
+        if (fitting != null ||
+            index >= displayed.Count ||
+            IsColumnShown(gitColumn))
+        {
+            return null;
+        }
+
+        var entry = displayed[index];
+        if (gitCells.Mark(entry) is not { } mark ||
+            gitCells.Change(entry) is not { } change)
+        {
+            return null;
+        }
+
+        return new(Row(index).Text, mark, ExplorerStyle.ChangeColor(change));
     }
 
     // Every column but the name, which is always the first, in gray, as Explorer has them: read
