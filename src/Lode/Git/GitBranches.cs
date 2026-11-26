@@ -579,7 +579,7 @@ static class GitBranches
     }
 
     /// <summary>
-    /// How long ago <paramref name="when"/> was, as GitHub Desktop says it: "15 hours ago".
+    /// How long ago <paramref name="when"/> was, as GitHub Desktop says it: "15 hours".
     /// </summary>
     internal static string Ago(DateTimeOffset when, DateTimeOffset now)
     {
@@ -616,10 +616,10 @@ static class GitBranches
         {
             if (count == 1)
             {
-                return $"1 {unit} ago";
+                return $"1 {unit}";
             }
 
-            return $"{count} {unit}s ago";
+            return $"{count} {unit}s";
         }
     }
 }

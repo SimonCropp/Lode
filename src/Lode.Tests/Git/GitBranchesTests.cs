@@ -150,15 +150,15 @@ public class GitBranchesTests
                     [
                       -00:00:05 -> just now,
                       00:00:30 -> just now,
-                      00:01:00 -> 1 minute ago,
-                      00:59:00 -> 59 minutes ago,
-                      01:00:00 -> 1 hour ago,
-                      15:00:00 -> 15 hours ago,
-                      1.00:00:00 -> 1 day ago,
-                      29.00:00:00 -> 29 days ago,
-                      45.00:00:00 -> 1 month ago,
-                      364.00:00:00 -> 12 months ago,
-                      800.00:00:00 -> 2 years ago
+                      00:01:00 -> 1 minute,
+                      00:59:00 -> 59 minutes,
+                      01:00:00 -> 1 hour,
+                      15:00:00 -> 15 hours,
+                      1.00:00:00 -> 1 day,
+                      29.00:00:00 -> 29 days,
+                      45.00:00:00 -> 1 month,
+                      364.00:00:00 -> 12 months,
+                      800.00:00:00 -> 2 years
                     ]
                     """);
     }

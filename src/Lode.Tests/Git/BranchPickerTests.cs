@@ -75,27 +75,27 @@ public class BranchPickerTests
                   ],
                   all: [
                     DEFAULT BRANCH,
-                        main  [15 hours ago],
+                        main  [15 hours],
                     RECENT BRANCHES,
-                      ✓ asyncinterfaces-pin-netfx  [5 hours ago],
-                        DiffEngine-21.2.0  [stashed changes · 2 days ago],
-                        Update-to-TUnit-1.86.6  [3 days ago],
+                      ✓ asyncinterfaces-pin-netfx  [5 hours],
+                        DiffEngine-21.2.0  [stashed changes · 2 days],
+                        Update-to-TUnit-1.86.6  [3 days],
                     OTHER BRANCHES,
-                        cleanup  [1 month ago],
-                        feature/sign-in-with-the-new-provider  [stashed changes · 6 days ago],
-                        origin/feature-on-origin  [3 days ago]
+                        cleanup  [1 month],
+                        feature/sign-in-with-the-new-provider  [stashed changes · 6 days],
+                        origin/feature-on-origin  [3 days]
                   ],
                   filtered: [
                     RECENT BRANCHES,
-                        Update-to-TUnit-1.86.6  [3 days ago],
+                        Update-to-TUnit-1.86.6  [3 days],
                     OTHER BRANCHES,
-                        cleanup  [1 month ago],
-                        feature/sign-in-with-the-new-provider  [stashed changes · 6 days ago],
-                        origin/feature-on-origin  [3 days ago]
+                        cleanup  [1 month],
+                        feature/sign-in-with-the-new-provider  [stashed changes · 6 days],
+                        origin/feature-on-origin  [3 days]
                   ],
                   twoWords: [
                     RECENT BRANCHES,
-                      ✓ asyncinterfaces-pin-netfx  [5 hours ago]
+                      ✓ asyncinterfaces-pin-netfx  [5 hours]
                   ],
                   noMatch: [
                     No branch matches. Enter makes a new one.
