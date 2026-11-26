@@ -139,7 +139,8 @@ sealed class GitPanes : IDisposable
         changes.ShowInFolderRequested += _ => ShowInFolderRequested?.Invoke(_);
         history.ShowInFolderRequested += _ => ShowInFolderRequested?.Invoke(_);
         history.OpenSiteRequested += _ => OpenSiteRequested?.Invoke(_);
-        history.PushRequested += Push;
+        history.PushRequested += () => Act(GitState.PartKind.Ahead);
+        changes.ActRequested += Act;
 
         // A commit is in History straight away, not once the watch hears of it.
         changes.Committed += history.Reload;
@@ -250,7 +251,7 @@ sealed class GitPanes : IDisposable
 
             changes.Bind(repo);
             history.Bind(repo);
-            ShowCount(state);
+            ShowState(state);
             Arrange();
             return;
         }
@@ -262,7 +263,7 @@ sealed class GitPanes : IDisposable
 
         var old = this.state;
         this.state = state;
-        ShowCount(state);
+        ShowState(state);
 
         // Watched, the watch says when the repository changes, for each pane to read it again.
         // Otherwise a state read again that differs, after F5 say, is what says so.
@@ -283,19 +284,22 @@ sealed class GitPanes : IDisposable
         }
     }
 
-    // How many files have changed, on the strip's Changes tab and on History's, where it has one.
-    // Changes' own says how many it read.
-    void ShowCount(GitState? state)
+    // How many files have changed, on the strip's Changes tab and on History's, where it has one,
+    // Changes' own saying how many it read; and, for Changes with nothing uncommitted, what to do
+    // next.
+    void ShowState(GitState? state)
     {
         var count = state?.Changes ?? 0;
         Strip.Changes = count;
         history.Header.ChangesCount = count;
+        changes.ShowState(state);
     }
 
-    // History's arrow clicked: asks what to do about the commits ahead, as the status bar's
-    // commits ahead do, pull first say where the branch has diverged. With the state read again,
-    // which the panes may not have, and the arrows may be newer than.
-    async void Push()
+    // History's arrow clicked, or what to do next in Changes with nothing uncommitted: asks what
+    // to do about that part of the state, as the status bar's part does, pull first say where
+    // the branch has diverged. With the state read again, which the panes may not have, and the
+    // arrows may be newer than.
+    async void Act(GitState.PartKind part)
     {
         if (repo is not { } asked)
         {
@@ -310,7 +314,7 @@ sealed class GitPanes : IDisposable
             return;
         }
 
-        GitStatusActions.Act(window, GitState.PartKind.Ahead, asked, read, settings.CodeDirectory);
+        GitStatusActions.Act(window, part, asked, read, settings.CodeDirectory);
     }
 
     /// <summary>

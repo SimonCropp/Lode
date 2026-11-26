@@ -69,9 +69,21 @@ sealed class ChangesPane : UserControl
     RowTip rowTip;
     Settings settings;
 
+    // In place of the files, once they are read and there are none.
+    NoChanges noChanges = new()
+    {
+        Dock = DockStyle.Fill,
+        Visible = false
+    };
+
     string? repo;
     GitChanges changes = GitChanges.Empty;
     IReadOnlyList<Change> shown = [];
+
+    // Whether what is uncommitted has been read for the repository, so it isn't said to be
+    // nothing while it is read.
+    bool readYet;
+    bool noneShown;
     bool showing;
     bool stale = true;
     bool reading;
@@ -106,6 +118,19 @@ sealed class ChangesPane : UserControl
     /// What is uncommitted was read again, for a diff of one of its files to be read again too.
     /// </summary>
     public event Action<string>? ChangesRead;
+
+    /// <summary>
+    /// With nothing uncommitted, what to do next was clicked, for the part of the repository's
+    /// state it is about to be asked about, as the status bar's part is.
+    /// </summary>
+    public event Action<GitState.PartKind>? ActRequested;
+
+    /// <summary>
+    /// Whether it says nothing is uncommitted, in place of the files. For tests.
+    /// </summary>
+    internal bool NoneShown => noneShown;
+
+    internal NoChanges NoChanges => noChanges;
 
     public PaneHeader Header => header;
 
@@ -236,8 +261,10 @@ sealed class ChangesPane : UserControl
             args.Graphics.DrawLine(pen, 0, mergeBar.Height - 1, mergeBar.Width, mergeBar.Height - 1);
         };
         abortButton.Click += (_, _) => AbortMerge();
+        noChanges.ActRequested += _ => ActRequested?.Invoke(_);
 
-        // The list fills what the rest leave.
+        // The list fills what the rest leave, or, with nothing uncommitted, what says so.
+        Controls.Add(noChanges);
         Controls.Add(list);
         Controls.Add(commitArea);
         Controls.Add(tickRow);
@@ -452,6 +479,7 @@ sealed class ChangesPane : UserControl
         KeepDraft();
         this.repo = repo;
         version++;
+        readYet = false;
         changes = GitChanges.Empty;
         draft = DraftOf(repo);
         loadingDraft = true;
@@ -588,6 +616,7 @@ sealed class ChangesPane : UserControl
             }
 
             changes = read ?? GitChanges.Empty;
+            readYet = true;
 
             // Part way through a merge, the summary starts as git's message for it, as GitHub
             // Desktop's does, unless something is typed already.
@@ -653,7 +682,32 @@ sealed class ChangesPane : UserControl
         header.ChangesCount = changes.Files.Count;
         ShowMergeBar();
         ShowCommitButton();
+        ShowNone();
     }
+
+    // Nothing uncommitted, once read, says so in place of the files. Part way through a merge,
+    // the merge is what there is to commit, with or without files.
+    void ShowNone()
+    {
+        var none = readYet &&
+                   repo != null &&
+                   changes.Files.Count == 0 &&
+                   !changes.Merging;
+        if (none == noneShown)
+        {
+            return;
+        }
+
+        noneShown = none;
+        noChanges.Visible = none;
+        list.Visible = !none;
+    }
+
+    /// <summary>
+    /// The repository's state as last read, for what to do next with nothing uncommitted.
+    /// </summary>
+    public void ShowState(GitState? state) =>
+        noChanges.ShowState(state);
 
     /// <summary>
     /// What the bar over the files says part way through a merge. For tests.

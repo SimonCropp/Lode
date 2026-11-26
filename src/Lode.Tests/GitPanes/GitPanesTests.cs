@@ -425,6 +425,83 @@ public class GitPanesTests
         await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…, Delete tag…");
     }
 
+    // With nothing uncommitted, what to do next: pull, then push after where both have moved on,
+    // pull, push, or sync a fork; nothing where there is nothing to do.
+    [Test]
+    public async Task NoChangesSuggestions()
+    {
+        static string? Suggested(GitState? state)
+        {
+            if (NoChanges.SuggestionFor(state) is not { } suggestion)
+            {
+                return null;
+            }
+
+            return $"{suggestion.Button} {suggestion.Part}: {suggestion.Text}";
+        }
+
+        static GitState State(int ahead, int behind, int forkBehind = 0) =>
+            new("main", "abc", ahead, behind, [])
+            {
+                Upstream = true,
+                ForkBehind = forkBehind
+            };
+
+        await Assert.That(Suggested(null)).IsNull();
+        await Assert.That(Suggested(State(0, 0))).IsNull();
+        await Assert.That(Suggested(State(2, 0))).IsEqualTo("Push… Ahead: 2 commits not pushed yet.");
+        await Assert.That(Suggested(State(0, 3))).IsEqualTo("Pull… Behind: 3 commits to pull, as of the last fetch.");
+        await Assert.That(Suggested(State(1, 3))).IsEqualTo("Pull… Behind: 3 commits to pull, and 1 commit here to push after them, as of the last fetch.");
+        await Assert.That(Suggested(State(0, 0, 4))).IsEqualTo("Sync fork… ForkBehind: 4 commits on the repository this was forked from to bring in, as of the last fetch.");
+    }
+
+    // Nothing uncommitted, once read, says so in place of the files, suggesting what to do next:
+    // here to push the commit not pushed, which asks as the status bar's commits ahead do. Files
+    // changed since are listed again.
+    [Test]
+    public async Task NoChangesInPlaceOfTheFiles()
+    {
+        using var stubs = new PaneStubs();
+        var files = new List<Change>();
+        ChangesPane.Read = (_, _) => new("main", true, false, files);
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        await Assert.That(pane.NoneShown).IsTrue();
+        await Assert.That(pane.List.Visible).IsFalse();
+        await Assert.That(pane.NoChanges.Suggested).IsEqualTo(new NoChanges.Suggestion("1 commit not pushed yet.", "Push…", GitState.PartKind.Ahead));
+
+        var ask = GitStatusActions.Ask;
+        GitStatusActions.Question? asked = null;
+        GitStatusActions.Ask = (_, question) =>
+        {
+            asked = question;
+            return null;
+        };
+        try
+        {
+            pane.NoChanges.SuggestionButton.PerformClick();
+            await Pump.Until(() => asked != null);
+        }
+        finally
+        {
+            GitStatusActions.Ask = ask;
+        }
+
+        await Assert.That(asked!.Caption).IsEqualTo("Git push");
+
+        files.AddRange(PaneStubs.Files);
+        pane.Reload();
+        await PaneStubs.Settled(form);
+        await Assert.That(pane.NoneShown).IsFalse();
+        await Assert.That(pane.List.Visible).IsTrue();
+    }
+
     // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,
     // nothing.
     [Test]

@@ -54,6 +54,21 @@ public class GitPanesCaptureTests
     public Task ChangesTab() =>
         Capture(PaneLayout.Medium);
 
+    // Nothing uncommitted: saying so in place of the files, with the commit not pushed to push.
+    [Test]
+    public Task ChangesNone() =>
+        Capture(
+            PaneLayout.Medium,
+            arrange: form =>
+            {
+                FolderView.ReadGit = (_, _) => new("main", PaneStubs.History[0].Sha, 1, 0, [])
+                {
+                    Upstream = true
+                };
+                ChangesPane.Read = (_, _) => new("main", true, false, []);
+                form.Reload();
+            });
+
     // History's tab chosen, a commit picked, with the files it changed under it.
     [Test]
     public Task HistoryTab() =>
