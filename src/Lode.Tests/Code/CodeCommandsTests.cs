@@ -588,6 +588,87 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "tag")).IsEqualTo("v1.0");
     }
 
+    static GitCommit Commit(string repo, string sha)
+    {
+        var parents = Scratch.Git(repo, "rev-list", "--parents", "-n", "1", sha)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Skip(1)
+            .ToList();
+        return new(sha, parents, "", DateTimeOffset.Now, [], "");
+    }
+
+    // History's Revert commit: a new commit undoing the one picked, on the branch, not pushed.
+    [Test]
+    public async Task RevertCommitsWhatUndoesTheCommit()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        Scratch.Git(repo, "commit", "-am", "Second");
+        var second = Scratch.Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "other.txt"), "other");
+        Scratch.Git(repo, "add", "other.txt");
+        Scratch.Git(repo, "commit", "-m", "Third");
+        var third = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var reverted = (await CodeCommands.Revert(repo, Commit(repo, second))).Single();
+
+        await Assert.That(reverted.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD^")).IsEqualTo(third);
+        await Assert.That(Scratch.Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Revert \"Second\"");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(File.Exists(Path.Combine(repo, "other.txt"))).IsTrue();
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEmpty();
+    }
+
+    // A merge is undone against its first parent, the branch it was merged into.
+    [Test]
+    public async Task RevertUndoesAMergeAgainstItsFirstParent()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var main = Scratch.Git(repo, "symbolic-ref", "--short", "HEAD");
+        Scratch.Git(repo, "checkout", "-b", "feature");
+        await File.WriteAllTextAsync(Path.Combine(repo, "feature.txt"), "feature");
+        Scratch.Git(repo, "add", "feature.txt");
+        Scratch.Git(repo, "commit", "-m", "Feature");
+        Scratch.Git(repo, "checkout", main);
+        await File.WriteAllTextAsync(Path.Combine(repo, "main.txt"), "main");
+        Scratch.Git(repo, "add", "main.txt");
+        Scratch.Git(repo, "commit", "-m", "Main");
+        Scratch.Git(repo, "merge", "--no-ff", "--no-edit", "feature");
+        var merge = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var reverted = (await CodeCommands.Revert(repo, Commit(repo, merge))).Single();
+
+        await Assert.That(reverted.Succeeded).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(repo, "feature.txt"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(repo, "main.txt"))).IsTrue();
+    }
+
+    // One that conflicts with what has changed since is given up: nothing committed, and the
+    // repository not left part way through a revert.
+    [Test]
+    public async Task RevertThatConflictsIsGivenUp()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "second");
+        Scratch.Git(repo, "commit", "-am", "Second");
+        var second = Scratch.Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "third");
+        Scratch.Git(repo, "commit", "-am", "Third");
+        var third = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var reverted = (await CodeCommands.Revert(repo, Commit(repo, second))).Single();
+
+        await Assert.That(reverted.Succeeded).IsFalse();
+        await Assert.That(reverted.Output).Contains("given up");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(third);
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEmpty();
+        await Assert.That(File.Exists(Path.Combine(repo, ".git", "REVERT_HEAD"))).IsFalse();
+    }
+
     // Given a commit, as History tags the one picked, the tag goes on that, not the one checked
     // out, and to origin.
     [Test]

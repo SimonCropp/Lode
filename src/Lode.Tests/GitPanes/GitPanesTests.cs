@@ -318,7 +318,8 @@ public class GitPanesTests
         box.Text = "";
     }
 
-    // A commit's menu offers to tag it, and, for one with tags, to delete one of them.
+    // A commit's menu offers to revert it and to tag it, and, for one with tags, to delete one of
+    // them.
     [Test]
     public async Task CommitMenuTags()
     {
@@ -335,8 +336,8 @@ public class GitPanesTests
         string Entries(int index) =>
             string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[index]).Select(_ => _?.Text ?? "----"));
 
-        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Tag…");
-        await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Tag…, Delete tag…");
+        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…");
+        await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…, Delete tag…");
     }
 
     // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,

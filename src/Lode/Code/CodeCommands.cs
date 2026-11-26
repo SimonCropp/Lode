@@ -642,6 +642,46 @@ static class CodeCommands
     }
 
     /// <summary>
+    /// History's Revert commit: a new commit, on the branch checked out, undoing what
+    /// <paramref name="commit"/> changed, with git's message for it. A merge is undone against
+    /// its first parent, the branch it was merged into. The commit is not pushed. One that
+    /// conflicts with what has changed since is given up, so the repository is left as it was,
+    /// not part way through a revert.
+    /// </summary>
+    public static Task<List<RepoResult>> Revert(string repo, GitCommit commit, Cancel cancel = default) =>
+        ForEach(
+            [repo],
+            null,
+            cancel,
+            _ =>
+            {
+                List<string> arguments = ["revert", "--no-edit"];
+                if (commit.Parents.Count > 1)
+                {
+                    arguments.AddRange(["-m", "1"]);
+                }
+
+                arguments.Add(commit.Sha);
+                var revert = GitToItsEnd(_, cancel, arguments.ToArray());
+                if (revert.Succeeded)
+                {
+                    return revert;
+                }
+
+                // Not cancellable: a revert left part way would be in the way of everything after.
+                if (Git(_, "rev-parse", "--quiet", "--verify", "REVERT_HEAD").Succeeded)
+                {
+                    GitToItsEnd(_, Cancel.None, "revert", "--abort");
+                    return revert with
+                    {
+                        Output = $"{revert.Output}\nThe revert conflicts with what has changed since, so it was given up, and nothing was committed.".Trim()
+                    };
+                }
+
+                return revert;
+            });
+
+    /// <summary>
     /// Deletes the tag <paramref name="name"/> from each repository and from origin. Gone from
     /// one of them already, or never pushed, it goes from the other; in neither, it fails.
     /// </summary>

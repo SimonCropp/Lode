@@ -745,6 +745,34 @@ static class CodeMenu
     }
 
     /// <summary>
+    /// History's Revert commit: asks, then commits what undoes the commit picked, on the branch
+    /// checked out, without pushing it, and reads the repository again, for History to show it.
+    /// </summary>
+    internal static void RevertCommit(Control owner, string repo, GitCommit commit)
+    {
+        var answer = MessageBox.Show(
+            owner,
+            $"Revert {commit.ShortSha} \"{commit.Subject}\" in {Path.GetFileName(repo)}?\n\nA new commit undoes its changes. It isn't pushed.",
+            "Git revert",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.OK)
+        {
+            return;
+        }
+
+        _ = ActionLog.Run(
+            "Git revert",
+            [repo],
+            async (_, cancel) =>
+            {
+                var results = await CodeCommands.Revert(repo, commit, cancel);
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome(results);
+            });
+    }
+
+    /// <summary>
     /// History's Delete tag: asks which of the commit's tags, then deletes it from the repository
     /// and from origin, and reads the repository again.
     /// </summary>

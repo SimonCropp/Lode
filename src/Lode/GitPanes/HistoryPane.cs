@@ -578,7 +578,7 @@ sealed class HistoryPane : UserControl
     }
 
     /// <summary>
-    /// A commit's right-click menu: copy its SHA or message; tag it, or delete one of its tags,
+    /// A commit's right-click menu: copy its SHA or message; revert it; tag it, or delete one of its tags,
     /// those it has offered; and view it on the repository's site.
     /// </summary>
     internal List<QuickMenu.Command?> CommitCommands(string menuRepo, GitCommit commit)
@@ -591,6 +591,10 @@ sealed class HistoryPane : UserControl
             },
             new("Copy message", () => CopyMessage(menuRepo, commit)),
             null,
+            new("Revert commit…", () => CodeMenu.RevertCommit(this, menuRepo, commit))
+            {
+                Glyph = Icons.Undo
+            },
             new("Tag…", () => CodeMenu.TagCommit(this, menuRepo, commit))
             {
                 Glyph = Icons.Tag
