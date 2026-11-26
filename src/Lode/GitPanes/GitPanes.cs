@@ -1,9 +1,10 @@
 /// <summary>
-/// A window's Changes and History panes, for the repository its tab is in, and the strip down
-/// its right edge with a tab for each that isn't pinned. Hovering a tab slides its pane out over
-/// the list, and over a pane pinned beside it; it slides back once the pointer has left it and
-/// the focus isn't in it. A pinned pane stays beside the list, the list narrower for it: both
-/// pinned share the column, Changes above History. Which are pinned is kept for each repository.
+/// A window's Changes and History panes, for the repository its tab is in, placed for the room
+/// there is beside the tree. With room for both beside the list, they are side by side, Changes
+/// then History. With room for one, they share it as tabs along its top, the one showing kept for
+/// each repository. With room for neither, a strip down the window's right edge has a tab for
+/// each: hovering one slides its pane out over the list, and it slides back once the pointer has
+/// left it and the focus isn't in it.
 /// </summary>
 sealed class GitPanes : IDisposable
 {
@@ -11,6 +12,9 @@ sealed class GitPanes : IDisposable
     const int defaultWidth = 380;
     const int leastWidth = 240;
     const int leastList = 200;
+
+    // How wide the list stays with the panes beside it, for there to be room for them there.
+    const int roomyList = 500;
 
     Form window;
     Settings settings;
@@ -22,8 +26,12 @@ sealed class GitPanes : IDisposable
 
     string? repo;
     GitState? state;
-    bool changesPinned;
-    bool historyPinned;
+    PaneLayout layout;
+
+    // The pane showing where the two share the room beside the list.
+    GitPane tab;
+    bool stripShown;
+    bool arranging;
     GitPane? floating;
     GitPane? hovering;
     bool disposed;
@@ -79,11 +87,6 @@ sealed class GitPanes : IDisposable
     public event Action<string>? ChangesRead;
 
     /// <summary>
-    /// A pane was pinned or unpinned for a repository, for other windows in it to follow.
-    /// </summary>
-    public event Action<string>? PinnedChanged;
-
-    /// <summary>
     /// How the strip's tabs are labelled was changed, for every window to follow.
     /// </summary>
     public event Action? StripLabelsChanged;
@@ -97,6 +100,11 @@ sealed class GitPanes : IDisposable
     internal HistoryPane HistoryPane => history;
     internal PaneSplitContainer PaneSplit => paneSplit;
     internal GitPane? Floating => floating;
+
+    /// <summary>
+    /// Where the panes are, for the room beside the tree.
+    /// </summary>
+    internal PaneLayout Layout => layout;
 
     /// <summary>
     /// The repository the panes are about, null outside one.
@@ -122,8 +130,10 @@ sealed class GitPanes : IDisposable
             Visible = false
         };
 
-        changes.Header.PinClicked += () => SetPinned(GitPane.Changes, !changesPinned);
-        history.Header.PinClicked += () => SetPinned(GitPane.History, !historyPinned);
+        changes.Header.TabClicked += ChooseTab;
+        history.Header.TabClicked += ChooseTab;
+        changes.Enter += (_, _) => OnEntered(GitPane.Changes);
+        history.Enter += (_, _) => OnEntered(GitPane.History);
         changes.EscapePressed += () => Escape(GitPane.Changes);
         history.EscapePressed += () => Escape(GitPane.History);
         changes.ShowInFolderRequested += _ => ShowInFolderRequested?.Invoke(_);
@@ -147,8 +157,7 @@ sealed class GitPanes : IDisposable
         slideTimer.Tick += (_, _) => Slide();
 
         // Plain lines between the list and the panes, and between the panes, rather than the
-        // faint one between the tree and the list: the panes are white as the list is, and
-        // Changes' commit area ran into History's heading.
+        // faint one between the tree and the list: the panes are white as the list is.
         paneSplit.Line = SplitterLine.Plain;
         columnSplit.Line = SplitterLine.Plain;
         paneSplit.Dock = DockStyle.Fill;
@@ -156,8 +165,10 @@ sealed class GitPanes : IDisposable
         paneSplit.Panel2Collapsed = true;
         paneSplit.Dragged += KeepWidth;
         paneSplit.DpiChangedAfterParent += (_, _) => Arrange();
+
+        // Changes and History side by side, where there is room for both.
         columnSplit.Dock = DockStyle.Fill;
-        columnSplit.Orientation = Orientation.Horizontal;
+        columnSplit.Orientation = Orientation.Vertical;
         columnSplit.Dragged += KeepSplit;
         paneSplit.Panel2.Controls.Add(columnSplit);
 
@@ -165,8 +176,9 @@ sealed class GitPanes : IDisposable
     }
 
     /// <summary>
-    /// Puts <paramref name="tabs"/> in <paramref name="host"/>, with the column the panes pin to
+    /// Puts <paramref name="tabs"/> in <paramref name="host"/>, with the column the panes go in
     /// beside them. A pane slides out over all of <paramref name="host"/>, which ends at the strip.
+    /// The panes are placed again as <paramref name="host"/> is made wider or narrower.
     /// </summary>
     public void Attach(Control host, Control tabs)
     {
@@ -175,6 +187,7 @@ sealed class GitPanes : IDisposable
         host.Controls.Add(paneSplit);
         host.Controls.Add(changes);
         host.Controls.Add(history);
+        host.Resize += (_, _) => OnHostResized();
     }
 
     Control ControlOf(GitPane pane)
@@ -187,14 +200,24 @@ sealed class GitPanes : IDisposable
         return history;
     }
 
-    public bool IsPinned(GitPane pane)
+    /// <summary>
+    /// Whether a pane is beside the list: both where there is room for both, the tab chosen where
+    /// there is room for one.
+    /// </summary>
+    internal bool IsBeside(GitPane pane)
     {
-        if (pane == GitPane.Changes)
+        if (repo == null)
         {
-            return changesPinned;
+            return false;
         }
 
-        return historyPinned;
+        if (layout == PaneLayout.Wide)
+        {
+            return true;
+        }
+
+        return layout == PaneLayout.Medium &&
+               tab == pane;
     }
 
     bool MenuOpen(GitPane pane)
@@ -209,7 +232,7 @@ sealed class GitPanes : IDisposable
 
     /// <summary>
     /// The repository the tab showing is in, and its state as last read, the strip saying how
-    /// many files have changed. A new repository brings its own pinned panes. Called at every
+    /// many files have changed. A new repository brings the tab chosen in it. Called at every
     /// change of selection, so does nothing when nothing has changed.
     /// </summary>
     public void ShowRepo(string? repo, GitState? state)
@@ -219,17 +242,15 @@ sealed class GitPanes : IDisposable
             Retract(animate: false);
             this.repo = repo;
             this.state = state;
-            PinnedPanes? pinned = null;
+            tab = GitPane.Changes;
             if (repo != null)
             {
-                pinned = settings.PinnedPanesOf(repo);
+                tab = settings.PaneTabOf(repo);
             }
 
-            changesPinned = pinned?.Changes == true;
-            historyPinned = pinned?.History == true;
             changes.Bind(repo);
             history.Bind(repo);
-            Strip.Changes = state?.Changes ?? 0;
+            ShowCount(state);
             Arrange();
             return;
         }
@@ -241,7 +262,7 @@ sealed class GitPanes : IDisposable
 
         var old = this.state;
         this.state = state;
-        Strip.Changes = state?.Changes ?? 0;
+        ShowCount(state);
 
         // Watched, the watch says when the repository changes, for each pane to read it again.
         // Otherwise a state read again that differs, after F5 say, is what says so.
@@ -260,6 +281,15 @@ sealed class GitPanes : IDisposable
         {
             history.Reload();
         }
+    }
+
+    // How many files have changed, on the strip's Changes tab and on History's, where it has one.
+    // Changes' own says how many it read.
+    void ShowCount(GitState? state)
+    {
+        var count = state?.Changes ?? 0;
+        Strip.Changes = count;
+        history.Header.ChangesCount = count;
     }
 
     // History's arrow clicked: asks what to do about the commits ahead, as the status bar's
@@ -329,13 +359,14 @@ sealed class GitPanes : IDisposable
         }
 
         history.Compare(branch);
-        Float(GitPane.History, focus: true);
+        Show(GitPane.History, focus: true);
         return true;
     }
 
     /// <summary>
-    /// Ctrl+Shift+G or Ctrl+Shift+H: a pinned pane takes the focus, or gives it back to the list;
-    /// one slid out slides back; otherwise it slides out with the focus.
+    /// Ctrl+Shift+G or Ctrl+Shift+H: a pane beside the list with the focus gives it back to the
+    /// list; one beside it without, or a tab not chosen, takes it; one slid out slides back;
+    /// otherwise it slides out with the focus.
     /// </summary>
     public void Toggle(GitPane pane)
     {
@@ -344,16 +375,16 @@ sealed class GitPanes : IDisposable
             return;
         }
 
-        var control = ControlOf(pane);
-        if (IsPinned(pane))
+        if (layout != PaneLayout.Narrow)
         {
-            if (control.ContainsFocus)
+            if (IsBeside(pane) &&
+                ControlOf(pane).ContainsFocus)
             {
                 FocusList();
                 return;
             }
 
-            FocusContent(pane);
+            Show(pane, focus: true);
             return;
         }
 
@@ -364,6 +395,87 @@ sealed class GitPanes : IDisposable
         }
 
         Float(pane, focus: true);
+    }
+
+    /// <summary>
+    /// Shows a pane: slid out over the list where there is no room for it beside it, its tab
+    /// chosen where it shares the room with the other. With <paramref name="focus"/>, the focus
+    /// goes into it.
+    /// </summary>
+    public void Show(GitPane pane, bool focus)
+    {
+        if (repo == null ||
+            host == null)
+        {
+            return;
+        }
+
+        if (layout == PaneLayout.Narrow)
+        {
+            Float(pane, focus);
+            return;
+        }
+
+        if (!IsBeside(pane))
+        {
+            Choose(pane, focus);
+            return;
+        }
+
+        if (focus)
+        {
+            FocusContent(pane);
+        }
+    }
+
+    /// <summary>
+    /// A tab clicked along a pane's top: its pane shows in place of the other, noted for the
+    /// repository, with the focus if the other had it.
+    /// </summary>
+    internal void ChooseTab(GitPane pane) =>
+        Choose(pane, focus: false);
+
+    void Choose(GitPane pane, bool focus)
+    {
+        if (repo == null ||
+            layout != PaneLayout.Medium ||
+            tab == pane)
+        {
+            return;
+        }
+
+        var focused = changes.ContainsFocus || history.ContainsFocus;
+        Note(pane);
+        Arrange();
+        if (focus ||
+            focused)
+        {
+            FocusContent(pane);
+        }
+    }
+
+    // The focus went into a pane beside the list: the one to show for the repository where only
+    // one has room, so the one in use stays as the window narrows.
+    void OnEntered(GitPane pane)
+    {
+        if (IsBeside(pane))
+        {
+            Note(pane);
+        }
+    }
+
+    // The pane to show for the repository, kept in the settings.
+    void Note(GitPane pane)
+    {
+        tab = pane;
+        if (repo is not { } noting ||
+            settings.PaneTabOf(noting) == pane)
+        {
+            return;
+        }
+
+        settings.SetPaneTab(noting, pane);
+        settings.Save();
     }
 
     void FocusContent(GitPane pane)
@@ -389,76 +501,6 @@ sealed class GitPanes : IDisposable
     }
 
     /// <summary>
-    /// Pins a pane beside the list for the repository, or unpins it, noting which are pinned for
-    /// it. One unpinned under the pointer stays slid out until the pointer leaves it.
-    /// </summary>
-    public void SetPinned(GitPane pane, bool pinned)
-    {
-        if (repo is not { } pinning ||
-            IsPinned(pane) == pinned)
-        {
-            return;
-        }
-
-        if (pinned &&
-            floating == pane)
-        {
-            StopSlide();
-            floating = null;
-            Strip.Open = null;
-            retractTimer.Stop();
-        }
-
-        var focused = ControlOf(pane).ContainsFocus;
-        if (pane == GitPane.Changes)
-        {
-            changesPinned = pinned;
-        }
-        else
-        {
-            historyPinned = pinned;
-        }
-
-        settings.SetPinnedPanes(pinning, changesPinned, historyPinned);
-        settings.Save();
-        Arrange();
-        if (!pinned &&
-            host != null &&
-            host.RectangleToScreen(host.ClientRectangle).Contains(Cursor.Position))
-        {
-            Float(pane, focus: focused, animate: false);
-        }
-
-        PinnedChanged?.Invoke(pinning);
-    }
-
-    /// <summary>
-    /// Takes up the panes pinned for <paramref name="repo"/> again, pinned or unpinned in another
-    /// window.
-    /// </summary>
-    public void ApplyPinned(string repo)
-    {
-        if (!ChangesPane.SameRepo(this.repo, repo))
-        {
-            return;
-        }
-
-        var pinned = settings.PinnedPanesOf(repo);
-        var changesNow = pinned?.Changes == true;
-        var historyNow = pinned?.History == true;
-        if (changesNow == changesPinned &&
-            historyNow == historyPinned)
-        {
-            return;
-        }
-
-        Retract(animate: false);
-        changesPinned = changesNow;
-        historyPinned = historyNow;
-        Arrange();
-    }
-
-    /// <summary>
     /// Labels the strip's tabs as chosen from its right-click menu, in every window.
     /// </summary>
     internal void SetStripLabels(StripLabels labels)
@@ -481,32 +523,133 @@ sealed class GitPanes : IDisposable
         Strip.Labels = settings.StripLabels;
 
     /// <summary>
-    /// Puts each pane where it belongs: in the column when pinned, hidden over the list when not,
-    /// and shows the strip's tabs for those not pinned.
+    /// Where the panes go for <paramref name="room"/>, the width beside the tree, the strip's
+    /// included: beside the list where it stays <paramref name="list"/> wide with both there, or
+    /// with one, each <paramref name="pane"/> wide; otherwise over it.
     /// </summary>
-    internal void Arrange()
+    internal static PaneLayout LayoutFor(int room, int pane, int list, int splitter)
     {
-        if (host == null)
+        if (room >= list + (pane + splitter) * 2)
+        {
+            return PaneLayout.Wide;
+        }
+
+        if (room >= list + pane + splitter)
+        {
+            return PaneLayout.Medium;
+        }
+
+        return PaneLayout.Narrow;
+    }
+
+    // From the panes' width to start at, not the one dragged to, so a pane dragged wider doesn't
+    // take itself away under the pointer. The strip's width counted too, so its coming and going
+    // doesn't change where they go.
+    PaneLayout LayoutNow()
+    {
+        var room = host!.Width;
+        if (stripShown)
+        {
+            room += Strip.Width;
+        }
+
+        return LayoutFor(room, host.LogicalToDeviceUnits(defaultWidth), host.LogicalToDeviceUnits(roomyList), paneSplit.SplitterWidth);
+    }
+
+    // Not minimized, which leaves the host no room, so the panes are where they were once the
+    // window is back.
+    bool Measurable() =>
+        host is { Width: > 0 } &&
+        window.WindowState != FormWindowState.Minimized;
+
+    void OnHostResized()
+    {
+        if (arranging ||
+            repo == null ||
+            !Measurable() ||
+            LayoutNow() == layout)
         {
             return;
         }
 
-        var inRepo = repo != null;
-        var pinChanges = inRepo && changesPinned;
-        var pinHistory = inRepo && historyPinned;
-        Place(changes, GitPane.Changes, pinChanges, columnSplit.Panel1);
-        Place(history, GitPane.History, pinHistory, columnSplit.Panel2);
-        changes.Header.Pinned = pinChanges;
-        history.Header.Pinned = pinHistory;
+        Arrange();
+    }
 
-        if (pinChanges ||
-            pinHistory)
+    // Where the panes go now differs: one slid out stays where it is, beside the list; the focus
+    // in one that goes from beside the list goes back to the list.
+    void ChangeLayout(PaneLayout now)
+    {
+        var was = layout;
+        layout = now;
+        if (now != PaneLayout.Narrow &&
+            floating is { } pane)
+        {
+            StopSlide();
+            floating = null;
+            Strip.Open = null;
+            retractTimer.Stop();
+            tab = pane;
+        }
+
+        if (now == PaneLayout.Narrow &&
+            was != PaneLayout.Narrow &&
+            (changes.ContainsFocus || history.ContainsFocus))
+        {
+            FocusList();
+        }
+    }
+
+    /// <summary>
+    /// Puts each pane where it belongs, for the room beside the tree: beside the list, both or
+    /// the tab chosen, or hidden over it, and shows the strip where both are hidden.
+    /// </summary>
+    internal void Arrange()
+    {
+        if (host == null ||
+            arranging)
+        {
+            return;
+        }
+
+        arranging = true;
+        try
+        {
+            if (Measurable())
+            {
+                var now = LayoutNow();
+                if (now != layout)
+                {
+                    ChangeLayout(now);
+                }
+            }
+
+            Place();
+        }
+        finally
+        {
+            arranging = false;
+        }
+    }
+
+    void Place()
+    {
+        var inRepo = repo != null;
+        var changesBeside = IsBeside(GitPane.Changes);
+        var historyBeside = IsBeside(GitPane.History);
+        Place(changes, GitPane.Changes, changesBeside, columnSplit.Panel1);
+        Place(history, GitPane.History, historyBeside, columnSplit.Panel2);
+        var tabbed = inRepo && layout == PaneLayout.Medium;
+        changes.Header.Tabbed = tabbed;
+        history.Header.Tabbed = tabbed;
+
+        if (changesBeside ||
+            historyBeside)
         {
             // Never both collapsed: SplitContainer uncollapses the other.
-            if (pinChanges)
+            if (changesBeside)
             {
                 columnSplit.Panel1Collapsed = false;
-                columnSplit.Panel2Collapsed = !pinHistory;
+                columnSplit.Panel2Collapsed = !historyBeside;
             }
             else
             {
@@ -515,10 +658,10 @@ sealed class GitPanes : IDisposable
             }
 
             paneSplit.Panel2Collapsed = false;
-            SetLeastSizes();
-            paneSplit.SetPanel2Size(Width());
-            if (pinChanges &&
-                pinHistory)
+            var both = changesBeside && historyBeside;
+            SetLeastSizes(both);
+            paneSplit.SetPanel2Size(ColumnWidth(both));
+            if (both)
             {
                 PlaceColumnSplit();
             }
@@ -528,16 +671,16 @@ sealed class GitPanes : IDisposable
             paneSplit.Panel2Collapsed = true;
         }
 
-        Strip.ShowTabs(!pinChanges, !pinHistory);
-        Strip.Visible = inRepo && !(pinChanges && pinHistory);
-        changes.Showing = pinChanges || (inRepo && floating == GitPane.Changes);
-        history.Showing = pinHistory || (inRepo && floating == GitPane.History);
+        stripShown = inRepo && layout == PaneLayout.Narrow;
+        Strip.Visible = stripShown;
+        changes.Showing = changesBeside || (inRepo && floating == GitPane.Changes);
+        history.Showing = historyBeside || (inRepo && floating == GitPane.History);
     }
 
-    // In the column, filling its half, or over the list, hidden until slid out.
-    void Place(Control control, GitPane pane, bool pinned, Control column)
+    // In the column, filling its part, or over the list, hidden until slid out.
+    void Place(Control control, GitPane pane, bool beside, Control column)
     {
-        if (pinned)
+        if (beside)
         {
             if (control.Parent != column)
             {
@@ -567,17 +710,22 @@ sealed class GitPanes : IDisposable
     }
 
     // SplitContainer throws for least sizes that don't fit the room it has.
-    void SetLeastSizes()
+    void SetLeastSizes(bool both)
     {
         var list = paneSplit.LogicalToDeviceUnits(leastList);
-        var pane = paneSplit.LogicalToDeviceUnits(leastWidth);
-        if (paneSplit.Width <= list + pane + paneSplit.SplitterWidth)
+        var panes = paneSplit.LogicalToDeviceUnits(leastWidth);
+        if (both)
+        {
+            panes = panes * 2 + columnSplit.SplitterWidth;
+        }
+
+        if (paneSplit.Width <= list + panes + paneSplit.SplitterWidth)
         {
             return;
         }
 
         paneSplit.Panel1MinSize = list;
-        paneSplit.Panel2MinSize = pane;
+        paneSplit.Panel2MinSize = panes;
     }
 
     // How wide a pane is, from the width kept, at the window's scale.
@@ -592,19 +740,39 @@ sealed class GitPanes : IDisposable
         return paneSplit.LogicalToDeviceUnits(width);
     }
 
-    void KeepWidth() =>
-        settings.PaneWidth = (int) Math.Round(paneSplit.Panel2.Width * 96.0 / paneSplit.DeviceDpi);
+    // How wide the column beside the list is: a pane, or two side by side.
+    int ColumnWidth(bool both)
+    {
+        if (both)
+        {
+            return Width() * 2 + columnSplit.SplitterWidth;
+        }
+
+        return Width();
+    }
+
+    // The width dragged to kept for each pane, half of it with two side by side.
+    void KeepWidth()
+    {
+        var width = paneSplit.Panel2.Width;
+        if (repo != null &&
+            layout == PaneLayout.Wide)
+        {
+            width = (width - columnSplit.SplitterWidth) / 2;
+        }
+
+        settings.PaneWidth = (int) Math.Round(width * 96.0 / paneSplit.DeviceDpi);
+    }
 
     void PlaceColumnSplit()
     {
-        var room = columnSplit.Height - columnSplit.SplitterWidth;
+        var room = columnSplit.Width - columnSplit.SplitterWidth;
         if (room <= 0)
         {
             return;
         }
 
-        // Changes more than half, as it has the commit's summary and description too.
-        var share = 0.6;
+        var share = 0.5;
         if (settings.PaneSplit is > 0 and < 1)
         {
             share = settings.PaneSplit;
@@ -620,7 +788,7 @@ sealed class GitPanes : IDisposable
 
     void KeepSplit()
     {
-        var room = columnSplit.Height - columnSplit.SplitterWidth;
+        var room = columnSplit.Width - columnSplit.SplitterWidth;
         if (room > 0)
         {
             settings.PaneSplit = Math.Round((double) columnSplit.SplitterDistance / room, 3);
@@ -659,9 +827,9 @@ sealed class GitPanes : IDisposable
     }
 
     /// <summary>
-    /// Slides a pane that isn't pinned out over the list, from the window's edge, the one slid
-    /// out before going back at once. With <paramref name="focus"/>, the focus goes into it, and
-    /// it stays out until the focus leaves it.
+    /// Slides a pane out over the list, from the window's edge, the one slid out before going
+    /// back at once. With <paramref name="focus"/>, the focus goes into it, and it stays out until
+    /// the focus leaves it. Where there is room for it beside the list, it shows there instead.
     /// </summary>
     internal void Float(GitPane pane, bool focus, bool animate = true)
     {
@@ -671,13 +839,9 @@ sealed class GitPanes : IDisposable
             return;
         }
 
-        if (IsPinned(pane))
+        if (layout != PaneLayout.Narrow)
         {
-            if (focus)
-            {
-                FocusContent(pane);
-            }
-
+            Show(pane, focus);
             return;
         }
 
@@ -850,7 +1014,7 @@ sealed class GitPanes : IDisposable
         done?.Invoke();
     }
 
-    // Where a slide was going is forgotten: the pane is pinned meanwhile.
+    // Where a slide was going is forgotten: the pane is beside the list meanwhile.
     void StopSlide()
     {
         slideTimer.Stop();
@@ -868,14 +1032,19 @@ sealed class GitPanes : IDisposable
             return "No repository";
         }
 
-        return $"{Path.GetFileName(repo)}: Changes {Where(GitPane.Changes)}, History {Where(GitPane.History)}, strip {StripText()}";
+        return $"{Path.GetFileName(repo)}: {layout.ToString().ToLowerInvariant()}, Changes {Where(GitPane.Changes)}, History {Where(GitPane.History)}, strip {StripText()}";
     }
 
     string Where(GitPane pane)
     {
-        if (IsPinned(pane))
+        if (IsBeside(pane))
         {
-            return "pinned";
+            if (layout == PaneLayout.Wide)
+            {
+                return "beside";
+            }
+
+            return "showing";
         }
 
         if (floating == pane)

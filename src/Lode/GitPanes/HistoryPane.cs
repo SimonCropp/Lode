@@ -11,7 +11,7 @@ sealed class HistoryPane : UserControl
 
     const string notPushed = "Not pushed yet. Click to push";
 
-    PaneHeader header = new("History", Icons.History);
+    PaneHeader header = new(GitPane.History);
     PaneSplitContainer split = new();
     RowList commits;
     RowList files;
@@ -360,7 +360,7 @@ sealed class HistoryPane : UserControl
     }
 
     /// <summary>
-    /// Whether the pane can be seen, pinned or slid out. Only then is it read.
+    /// Whether the pane can be seen, beside the list or slid out. Only then is it read.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool Showing

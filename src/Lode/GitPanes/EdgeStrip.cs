@@ -1,10 +1,11 @@
 /// <summary>
-/// The strip down the window's right edge, inside a repository: a tab for each of the Changes and
-/// History panes that isn't pinned, as Visual Studio has its windows that hide themselves. Each
-/// tab has the pane's icon, and its name written down the strip, across under the icon, or not at
-/// all, as chosen from the strip's right-click menu. Hovering a tab slides its pane out; clicking
-/// one opens it with the focus in it. Changes says how many files have changed: in its name, or,
-/// where the name isn't written down the strip, in a badge beside its icon.
+/// The strip down the window's right edge, inside a repository, where the window has no room for
+/// the Changes and History panes beside the list: a tab for each, as Visual Studio has its windows
+/// that hide themselves. Each tab has the pane's icon, and its name written down the strip, across
+/// under the icon, or not at all, as chosen from the strip's right-click menu. Hovering a tab
+/// slides its pane out; clicking one opens it with the focus in it. Changes says how many files
+/// have changed: in its name, or, where the name isn't written down the strip, in a badge beside
+/// its icon.
 /// </summary>
 sealed class EdgeStrip : Control
 {
@@ -13,12 +14,8 @@ sealed class EdgeStrip : Control
     const int iconSize = 16;
     const int gap = 4;
 
-    // Which tabs show, in order, and what each says.
-    Dictionary<GitPane, bool> shown = new()
-    {
-        [GitPane.Changes] = true,
-        [GitPane.History] = true
-    };
+    // The tabs, in order.
+    static GitPane[] panes = [GitPane.Changes, GitPane.History];
 
     int changes;
     GitPane? hovered;
@@ -68,23 +65,6 @@ sealed class EdgeStrip : Control
     {
         var size = Math.Max(7f, font.SizeInPoints - 1);
         return (new(font.FontFamily, size), new(font.FontFamily, size, FontStyle.Bold));
-    }
-
-    /// <summary>
-    /// Shows the tab of each pane that isn't pinned.
-    /// </summary>
-    public void ShowTabs(bool changesTab, bool historyTab)
-    {
-        if (shown[GitPane.Changes] == changesTab &&
-            shown[GitPane.History] == historyTab)
-        {
-            return;
-        }
-
-        shown[GitPane.Changes] = changesTab;
-        shown[GitPane.History] = historyTab;
-        Fit();
-        Invalidate();
     }
 
     /// <summary>
@@ -215,7 +195,7 @@ sealed class EdgeStrip : Control
         switch (labels)
         {
             case StripLabels.Horizontal:
-                foreach (var pane in shown.Keys)
+                foreach (var pane in panes)
                 {
                     width = Math.Max(width, TextRenderer.MeasureText(pane.ToString(), small, Size.Empty, acrossFlags).Width + LogicalToDeviceUnits(12));
                 }
@@ -261,20 +241,15 @@ sealed class EdgeStrip : Control
     }
 
     /// <summary>
-    /// Where each tab showing is, top down.
+    /// Where each tab is, top down.
     /// </summary>
     internal List<(GitPane Pane, Rectangle Bounds)> Tabs()
     {
         var tabs = new List<(GitPane, Rectangle)>();
         var top = LogicalToDeviceUnits(gap);
         using var graphics = CreateGraphics();
-        foreach (var (pane, isShown) in shown)
+        foreach (var pane in panes)
         {
-            if (!isShown)
-            {
-                continue;
-            }
-
             var height = LengthOf(pane, graphics);
             tabs.Add((pane, new(0, top, Width, height)));
             top += height + LogicalToDeviceUnits(gap);

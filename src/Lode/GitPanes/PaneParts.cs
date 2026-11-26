@@ -1,10 +1,27 @@
 /// <summary>
 /// The two panes on the window's right edge.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<GitPane>))]
 enum GitPane
 {
     Changes,
     History
+}
+
+/// <summary>
+/// Where the Changes and History panes are, for how much room there is beside the tree.
+/// </summary>
+enum PaneLayout
+{
+    // Too little room for either beside the list: each is a tab on the strip down the window's
+    // right edge, and slides out over the list.
+    Narrow,
+
+    // Room for one beside the list: the two share it, as tabs along its top.
+    Medium,
+
+    // Room for both beside the list, side by side.
+    Wide
 }
 
 /// <summary>
@@ -23,47 +40,42 @@ enum StripLabels
     IconsOnly
 }
 
-/// <summary>
-/// The top of a pane, drawn as the tab chosen on GitHub Desktop's tab bar: the pane's icon and
-/// name, for Changes how many files have changed in a grey pill, as Desktop's tab has, and
-/// Desktop's blue line under them. So each pane says which it is at a glance, and where History
-/// starts under Changes with both pinned. At the right, the pin that keeps it beside the list, or
-/// lets it slide away again.
+//// <summary>
+/// The top of a pane, drawn as GitHub Desktop's tab bar: the pane's icon and name, for Changes
+/// how many files have changed in a grey pill, as Desktop's tab has, and Desktop's blue line under
+/// the tab chosen. So each pane says which it is at a glance, and where History starts beside
+/// Changes. Where the two share the room beside the list, it has a tab for each, Changes then
+/// History, its own chosen; clicking the other shows that pane instead.
 /// </summary>
 sealed class PaneHeader : Panel
 {
     // Pixels at 100% scale.
     const int iconSize = 16;
 
-    GlyphButton pin = new()
-    {
-        Dock = DockStyle.Right,
-        Width = 32,
-        TabStop = false
-    };
+    const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
 
-    ToolTip tip = new();
     Font bold;
     Font counter;
-    string title;
-    char glyph;
-    int count;
+    GitPane own;
+    bool tabbed;
+    int changesCount;
+    GitPane? hovered;
 
-    public event Action? PinClicked;
+    /// <summary>
+    /// The other pane's tab was clicked, for it to show instead.
+    /// </summary>
+    public event Action<GitPane>? TabClicked;
 
-    public PaneHeader(string title, char glyph)
+    public PaneHeader(GitPane own)
     {
-        this.title = title;
-        this.glyph = glyph;
+        this.own = own;
         (bold, counter) = Fonts(Font);
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
         BackColor = ExplorerStyle.Window;
         Dock = DockStyle.Top;
         Height = 34;
-        Padding = new(0, 3, 4, 6);
-        pin.Click += (_, _) => PinClicked?.Invoke();
-        Controls.Add(pin);
-        Pinned = false;
+        AccessibleRole = AccessibleRole.PageTabList;
+        AccessibleName = own.ToString();
     }
 
     // The name semibold, and the count in Desktop's 9 pixel semibold.
@@ -80,47 +92,171 @@ sealed class PaneHeader : Panel
     }
 
     /// <summary>
-    /// The count in the pill after the name, none when 0: how many files have changed.
+    /// The count in the pill after Changes' name, none when 0: how many files have changed.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public int Count
+    public int ChangesCount
     {
-        get => count;
+        get => changesCount;
         set
         {
-            if (count == value)
+            if (changesCount == value)
             {
                 return;
             }
 
-            count = value;
+            changesCount = value;
             Invalidate();
         }
     }
 
     /// <summary>
-    /// Whether the pane is pinned: the pin then offers to unpin it.
+    /// Whether it has a tab for each pane, its own chosen, rather than its own alone.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    public bool Pinned
+    public bool Tabbed
     {
-        get;
+        get => tabbed;
         set
         {
-            field = value;
-            if (value)
+            if (tabbed == value)
             {
-                pin.Text = Icons.Unpin.ToString();
-                pin.AccessibleName = $"Unpin {title}";
-                pin.AccessibleDescription = "Unpin: slide away when not in use";
-                tip.SetToolTip(pin, pin.AccessibleDescription);
                 return;
             }
 
-            pin.Text = Icons.Pin.ToString();
-            pin.AccessibleName = $"Pin {title}";
-            pin.AccessibleDescription = "Pin: keep beside the list";
-            tip.SetToolTip(pin, pin.AccessibleDescription);
+            tabbed = value;
+            hovered = null;
+            Invalidate();
+        }
+    }
+
+    static char GlyphOf(GitPane pane)
+    {
+        if (pane == GitPane.Changes)
+        {
+            return Icons.Changes;
+        }
+
+        return Icons.History;
+    }
+
+    // The tab chosen semibold, the other as the window's text is, as Desktop has them.
+    Font FontOf(GitPane pane)
+    {
+        if (pane == own)
+        {
+            return bold;
+        }
+
+        return Font;
+    }
+
+    string? CountText(GitPane pane)
+    {
+        if (pane != GitPane.Changes ||
+            changesCount <= 0)
+        {
+            return null;
+        }
+
+        return changesCount.ToString("N0", CultureInfo.CurrentCulture);
+    }
+
+    /// <summary>
+    /// The tabs, left to right: the pane's own alone, or, tabbed, Changes then History. Each as
+    /// wide as its icon, name and count, with the inset either side, none wider than what is left
+    /// of the header.
+    /// </summary>
+    internal List<(GitPane Pane, Rectangle Bounds)> Tabs()
+    {
+        using var graphics = CreateGraphics();
+        return Tabs(graphics);
+    }
+
+    List<(GitPane Pane, Rectangle Bounds)> Tabs(Graphics graphics)
+    {
+        List<GitPane> panes = [own];
+        if (tabbed)
+        {
+            panes = [GitPane.Changes, GitPane.History];
+        }
+
+        var inset = LogicalToDeviceUnits(DesktopStyle.Inset);
+        var size = LogicalToDeviceUnits(iconSize);
+        var tabs = new List<(GitPane, Rectangle)>();
+        var left = 0;
+        foreach (var pane in panes)
+        {
+            var width = inset + size + LogicalToDeviceUnits(6) + TextRenderer.MeasureText(graphics, pane.ToString(), FontOf(pane), Size.Empty, flags).Width;
+            if (CountText(pane) is { } number)
+            {
+                width += LogicalToDeviceUnits(15) + TextRenderer.MeasureText(graphics, number, counter, Size.Empty, flags).Width;
+            }
+
+            width = Math.Clamp(width + inset, 0, Math.Max(0, Width - left));
+            tabs.Add((pane, new(left, 0, width, Height)));
+            left += width;
+        }
+
+        return tabs;
+    }
+
+    GitPane? TabAt(Point point)
+    {
+        if (!tabbed)
+        {
+            return null;
+        }
+
+        foreach (var (pane, bounds) in Tabs())
+        {
+            if (bounds.Contains(point))
+            {
+                return pane;
+            }
+        }
+
+        return null;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs args)
+    {
+        base.OnMouseMove(args);
+        var at = TabAt(args.Location);
+        if (at == own)
+        {
+            at = null;
+        }
+
+        if (at == hovered)
+        {
+            return;
+        }
+
+        hovered = at;
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs args)
+    {
+        base.OnMouseLeave(args);
+        if (hovered == null)
+        {
+            return;
+        }
+
+        hovered = null;
+        Invalidate();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs args)
+    {
+        base.OnMouseClick(args);
+        if (args.Button == MouseButtons.Left &&
+            TabAt(args.Location) is { } pane &&
+            pane != own)
+        {
+            TabClicked?.Invoke(pane);
         }
     }
 
@@ -128,7 +264,6 @@ sealed class PaneHeader : Panel
     {
         base.OnPaint(args);
         var graphics = args.Graphics;
-        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
         var inset = LogicalToDeviceUnits(DesktopStyle.Inset);
         var bar = LogicalToDeviceUnits(3);
 
@@ -136,40 +271,58 @@ sealed class PaneHeader : Panel
         var middle = (Height - bar) / 2;
         var size = LogicalToDeviceUnits(iconSize);
         var text = DesktopStyle.Text;
-        graphics.DrawImageUnscaled(Icons.Bitmap(glyph, size, text), inset, middle - size / 2);
-
-        var left = inset + size + LogicalToDeviceUnits(6);
-        var room = Math.Max(0, pin.Left - left);
-        var measured = TextRenderer.MeasureText(graphics, title, bold, Size.Empty, flags);
-        var titleWidth = Math.Min(measured.Width, room);
-        TextRenderer.DrawText(graphics, title, bold, new Rectangle(left, middle - measured.Height / 2, titleWidth, measured.Height), text, flags | TextFormatFlags.EndEllipsis);
-        var right = left + titleWidth;
-
-        if (count > 0)
+        var chosen = Rectangle.Empty;
+        foreach (var (pane, bounds) in Tabs(graphics))
         {
-            var number = count.ToString("N0", CultureInfo.CurrentCulture);
+            if (pane == own)
+            {
+                chosen = bounds;
+            }
+
+            if (pane == hovered)
+            {
+                using var hover = new SolidBrush(DesktopStyle.Hover);
+                graphics.FillRectangle(hover, bounds.Left, 0, bounds.Width, Height - 1);
+            }
+
+            var font = FontOf(pane);
+            graphics.DrawImageUnscaled(Icons.Bitmap(GlyphOf(pane), size, text), bounds.Left + inset, middle - size / 2);
+            var left = bounds.Left + inset + size + LogicalToDeviceUnits(6);
+            var room = Math.Max(0, bounds.Right - inset - left);
+            var title = pane.ToString();
+            var measured = TextRenderer.MeasureText(graphics, title, font, Size.Empty, flags);
+            var titleWidth = Math.Min(measured.Width, room);
+            TextRenderer.DrawText(graphics, title, font, new Rectangle(left, middle - measured.Height / 2, titleWidth, measured.Height), text, flags | TextFormatFlags.EndEllipsis);
+
+            if (CountText(pane) is not { } number)
+            {
+                continue;
+            }
+
             var numberSize = TextRenderer.MeasureText(graphics, number, counter, Size.Empty, flags);
             var pill = new Rectangle(
-                right + LogicalToDeviceUnits(5),
+                left + titleWidth + LogicalToDeviceUnits(5),
                 middle - numberSize.Height / 2 - LogicalToDeviceUnits(2),
                 numberSize.Width + LogicalToDeviceUnits(10),
                 numberSize.Height + LogicalToDeviceUnits(4));
-            if (pill.Right < pin.Left)
+            if (pill.Right <= bounds.Right)
             {
                 DesktopStyle.DrawPill(graphics, pill, pill.Height / 2, DesktopStyle.Pill, number, counter, DesktopStyle.PillText);
-                right = pill.Right;
             }
         }
 
-        // The line along the foot, and the blue line of the tab chosen under the icon and name.
+        // The line along the foot, and the blue line under the tab chosen.
         using (var pen = new Pen(DesktopStyle.Border))
         {
             graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
         }
 
         using var blue = new SolidBrush(DesktopStyle.Blue);
-        graphics.FillRectangle(blue, 0, Height - bar, right + inset, bar);
+        graphics.FillRectangle(blue, chosen.Left, Height - bar, chosen.Width, bar);
     }
+
+    protected override AccessibleObject CreateAccessibilityInstance() =>
+        new HeaderAccessibility(this);
 
     protected override void Dispose(bool disposing)
     {
@@ -177,14 +330,89 @@ sealed class PaneHeader : Panel
         {
             bold.Dispose();
             counter.Dispose();
-            tip.Dispose();
         }
 
         base.Dispose(disposing);
     }
+
+    // A tab for each pane it has, for a screen reader, the other's Click showing it.
+    sealed class HeaderAccessibility(PaneHeader header) : ControlAccessibleObject(header)
+    {
+        public override int GetChildCount() =>
+            header.Tabs().Count;
+
+        public override AccessibleObject? GetChild(int index)
+        {
+            var tabs = header.Tabs();
+            if (index < 0 ||
+                index >= tabs.Count)
+            {
+                return null;
+            }
+
+            return new TabAccessibility(header, tabs[index].Pane, this);
+        }
+    }
+
+    sealed class TabAccessibility(PaneHeader header, GitPane pane, AccessibleObject parent) : AccessibleObject
+    {
+        public override string Name
+        {
+            get
+            {
+                if (header.CountText(pane) is { } number)
+                {
+                    return $"{pane} ({number})";
+                }
+
+                return pane.ToString();
+            }
+        }
+
+        public override AccessibleRole Role => AccessibleRole.PageTab;
+        public override AccessibleObject Parent => parent;
+        public override string DefaultAction => "Show";
+
+        public override AccessibleStates State
+        {
+            get
+            {
+                if (pane == header.own)
+                {
+                    return AccessibleStates.Selectable | AccessibleStates.Selected;
+                }
+
+                return AccessibleStates.Selectable;
+            }
+        }
+
+        public override Rectangle Bounds
+        {
+            get
+            {
+                foreach (var (tab, bounds) in header.Tabs())
+                {
+                    if (tab == pane)
+                    {
+                        return header.RectangleToScreen(bounds);
+                    }
+                }
+
+                return Rectangle.Empty;
+            }
+        }
+
+        public override void DoDefaultAction()
+        {
+            if (pane != header.own)
+            {
+                header.TabClicked?.Invoke(pane);
+            }
+        }
+    }
 }
 
-/// <summary>
+// <summary>
 /// A button filled with GitHub Desktop's blue, as its Commit is, its text white, in two parts, the
 /// second bold: "Commit 2 files to " and the branch. A shade lighter under the pointer, and faded
 /// while it does nothing, as Desktop has it.

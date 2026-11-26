@@ -95,8 +95,6 @@ sealed class Commands
         var panes = window.GitPanes;
         if (panes.Repo is { } repo)
         {
-            var changesPinned = panes.IsPinned(GitPane.Changes);
-            var historyPinned = panes.IsPinned(GitPane.History);
             commands.AddRange(
             [
                 null,
@@ -113,14 +111,6 @@ sealed class Commands
                 new("Compare to branch…", () => CodeMenu.CompareToBranch(window, repo))
                 {
                     Glyph = Icons.History
-                },
-                new("Pin changes", () => panes.SetPinned(GitPane.Changes, !changesPinned))
-                {
-                    Checked = changesPinned
-                },
-                new("Pin history", () => panes.SetPinned(GitPane.History, !historyPinned))
-                {
-                    Checked = historyPinned
                 }
             ]);
         }
@@ -193,8 +183,6 @@ sealed class Commands
             Add("Changes", () => panes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
             Add("History", () => panes.Toggle(GitPane.History), "Ctrl+Shift+H");
             Add("Compare to branch…", () => CodeMenu.CompareToBranch(window, repo));
-            Add(panes.IsPinned(GitPane.Changes) ? "Unpin changes" : "Pin changes", () => panes.SetPinned(GitPane.Changes, !panes.IsPinned(GitPane.Changes)));
-            Add(panes.IsPinned(GitPane.History) ? "Unpin history" : "Pin history", () => panes.SetPinned(GitPane.History, !panes.IsPinned(GitPane.History)));
         }
 
         if (page != null)

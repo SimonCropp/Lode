@@ -228,13 +228,13 @@ static class CodeMenu
 
         await RunOnBranch(title, repo, cancel => GitMerging.Merge(repo, picked, squash, cancel));
 
-        // Left part way by conflicts, Changes slides out, where they are settled.
+        // Left part way by conflicts, Changes shows, where they are settled.
         if (!owner.IsDisposed &&
             owner.FindForm() is MainForm window &&
             GitChanges.IsMerging(repo) &&
             ChangesPane.SameRepo(window.GitPanes.Repo, repo))
         {
-            window.GitPanes.Float(GitPane.Changes, focus: true);
+            window.GitPanes.Show(GitPane.Changes, focus: true);
         }
     }
 

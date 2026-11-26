@@ -1,6 +1,6 @@
 /// <summary>
-/// How the Changes and History panes follow the window: which are pinned for each repository,
-/// sliding out and back, and the keys that do it.
+/// How the Changes and History panes follow the window: where they go for how wide it is, the tab
+/// chosen for each repository, sliding out and back, and the keys that do it.
 /// </summary>
 [STAThreadExecutor]
 [NotInParallel("windows")]
@@ -36,9 +36,64 @@ public class GitPanesTests
         await Assert.That(form.GitPanes.Strip.Visible).IsFalse();
     }
 
-    // Pinned in one repository, a pane stays pinned there, and only there, kept in the settings.
+    // The room beside the tree, the strip's included, decides where the panes go: beside the
+    // list where it stays 500 wide with them there, both or one, otherwise over it.
     [Test]
-    public async Task PinnedForEachRepository()
+    public async Task LayoutForTheRoom()
+    {
+        await Assert.That(GitPanes.LayoutFor(883, 380, 500, 4)).IsEqualTo(PaneLayout.Narrow);
+        await Assert.That(GitPanes.LayoutFor(884, 380, 500, 4)).IsEqualTo(PaneLayout.Medium);
+        await Assert.That(GitPanes.LayoutFor(1267, 380, 500, 4)).IsEqualTo(PaneLayout.Medium);
+        await Assert.That(GitPanes.LayoutFor(1268, 380, 500, 4)).IsEqualTo(PaneLayout.Wide);
+    }
+
+    // The panes follow how wide the window is: too narrow, a tab for each on the strip; room for
+    // one, the two as tabs beside the list; room for both, side by side, Changes then History. One
+    // slid out stays out, beside the list, as the window widens.
+    [Test]
+    public async Task LayoutFollowsWidth()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings, narrow);
+        await PaneStubs.Settled(form);
+        var panes = form.GitPanes;
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History hidden, strip Changes (6) and History");
+
+        panes.Float(GitPane.History, focus: false);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History slid out, strip Changes (6) and History");
+
+        Resize(form, medium);
+        await PaneStubs.Settled(form);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes hidden, History showing, strip hidden");
+        await Assert.That(panes.HistoryPane.Header.Tabbed).IsTrue();
+        await Assert.That(panes.Floating).IsNull();
+
+        Resize(form, wide);
+        await PaneStubs.Settled(form);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: wide, Changes beside, History beside, strip hidden");
+        await Assert.That(panes.HistoryPane.Header.Tabbed).IsFalse();
+        var changesAt = panes.ChangesPane.RectangleToScreen(panes.ChangesPane.ClientRectangle);
+        var historyAt = panes.HistoryPane.RectangleToScreen(panes.HistoryPane.ClientRectangle);
+        await Assert.That(changesAt.Right).IsLessThanOrEqualTo(historyAt.Left);
+        await Assert.That(changesAt.Top).IsEqualTo(historyAt.Top);
+        await Assert.That(panes.ChangesPane.Changes.Files.Count).IsEqualTo(PaneStubs.Files.Count);
+        await Assert.That(panes.HistoryPane.Commits.Count).IsEqualTo(PaneStubs.History.Count);
+
+        Resize(form, narrow);
+        await PaneStubs.Settled(form);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History hidden, strip Changes (6) and History");
+    }
+
+    // Where there is room for one pane beside the list, the two are tabs along its top, Changes
+    // showing to start with. The tab chosen in a repository shows there again, and only there,
+    // kept in the settings.
+    [Test]
+    public async Task TabForEachRepository()
     {
         using var stubs = new PaneStubs();
         using var fixture = Repositories();
@@ -48,27 +103,34 @@ public class GitPanesTests
         };
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History hidden, strip Changes (6) and History");
+        var panes = form.GitPanes;
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes showing, History hidden, strip hidden");
+        await Assert.That(panes.ChangesPane.Header.Tabs().Select(_ => _.Pane)).IsEquivalentTo([GitPane.Changes, GitPane.History]);
 
-        form.GitPanes.SetPinned(GitPane.History, true);
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History pinned, strip Changes (6)");
-        await Assert.That(settings.PinnedPanesOf(fixture.At("Docs"))).IsEqualTo(new(fixture.At("Docs"), false, true));
+        panes.ChooseTab(GitPane.History);
+        await PaneStubs.Settled(form);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes hidden, History showing, strip hidden");
+        await Assert.That(panes.HistoryPane.Commits.Count).IsEqualTo(PaneStubs.History.Count);
+        await Assert.That(settings.PaneTabOf(fixture.At("Docs"))).IsEqualTo(GitPane.History);
 
         form.ActiveView!.Navigate(fixture.At("Source"));
         await PaneStubs.Settled(form);
-        await Pump.Until(() => form.GitPanes.Repo == fixture.At("Source"));
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Source: Changes hidden, History hidden, strip Changes (6) and History");
+        await Pump.Until(() => panes.Repo == fixture.At("Source"));
+        await Assert.That(panes.Describe()).IsEqualTo("Source: medium, Changes showing, History hidden, strip hidden");
 
         form.ActiveView.Navigate(fixture.At("Docs"));
         await PaneStubs.Settled(form);
-        await Pump.Until(() => form.GitPanes.Repo == fixture.At("Docs"));
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History pinned, strip Changes (6)");
+        await Pump.Until(() => panes.Repo == fixture.At("Docs"));
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes hidden, History showing, strip hidden");
 
-        form.GitPanes.SetPinned(GitPane.Changes, true);
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes pinned, History pinned, strip hidden");
-        form.GitPanes.SetPinned(GitPane.Changes, false);
-        form.GitPanes.SetPinned(GitPane.History, false);
-        await Assert.That(settings.PinnedPanes).IsEmpty();
+        // Changes' tab along History's top, as a screen reader clicks it.
+        var tabs = panes.HistoryPane.Header.AccessibilityObject;
+        await Assert.That(tabs.GetChildCount()).IsEqualTo(2);
+        await Assert.That(tabs.GetChild(0)!.Name).IsEqualTo("Changes (6)");
+        await Assert.That(tabs.GetChild(1)!.State.HasFlag(AccessibleStates.Selected)).IsTrue();
+        tabs.GetChild(0)!.DoDefaultAction();
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes showing, History hidden, strip hidden");
+        await Assert.That(settings.PaneTabs).IsEmpty();
     }
 
     // Going into a folder of the repository leaves the panes as they are, rather than taking
@@ -82,7 +144,6 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Source"), true, false);
         using var form = await Show(fixture.At("Source"), settings);
         await PaneStubs.Settled(form);
         var repos = new List<string?>();
@@ -92,10 +153,11 @@ public class GitPanesTests
         await PaneStubs.Settled(form);
 
         await Assert.That(repos.All(_ => _ == fixture.At("Source"))).IsTrue();
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Source: Changes pinned, History hidden, strip History");
+        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Source: medium, Changes showing, History hidden, strip hidden");
     }
 
-    // Ctrl+Shift+G and Ctrl+Shift+H slide a pane out with the focus in it, and back again.
+    // Where there is no room beside the list, Ctrl+Shift+G and Ctrl+Shift+H slide a pane out with
+    // the focus in it, and back again.
     [Test]
     public async Task KeysSlideThePanes()
     {
@@ -105,26 +167,28 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        using var form = await Show(fixture.At("Docs"), settings);
+        using var form = await Show(fixture.At("Docs"), settings, narrow);
         await PaneStubs.Settled(form);
 
         Press(form, Keys.Control | Keys.Shift | Keys.H);
         await PaneStubs.Settled(form);
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History slid out, strip Changes (6) and History");
+        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History slid out, strip Changes (6) and History");
         await Assert.That(form.GitPanes.HistoryPane.Commits.Count).IsEqualTo(PaneStubs.History.Count);
 
         Press(form, Keys.Control | Keys.Shift | Keys.G);
         await PaneStubs.Settled(form);
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes slid out, History hidden, strip Changes (6) and History");
+        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: narrow, Changes slid out, History hidden, strip Changes (6) and History");
         await Assert.That(form.GitPanes.ChangesPane.Changes.Files.Count).IsEqualTo(PaneStubs.Files.Count);
 
         Press(form, Keys.Control | Keys.Shift | Keys.G);
-        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History hidden, strip Changes (6) and History");
+        await Assert.That(form.GitPanes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History hidden, strip Changes (6) and History");
     }
 
-    // Pinned in one window, a pane is pinned in another showing the same repository too.
+    // Where there is room beside the list, Ctrl+Shift+H puts the focus in History, choosing its
+    // tab where the two share the room, and again gives it back to the list. Side by side, the
+    // pane the focus went into last is the tab to show once the window is narrower.
     [Test]
-    public async Task PinnedInEveryWindow()
+    public async Task KeysBesideTheList()
     {
         using var stubs = new PaneStubs();
         using var fixture = Repositories();
@@ -132,14 +196,38 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        using var first = await Show(fixture.At("Docs"), settings);
-        using var second = await Show(fixture.At("Docs"), settings);
-        await PaneStubs.Settled(first);
-        await PaneStubs.Settled(second);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var panes = form.GitPanes;
 
-        first.GitPanes.SetPinned(GitPane.Changes, true);
+        Press(form, Keys.Control | Keys.Shift | Keys.H);
+        await PaneStubs.Settled(form);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes hidden, History showing, strip hidden");
+        await Assert.That(panes.HistoryPane.ContainsFocus).IsTrue();
+        await Assert.That(settings.PaneTabOf(fixture.At("Docs"))).IsEqualTo(GitPane.History);
 
-        await Assert.That(second.GitPanes.Describe()).IsEqualTo("Docs: Changes pinned, History hidden, strip History");
+        Press(form, Keys.Control | Keys.Shift | Keys.H);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes hidden, History showing, strip hidden");
+        await Assert.That(panes.HistoryPane.ContainsFocus).IsFalse();
+
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.Changes);
+        Resize(form, wide);
+        await PaneStubs.Settled(form);
+        Press(form, Keys.Control | Keys.Shift | Keys.H);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: wide, Changes beside, History beside, strip hidden");
+        await Assert.That(panes.HistoryPane.ContainsFocus).IsTrue();
+        await Assert.That(settings.PaneTabOf(fixture.At("Docs"))).IsEqualTo(GitPane.History);
+
+        Resize(form, medium);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes hidden, History showing, strip hidden");
+        await Assert.That(panes.HistoryPane.ContainsFocus).IsTrue();
+
+        // Changes with the focus picks its first file, its diff showing in the Diff tab, which
+        // keeps the panes on the repository.
+        Press(form, Keys.Control | Keys.Shift | Keys.G);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: medium, Changes showing, History hidden, strip hidden");
+        await Assert.That(panes.ChangesPane.ContainsFocus).IsTrue();
+        await Assert.That(settings.PaneTabOf(fixture.At("Docs"))).IsEqualTo(GitPane.Changes);
     }
 
     // Chosen from the strip's right-click menu in one window, the tabs are labelled that way in
@@ -153,8 +241,8 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        using var first = await Show(fixture.At("Docs"), settings);
-        using var second = await Show(fixture.At("Docs"), settings);
+        using var first = await Show(fixture.At("Docs"), settings, narrow);
+        using var second = await Show(fixture.At("Docs"), settings, narrow);
         await PaneStubs.Settled(first);
         await PaneStubs.Settled(second);
         var strip = second.GitPanes.Strip;
@@ -178,7 +266,7 @@ public class GitPanesTests
         await Assert.That(tabs.All(_ => _.Bounds.Height == strip.LogicalToDeviceUnits(32))).IsTrue();
 
         // What a screen reader is told is the same however the tabs are labelled.
-        await Assert.That(second.GitPanes.Describe()).IsEqualTo("Docs: Changes hidden, History hidden, strip Changes (6) and History");
+        await Assert.That(second.GitPanes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History hidden, strip Changes (6) and History");
     }
 
     // The badge on Changes' icon: none for no changes, up to 99, then 99+.
@@ -202,7 +290,6 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var list = form.GitPanes.ChangesPane.List;
@@ -237,7 +324,6 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.ChangesPane;
@@ -282,7 +368,6 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.ChangesPane;
@@ -329,7 +414,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -351,7 +436,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -385,7 +470,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var list = form.GitPanes.HistoryPane.CommitList;
@@ -434,7 +519,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -458,7 +543,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -497,7 +582,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -522,7 +607,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -554,7 +639,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -581,7 +666,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -611,7 +696,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -648,7 +733,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
@@ -676,7 +761,6 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), true, false);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.ChangesPane;
@@ -730,7 +814,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var panes = form.GitPanes;
@@ -771,7 +855,7 @@ public class GitPanesTests
         {
             CodeDirectory = fixture.Root
         };
-        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         PumpFor(TimeSpan.FromMilliseconds(200));
@@ -836,7 +920,13 @@ public class GitPanesTests
         return fixture;
     }
 
-    static async Task<QuietForm> Show(string folder, Settings settings)
+    // How wide the window is, at 100% scale, for each place the panes go: none beside the list,
+    // one, and both.
+    const int narrow = 900;
+    const int medium = 1200;
+    const int wide = 1700;
+
+    static async Task<QuietForm> Show(string folder, Settings settings, int width = medium)
     {
         var places = new Places([folder], [], ShowComputer: false, _ => "");
         var form = new QuietForm([folder], settings, places)
@@ -844,12 +934,19 @@ public class GitPanesTests
             ShowInTaskbar = false,
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000),
-            Size = new(1200, 700)
+            // WinForms keeps a window no wider than the screen unless it has a maximum size of
+            // its own, and CI's screen is 1024 wide, where the panes would have no room beside
+            // the list.
+            MaximumSize = new(10_000, 10_000)
         };
+        Resize(form, width);
         form.Show();
         await Pump.Loaded(form.ActiveView!);
         return form;
     }
+
+    static void Resize(Form form, int width) =>
+        form.Size = new(form.LogicalToDeviceUnits(width), form.LogicalToDeviceUnits(700));
 
     static void Press(QuietForm form, Keys keys) =>
         form.Press(keys);

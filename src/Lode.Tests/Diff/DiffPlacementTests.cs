@@ -16,7 +16,6 @@ public class DiffPlacementTests
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = DiffPlacement.Tab;
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture.Root, settings);
 
         await Pick(form, 0);
@@ -61,7 +60,6 @@ public class DiffPlacementTests
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = DiffPlacement.Tab;
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture.Root, settings);
         await Pick(form, 0);
         await Pump.Until(() => form.DiffHost.TabShowing);
@@ -111,7 +109,6 @@ public class DiffPlacementTests
         using var diff = DiffSample.Stub();
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture.Root, settings);
         await Pick(form, 0);
         var host = form.DiffHost;
@@ -133,7 +130,6 @@ public class DiffPlacementTests
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = DiffPlacement.Folder;
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture.Root, settings);
         var host = form.DiffHost;
 
@@ -164,7 +160,6 @@ public class DiffPlacementTests
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = DiffPlacement.Window;
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture.Root, settings);
         var host = form.DiffHost;
 
@@ -205,7 +200,6 @@ public class DiffPlacementTests
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = DiffPlacement.Editor;
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture.Root, settings);
 
         await Pick(form, 0);
@@ -224,7 +218,7 @@ public class DiffPlacementTests
         using var diff = DiffSample.Stub();
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
-        settings.SetPinnedPanes(fixture.Root, false, true);
+        settings.SetPaneTab(fixture.Root, GitPane.History);
         using var form = await Show(fixture.Root, settings);
         var history = form.GitPanes.HistoryPane;
         history.CommitList.SelectedIndices.Add(1);
@@ -259,8 +253,12 @@ public class DiffPlacementTests
             ShowInTaskbar = false,
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000),
-            Size = new(1200, 700)
+            // WinForms keeps a window no wider than the screen unless it has a maximum size of
+            // its own, and CI's screen is 1024 wide, where Changes would have no room beside the
+            // list. Then the size it opens at.
+            MaximumSize = new(10_000, 10_000)
         };
+        form.Size = new(form.LogicalToDeviceUnits(1200), form.LogicalToDeviceUnits(700));
         form.Show();
         await PaneStubs.Settled(form);
         return form;

@@ -226,7 +226,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    * Each runs in the **Actions** panel under the tree, with progress. Click a line for what it reported; right-click to cancel or remove it. A line that went well leaves after a minute; one that failed stays, as does a deleted branch's, which says the commit the branch was at.
    * <a id="git-state"></a>**Git state**: a **Git** column says of each repository its branch, changes, and commits ahead and behind (`main · 3 changes · 2 ahead`), in a fork how far behind upstream it is (`main · 12 behind upstream`), and in a repository what has become of each file. Beside it, a **Tag** column says of each repository its most recent tag, the nearest back from the commit checked out, as `git describe --tags` finds it. The status bar says it of the repository, links to its page on GitHub, Azure DevOps, GitLab or Bitbucket, and acts on it when clicked: behind offers Pull, ahead Push, changes Commit and push or Discard, and Abort merge part way through one, behind upstream Sync fork. Each repository is read once and again only when something in it changes, so going back to a folder reads nothing. F5 reads them all again. How it works: [docs/git-status.md](docs/git-status.md).
    * **Switch branch**: click the branch in the status bar, or press Ctrl+B, for the repository's branches, as GitHub Desktop lists them. Type to filter; Enter switches. Uncommitted changes can be left on the branch, stashed, or brought along. It also makes, renames and deletes branches, copies a branch's name, and checks one out in a new worktree.
-   * <a id="changes-and-history"></a>**Changes and History**: inside a repository, a strip down the window's right edge has a tab for each, with its icon. Right-click the strip to write the names down it (Vertical names), across under the icons (Horizontal names), or not at all (Icons only); without the names down it, how many files have changed shows in a badge beside Changes' icon. Hover a tab and its pane slides out over the list; it slides back once the pointer leaves it and the focus isn't in it. Click a tab, or press Ctrl+Shift+G (Changes) or Ctrl+Shift+H (History), to open it with the focus in it. The pin at a pane's top keeps it beside the list; with both pinned they share the column, Changes above History. Which are pinned is kept for each repository.
+   * <a id="changes-and-history"></a>**Changes and History**: inside a repository, the two panes go where the window has room for them. With room beside the list for both, they are side by side, Changes then History. With room for one, they share it as tabs along its top; click a tab to show its pane, and the one showing, or the one used last, is kept for each repository. With room for neither, a strip down the window's right edge has a tab for each, with its icon: hover one and its pane slides out over the list, sliding back once the pointer leaves it and the focus isn't in it; click it to open it with the focus in it. Right-click the strip to write the names down it (Vertical names), across under the icons (Horizontal names), or not at all (Icons only); without the names down it, how many files have changed shows in a badge beside Changes' icon. Ctrl+Shift+G (Changes) and Ctrl+Shift+H (History) put the focus in a pane, choosing its tab or sliding it out, and again give it back to the list.
      * **Changes** lists what is uncommitted, each file on its own, ticked to go in the commit. The funnel beside how many have changed shows a filter, to list only the files whose names match; Escape, or the funnel again, puts it away. Type a summary, and a description if you like, from the button beside the summary, which stays shown while it holds something, and **Commit to** the branch (Ctrl+Enter): only the ticked files go in, and what else is staged stays staged. Part way through a merge, everything is committed, and the summary starts as git's message for it. <a id="conflicts"></a>Left part way by conflicts, as GitHub Desktop's, a bar over the files says what is merging into what and how many files are left, with **Abort merge**, which puts the branch and its files back as they were. Each file in conflict says how many conflicts are marked in it, **No conflicts left** once its markers are gone, settled in the editor, or **Pick a side** for one a side deleted, or that isn't text. Right-click one to **Use the file from** the branch checked out, or the branch merged in, whole, or the deletion where that side deleted it, or to **Mark as resolved** as it is, once no markers are left in it. **Commit merge** waits till none are left. Pick a file for its [diff](#diff); double-click it for its changes in the text editor, when it is VS Code or one made from it, or in git's diff tool when one is set. Right-click to discard the changes, the files as they were going to the Recycle Bin first, open it, show it in its folder, copy its path, or have git ignore it. Hover a file's icon for what happened to it, or its row for its whole path. Ticks and what is typed are kept for each repository while Lode runs.
 
        A merge left part way by conflicts:
@@ -235,13 +235,17 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
      * **History** lists the branch's commits, newest first: subject, author, how long ago, tags, and an arrow for those not pushed, each tag and arrow saying what it is when hovered. Pick one for the files it changed, a merge's against its first parent, and click it again to put them away; pick a file for its [diff](#diff), or double-click it for its changes in the text editor. **Compare to branch…**, in the ⋯ menu and the command palette, or on a branch right-clicked in the status bar's branches, lists instead the commits another branch has that the one checked out hasn't, **Behind**, and those it has that the other hasn't, **Ahead**, with how many each way, and from Behind merges them in; × goes back to the branch's own. Right-click a commit to copy its SHA or message, tag it, or delete one of its tags, from origin too, or view it on GitHub, Azure DevOps, GitLab or Bitbucket.
 
-     Changes and History both pinned:
+     Changes and History side by side, with room for both:
 
-     ![Changes and History pinned](src/Lode.Tests/GitPanes/GitPanesCaptureTests.BothPinned.verified.png)
+     ![Changes and History side by side](src/Lode.Tests/GitPanes/GitPanesCaptureTests.BothBeside.verified.png)
 
-     History slid out over Changes, pinned:
+     As tabs, with room for one, History chosen:
 
-     ![History slid out](src/Lode.Tests/GitPanes/GitPanesCaptureTests.HistorySlidOutOverChanges.verified.png)
+     ![Changes and History as tabs](src/Lode.Tests/GitPanes/GitPanesCaptureTests.HistoryTab.verified.png)
+
+     Changes slid out from the strip, with room for neither:
+
+     ![Changes slid out](src/Lode.Tests/GitPanes/GitPanesCaptureTests.ChangesSlidOut.verified.png)
 
      History comparing the branch with develop:
 
@@ -254,7 +258,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
      * <a id="pick-lines"></a>**Pick lines to commit**: in an uncommitted change, click a line's numbers, or drag down them, to leave it out of the commit or put it back; the strip beside the numbers does a run of changes at once. The file's tick shows a dash while only some of its lines go in, and Commit takes only those: the rest stay changed, and whatever else was staged stays staged. Lines aren't picked with whitespace hidden, part way through a merge, or in a renamed file, which goes in whole. Should the file change after its lines were picked, nothing is committed, and it is ticked whole again.
      * Rows clicked copy with Ctrl+C.
 
-     The Diff tab, Changes pinned beside it:
+     The Diff tab, Changes beside it:
 
      ![The Diff tab](src/Lode.Tests/Diff/DiffPlacementCaptureTests.Tab.verified.png)
 
@@ -299,7 +303,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * **The list refreshes itself** when the folder changes on disk. Lode lets go of a drive while Windows removes it, so it never blocks **Safely remove**.
  * **A shell extension that stops answering** is cut off after 3 seconds, and skipped for the session.
- * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options, which of Changes and History are pinned for each repository, how the strip labels them, where diffs show and how, and the Azure DevOps organizations added in Clone. The tabs are saved as they change, those of the window used last, so they come back after a crash too. A Debug build keeps its own, and runs beside the installed Lode.
+ * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options, which of Changes and History shows for each repository, how the strip labels them, where diffs show and how, and the Azure DevOps organizations added in Clone. The tabs are saved as they change, those of the window used last, so they come back after a crash too. A Debug build keeps its own, and runs beside the installed Lode.
 
 
 ## Keyboard

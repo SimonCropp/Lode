@@ -1,7 +1,7 @@
 #if DEBUG
 /// <summary>
-/// A file's changes where each placement shows them, the Changes pane pinned beside them. Debug
-/// only, as the other captures of the window are.
+/// A file's changes where each placement shows them, the Changes pane beside them. Debug only, as
+/// the other captures of the window are.
 /// </summary>
 [STAThreadExecutor]
 [NotInParallel("windows")]
@@ -47,7 +47,6 @@ public class DiffPlacementCaptureTests
         using var fixture = Fixture.CreateAtFixedPath();
         var settings = PaneStubs.InRepository(fixture);
         settings.DiffPlacement = placement;
-        settings.SetPinnedPanes(fixture.Root, true, false);
         using var form = await Show(fixture, settings);
 
         var list = form.GitPanes.ChangesPane.List;
@@ -68,8 +67,12 @@ public class DiffPlacementCaptureTests
             ShowInTaskbar = false,
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000),
-            Size = new(1200, 700)
+            // WinForms keeps a window no wider than the screen unless it has a maximum size of
+            // its own, and CI's screen is 1024 wide, where Changes would have no room beside the
+            // list. Then the size it opens at.
+            MaximumSize = new(10_000, 10_000)
         };
+        form.Size = new(form.LogicalToDeviceUnits(1200), form.LogicalToDeviceUnits(700));
         form.Show();
         await PaneStubs.Settled(form);
         return form;

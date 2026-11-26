@@ -135,7 +135,6 @@ class MainForm : Form
         DiffHost = new(this, settings, Tabs, () => ActiveView, () => ActiveView?.FocusList());
         GitPanes.DiffRequested += DiffHost.Request;
         GitPanes.ChangesRead += DiffHost.ChangesRead;
-        GitPanes.PinnedChanged += ApplyPinnedInAllWindows;
         GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
         Commands = new(this, settings, places);
         AddressBar = new(this, () => ActiveView, Reload, NewTab, Commands.Menu);
@@ -1040,15 +1039,6 @@ class MainForm : Form
         }
 
         GitPanes.ShowRepo(repo, state);
-    }
-
-    // Pinned or unpinned in one window, for a repository, in every window showing it.
-    static void ApplyPinnedInAllWindows(string repo)
-    {
-        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
-        {
-            window.GitPanes.ApplyPinned(repo);
-        }
     }
 
     // The strip's tabs labelled another way in one window, in every window.

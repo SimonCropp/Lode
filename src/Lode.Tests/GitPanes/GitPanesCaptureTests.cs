@@ -1,66 +1,65 @@
 #if DEBUG
 /// <summary>
-/// The Changes and History panes, drawn in the window: pinned beside the list, one or both, and
-/// slid out over it. Debug only, as the other captures of the window are.
+/// The Changes and History panes, drawn in the window, for how wide it is: over the list, slid
+/// out from the strip, beside it as tabs, and side by side. Debug only, as the other captures of
+/// the window are.
 /// </summary>
 [STAThreadExecutor]
 [NotInParallel("windows")]
 public class GitPanesCaptureTests
 {
-    // Neither pinned: the strip down the right edge, with a tab for each.
+    // No room beside the list: the strip down the right edge, with a tab for each.
     [Test]
     public Task Strip() =>
-        Capture(changes: false, history: false);
+        Capture(PaneLayout.Narrow);
 
     // The names across, under the icons, Changes' count in a badge beside its icon.
     [Test]
     public Task StripHorizontal() =>
-        Capture(changes: false, history: false, labels: StripLabels.Horizontal);
+        Capture(PaneLayout.Narrow, labels: StripLabels.Horizontal);
 
     // The icons alone, Changes' count in a badge beside its icon.
     [Test]
     public Task StripIconsOnly() =>
-        Capture(changes: false, history: false, labels: StripLabels.IconsOnly);
+        Capture(PaneLayout.Narrow, labels: StripLabels.IconsOnly);
 
     // The filter shown, from the button beside how many files have changed, which shows it on.
     [Test]
     public Task ChangesFilter() =>
         Capture(
-            changes: true,
-            history: false,
-            form => form.GitPanes.ChangesPane.ShowFilter(true));
+            PaneLayout.Medium,
+            arrange: form => form.GitPanes.ChangesPane.ShowFilter(true));
 
     // The description shown, from the button beside the summary, which shows it on.
     [Test]
     public Task ChangesDescription() =>
         Capture(
-            changes: true,
-            history: false,
-            form => form.GitPanes.ChangesPane.ShowDescription(true, focus: false));
+            PaneLayout.Medium,
+            arrange: form => form.GitPanes.ChangesPane.ShowDescription(true, focus: false));
 
     // A merge left part way by conflicts: the bar over the files, each in conflict saying how it
     // is left to settle, the summary as git's message, and Commit merge held back.
     [Test]
     public Task ChangesConflicted() =>
         Capture(
-            changes: true,
-            history: false,
-            form =>
+            PaneLayout.Medium,
+            arrange: form =>
             {
                 ChangesPane.Read = (_, _) => PaneStubs.Conflicted;
                 form.GitPanes.ChangesPane.Reload();
             });
 
+    // Room for one beside the list: the two as tabs along its top, Changes showing.
     [Test]
-    public Task ChangesPinned() =>
-        Capture(changes: true, history: false);
+    public Task ChangesTab() =>
+        Capture(PaneLayout.Medium);
 
-    // A commit picked, with the files it changed under it.
+    // History's tab chosen, a commit picked, with the files it changed under it.
     [Test]
-    public Task HistoryPinned() =>
+    public Task HistoryTab() =>
         Capture(
-            changes: false,
-            history: true,
+            PaneLayout.Medium,
+            GitPane.History,
             form =>
             {
                 var commits = form.GitPanes.HistoryPane.CommitList;
@@ -72,8 +71,8 @@ public class GitPanesCaptureTests
     [Test]
     public Task HistoryComparing() =>
         Capture(
-            changes: false,
-            history: true,
+            PaneLayout.Medium,
+            GitPane.History,
             form =>
             {
                 HistoryPane.ReadRange = (_, _, skip, count, _) => PaneStubs.History.Take(3).Skip(skip).Take(count).ToList();
@@ -81,41 +80,38 @@ public class GitPanesCaptureTests
                 form.GitPanes.Compare(form.GitPanes.Repo!, "develop");
             });
 
+    // Room for both beside the list: side by side, Changes then History.
     [Test]
-    public Task BothPinned() =>
-        Capture(changes: true, history: true);
+    public Task BothBeside() =>
+        Capture(PaneLayout.Wide);
 
     // Slid out over the list from the strip, the other pane still a tab on it.
     [Test]
     public Task ChangesSlidOut() =>
         Capture(
-            changes: false,
-            history: false,
-            form => form.GitPanes.Float(GitPane.Changes, focus: false));
+            PaneLayout.Narrow,
+            arrange: form => form.GitPanes.Float(GitPane.Changes, focus: false));
 
-    // Slid out over the pinned Changes, as Visual Studio's hidden windows do.
-    [Test]
-    public Task HistorySlidOutOverChanges() =>
-        Capture(
-            changes: true,
-            history: false,
-            form => form.GitPanes.Float(GitPane.History, focus: false));
-
-    static async Task Capture(bool changes, bool history, Action<MainForm>? arrange = null, StripLabels labels = StripLabels.Vertical)
+    static async Task Capture(PaneLayout layout, GitPane tab = GitPane.Changes, Action<MainForm>? arrange = null, StripLabels labels = StripLabels.Vertical)
     {
         using var stubs = new PaneStubs();
         using var fixture = Fixture.CreateAtFixedPath();
         var settings = PaneStubs.InRepository(fixture);
-        settings.SetPinnedPanes(fixture.Root, changes, history);
+        settings.SetPaneTab(fixture.Root, tab);
         settings.StripLabels = labels;
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
         using var form = new QuietForm([fixture.Root], settings, places);
         form.ShowInTaskbar = false;
         form.StartPosition = FormStartPosition.Manual;
         form.Location = new(-20000, -20000);
-        form.Size = new(1200, 700);
+
+        // WinForms keeps a window no wider than the screen unless it has a maximum size of its
+        // own, and CI's screen is 1024 wide.
+        form.MaximumSize = new(10_000, 10_000);
+        form.Size = new(form.LogicalToDeviceUnits(WidthFor(layout)), form.LogicalToDeviceUnits(700));
         form.Show();
         await PaneStubs.Settled(form);
+        await Assert.That(form.GitPanes.Layout).IsEqualTo(layout);
         if (arrange != null)
         {
             arrange(form);
@@ -134,6 +130,22 @@ public class GitPanesCaptureTests
         // screen, so the pane over the list would be drawn under it. The window, then the pane
         // where it is over it.
         await Verify(Composite(form, floating), "png");
+    }
+
+    // How wide the window is, at 100% scale, for the panes to go where asked.
+    static int WidthFor(PaneLayout layout)
+    {
+        if (layout == PaneLayout.Narrow)
+        {
+            return 900;
+        }
+
+        if (layout == PaneLayout.Medium)
+        {
+            return 1200;
+        }
+
+        return 1700;
     }
 
     static MemoryStream Composite(MainForm form, GitPane floating)

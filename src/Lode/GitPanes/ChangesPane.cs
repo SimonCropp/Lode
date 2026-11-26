@@ -12,7 +12,7 @@ sealed class ChangesPane : UserControl
     const int inset = DesktopStyle.Inset;
     const int tickGap = 7;
 
-    PaneHeader header = new("Changes", Icons.Changes);
+    PaneHeader header = new(GitPane.Changes);
     FramedTextBox filterFrame = new();
     Panel filterRow;
     TickRow tickRow;
@@ -534,7 +534,7 @@ sealed class ChangesPane : UserControl
     }
 
     /// <summary>
-    /// Whether the pane can be seen, pinned or slid out. Only then is it read.
+    /// Whether the pane can be seen, beside the list or slid out. Only then is it read.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool Showing
@@ -650,7 +650,7 @@ sealed class ChangesPane : UserControl
         list.EndUpdate();
         list.Invalidate();
         tickRow.Invalidate();
-        header.Count = changes.Files.Count;
+        header.ChangesCount = changes.Files.Count;
         ShowMergeBar();
         ShowCommitButton();
     }

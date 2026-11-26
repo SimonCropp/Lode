@@ -14,30 +14,34 @@ public class SettingsTests
         await Assert.That(new Settings {CodeDirectory = @"\\NotAServer\Share\Code"}.MissingCodeDirectory()).IsNull();
     }
 
-    // Which panes are pinned, for each repository, however its path is written; neither pinned
-    // isn't kept.
+    // Which pane shows for each repository, where the two are tabs, however its path is written;
+    // Changes, which shows unless History is noted, isn't kept.
     [Test]
-    public async Task PinnedPanesForEachRepository()
+    public async Task PaneTabForEachRepository()
     {
         var settings = new Settings();
-        settings.SetPinnedPanes(@"D:\Code\Lode", true, false);
-        settings.SetPinnedPanes(@"D:\Code\Other", false, true);
-        settings.SetPinnedPanes(@"d:\code\lode\", true, true);
+        await Assert.That(settings.PaneTabOf(@"D:\Code\Lode")).IsEqualTo(GitPane.Changes);
 
-        await Assert.That(settings.PinnedPanes.Count).IsEqualTo(2);
-        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Lode")).IsEqualTo(new(@"d:\code\lode\", true, true));
+        settings.SetPaneTab(@"D:\Code\Lode", GitPane.History);
+        settings.SetPaneTab(@"D:\Code\Other", GitPane.History);
+        settings.SetPaneTab(@"d:\code\lode\", GitPane.History);
 
-        settings.SetPinnedPanes(@"D:\Code\Other", false, false);
-        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Other")).IsNull();
+        await Assert.That(settings.PaneTabs.Count).IsEqualTo(2);
+        await Assert.That(settings.PaneTabs[^1]).IsEqualTo(new(@"d:\code\lode\", GitPane.History));
+        await Assert.That(settings.PaneTabOf(@"D:\Code\Lode")).IsEqualTo(GitPane.History);
+
+        settings.SetPaneTab(@"D:\Code\Other", GitPane.Changes);
+        await Assert.That(settings.PaneTabOf(@"D:\Code\Other")).IsEqualTo(GitPane.Changes);
+        await Assert.That(settings.PaneTabs.Count).IsEqualTo(1);
 
         for (var index = 0; index < 600; index++)
         {
-            settings.SetPinnedPanes($@"D:\Code\Repo{index}", true, false);
+            settings.SetPaneTab($@"D:\Code\Repo{index}", GitPane.History);
         }
 
-        await Assert.That(settings.PinnedPanes.Count).IsEqualTo(500);
-        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Repo599")).IsNotNull();
-        await Assert.That(settings.PinnedPanesOf(@"D:\Code\Lode")).IsNull();
+        await Assert.That(settings.PaneTabs.Count).IsEqualTo(500);
+        await Assert.That(settings.PaneTabOf(@"D:\Code\Repo599")).IsEqualTo(GitPane.History);
+        await Assert.That(settings.PaneTabOf(@"D:\Code\Lode")).IsEqualTo(GitPane.Changes);
     }
 
     [Test]
@@ -81,7 +85,7 @@ public class SettingsTests
                       "Ascending": false
                     }
                   ],
-                  "PinnedPanes": [],
+                  "PaneTabs": [],
                   "PaneWidth": 0,
                   "PaneSplit": 0,
                   "StripLabels": "Vertical",
