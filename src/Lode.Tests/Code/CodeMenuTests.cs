@@ -243,9 +243,9 @@ public class CodeMenuTests
     }
 
     // Tag's question offers the tag after the latest, and to commit the changes first only where
-    // there are any, which needs a message. A name with a space is made one git takes, as
-    // History's Tag makes it, saying so. It can't be pressed without a name to be had,
-    // or where every repository has diverged from origin.
+    // there are any, which needs a message: the tag, until the message is typed in itself. A
+    // name with a space is made one git takes, as History's Tag makes it, saying so. It can't be
+    // pressed without a name to be had, or where every repository has diverged from origin.
     [Test]
     public async Task WhatTagsQuestionTakes()
     {
@@ -286,15 +286,83 @@ public class CodeMenuTests
         accept = withChanges.Controls.Find("accept", true).Single();
         await Assert.That((message.Enabled, withChanges.CommitMessage)).IsEqualTo((false, (string?) null));
         commitFirst.Checked = true;
-        await Assert.That((message.Enabled, withChanges.CommitMessage)).IsEqualTo((true, (string?) "refs or cleanup"));
+        await Assert.That((message.Enabled, withChanges.CommitMessage)).IsEqualTo((true, (string?) "2.0.1"));
+        var changedName = (TextBox) withChanges.Controls.Find("value", true).Single();
+        changedName.Text = "v3 beta";
+        await Assert.That(withChanges.CommitMessage).IsEqualTo("v3-beta");
         message.Text = " ";
         await Assert.That(accept.Enabled).IsFalse();
         message.Text = "Release";
         await Assert.That((accept.Enabled, withChanges.CommitMessage)).IsEqualTo((true, (string?) "Release"));
+        changedName.Text = "3.0.0";
+        await Assert.That(withChanges.CommitMessage).IsEqualTo("Release");
 
         using var blocked = new CodeMenu.TagForm([new("Lode", diverged, [])]);
         await Assert.That(blocked.Controls.Find("accept", true).Single().Enabled).IsFalse();
         using var partly = new CodeMenu.TagForm([new("Lode", diverged, []), new("Argon", clean, [])]);
         await Assert.That(partly.Controls.Find("accept", true).Single().Enabled).IsTrue();
+    }
+
+    // What Tag asks is text to select and copy, the commit's SHA and subject say, not a label,
+    // and is as tall as it needs, wrapped, with nothing scrolled out of sight.
+    [Test]
+    public async Task TagsQuestionCanBeSelected()
+    {
+        using var form = new QuietTagForm(
+        [
+            new(
+                @"C:\Code\NServiceBus.Community.SqlNative",
+                new("main", "eaae4361234", 0, 0, [new("tracked.txt", GitChange.Modified)])
+                {
+                    Upstream = true,
+                    Tag = "17.1.0"
+                },
+                [],
+                "refs or cleanup")
+        ]);
+        form.Show();
+        Application.DoEvents();
+        var question = (TextBox) form.Controls.Find("question", true).Single();
+        question.SelectAll();
+
+        await Assert.That(question.ReadOnly).IsTrue();
+        await Assert.That(question.SelectedText).Contains("eaae436 refs or cleanup");
+        await Assert.That(question.GetPositionFromCharIndex(question.TextLength - 1).Y).IsLessThan(question.ClientSize.Height);
+    }
+
+#if DEBUG
+    [Test]
+    public async Task TagsQuestion()
+    {
+        using var form = new QuietTagForm(
+        [
+            new(
+                @"C:\Code\NServiceBus.Community.SqlNative",
+                new("main", "eaae4361234", 1, 0, [new("tracked.txt", GitChange.Modified)])
+                {
+                    Upstream = true,
+                    Tag = "17.1.0"
+                },
+                [],
+                "refs or cleanup")
+        ]);
+        form.Show();
+        Application.DoEvents();
+        form.Refresh();
+        await Verify(form);
+    }
+#endif
+
+    sealed class QuietTagForm(IReadOnlyList<CodeMenu.TagRead> reads) :
+        CodeMenu.TagForm(reads)
+    {
+        protected override bool ShowWithoutActivation => true;
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            StartPosition = FormStartPosition.Manual;
+            Location = new(-20000, -20000);
+        }
     }
 }

@@ -449,10 +449,34 @@ static class CodeMenu
     }
 
     /// <summary>
-    /// What Tag knows of a repository as it asks: its state, and the tags its commit checked out
-    /// has already. A state that couldn't be read is null, and says nothing.
+    /// What Tag knows of a repository as it asks: its state, the tags its commit checked out has
+    /// already, and the commit's subject. A state that couldn't be read is null, and says nothing.
     /// </summary>
-    internal sealed record TagRead(string Repo, GitState? State, IReadOnlyList<string> AtHead);
+    internal sealed record TagRead(string Repo, GitState? State, IReadOnlyList<string> AtHead, string? Subject = null)
+    {
+        /// <summary>
+        /// The commit checked out, as History shows it: its short SHA, then its subject. Null
+        /// before the first commit, or where the state couldn't be read.
+        /// </summary>
+        public string? Commit
+        {
+            get
+            {
+                if (State?.Commit is not { } sha)
+                {
+                    return null;
+                }
+
+                var shortSha = sha[..Math.Min(7, sha.Length)];
+                if (string.IsNullOrEmpty(Subject))
+                {
+                    return shortSha;
+                }
+
+                return $"{shortSha} {Subject}";
+            }
+        }
+    }
 
     // Reads each repository afresh, off the UI thread, as what the menu knew may be a while old,
     // then asks for the tag's name, saying what goes with it.
@@ -505,7 +529,14 @@ static class CodeMenu
             tags = [.. atHead.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
         }
 
-        return new(repo, state, tags);
+        string? subject = null;
+        var log = CodeCommands.Git(repo, "log", "-1", "--format=%s", "HEAD");
+        if (log.Succeeded)
+        {
+            subject = log.Output.Trim();
+        }
+
+        return new(repo, state, tags, subject);
     }
 
     /// <summary>
@@ -521,22 +552,28 @@ static class CodeMenu
         };
 
     /// <summary>
-    /// What Tag asks: what it tags, then what else goes, or doesn't: commits not yet pushed,
+    /// What Tag asks: what it tags, each commit with its short SHA and subject, then what else goes, or doesn't: commits not yet pushed,
     /// which go with the tag, a branch origin hasn't got, which goes too, no branch, so the tag
     /// goes alone, a branch diverged from origin's, left till pulled, the tags the commit has
     /// already, and changes not committed, which aren't in the tag unless committed first.
     /// </summary>
     internal static string TagQuestion(IReadOnlyList<TagRead> reads)
     {
-        var repos = reads
-            .Select(_ => _.Repo)
-            .ToList();
         var lines = new List<string>();
         if (reads.Count == 1)
         {
             var read = reads[0];
             var name = Path.GetFileName(read.Repo);
-            lines.Add($"Tag the commit {name} has checked out, and push the tag to origin.");
+            if (read.Commit is { } commit)
+            {
+                lines.Add($"Tag the commit {name} has checked out, and push the tag to origin:");
+                lines.Add(commit);
+            }
+            else
+            {
+                lines.Add($"Tag the commit {name} has checked out, and push the tag to origin.");
+            }
+
             if (read.State is { } state)
             {
                 if (Diverged(state))
@@ -559,7 +596,7 @@ static class CodeMenu
 
                 if (state.Changes > 0)
                 {
-                    lines.Add($"Its {GitState.CountOf(state.Changes, "uncommitted change")} won't be in the tag unless committed first.");
+                    lines.Add($"Its {GitState.CountOf(state.Changes, "uncommitted change")} won't be in the tag unless committed first, when the tag goes on the new commit instead.");
                 }
             }
 
@@ -571,7 +608,27 @@ static class CodeMenu
             return string.Join("\n\n", lines);
         }
 
-        lines.Add($"Tag the commit each of {Describe(repos)} has checked out, and push the tag to origin.");
+        // Each repository with its commit, as many as fit, rather than Describe's names alone.
+        lines.Add($"Tag the commit each of {reads.Count} repositories has checked out, and push the tag to origin:");
+        var listed = reads
+            .Take(8)
+            .Select(_ =>
+            {
+                var name = Path.GetFileName(_.Repo);
+                if (_.Commit is { } commit)
+                {
+                    return $"{name}: {commit}";
+                }
+
+                return name;
+            })
+            .ToList();
+        if (reads.Count > 8)
+        {
+            listed.Add($"and {reads.Count - 8} more");
+        }
+
+        lines.Add(string.Join("\n", listed));
         void Note(Func<TagRead, bool> applies, string one, string several)
         {
             var names = reads
@@ -1031,16 +1088,77 @@ static class CodeMenu
     }
 
     /// <summary>
+    /// Text that reads as a label's does, wrapped to its width and as tall as it needs, but can be
+    /// selected and copied: read-only, borderless, on the dialog's own colour, and passed over by
+    /// Tab.
+    /// </summary>
+    internal sealed class SelectableText : TextBox
+    {
+        public SelectableText(string text, int width)
+        {
+            ReadOnly = true;
+            Multiline = true;
+            WordWrap = true;
+            BorderStyle = BorderStyle.None;
+            TabStop = false;
+            BackColor = SystemColors.Control;
+            Width = width;
+            Text = text.ReplaceLineEndings("\r\n");
+            FitHeight();
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            FitHeight();
+        }
+
+        protected override void OnClientSizeChanged(EventArgs e)
+        {
+            base.OnClientSizeChanged(e);
+            FitHeight();
+        }
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            base.OnTextChanged(e);
+            FitHeight();
+        }
+
+        // As tall as the text wrapped to the width, less the box's own margins either side, so
+        // the last line never scrolls out of sight. Set only when it changes, as setting it lays
+        // the form out again.
+        void FitHeight()
+        {
+            var measured = TextRenderer.MeasureText(
+                Text,
+                Font,
+                new(Math.Max(1, ClientSize.Width - 6), int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+            var height = measured.Height + 2;
+            if (Height != height)
+            {
+                Height = height;
+            }
+        }
+    }
+
+    /// <summary>
     /// Tag's question: what goes with the tag, the tag's name, offered as the one after the
     /// latest, and, where anything is uncommitted, whether to commit it first, and with what
     /// message. Tag can't be pressed where every repository has diverged from origin, as none
     /// would be tagged.
     /// </summary>
-    internal sealed class TagForm : Form
+    internal class TagForm : Form
     {
         TextBox name;
         CheckBox? commitFirst;
         TextBox? message;
+
+        // Whether the message was typed in, so it no longer follows the tag, and whether it is
+        // being set to the tag, which isn't typing.
+        bool messageTyped;
+        bool settingMessage;
 
         /// <summary>
         /// What was typed made a name git takes, as History's Tag makes it.
@@ -1084,13 +1202,19 @@ static class CodeMenu
                 ColumnCount = 1,
                 Location = new(Padding.Left, Padding.Top)
             };
+            // Selectable, for the SHAs, subjects and tags in it to be copied.
+            layout.Controls.Add(
+                new SelectableText(TagQuestion(reads), 380)
+                {
+                    Name = "question",
+                    Margin = new(3, 3, 3, 6)
+                });
             layout.Controls.Add(
                 new Label
                 {
                     AutoSize = true,
-                    MaximumSize = new(380, 0),
-                    Margin = new(3, 3, 3, 6),
-                    Text = $"{TagQuestion(reads)}\n\nTag:"
+                    Margin = new(3, 6, 3, 6),
+                    Text = "Tag:"
                 });
             name = new()
             {
@@ -1142,11 +1266,18 @@ static class CodeMenu
                 }
 
                 note.Visible = text.Length > 0;
+
+                // The message is the tag, as the commit is the release, until typed in itself.
+                if (message != null &&
+                    !messageTyped)
+                {
+                    settingMessage = true;
+                    message.Text = TagName;
+                    settingMessage = false;
+                }
+
                 UpdateAccept();
             }
-
-            name.TextChanged += (_, _) => NameChanged();
-            NameChanged();
 
             if (reads.Any(_ => _.State is { Changes: > 0 }))
             {
@@ -1161,7 +1292,6 @@ static class CodeMenu
                 {
                     Name = "message",
                     Width = 380,
-                    Text = defaultCommitMessage,
                     Enabled = false
                 };
                 commitFirst.CheckedChanged += (_, _) =>
@@ -1169,12 +1299,21 @@ static class CodeMenu
                     message.Enabled = commitFirst.Checked;
                     UpdateAccept();
                 };
-                message.TextChanged += (_, _) => UpdateAccept();
+                message.TextChanged += (_, _) =>
+                {
+                    if (!settingMessage)
+                    {
+                        messageTyped = true;
+                    }
+
+                    UpdateAccept();
+                };
                 layout.Controls.Add(commitFirst);
                 layout.Controls.Add(message);
             }
 
-            UpdateAccept();
+            name.TextChanged += (_, _) => NameChanged();
+            NameChanged();
 
             var buttons = new FlowLayoutPanel
             {

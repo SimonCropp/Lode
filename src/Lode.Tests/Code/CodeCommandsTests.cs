@@ -729,7 +729,22 @@ public class CodeCommandsTests
         await Assert.That(CodeMenu.SuggestTag([Read(null)])).IsEqualTo("");
     }
 
-    // What Tag asks says what goes with the tag, and what doesn't.
+    // Tag reads the commit checked out, to say it by its short SHA and subject, and its tags.
+    [Test]
+    public async Task TagReadsTheCommitCheckedOut()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "tag", "1.0");
+
+        var read = CodeMenu.ReadForTag(repo);
+
+        await Assert.That(read.Commit).IsEqualTo($"{Scratch.Git(repo, "rev-parse", "--short=7", "HEAD")} Initial");
+        await Assert.That(read.AtHead).IsEquivalentTo(["1.0"]);
+    }
+
+    // What Tag asks says what it tags, by short SHA and subject, what goes with the tag, and what
+    // doesn't.
     [Test]
     public async Task WhatTagAsks()
     {
@@ -745,12 +760,12 @@ public class CodeCommandsTests
         await Verify(
             new
             {
-                clean = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean, [])]),
+                clean = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean, [], "Release 2.0.1")]),
                 ahead = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Ahead = 1 }, ["2.0.0"])]),
                 diverged = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Ahead = 2, Behind = 1 }, [])]),
                 newBranch = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = "feature", Upstream = false }, [])]),
                 detached = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = null, Upstream = false }, [])]),
-                changed = CodeMenu.TagQuestion([new(@"C:\Code\Lode", changed, [])]),
+                changed = CodeMenu.TagQuestion([new(@"C:\Code\Lode", changed, [], "Fix the build")]),
                 several = CodeMenu.TagQuestion(
                 [
                     new(@"C:\Code\Argon", changed with { Ahead = 3 }, []),
@@ -762,31 +777,49 @@ public class CodeCommandsTests
             .Snapshot(
                 """
                 {
-                  clean: Tag the commit Lode has checked out, and push the tag to origin.,
+                  clean:
+                Tag the commit Lode has checked out, and push the tag to origin:
+
+                abc1234 Release 2.0.1,
                   ahead:
-                Tag the commit Lode has checked out, and push the tag to origin.
+                Tag the commit Lode has checked out, and push the tag to origin:
+
+                abc1234
 
                 Its 1 commit not yet pushed goes with the tag, so origin's main has the commit tagged.
 
                 The commit is tagged 2.0.0 already.,
                   diverged:
-                Tag the commit Lode has checked out, and push the tag to origin.
+                Tag the commit Lode has checked out, and push the tag to origin:
+
+                abc1234
 
                 main and origin's have each got commits the other hasn't, so it can't be tagged till pulled.,
                   newBranch:
-                Tag the commit Lode has checked out, and push the tag to origin.
+                Tag the commit Lode has checked out, and push the tag to origin:
+
+                abc1234
 
                 feature goes to origin with the tag, as origin hasn't got it yet.,
                   detached:
-                Tag the commit Lode has checked out, and push the tag to origin.
+                Tag the commit Lode has checked out, and push the tag to origin:
+
+                abc1234
 
                 No branch is checked out, so the tag goes alone.,
                   changed:
-                Tag the commit Lode has checked out, and push the tag to origin.
+                Tag the commit Lode has checked out, and push the tag to origin:
 
-                Its 2 uncommitted changes won't be in the tag unless committed first.,
+                abc1234 Fix the build
+
+                Its 2 uncommitted changes won't be in the tag unless committed first, when the tag goes on the new commit instead.,
                   several:
-                Tag the commit each of 4 repositories (Argon, Lode, Morph, Unread) has checked out, and push the tag to origin.
+                Tag the commit each of 4 repositories has checked out, and push the tag to origin:
+
+                Argon: abc1234
+                Lode: abc1234
+                Morph: abc1234
+                Unread
 
                 Lode has diverged from origin, so won't be tagged till pulled.
 
