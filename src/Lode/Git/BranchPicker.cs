@@ -584,18 +584,23 @@ sealed class BranchPicker : Form
     /// </summary>
     internal static string Note(GitBranches.Branch branch, DateTimeOffset now)
     {
-        var parts = new List<string>();
+        if (branch.Committed is not { } committed)
+        {
+            if (branch.Stashed)
+            {
+                return stashedNote;
+            }
+
+            return "";
+        }
+
+        var ago = GitBranches.Ago(committed, now);
         if (branch.Stashed)
         {
-            parts.Add(stashedNote);
+            return $"{stashedNote} · {ago}";
         }
 
-        if (branch.Committed is { } committed)
-        {
-            parts.Add(GitBranches.Ago(committed, now));
-        }
-
-        return string.Join(" · ", parts);
+        return ago;
     }
 
     void DrawRow(object? sender, DrawItemEventArgs args)
