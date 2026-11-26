@@ -80,19 +80,19 @@ sealed class HistoryPane : UserControl
     internal string CompareText => compareBar.Description;
 
     /// <summary>
-    /// Reads a page of commits. Tests answer for git.
+    /// Reads a page of commits, in process where it can. Tests answer for git.
     /// </summary>
-    internal static Func<string, int, int, Cancel, List<GitCommit>?> ReadCommits { get; set; } = GitHistory.Read;
+    internal static Func<string, int, int, Cancel, List<GitCommit>?> ReadCommits { get; set; } = LibGitHistory.ReadFaster;
 
     /// <summary>
-    /// Reads the files a commit changed. Tests answer for git.
+    /// Reads the files a commit changed, in process where it can. Tests answer for git.
     /// </summary>
-    internal static Func<string, GitCommit, Cancel, List<Change>?> ReadFiles { get; set; } = GitHistory.FilesOf;
+    internal static Func<string, GitCommit, Cancel, List<Change>?> ReadFiles { get; set; } = LibGitHistory.FilesOfFaster;
 
     /// <summary>
-    /// Reads which commits aren't pushed. Tests answer for git.
+    /// Reads which commits aren't pushed, in process where it can. Tests answer for git.
     /// </summary>
-    internal static Func<string, Cancel, HashSet<string>> ReadUnpushed { get; set; } = GitHistory.Unpushed;
+    internal static Func<string, Cancel, HashSet<string>> ReadUnpushed { get; set; } = LibGitHistory.UnpushedFaster;
 
     /// <summary>
     /// How long ago is measured from. Tests put in a clock of their own.

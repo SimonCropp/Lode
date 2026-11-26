@@ -78,7 +78,7 @@ public class GitStateBenchmarks
         {
             if (Directory.Exists(folder))
             {
-                Delete(folder);
+                BenchmarkGit.Delete(folder);
             }
 
             if (set == "Small")
@@ -107,17 +107,17 @@ public class GitStateBenchmarks
         if (index % 7 == 0)
         {
             File.WriteAllText(Path.Combine(repo, "behind.txt"), "behind");
-            Git(repo, "add", "behind.txt");
-            Commit(repo, "Behind");
-            Git(repo, "push");
-            Git(repo, "reset", "--hard", "HEAD~1");
+            BenchmarkGit.Git(repo, "add", "behind.txt");
+            BenchmarkGit.Commit(repo, "Behind");
+            BenchmarkGit.Git(repo, "push");
+            BenchmarkGit.Git(repo, "reset", "--hard", "HEAD~1");
         }
 
         if (index % 5 == 0)
         {
             File.WriteAllText(Path.Combine(repo, "ahead.txt"), "ahead");
-            Git(repo, "add", "ahead.txt");
-            Commit(repo, "Ahead");
+            BenchmarkGit.Git(repo, "add", "ahead.txt");
+            BenchmarkGit.Commit(repo, "Ahead");
         }
 
         if (index % 3 == 0)
@@ -148,11 +148,11 @@ public class GitStateBenchmarks
     {
         var origin = Path.Combine(folder, "origins", $"{name}.git");
         Directory.CreateDirectory(origin);
-        Git(origin, "init", "--bare", "--initial-branch=main");
+        BenchmarkGit.Git(origin, "init", "--bare", "--initial-branch=main");
 
         var repo = Path.Combine(folder, name);
         Directory.CreateDirectory(repo);
-        Git(repo, "init", "--initial-branch=main");
+        BenchmarkGit.Git(repo, "init", "--initial-branch=main");
         for (var folderIndex = 0; folderIndex < folders; folderIndex++)
         {
             var directory = Path.Combine(repo, $"{folderIndex}");
@@ -163,23 +163,11 @@ public class GitStateBenchmarks
             }
         }
 
-        Git(repo, "add", ".");
-        Commit(repo, "Initial");
-        Git(repo, "remote", "add", "origin", origin);
-        Git(repo, "push", "-u", "origin", "main");
+        BenchmarkGit.Git(repo, "add", ".");
+        BenchmarkGit.Commit(repo, "Initial");
+        BenchmarkGit.Git(repo, "remote", "add", "origin", origin);
+        BenchmarkGit.Git(repo, "push", "-u", "origin", "main");
         return repo;
-    }
-
-    static void Commit(string repo, string message) =>
-        Git(repo, "-c", "user.name=Benchmark", "-c", "user.email=benchmark@example.com", "-c", "commit.gpgsign=false", "commit", "-m", message);
-
-    static void Git(string directory, params string[] arguments)
-    {
-        var result = CodeCommands.Git(directory, arguments);
-        if (!result.Succeeded)
-        {
-            throw new($"git {string.Join(' ', arguments)} failed in {directory}: {result.Output}");
-        }
     }
 
     // Timing two readers is only fair if they read the same. A real code folder may hold what
@@ -208,16 +196,5 @@ public class GitStateBenchmarks
 
             Console.WriteLine($"// Readers disagree: {message}");
         }
-    }
-
-    static void Delete(string folder)
-    {
-        // git marks its object files read-only.
-        foreach (var file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
-        {
-            File.SetAttributes(file, FileAttributes.Normal);
-        }
-
-        Directory.Delete(folder, true);
     }
 }
