@@ -1184,6 +1184,7 @@ public class WindowsTests
                     Sync fork,
                     Switch to default branch,
                     Push…,
+                    Tag… (disabled),
                     Discard…,
                     Purge…
                   ]
@@ -1323,6 +1324,7 @@ public class WindowsTests
                     Git sync fork,
                     Git switch to default branch,
                     Git push,
+                    Git tag,
                     Git discard,
                     Git purge
                   ],
@@ -1452,6 +1454,7 @@ public class WindowsTests
                     Sync fork,
                     Switch to default branch,
                     Push…,
+                    Tag…,
                     Discard…,
                     Purge…
                   ],
@@ -1642,6 +1645,7 @@ public class WindowsTests
                     Git sync fork (disabled),
                     Git switch to default branch (disabled),
                     Git push (disabled),
+                    Git tag (disabled),
                     Git discard (disabled),
                     Git purge (disabled),
                     Update NuGets (disabled),

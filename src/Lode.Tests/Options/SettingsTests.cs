@@ -250,6 +250,13 @@ public class SettingsTests
                       menuNested: true
                     },
                     {
+                      id: gitTag,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
                       id: gitDiscard,
                       button: true,
                       menu: false,

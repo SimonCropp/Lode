@@ -606,6 +606,199 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "v0.9^{commit}")).IsEqualTo(first);
     }
 
+    // Commits not yet pushed go with the tag, so origin's branch has the commit tagged, not only
+    // the tag.
+    [Test]
+    public async Task TagPushesCommitsNotYetPushedWithIt()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        Scratch.Git(repo, "commit", "-am", "Second");
+
+        var tagged = (await CodeCommands.Tag([repo], "v1.0")).Single();
+
+        var head = Scratch.Git(repo, "rev-parse", "HEAD");
+        await Assert.That(tagged.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(head);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "v1.0^{commit}")).IsEqualTo(head);
+    }
+
+    // Given a commit message, the changes are committed first, new files too, and are in the
+    // tag. Without one, the tag is of what is committed, and the changes stay as they are.
+    [Test]
+    public async Task TagCommitsTheChangesOnlyWhenAsked()
+    {
+        using var code = new Scratch();
+        var asked = code.CreateRepo("Asked");
+        var notAsked = code.CreateRepo("NotAsked");
+        foreach (var repo in new[] { asked, notAsked })
+        {
+            await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+            await File.WriteAllTextAsync(Path.Combine(repo, "new.txt"), "new");
+        }
+
+        var before = Scratch.Git(notAsked, "rev-parse", "HEAD");
+
+        var committed = (await CodeCommands.Tag([asked], "v1.0", commitMessage: "Release")).Single();
+        var left = (await CodeCommands.Tag([notAsked], "v1.0")).Single();
+
+        await Assert.That((committed.Succeeded, left.Succeeded)).IsEqualTo((true, true));
+        await Assert.That(Scratch.Git(asked, "log", "-1", "--format=%s", "v1.0")).IsEqualTo("Release");
+        await Assert.That(Scratch.Git(asked, "status", "--porcelain")).IsEqualTo("");
+        await Assert.That(Scratch.Git(code.Origin("Asked"), "rev-parse", "main")).IsEqualTo(Scratch.Git(asked, "rev-parse", "HEAD"));
+        await Assert.That(Scratch.Git(notAsked, "rev-parse", "v1.0^{commit}")).IsEqualTo(before);
+        await Assert.That(Scratch.Git(notAsked, "status", "--porcelain")).IsNotEqualTo("");
+    }
+
+    // A branch diverged from origin's, as last fetched, is left untagged, to be pulled first.
+    // One not known to have diverged, origin's not fetched since, has its push refused, and the
+    // tag is taken off again, so it can be tagged once pulled.
+    [Test]
+    public async Task TagLeavesABranchThatHasDiverged()
+    {
+        using var code = new Scratch();
+        var fetched = code.CreateRepo("Fetched");
+        var unfetched = code.CreateRepo("Unfetched");
+        foreach (var name in new[] { "Fetched", "Unfetched" })
+        {
+            var other = code.Clone(name, $"{name}Other");
+            await File.WriteAllTextAsync(Path.Combine(other, "tracked.txt"), "from elsewhere");
+            Scratch.Git(other, "commit", "-am", "Elsewhere");
+            Scratch.Git(other, "push", "origin");
+            var repo = code.At(name);
+            await File.WriteAllTextAsync(Path.Combine(repo, "local.txt"), "local");
+            Scratch.Git(repo, "add", ".");
+            Scratch.Git(repo, "commit", "-m", "Local");
+        }
+
+        Scratch.Git(fetched, "fetch");
+
+        var known = (await CodeCommands.Tag([fetched], "v1.0")).Single();
+        var refused = (await CodeCommands.Tag([unfetched], "v1.0")).Single();
+
+        await Assert.That((known.Succeeded, refused.Succeeded)).IsEqualTo((false, false));
+        await Assert.That(known.Output).Contains("Pull first");
+        await Assert.That(refused.Output).Contains("The tag was taken off again");
+        await Assert.That(Scratch.Git(fetched, "tag")).IsEqualTo("");
+        await Assert.That(Scratch.Git(unfetched, "tag")).IsEqualTo("");
+        await Assert.That(Scratch.Git(code.Origin("Fetched"), "tag")).IsEqualTo("");
+        await Assert.That(Scratch.Git(code.Origin("Unfetched"), "tag")).IsEqualTo("");
+    }
+
+    // A branch origin hasn't got goes with the tag, and tracks origin's from then on. Detached,
+    // the tag goes alone.
+    [Test]
+    public async Task TagPushesANewBranchButNotADetachedHead()
+    {
+        using var code = new Scratch();
+        var branched = code.CreateRepo("Branched");
+        var detached = code.CreateRepo("Detached");
+        Scratch.Git(branched, "switch", "-c", "feature");
+        await File.WriteAllTextAsync(Path.Combine(branched, "tracked.txt"), "feature");
+        Scratch.Git(branched, "commit", "-am", "Feature");
+        Scratch.Git(detached, "switch", "--detach");
+        await File.WriteAllTextAsync(Path.Combine(detached, "tracked.txt"), "detached");
+        Scratch.Git(detached, "commit", "-am", "Detached");
+
+        var results = await CodeCommands.Tag([branched, detached], "v1.0");
+
+        await Assert.That(results.All(_ => _.Succeeded)).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Branched"), "rev-parse", "feature")).IsEqualTo(Scratch.Git(branched, "rev-parse", "HEAD"));
+        await Assert.That(Scratch.Git(branched, "rev-parse", "--abbrev-ref", "@{upstream}")).IsEqualTo("origin/feature");
+        await Assert.That(Scratch.Git(code.Origin("Detached"), "rev-parse", "v1.0^{commit}")).IsEqualTo(Scratch.Git(detached, "rev-parse", "HEAD"));
+        await Assert.That(Scratch.Git(code.Origin("Detached"), "branch", "--format=%(refname:short)")).IsEqualTo("main");
+    }
+
+    // The tag offered is the one after the latest, where that is numbers and dots, and the same
+    // for every repository.
+    [Test]
+    public async Task TheTagOffered()
+    {
+        static CodeMenu.TagRead Read(string? tag) =>
+            new("Repo", new GitState("main", "abc1234", 0, 0, []) { Tag = tag }, []);
+
+        await Assert.That(CodeMenu.NextTag("2.0.0")).IsEqualTo("2.0.1");
+        await Assert.That(CodeMenu.NextTag("v1.9")).IsEqualTo("v1.10");
+        await Assert.That(CodeMenu.NextTag("7")).IsEqualTo("8");
+        await Assert.That(CodeMenu.NextTag("133.0.88364-dev")).IsNull();
+        await Assert.That(CodeMenu.NextTag("release")).IsNull();
+        await Assert.That(CodeMenu.NextTag(null)).IsNull();
+        await Assert.That(CodeMenu.SuggestTag([Read("2.0.0"), Read("2.0.0")])).IsEqualTo("2.0.1");
+        await Assert.That(CodeMenu.SuggestTag([Read("2.0.0"), Read("1.0.0")])).IsEqualTo("");
+        await Assert.That(CodeMenu.SuggestTag([Read(null)])).IsEqualTo("");
+    }
+
+    // What Tag asks says what goes with the tag, and what doesn't.
+    [Test]
+    public async Task WhatTagAsks()
+    {
+        var clean = new GitState("main", "abc1234", 0, 0, [])
+        {
+            Upstream = true
+        };
+        var changed = clean with
+        {
+            Files = [new("tracked.txt", GitChange.Modified), new("new.txt", GitChange.Untracked)]
+        };
+
+        await Verify(
+            new
+            {
+                clean = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean, [])]),
+                ahead = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Ahead = 1 }, ["2.0.0"])]),
+                diverged = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Ahead = 2, Behind = 1 }, [])]),
+                newBranch = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = "feature", Upstream = false }, [])]),
+                detached = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = null, Upstream = false }, [])]),
+                changed = CodeMenu.TagQuestion([new(@"C:\Code\Lode", changed, [])]),
+                several = CodeMenu.TagQuestion(
+                [
+                    new(@"C:\Code\Argon", changed with { Ahead = 3 }, []),
+                    new(@"C:\Code\Lode", clean with { Ahead = 1, Behind = 1 }, []),
+                    new(@"C:\Code\Morph", changed, ["1.0"]),
+                    new(@"C:\Code\Unread", null, [])
+                ])
+            })
+            .Snapshot(
+                """
+                {
+                  clean: Tag the commit Lode has checked out, and push the tag to origin.,
+                  ahead:
+                Tag the commit Lode has checked out, and push the tag to origin.
+
+                Its 1 commit not yet pushed goes with the tag, so origin's main has the commit tagged.
+
+                The commit is tagged 2.0.0 already.,
+                  diverged:
+                Tag the commit Lode has checked out, and push the tag to origin.
+
+                main and origin's have each got commits the other hasn't, so it can't be tagged till pulled.,
+                  newBranch:
+                Tag the commit Lode has checked out, and push the tag to origin.
+
+                feature goes to origin with the tag, as origin hasn't got it yet.,
+                  detached:
+                Tag the commit Lode has checked out, and push the tag to origin.
+
+                No branch is checked out, so the tag goes alone.,
+                  changed:
+                Tag the commit Lode has checked out, and push the tag to origin.
+
+                Its 2 uncommitted changes won't be in the tag unless committed first.,
+                  several:
+                Tag the commit each of 4 repositories (Argon, Lode, Morph, Unread) has checked out, and push the tag to origin.
+
+                Lode has diverged from origin, so won't be tagged till pulled.
+
+                Argon has commits not yet pushed, which go with the tag.
+
+                Morph is tagged already.
+
+                Argon and Morph have uncommitted changes, which won't be in the tag unless committed first.
+                }
+                """);
+    }
+
     // Deleting a tag takes it from the repository and from origin. One never pushed goes from
     // the repository alone; one in neither fails.
     [Test]

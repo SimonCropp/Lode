@@ -475,24 +475,18 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// Tags the commit each repository is at with <paramref name="name"/>, or
-    /// <paramref name="commit"/> where given, as History tags the commit picked, then pushes the
-    /// tag to origin. One that has a tag of that name already fails, and keeps the tag it has.
+    /// Tags <paramref name="commit"/> with <paramref name="name"/>, as History tags the commit
+    /// picked, then pushes the tag to origin. One that has a tag of that name already fails, and
+    /// keeps the tag it has.
     /// </summary>
-    public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default, string? commit = null) =>
+    public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, string commit, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
             repos,
             progress,
             cancel,
             repo =>
             {
-                string[] arguments = ["tag", name];
-                if (commit != null)
-                {
-                    arguments = ["tag", name, commit];
-                }
-
-                var tag = GitToItsEnd(repo, cancel, arguments);
+                var tag = GitToItsEnd(repo, cancel, "tag", name, commit);
                 if (!tag.Succeeded)
                 {
                     return tag;
@@ -504,6 +498,148 @@ static class CodeCommands
                     Output = $"Tagged {name}\n{push.Output}".Trim()
                 };
             });
+
+    /// <summary>
+    /// Tags the commit each repository has checked out with <paramref name="name"/>, and pushes
+    /// the tag to origin. With <paramref name="commitMessage"/>, what is uncommitted is committed
+    /// first, as Push commits it, so it is in the tag. The branch's commits origin hasn't got go
+    /// with the tag, in the one push, so the commit tagged is on origin's branch, not only under
+    /// the tag: both go or neither does. A branch origin hasn't got at all goes too, tracking
+    /// origin's from then on. Detached, the tag goes alone. A branch that has diverged from
+    /// origin's, as of the last fetch, is left untagged, to be pulled first, and a push that
+    /// fails takes the tag off again, so tagging once it is put right finds no tag in the way.
+    /// One that has a tag of that name already fails, and keeps the tag it has.
+    /// </summary>
+    public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default, string? commitMessage = null) =>
+        ForEach(repos, progress, cancel, repo => TagCheckedOut(repo, name, commitMessage, cancel));
+
+    static RepoResult TagCheckedOut(string repo, string name, string? commitMessage, Cancel cancel)
+    {
+        var committed = "";
+        if (commitMessage != null &&
+            HasChanges(repo))
+        {
+            var commit = CommitAll(repo, commitMessage, "nothing was committed, tagged or pushed", cancel);
+            if (!commit.Succeeded)
+            {
+                return commit;
+            }
+
+            committed = commit.Output;
+        }
+
+        var (branchRef, newBranch, failed) = BranchToPushWithTag(repo);
+        if (failed != null)
+        {
+            return failed with
+            {
+                Output = $"{committed}\n{failed.Output}".Trim()
+            };
+        }
+
+        var tag = GitToItsEnd(repo, cancel, "tag", name);
+        if (!tag.Succeeded)
+        {
+            return tag with
+            {
+                Output = $"{committed}\n{tag.Output}".Trim()
+            };
+        }
+
+        List<string> arguments = ["push", "origin", $"refs/tags/{name}"];
+        if (branchRef != null)
+        {
+            arguments = ["push", "--atomic", "origin", branchRef, $"refs/tags/{name}"];
+            if (newBranch)
+            {
+                arguments.Insert(1, "--set-upstream");
+            }
+        }
+
+        var push = Git(repo, cancel, network: true, [.. arguments]);
+        if (!push.Succeeded)
+        {
+            // Not cancellable: a tag left behind would be in the way of tagging again.
+            GitToItsEnd(repo, Cancel.None, "tag", "-d", name);
+            return push with
+            {
+                Output = $"{committed}\n{push.Output}\nThe tag was taken off again, as it didn't reach origin.".Trim()
+            };
+        }
+
+        return push with
+        {
+            Output = $"{committed}\nTagged {name}\n{push.Output}".Trim()
+        };
+    }
+
+    /// <summary>
+    /// What to push with a tag of the commit checked out, so origin's branch has the commit too:
+    /// HEAD to the branch on origin it tracks, where it is ahead of it, or to a branch of the
+    /// same name, for one tracking none, which is <paramref name="NewBranch"/>. Nothing, where
+    /// origin's has the commit already, or detached, or tracking another remote. Failed where it
+    /// has diverged from origin's, which would refuse the push.
+    /// </summary>
+    internal readonly record struct WithTag(string? BranchRef, bool NewBranch, RepoResult? Failed);
+
+    internal static WithTag BranchToPushWithTag(string repo)
+    {
+        var symbolic = Git(repo, "symbolic-ref", "--quiet", "--short", "HEAD");
+        if (!symbolic.Succeeded)
+        {
+            return default;
+        }
+
+        var branch = symbolic.Output.Trim();
+        var remote = Git(repo, "config", "--get", $"branch.{branch}.remote");
+        var merge = Git(repo, "config", "--get", $"branch.{branch}.merge");
+        if (!remote.Succeeded ||
+            !merge.Succeeded)
+        {
+            return new($"HEAD:refs/heads/{branch}", true, null);
+        }
+
+        if (remote.Output.Trim() != "origin")
+        {
+            return default;
+        }
+
+        // "ahead<tab>behind", as of the last fetch.
+        var counts = Git(repo, "rev-list", "--left-right", "--count", "HEAD...@{upstream}");
+        var parts = counts.Output.Split('\t', StringSplitOptions.TrimEntries);
+        if (!counts.Succeeded ||
+            parts.Length != 2 ||
+            !int.TryParse(parts[0], out var ahead) ||
+            !int.TryParse(parts[1], out var behind))
+        {
+            // Origin's branch not fetched yet, or gone: pushed to, it is made again.
+            return new($"HEAD:{merge.Output.Trim()}", false, null);
+        }
+
+        if (ahead == 0)
+        {
+            return default;
+        }
+
+        if (behind > 0)
+        {
+            return new(null, false, new(repo, false, $"{branch} and origin's have each got commits the other hasn't, so nothing was tagged or pushed. Pull first."));
+        }
+
+        return new($"HEAD:{merge.Output.Trim()}", false, null);
+    }
+
+    // Anything to commit: a change, staged or not, or a file git doesn't track nor ignores, as
+    // Push adds them.
+    static bool HasChanges(string repo)
+    {
+        var status = Git(repo, "status", "--porcelain", "--ignore-submodules=dirty");
+        return status is
+        {
+            Succeeded: true,
+            Output.Length: > 0
+        };
+    }
 
     /// <summary>
     /// Deletes the tag <paramref name="name"/> from each repository and from origin. Gone from
@@ -551,22 +687,8 @@ static class CodeCommands
             cancel,
             repo =>
             {
-                if (WhyNotChange(repo, "nothing was committed or pushed") is { } why)
-                {
-                    return new(repo, false, why);
-                }
-
-                var add = GitToItsEnd(repo, cancel, "add", "--all");
-                if (!add.Succeeded)
-                {
-                    return add;
-                }
-
-                var commit = GitToItsEnd(repo, cancel, "commit", "-m", message);
-
-                // Nothing to commit is fine: there may still be commits to push.
-                if (!commit.Succeeded &&
-                    !NothingToCommit(repo))
+                var commit = CommitAll(repo, message, "nothing was committed or pushed", cancel);
+                if (!commit.Succeeded)
                 {
                     return commit;
                 }
@@ -577,6 +699,35 @@ static class CodeCommands
                     Output = $"{commit.Output}\n{push.Output}".Trim()
                 };
             });
+
+    // Commits every change, new files included, as Push and Tag commit them: what went wrong,
+    // ending with what was not done, or what the commit said. Nothing to commit is fine: there
+    // may still be commits to push.
+    static RepoResult CommitAll(string repo, string message, string notDone, Cancel cancel)
+    {
+        if (WhyNotChange(repo, notDone) is { } why)
+        {
+            return new(repo, false, why);
+        }
+
+        var add = GitToItsEnd(repo, cancel, "add", "--all");
+        if (!add.Succeeded)
+        {
+            return add;
+        }
+
+        var commit = GitToItsEnd(repo, cancel, "commit", "-m", message);
+        if (!commit.Succeeded &&
+            !NothingToCommit(repo))
+        {
+            return commit;
+        }
+
+        return commit with
+        {
+            Succeeded = true
+        };
+    }
 
     // Why Push is not to commit in a repository, nor Sync fork to merge, or null where they can,
     // ending with what was not done. With files still in conflict, from a pull say, Push would

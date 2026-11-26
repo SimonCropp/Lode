@@ -217,4 +217,84 @@ public class CodeMenuTests
         await Assert.That(CodeMenu.SwitchOffTo(listing with { Current = "main" }, listing.Default!)?.Name).IsEqualTo("feature");
         await Assert.That(CodeMenu.SwitchOffTo(new("main", Branch("main"), [], []), Branch("main"))).IsNull();
     }
+
+    // Tag for a repository, a folder in one, or several picked, but not for a folder only
+    // holding repositories, where it would be the same tag in every one below it.
+    [Test]
+    public async Task TagOnlyForRepositories()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Repo");
+        var clone = code.Clone("Repo", "Clone");
+        var other = code.Clone("Repo", "Other");
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var owner = new Control();
+        bool Offered(IReadOnlyList<string> folders) =>
+            CodeMenu.Commands(owner, settings, folders).Any(_ => _?.Id == "gitTag");
+
+        await Assert.That(Offered([clone])).IsTrue();
+        await Assert.That(Offered([Path.Combine(clone, "sub")])).IsTrue();
+        await Assert.That(Offered([clone, other])).IsTrue();
+        await Assert.That(Offered([code.Root])).IsFalse();
+        await Assert.That(Offered([clone, code.Root])).IsFalse();
+    }
+
+    // Tag's question offers the tag after the latest, and to commit the changes first only where
+    // there are any, which needs a message. A name with a space is made one git takes, as
+    // History's Tag makes it, saying so. It can't be pressed without a name to be had,
+    // or where every repository has diverged from origin.
+    [Test]
+    public async Task WhatTagsQuestionTakes()
+    {
+        var clean = new GitState("main", "abc1234", 0, 0, [])
+        {
+            Upstream = true,
+            Tag = "2.0.0"
+        };
+        var changed = clean with
+        {
+            Files = [new("tracked.txt", GitChange.Modified)]
+        };
+        var diverged = clean with
+        {
+            Ahead = 1,
+            Behind = 1
+        };
+
+        using var plain = new CodeMenu.TagForm([new("Lode", clean, [])]);
+        var name = (TextBox) plain.Controls.Find("value", true).Single();
+        var accept = plain.Controls.Find("accept", true).Single();
+        await Assert.That(name.Text).IsEqualTo("2.0.1");
+        await Assert.That(accept.Enabled).IsTrue();
+        await Assert.That(plain.Controls.Find("commitFirst", true)).IsEmpty();
+        await Assert.That(plain.CommitMessage).IsNull();
+        var note = plain.Controls.Find("note", true).Single();
+        await Assert.That(note.Visible).IsFalse();
+        name.Text = "v 1";
+        await Assert.That((accept.Enabled, plain.TagName, note.Text)).IsEqualTo((true, "v-1", "Will be created as v-1."));
+        name.Text = "...";
+        await Assert.That(accept.Enabled).IsFalse();
+        name.Text = "";
+        await Assert.That(accept.Enabled).IsFalse();
+
+        using var withChanges = new CodeMenu.TagForm([new("Lode", changed, [])]);
+        var commitFirst = (CheckBox) withChanges.Controls.Find("commitFirst", true).Single();
+        var message = (TextBox) withChanges.Controls.Find("message", true).Single();
+        accept = withChanges.Controls.Find("accept", true).Single();
+        await Assert.That((message.Enabled, withChanges.CommitMessage)).IsEqualTo((false, (string?) null));
+        commitFirst.Checked = true;
+        await Assert.That((message.Enabled, withChanges.CommitMessage)).IsEqualTo((true, (string?) "refs or cleanup"));
+        message.Text = " ";
+        await Assert.That(accept.Enabled).IsFalse();
+        message.Text = "Release";
+        await Assert.That((accept.Enabled, withChanges.CommitMessage)).IsEqualTo((true, (string?) "Release"));
+
+        using var blocked = new CodeMenu.TagForm([new("Lode", diverged, [])]);
+        await Assert.That(blocked.Controls.Find("accept", true).Single().Enabled).IsFalse();
+        using var partly = new CodeMenu.TagForm([new("Lode", diverged, []), new("Argon", clean, [])]);
+        await Assert.That(partly.Controls.Find("accept", true).Single().Enabled).IsTrue();
+    }
 }

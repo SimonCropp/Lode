@@ -1,6 +1,6 @@
 /// <summary>
 /// The right-click entries for folders under the code folder: git fetch, pull, sync fork, switch
-/// to the default branch, push, discard and purge across their repositories, and Update NuGets (optionally
+/// to the default branch, push, tag, discard and purge across their repositories, and Update NuGets (optionally
 /// then building). With several folders selected, each command takes in all of them at once,
 /// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
@@ -15,7 +15,8 @@ static class CodeMenu
     /// when every one has nothing to push, and Discard when every one has nothing uncommitted,
     /// as <paramref name="stateOf"/> has it, which gives a repository's state where it has been
     /// read. Sync fork only where there may be a fork: a repository with an upstream remote, or a
-    /// folder holding repositories. Tagging is History's, on the commit picked.
+    /// folder holding repositories. Tag only for repositories, not a folder holding them.
+    /// Deleting a tag is History's, on the commit picked.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
     {
@@ -64,6 +65,13 @@ static class CodeMenu
         if (!nothingToPush)
         {
             commands.Add(LodeActions.Command("gitPush", () => Push(owner, folders, settings.CodeDirectory), text: "Git push…"));
+        }
+
+        // A tag names a commit of a repository: for a folder only holding repositories, it would
+        // be the same tag in every one below it, which is never what is meant.
+        if (allInRepos)
+        {
+            commands.Add(LodeActions.Command("gitTag", () => Tag(owner, folders, settings.CodeDirectory), text: "Git tag…"));
         }
 
         if (!nothingToDiscard)
@@ -441,6 +449,213 @@ static class CodeMenu
     }
 
     /// <summary>
+    /// What Tag knows of a repository as it asks: its state, and the tags its commit checked out
+    /// has already. A state that couldn't be read is null, and says nothing.
+    /// </summary>
+    internal sealed record TagRead(string Repo, GitState? State, IReadOnlyList<string> AtHead);
+
+    // Reads each repository afresh, off the UI thread, as what the menu knew may be a while old,
+    // then asks for the tag's name, saying what goes with it.
+    static async void Tag(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    {
+        var reads = await Task.Run(
+            () => CodeCommands.InParallel(
+                CodeCommands.FindRepos(folders, codeFolder),
+                ReadForTag));
+        if (reads.Count == 0)
+        {
+            NoRepos("Git tag", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
+        using var form = new TagForm(reads);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var name = form.TagName;
+        var message = form.CommitMessage;
+        var repos = reads
+            .Select(_ => _.Repo)
+            .ToList();
+        _ = ActionLog.Run(
+            "Git tag",
+            folders,
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.Tag(repos, name, progress, cancel, message);
+                GitCache.MarkStale(repos);
+                return CodeCommands.GitOutcome(results);
+            });
+    }
+
+    internal static TagRead ReadForTag(string repo)
+    {
+        var state = GitState.FromGit(repo, Cancel.None);
+        var atHead = CodeCommands.Git(repo, "tag", "--points-at", "HEAD");
+        List<string> tags = [];
+        if (atHead.Succeeded)
+        {
+            tags = [.. atHead.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        }
+
+        return new(repo, state, tags);
+    }
+
+    /// <summary>
+    /// Whether the branch checked out has diverged from the one it tracks, as of the last fetch:
+    /// Tag leaves it, as origin would refuse the push.
+    /// </summary>
+    internal static bool Diverged(GitState? state) =>
+        state is
+        {
+            Upstream: true,
+            Ahead: > 0,
+            Behind: > 0
+        };
+
+    /// <summary>
+    /// What Tag asks: what it tags, then what else goes, or doesn't: commits not yet pushed,
+    /// which go with the tag, a branch origin hasn't got, which goes too, no branch, so the tag
+    /// goes alone, a branch diverged from origin's, left till pulled, the tags the commit has
+    /// already, and changes not committed, which aren't in the tag unless committed first.
+    /// </summary>
+    internal static string TagQuestion(IReadOnlyList<TagRead> reads)
+    {
+        var repos = reads
+            .Select(_ => _.Repo)
+            .ToList();
+        var lines = new List<string>();
+        if (reads.Count == 1)
+        {
+            var read = reads[0];
+            var name = Path.GetFileName(read.Repo);
+            lines.Add($"Tag the commit {name} has checked out, and push the tag to origin.");
+            if (read.State is { } state)
+            {
+                if (Diverged(state))
+                {
+                    lines.Add($"{state.Branch} and origin's have each got commits the other hasn't, so it can't be tagged till pulled.");
+                }
+                else if (state is { Upstream: true, Ahead: > 0 })
+                {
+                    var go = state.Ahead == 1 ? "goes" : "go";
+                    lines.Add($"Its {GitState.CountOf(state.Ahead, "commit")} not yet pushed {go} with the tag, so origin's {state.Branch} has the commit tagged.");
+                }
+                else if (state is { Upstream: false, Branch: { } branch, Commit: not null })
+                {
+                    lines.Add($"{branch} goes to origin with the tag, as origin hasn't got it yet.");
+                }
+                else if (state is { Branch: null, Commit: not null })
+                {
+                    lines.Add("No branch is checked out, so the tag goes alone.");
+                }
+
+                if (state.Changes > 0)
+                {
+                    lines.Add($"Its {GitState.CountOf(state.Changes, "uncommitted change")} won't be in the tag unless committed first.");
+                }
+            }
+
+            if (read.AtHead.Count > 0)
+            {
+                lines.Add($"The commit is tagged {string.Join(", ", read.AtHead)} already.");
+            }
+
+            return string.Join("\n\n", lines);
+        }
+
+        lines.Add($"Tag the commit each of {Describe(repos)} has checked out, and push the tag to origin.");
+        void Note(Func<TagRead, bool> applies, string one, string several)
+        {
+            var names = reads
+                .Where(applies)
+                .Select(_ => Path.GetFileName(_.Repo))
+                .ToList();
+            if (names.Count == 0)
+            {
+                return;
+            }
+
+            var list = names[0];
+            if (names.Count > 1)
+            {
+                list = $"{string.Join(", ", names[..^1])} and {names[^1]}";
+            }
+
+            if (names.Count == 1)
+            {
+                lines.Add($"{list} {one}");
+            }
+            else
+            {
+                lines.Add($"{list} {several}");
+            }
+        }
+
+        Note(_ => Diverged(_.State), "has diverged from origin, so won't be tagged till pulled.", "have diverged from origin, so won't be tagged till pulled.");
+        Note(_ => !Diverged(_.State) && _.State is { Upstream: true, Ahead: > 0 }, "has commits not yet pushed, which go with the tag.", "have commits not yet pushed, which go with the tag.");
+        Note(_ => _.State is { Upstream: false, Branch: not null, Commit: not null }, "is on a branch origin hasn't got yet, which goes with the tag.", "are on branches origin hasn't got yet, which go with the tag.");
+        Note(_ => _.State is { Branch: null, Commit: not null }, "has no branch checked out, so the tag goes alone.", "have no branch checked out, so the tag goes alone.");
+        Note(_ => _.AtHead.Count > 0, "is tagged already.", "are tagged already.");
+        Note(_ => _.State is { Changes: > 0 }, "has uncommitted changes, which won't be in the tag unless committed first.", "have uncommitted changes, which won't be in the tag unless committed first.");
+        return string.Join("\n\n", lines);
+    }
+
+    /// <summary>
+    /// The tag to offer: the one after each repository's most recent, 2.0.1 after 2.0.0, v1.3
+    /// after v1.2, where it is the same for every one. Nothing where they differ, or a tag isn't
+    /// numbers and dots, a pre-release say, whose next there is no telling.
+    /// </summary>
+    internal static string SuggestTag(IReadOnlyList<TagRead> reads)
+    {
+        var next = reads
+            .Select(_ => NextTag(_.State?.Tag))
+            .Distinct()
+            .ToList();
+        if (next is [{ } only])
+        {
+            return only;
+        }
+
+        return "";
+    }
+
+    internal static string? NextTag(string? tag)
+    {
+        if (tag == null)
+        {
+            return null;
+        }
+
+        var prefix = "";
+        var numbers = tag;
+        if (tag.StartsWith('v') ||
+            tag.StartsWith('V'))
+        {
+            prefix = tag[..1];
+            numbers = tag[1..];
+        }
+
+        var parts = numbers.Split('.');
+        if (parts.Length == 0 ||
+            !parts.All(_ => _.Length > 0 && _.All(char.IsAsciiDigit)) ||
+            !long.TryParse(parts[^1], out var last))
+        {
+            return null;
+        }
+
+        parts[^1] = (last + 1).ToString(CultureInfo.InvariantCulture);
+        return prefix + string.Join('.', parts);
+    }
+
+    /// <summary>
     /// History's Tag: asks for the tag's name, then tags the commit picked, rather than the one
     /// checked out, and pushes the tag. The repository is read again once it is done, for History
     /// to show the tag.
@@ -466,7 +681,7 @@ static class CodeMenu
             [repo],
             async (progress, cancel) =>
             {
-                var results = await CodeCommands.Tag([repo], name, progress, cancel, commit: commit.Sha);
+                var results = await CodeCommands.Tag([repo], name, commit.Sha, progress, cancel);
                 GitCache.MarkStale([repo]);
                 return CodeCommands.GitOutcome(results);
             });
@@ -812,6 +1027,167 @@ static class CodeMenu
             }
 
             return !value.Any(char.IsWhiteSpace);
+        }
+    }
+
+    /// <summary>
+    /// Tag's question: what goes with the tag, the tag's name, offered as the one after the
+    /// latest, and, where anything is uncommitted, whether to commit it first, and with what
+    /// message. Tag can't be pressed where every repository has diverged from origin, as none
+    /// would be tagged.
+    /// </summary>
+    internal sealed class TagForm : Form
+    {
+        TextBox name;
+        CheckBox? commitFirst;
+        TextBox? message;
+
+        /// <summary>
+        /// What was typed made a name git takes, as History's Tag makes it.
+        /// </summary>
+        public string TagName => RefName.Sanitized(name.Text.Trim());
+
+        /// <summary>
+        /// The message to commit the changes with first, or null to tag what is committed.
+        /// </summary>
+        public string? CommitMessage
+        {
+            get
+            {
+                if (commitFirst is not { Checked: true })
+                {
+                    return null;
+                }
+
+                return message!.Text.Trim();
+            }
+        }
+
+        public TagForm(IReadOnlyList<TagRead> reads)
+        {
+            AutoScaleDimensions = new(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            Text = "Git tag";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.CenterParent;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Padding = new(9);
+
+            var layout = new TableLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 1,
+                Location = new(Padding.Left, Padding.Top)
+            };
+            layout.Controls.Add(
+                new Label
+                {
+                    AutoSize = true,
+                    MaximumSize = new(380, 0),
+                    Margin = new(3, 3, 3, 6),
+                    Text = $"{TagQuestion(reads)}\n\nTag:"
+                });
+            name = new()
+            {
+                Name = "value",
+                Width = 380,
+                Text = SuggestTag(reads)
+            };
+            layout.Controls.Add(name);
+
+            // What the tag will be, where that isn't what was typed, as History's Tag says it.
+            var note = new Label
+            {
+                Name = "note",
+                AutoSize = true,
+                MaximumSize = new(380, 0),
+                Margin = new(3, 6, 3, 0),
+                Visible = false
+            };
+            layout.Controls.Add(note);
+
+            var accept = new Button
+            {
+                Name = "accept",
+                Text = "Tag",
+                DialogResult = DialogResult.OK,
+                AutoSize = true
+            };
+            var cancel = new Button
+            {
+                Text = "Cancel",
+                DialogResult = DialogResult.Cancel,
+                AutoSize = true
+            };
+            AcceptButton = accept;
+            CancelButton = cancel;
+
+            var blocked = reads.All(_ => Diverged(_.State));
+            void UpdateAccept() =>
+                accept.Enabled = !blocked &&
+                                 GitTextForm.IsValid(TagName, isTagName: true) &&
+                                 CommitMessage is not "";
+            void NameChanged()
+            {
+                // Set only when it says something else: the form is laid out again for it.
+                var text = GitTextForm.NameNote(name.Text.Trim(), "Will be created as");
+                if (note.Text != text)
+                {
+                    note.Text = text;
+                }
+
+                note.Visible = text.Length > 0;
+                UpdateAccept();
+            }
+
+            name.TextChanged += (_, _) => NameChanged();
+            NameChanged();
+
+            if (reads.Any(_ => _.State is { Changes: > 0 }))
+            {
+                commitFirst = new()
+                {
+                    Name = "commitFirst",
+                    AutoSize = true,
+                    Margin = new(3, 9, 3, 3),
+                    Text = "Commit the changes first, with the message:"
+                };
+                message = new()
+                {
+                    Name = "message",
+                    Width = 380,
+                    Text = defaultCommitMessage,
+                    Enabled = false
+                };
+                commitFirst.CheckedChanged += (_, _) =>
+                {
+                    message.Enabled = commitFirst.Checked;
+                    UpdateAccept();
+                };
+                message.TextChanged += (_, _) => UpdateAccept();
+                layout.Controls.Add(commitFirst);
+                layout.Controls.Add(message);
+            }
+
+            UpdateAccept();
+
+            var buttons = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.RightToLeft,
+                Anchor = AnchorStyles.Right,
+                Margin = new(0, 9, 0, 0)
+            };
+            buttons.Controls.Add(cancel);
+            buttons.Controls.Add(accept);
+            layout.Controls.Add(buttons);
+            Controls.Add(layout);
         }
     }
 }
