@@ -63,6 +63,7 @@ static class LodeActions
     // updates.
     public static IReadOnlyList<Definition> All { get; } =
     [
+        new("sortBy", "Sort by", Icons.Sort, 0, Button: false, Menu: true, Submenu: true),
         new("new", "New", Icons.New, 0, Button: true, Menu: true, Submenu: true),
         new("undo", "Undo", Icons.Undo, 1, Button: true, Menu: true, "Ctrl+Z", Parent: undoAndRedo),
         new("redo", "Redo", Icons.Redo, 1, Button: true, Menu: true, "Ctrl+Y", Parent: undoAndRedo),

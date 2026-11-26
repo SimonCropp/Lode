@@ -65,7 +65,7 @@ public class MenuTests
             {
                 ShowHidden = false
             });
-        var children = view.BackgroundCommands(canPaste: true, newTypes)[0]!.Children!
+        var children = view.BackgroundCommands(canPaste: true, newTypes).Single(_ => _?.Id == "new")!.Children!
             .Select(_ =>
             {
                 if (_?.ShellIcon == null)

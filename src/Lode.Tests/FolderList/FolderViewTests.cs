@@ -2065,6 +2065,62 @@ public class FolderViewTests
         await Assert.That(settings.SortOf(fixture.At("Documents"))?.Column).IsEqualTo("Type");
     }
 
+    // Sort by offers every column the folder has, hidden ones too, ticking the one sorted by and
+    // which way. Sorted by a hidden one, newest first for Date modified as its header starts, it
+    // shows while the list is, still unticked in the header's menu, and goes once sorted by
+    // another. Opened again, the folder is sorted by it, and it shows.
+    [Test]
+    public async Task SortByAHiddenColumn()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings
+        {
+            ShowHidden = false,
+            HiddenColumns = ["Date"]
+        };
+        using var view = await Open(fixture.Root, settings);
+        var before = Ticked(view);
+        var columns = view.ColumnTitles.ToList();
+
+        Pick(view, "Date modified");
+        var sorted = (view.Sort, Ticked(view), columns: view.ColumnTitles.ToList(), first: view.Entries[0].Name);
+        bool headerTicked;
+        using (var menu = view.HeaderMenu(clickedColumn: 0))
+        {
+            headerTicked = menu.Items.OfType<ToolStripMenuItem>().Single(_ => _.Text == "Date modified").Checked;
+        }
+
+        Pick(view, "Ascending");
+        var ascending = (view.Sort, Ticked(view));
+        using var other = await Open(fixture.Root, settings);
+        var opened = (other.Sort, columns: other.ColumnTitles.ToList());
+
+        Pick(view, "Type");
+        Pick(view, "Type");
+
+        await Assert.That(before).IsEqualTo("Name, Ascending");
+        await Assert.That(columns).IsEquivalentTo(["Name", "Type", "Size"], CollectionOrdering.Matching);
+        await Assert.That(sorted.Sort).IsEqualTo((dateColumn, false));
+        await Assert.That(sorted.Item2).IsEqualTo("Date modified, Descending");
+        await Assert.That(sorted.columns).IsEquivalentTo(["Name", "Date modified", "Type", "Size"], CollectionOrdering.Matching);
+        await Assert.That(sorted.first).IsEqualTo("Source");
+        await Assert.That(headerTicked).IsFalse();
+        await Assert.That(ascending).IsEqualTo(((dateColumn, true), "Date modified, Ascending"));
+        await Assert.That(opened.Sort).IsEqualTo((dateColumn, true));
+        await Assert.That(opened.columns).Contains("Date modified");
+        await Assert.That(view.Sort).IsEqualTo((typeColumn, true));
+        await Assert.That(view.ColumnTitles).IsEquivalentTo(["Name", "Type", "Size"], CollectionOrdering.Matching);
+        await Assert.That(settings.HiddenColumns).IsEquivalentTo(["Date"]);
+    }
+
+    // Runs Sort by's entry of that name.
+    static void Pick(FolderView view, string text) =>
+        view.SortCommands().Single(_ => _?.Text == text)!.Action();
+
+    // Sort by's ticked entries: the column, then which way.
+    static string Ticked(FolderView view) =>
+        string.Join(", ", view.SortCommands().Where(_ => _ is { Checked: true }).Select(_ => _!.Text));
+
     // Typing the start of a name moves to the next item that has it, going round to the top.
     [Test]
     public async Task TypingTheStartOfANameFindsTheNextWithIt()
@@ -2559,7 +2615,7 @@ public class FolderViewTests
         await Assert.That(view.IsReadOnly).IsTrue();
         await Assert.That(view.CanShowShellMenu).IsFalse();
         await Assert.That(itemCommands).IsEquivalentTo(["open", null, "copy", "copyAsPath"], CollectionOrdering.Matching);
-        await Assert.That(backgroundCommands).IsEquivalentTo(["undo", "redo", null, "extractAll", "copyAsPath"], CollectionOrdering.Matching);
+        await Assert.That(backgroundCommands).IsEquivalentTo(["sortBy", null, "undo", "redo", null, "extractAll", "copyAsPath"], CollectionOrdering.Matching);
         await Assert.That(deleted).IsEmpty();
         await Assert.That(Names(view)).IsEquivalentTo(["Docs", "readme.aleph", "tool.exe"], CollectionOrdering.Matching);
     }

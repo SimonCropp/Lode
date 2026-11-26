@@ -231,7 +231,13 @@ sealed class Commands
             List<QuickMenu.Command?> viewCommands;
             if (selection.Count > 0)
             {
-                viewCommands = view.ItemCommands(selection);
+                // Sort by, which the right-click menu has only where nothing is clicked, as the
+                // list is sorted whatever is selected.
+                viewCommands =
+                [
+                    .. view.ItemCommands(selection),
+                    LodeActions.Submenu("sortBy", view.SortCommands())
+                ];
             }
             else if (!view.ListsPlaces)
             {

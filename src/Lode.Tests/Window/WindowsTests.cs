@@ -1573,6 +1573,8 @@ public class WindowsTests
             .Snapshot(
                 """
                 [
+                  Sort by,
+                  ----,
                   Open,
                   Open in new tab (disabled),
                   Run (disabled),
@@ -1635,6 +1637,8 @@ public class WindowsTests
                     See more
                   ],
                   seeMore: [
+                    Sort by,
+                    ----,
                     Open,
                     Open in new tab (disabled),
                     Run (disabled),
@@ -1715,6 +1719,29 @@ public class WindowsTests
             ClaudeDesktop.IsInstalled = claude;
             CodingAgents.Installed = agents;
         }
+    }
+
+    // The palette sorts the list by any column, a hidden one too, with something selected as
+    // with nothing, which the right-click menu only offers for.
+    [Test]
+    public async Task PaletteSorts()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings
+        {
+            HiddenColumns = ["Size"]
+        };
+        using var form = await Show(fixture, settings, fixture.Root);
+        var view = form.ActiveView!;
+        var nothingSelected = form.Commands.Palette().Where(_ => _.Name.StartsWith("Sort by: ", StringComparison.Ordinal)).Select(_ => _.Name).ToList();
+        view.Reveal(fixture.At("Docs"));
+        await Pump.Loaded(view);
+
+        form.Commands.Palette().Single(_ => _.Name == "Sort by: Size").Action();
+
+        await Assert.That(nothingSelected).IsEquivalentTo(["Sort by: Name", "Sort by: Date modified", "Sort by: Type", "Sort by: Size", "Sort by: Ascending", "Sort by: Descending"], CollectionOrdering.Matching);
+        await Assert.That(view.Sort).IsEqualTo((6, true));
+        await Assert.That(view.ColumnTitles).Contains("Size");
     }
 
     // From the palette, Terminal, Terminal (admin), Open in Claude and Coding agent open in the
@@ -1978,6 +2005,12 @@ public class WindowsTests
                   Coding agent: Claude Code,
                   Coding agent: Codex CLI,
                   Pin this folder to Quick access,
+                  Sort by: Name,
+                  Sort by: Date modified,
+                  Sort by: Type,
+                  Sort by: Size,
+                  Sort by: Ascending,
+                  Sort by: Descending,
                   New: Folder (Ctrl+Shift+N),
                   Copy as path,
                   Properties (Alt+Enter),

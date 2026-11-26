@@ -507,6 +507,15 @@ public class QuickMenuTests
                     Show more options
                   ],
                   background: [
+                    Sort by,
+                      Name,
+                      Date modified,
+                      Type,
+                      Size,
+                      ----,
+                      Ascending,
+                      Descending,
+                    ----,
                     New,
                       Folder,
                       ----,
@@ -617,6 +626,15 @@ public class QuickMenuTests
             .Snapshot(
                 """
                 [
+                  Sort by,
+                    Name,
+                    Date modified,
+                    Type,
+                    Size,
+                    ----,
+                    Ascending,
+                    Descending,
+                  ----,
                   New,
                     Folder,
                     ----,
@@ -651,6 +669,15 @@ public class QuickMenuTests
             .Snapshot(
                 """
                 [
+                  Sort by,
+                    Name,
+                    Date modified,
+                    Type,
+                    Size,
+                    ----,
+                    Ascending,
+                    Descending,
+                  ----,
                   New,
                     Folder,
                     ----,
@@ -759,6 +786,15 @@ public class QuickMenuTests
                     Show more options
                   ],
                   background: [
+                    Sort by,
+                      Name,
+                      Date modified,
+                      Type,
+                      Size,
+                      ----,
+                      Ascending,
+                      Descending,
+                    ----,
                     New,
                       Folder,
                       ----,

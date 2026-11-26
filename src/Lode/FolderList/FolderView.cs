@@ -3158,13 +3158,27 @@ sealed class FolderView : UserControl
         return definition.Title;
     }
 
+    // Whether a column shows: one the folder has that isn't hidden, or the one the list is sorted
+    // by, which shows while it is, hidden or not, so the order can be seen for what it is.
     bool IsColumnShown(int column)
     {
-        if (column == nameColumn)
+        if (!IsColumnOffered(column))
+        {
+            return false;
+        }
+
+        if (column == sortColumn)
         {
             return true;
         }
 
+        return !IsColumnHidden(column);
+    }
+
+    // Whether the folder has the column to show or sort by: Folder for a search alone, Git and
+    // Tag only where there are repositories to say them of.
+    bool IsColumnOffered(int column)
+    {
         if (column == folderColumn &&
             !IsSearch)
         {
@@ -3177,19 +3191,31 @@ sealed class FolderView : UserControl
             return false;
         }
 
-        if (column == gitColumn &&
-            GitColumnForChanges)
-        {
-            return settings.GitColumnInRepository;
-        }
-
         if (column == tagColumn &&
             !HasTagColumn)
         {
             return false;
         }
 
-        return !settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
+        return true;
+    }
+
+    // Hidden from the header's right-click menu, which Name never is. Git inside a repository is
+    // hidden unless shown there.
+    bool IsColumnHidden(int column)
+    {
+        if (column == nameColumn)
+        {
+            return false;
+        }
+
+        if (column == gitColumn &&
+            GitColumnForChanges)
+        {
+            return !settings.GitColumnInRepository;
+        }
+
+        return settings.HiddenColumns.Contains(columnDefinitions[column].Key, StringComparer.OrdinalIgnoreCase);
     }
 
     // Inside a repository, where the Git column says only what has become of each item, which
@@ -3292,15 +3318,15 @@ sealed class FolderView : UserControl
         ColumnWidthsChanged?.Invoke(this);
     }
 
-    // How the folder open was last sorted, by a column shown: by Name, A to Z, unless it was
-    // sorted otherwise.
+    // How the folder open was last sorted, by a column it has, hidden or not, which then shows:
+    // by Name, A to Z, unless it was sorted otherwise.
     (int Column, bool Ascending) SortOfFolder()
     {
         if (settings.SortOf(CurrentPath) is { } sort)
         {
             var column = Array.FindIndex(columnDefinitions, _ => _.Key == sort.Column);
             if (column >= 0 &&
-                IsColumnShown(column))
+                IsColumnOffered(column))
             {
                 return (column, sort.Ascending);
             }
@@ -3380,14 +3406,28 @@ sealed class FolderView : UserControl
     }
 
     /// <summary>
-    /// Shows or hides a column in every view. Name cannot be hidden.
+    /// Shows or hides a column in every view. Name cannot be hidden. Hidden, the column still
+    /// shows in a view sorted by it, for as long as it is.
     /// </summary>
     internal void SetColumnShown(int column, bool shown)
     {
         if (column == nameColumn ||
-            IsColumnShown(column) == shown)
+            IsColumnHidden(column) != shown)
         {
             return;
+        }
+
+        // Hidden while the list is sorted by it, which would keep it showing: sorted by Name
+        // instead, as the folder is from then on.
+        if (!shown &&
+            column == sortColumn)
+        {
+            sortColumn = nameColumn;
+            sortAscending = true;
+            if (column != folderColumn)
+            {
+                settings.SetSort(CurrentPath, columnDefinitions[nameColumn].Key, true);
+            }
         }
 
         if (column == gitColumn &&
@@ -3459,15 +3499,14 @@ sealed class FolderView : UserControl
         for (var column = 0; column < columnDefinitions.Length; column++)
         {
             // Hidden or shown only while there is a search, or are repositories, to show it for.
-            if ((column == folderColumn && !IsSearch) ||
-                (column == gitColumn && !HasGitColumn) ||
-                (column == tagColumn && !HasTagColumn))
+            if (!IsColumnOffered(column))
             {
                 continue;
             }
 
+            // Ticked as hidden or not, whether or not it shows for now as the list is sorted by it.
             var current = column;
-            var shown = IsColumnShown(column);
+            var shown = !IsColumnHidden(column);
             menu.Items.Add(
                 new ToolStripMenuItem(ColumnTitle(column), null, (_, _) => SetColumnShown(current, !shown))
                 {
@@ -4025,22 +4064,29 @@ sealed class FolderView : UserControl
 
     /// <summary>
     /// Sorts by a column, as clicking its header does: first the way the column starts, then
-    /// toggling (see <see cref="StartsAscending"/>). The folder is sorted so from then on, in
-    /// any tab, and the next time Lode starts, as Explorer keeps each folder's. Folder, which
-    /// only a search has, is for the search alone.
+    /// toggling (see <see cref="StartsAscending"/>).
     /// </summary>
     public void SortBy(int column)
     {
         if (column == sortColumn)
         {
-            sortAscending = !sortAscending;
-        }
-        else
-        {
-            sortColumn = column;
-            sortAscending = StartsAscending(column);
+            SortTo(column, !sortAscending);
+            return;
         }
 
+        SortTo(column, StartsAscending(column));
+    }
+
+    /// <summary>
+    /// Sorts by a column, whether it shows or not, the way given: hidden, it shows for as long
+    /// as the list is sorted by it. The folder is sorted so from then on, in any tab, and the
+    /// next time Lode starts, as Explorer keeps each folder's. Folder, which only a search has,
+    /// is for the search alone.
+    /// </summary>
+    internal void SortTo(int column, bool ascending)
+    {
+        sortColumn = column;
+        sortAscending = ascending;
         if (column != folderColumn)
         {
             settings.SetSort(CurrentPath, columnDefinitions[column].Key, sortAscending);
@@ -4072,6 +4118,54 @@ sealed class FolderView : UserControl
         {
             list.EnsureVisible(list.SelectedIndices[0]);
         }
+    }
+
+    /// <summary>
+    /// Sort by's entries, as Explorer's are: each column the folder has, shown or hidden, the one
+    /// sorted by ticked, then which way.
+    /// </summary>
+    internal List<QuickMenu.Command?> SortCommands()
+    {
+        var commands = new List<QuickMenu.Command?>();
+        for (var column = 0; column < columnDefinitions.Length; column++)
+        {
+            if (!IsColumnOffered(column))
+            {
+                continue;
+            }
+
+            var current = column;
+            commands.Add(
+                new(ColumnTitle(column), () => SortByColumn(current))
+                {
+                    Checked = column == sortColumn
+                });
+        }
+
+        commands.Add(null);
+        commands.Add(
+            new("Ascending", () => SortTo(sortColumn, true))
+            {
+                Checked = sortAscending
+            });
+        commands.Add(
+            new("Descending", () => SortTo(sortColumn, false))
+            {
+                Checked = !sortAscending
+            });
+        return commands;
+    }
+
+    // A column picked from Sort by: sorted the way it starts, or, sorted by it already, left as it
+    // is, rather than turned round as a second click on its header does.
+    void SortByColumn(int column)
+    {
+        if (column == sortColumn)
+        {
+            return;
+        }
+
+        SortTo(column, StartsAscending(column));
     }
 
     // Which way a column is first sorted: Date modified newest first, as Explorer sorts it, the
@@ -4926,6 +5020,8 @@ sealed class FolderView : UserControl
         {
             return
             [
+                LodeActions.Submenu("sortBy", SortCommands()),
+                null,
                 .. UndoCommands(),
                 null,
                 LodeActions.Command("extractAll", () => Extract([inArchive.Archive], false)),
@@ -4936,8 +5032,11 @@ sealed class FolderView : UserControl
         return FolderCommands(canPaste, newTypes);
     }
 
+    // Sort by first, as Explorer has it, then what makes or changes something.
     List<QuickMenu.Command?> FolderCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes) =>
     [
+        LodeActions.Submenu("sortBy", SortCommands()),
+        null,
         LodeActions.Submenu("new", NewCommands(newTypes ?? ShellNew.Current, CreateFolder, CreateFile)),
         LodeActions.Command("paste", Paste, canPaste),
         .. UndoCommands(),
