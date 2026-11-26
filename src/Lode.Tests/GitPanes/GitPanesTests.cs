@@ -663,6 +663,51 @@ public class GitPanesTests
         await Assert.That(list.TopItem?.Index).IsEqualTo(0);
     }
 
+    // Compare to branch, as GitHub Desktop's: the commits the branch has that the one checked
+    // out hasn't, behind, first, with how many each way; Ahead lists the others; closed, the
+    // branch's own commits again. Not for a repository the panes aren't about.
+    [Test]
+    public async Task CompareListsBehindThenAhead()
+    {
+        using var stubs = new PaneStubs();
+        var ranges = new List<string>();
+        HistoryPane.ReadRange = (_, range, skip, count, _) =>
+        {
+            ranges.Add(range);
+            if (range.StartsWith("HEAD..", StringComparison.Ordinal))
+            {
+                return PaneStubs.History.Take(2).ToList();
+            }
+
+            return PaneStubs.History.Skip(2).Take(1).ToList();
+        };
+        HistoryPane.ReadApart = (_, _, _) => (1, 2);
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPinnedPanes(fixture.At("Docs"), false, true);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var panes = form.GitPanes;
+        var pane = panes.HistoryPane;
+
+        await Assert.That(panes.Compare(fixture.At("Elsewhere"), "develop")).IsFalse();
+        await Assert.That(panes.Compare(fixture.At("Docs"), "develop")).IsTrue();
+        await Pump.Until(() => pane.Reading.IsCompleted);
+        await Assert.That((pane.ComparedTo, pane.Commits.Count, ranges[^1])).IsEqualTo(("develop", 2, "HEAD..develop"));
+        await Assert.That(pane.CompareText).IsEqualTo("Compared to develop: Behind (2), Ahead (1)");
+
+        pane.ShowAhead(true);
+        await Pump.Until(() => pane.Reading.IsCompleted);
+        await Assert.That((pane.ShowingAhead, pane.Commits.Count, ranges[^1])).IsEqualTo((true, 1, "develop..HEAD"));
+
+        pane.EndCompare();
+        await Pump.Until(() => pane.Reading.IsCompleted);
+        await Assert.That((pane.ComparedTo, pane.Commits.Count)).IsEqualTo(((string?) null, PaneStubs.History.Count));
+    }
+
     // History's commits and the newest's files, more of each than fit, as the window opens: a
     // scrollbar along the side of each, none along the bottom, which the files brought as the
     // pane was laid out narrower than it first was, and again once they came.

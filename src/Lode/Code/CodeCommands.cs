@@ -306,11 +306,26 @@ static class CodeCommands
 
     // A merge that failed: refused before it began, uncommitted changes in the way say, which
     // changed nothing, or stopped part way, by a conflict, which is undone, the branch and its
-    // files as they were before it.
-    static RepoResult UndoMerge(string repo, string from, RepoResult merge)
+    // files as they were before it. Without <paramref name="pushing"/>, a merge that was never to
+    // be pushed, it says nothing of pushing, and what git said of one refused.
+    internal static RepoResult UndoMerge(string repo, string from, RepoResult merge, bool pushing = true)
     {
+        var notPushed = "";
+        if (pushing)
+        {
+            notPushed = ", so nothing was pushed";
+        }
+
         if (!Git(repo, "rev-parse", "--quiet", "--verify", "MERGE_HEAD").Succeeded)
         {
+            if (!pushing)
+            {
+                return merge with
+                {
+                    Output = $"Couldn't merge {from}, so nothing was merged:\n{merge.Output}".Trim()
+                };
+            }
+
             return merge with
             {
                 Output = $"Couldn't merge {from}, so nothing was merged or pushed."
@@ -332,14 +347,14 @@ static class CodeCommands
             return merge with
             {
                 Succeeded = false,
-                Output = $"Merging {from} stopped part way, so nothing was pushed. {undone}"
+                Output = $"Merging {from} stopped part way{notPushed}. {undone}"
             };
         }
 
         return merge with
         {
             Succeeded = false,
-            Output = $"Merging {from} would conflict, so nothing was pushed. {undone}\nIn conflict:\n{conflicted}"
+            Output = $"Merging {from} would conflict{notPushed}. {undone}\nIn conflict:\n{conflicted}"
         };
     }
 
@@ -436,7 +451,7 @@ static class CodeCommands
     // recorded it, or, in a repository made by init then given an origin, which has none
     // recorded, as origin says now. Fails, saying why, without an origin, or one with no HEAD.
     // Of another remote where given, upstream say.
-    static RepoResult DefaultBranch(string repo, Cancel cancel, string name = "origin")
+    internal static RepoResult DefaultBranch(string repo, Cancel cancel, string name = "origin")
     {
         if (RecordedDefaultBranch(repo, cancel, name) is { } recorded)
         {
@@ -787,7 +802,7 @@ static class CodeCommands
     // commit them as they are, the markers in them, as the merge settled, and send that. With no
     // branch checked out, as part way through a rebase, or on a tag, either would make a commit
     // no branch has, which there is nowhere to send, and the next switch leaves behind.
-    static string? WhyNotChange(string repo, string notDone)
+    internal static string? WhyNotChange(string repo, string notDone)
     {
         var unmerged = Git(repo, "ls-files", "--unmerged");
         if (unmerged is
@@ -873,7 +888,7 @@ static class CodeCommands
     // pulls is not one wait on the network after another. With more than one, reports how many
     // are done. With one, the entry's folder already says. Cancelled, it starts no more of them,
     // and gives those it went through, in the order they were given.
-    static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Cancel cancel, Func<string, RepoResult> action) =>
+    internal static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Cancel cancel, Func<string, RepoResult> action) =>
         Task.Run(
             () => InParallel(
                 repos,

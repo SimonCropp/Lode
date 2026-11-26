@@ -44,6 +44,41 @@ sealed class HistoryPane : UserControl
     bool unpicked;
     List<Change> changed = [];
 
+    // Compare to branch, as GitHub Desktop's: the branch compared with, null when not comparing,
+    // whether its commits ahead are listed rather than those behind, and how far apart they are.
+    string? compareTo;
+    bool showAhead;
+    (int Ahead, int Behind)? apart;
+    CompareBar compareBar;
+
+    /// <summary>
+    /// Reads a page of the commits only one of HEAD and a branch has, comparing. Tests answer
+    /// for git.
+    /// </summary>
+    internal static Func<string, string, int, int, Cancel, List<GitCommit>?> ReadRange { get; set; } = GitHistory.Read;
+
+    /// <summary>
+    /// Reads how far HEAD and a branch are apart, comparing. Tests answer for git.
+    /// </summary>
+    internal static Func<string, string, Cancel, (int Ahead, int Behind)?> ReadApart { get; set; } = GitHistory.Apart;
+
+    /// <summary>
+    /// The branch compared with, null when not comparing. For tests.
+    /// </summary>
+    internal string? ComparedTo => compareTo;
+
+    /// <summary>
+    /// Whether the commits ahead of the branch compared with are listed, rather than those
+    /// behind. For tests.
+    /// </summary>
+    internal bool ShowingAhead => showAhead;
+
+    /// <summary>
+    /// What the bar comparing says: the branch, and how many commits are behind and ahead. For
+    /// tests.
+    /// </summary>
+    internal string CompareText => compareBar.Description;
+
     /// <summary>
     /// Reads a page of commits. Tests answer for git.
     /// </summary>
@@ -143,6 +178,10 @@ sealed class HistoryPane : UserControl
         files.LostFocus += (_, _) => files.Invalidate();
         fileTip = new(files, _ => ChangeRows.TipAt(files, _, changed));
         heading = new(this);
+        compareBar = new(this)
+        {
+            Visible = false
+        };
 
         split.Dock = DockStyle.Fill;
         // No line of its own: the commit's heading draws one along its top, which always shows.
@@ -154,7 +193,99 @@ sealed class HistoryPane : UserControl
         split.SizeChanged += (_, _) => PlaceSplitter();
 
         Controls.Add(split);
+        Controls.Add(compareBar);
         Controls.Add(header);
+    }
+
+    /// <summary>
+    /// Compares the branch checked out with <paramref name="branch"/>, as GitHub Desktop's
+    /// Compare to branch does: the commits it has that the branch checked out hasn't, behind,
+    /// listed first, then those the branch checked out has, ahead, a click away.
+    /// </summary>
+    public void Compare(string branch)
+    {
+        compareTo = branch;
+        showAhead = false;
+        apart = null;
+        ResetCommits();
+        compareBar.Visible = true;
+        compareBar.ShowFor(branch, showAhead, apart);
+        Reload();
+    }
+
+    /// <summary>
+    /// Back to the commits of the branch checked out.
+    /// </summary>
+    public void EndCompare()
+    {
+        if (compareTo == null)
+        {
+            return;
+        }
+
+        compareTo = null;
+        apart = null;
+        compareBar.Visible = false;
+        ResetCommits();
+        Reload();
+    }
+
+    // The commits behind, or those ahead.
+    internal void ShowAhead(bool ahead)
+    {
+        if (compareTo == null ||
+            showAhead == ahead)
+        {
+            return;
+        }
+
+        showAhead = ahead;
+        ResetCommits();
+        compareBar.ShowFor(compareTo, showAhead, apart);
+        Reload();
+    }
+
+    // The commits of the branch compared with that the branch checked out hasn't, merged into it.
+    void MergeCompared()
+    {
+        if (repo is { } mergeRepo &&
+            compareTo is { } branch)
+        {
+            CodeMenu.MergeBranch(this, mergeRepo, GitMerging.Kind.Merge, branch);
+        }
+    }
+
+    // The commits listed are another list: none picked, none kept, until they are read.
+    void ResetCommits()
+    {
+        version++;
+        filesVersion++;
+        loaded = [];
+        more = false;
+        selected = null;
+        unpicked = false;
+        changed = [];
+        commits.SetRows(0);
+        files.SetRows(0);
+        PickedChanged();
+        heading.Invalidate();
+    }
+
+    // What is listed: HEAD's commits, or, comparing, those behind or ahead of the branch.
+    static List<GitCommit>? Read(string reading, string? comparing, bool ahead, int skip, int count)
+    {
+        if (comparing == null)
+        {
+            return ReadCommits(reading, skip, count, Cancel.None);
+        }
+
+        var range = $"HEAD..{comparing}";
+        if (ahead)
+        {
+            range = $"{comparing}..HEAD";
+        }
+
+        return ReadRange(reading, range, skip, count, Cancel.None);
     }
 
     // Desktop's 50 pixels, taller for larger text.
@@ -190,6 +321,11 @@ sealed class HistoryPane : UserControl
 
         this.repo = repo;
         site = null;
+
+        // Another repository's branches are others.
+        compareTo = null;
+        apart = null;
+        compareBar.Visible = false;
         version++;
         loaded = [];
         unpushed = [];
@@ -268,18 +404,27 @@ sealed class HistoryPane : UserControl
         var reading = repo!;
         var asked = ++version;
         var count = Math.Max(GitHistory.Page, loaded.Count);
+        var comparing = compareTo;
+        var ahead = showAhead;
         this.reading = true;
         stale = false;
         try
         {
-            var (read, notPushed, readSite) = await Task.Run(() => (
-                ReadCommits(reading, 0, count, Cancel.None),
+            var (read, notPushed, readSite, readApart) = await Task.Run(() => (
+                Read(reading, comparing, ahead, 0, count),
                 ReadUnpushed(reading, Cancel.None),
-                RemoteSite.OfRepo(reading)));
+                RemoteSite.OfRepo(reading),
+                comparing == null ? null : ReadApart(reading, comparing, Cancel.None)));
             if (asked != version ||
                 IsDisposed)
             {
                 return;
+            }
+
+            if (comparing != null)
+            {
+                apart = readApart;
+                compareBar.ShowFor(comparing, ahead, readApart);
             }
 
             site = readSite;
@@ -322,9 +467,11 @@ sealed class HistoryPane : UserControl
         var reading = repo!;
         var asked = version;
         var skip = loaded.Count;
+        var comparing = compareTo;
+        var ahead = showAhead;
         try
         {
-            var read = await Task.Run(() => ReadCommits(reading, skip, GitHistory.Page, Cancel.None));
+            var read = await Task.Run(() => Read(reading, comparing, ahead, skip, GitHistory.Page));
             if (asked != version ||
                 IsDisposed ||
                 read == null)
@@ -893,6 +1040,115 @@ sealed class HistoryPane : UserControl
         }
 
         base.Dispose(disposing);
+    }
+
+    // Above the commits while comparing, as Desktop's Compare tab has it: the branch compared
+    // with, and a close button back to the branch's own commits; under that, Behind and Ahead,
+    // each with how many, the one listed pressed, and, behind, a button to merge them in.
+    sealed class CompareBar : TableLayoutPanel
+    {
+        HistoryPane pane;
+        Label title = new()
+        {
+            AutoSize = false,
+            AutoEllipsis = true,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            UseMnemonic = false
+        };
+        Button close = new()
+        {
+            Text = "✕",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlatStyle = FlatStyle.Flat,
+            AccessibleName = "Stop comparing"
+        };
+        RadioButton behind = new()
+        {
+            Appearance = Appearance.Button,
+            AutoSize = true,
+            Name = "behind"
+        };
+        RadioButton ahead = new()
+        {
+            Appearance = Appearance.Button,
+            AutoSize = true,
+            Name = "ahead"
+        };
+        Button merge = new()
+        {
+            AutoSize = true,
+            Name = "merge"
+        };
+
+        public string Description { get; private set; } = "";
+
+        public CompareBar(HistoryPane pane)
+        {
+            this.pane = pane;
+            Dock = DockStyle.Top;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            ColumnCount = 2;
+            RowCount = 2;
+            BackColor = DesktopStyle.Background;
+            Padding = new(DesktopStyle.Inset - 3, 4, 4, 4);
+            ColumnStyles.Add(new(SizeType.Percent, 100));
+            ColumnStyles.Add(new(SizeType.AutoSize));
+            close.FlatAppearance.BorderSize = 0;
+            close.Click += (_, _) => pane.EndCompare();
+            behind.Click += (_, _) => pane.ShowAhead(false);
+            ahead.Click += (_, _) => pane.ShowAhead(true);
+            merge.Click += (_, _) => pane.MergeCompared();
+
+            var tabs = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = true,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty
+            };
+            tabs.Controls.Add(behind);
+            tabs.Controls.Add(ahead);
+            tabs.Controls.Add(merge);
+            Controls.Add(title, 0, 0);
+            Controls.Add(close, 1, 0);
+            Controls.Add(tabs, 0, 1);
+            SetColumnSpan(tabs, 2);
+        }
+
+        public void ShowFor(string branch, bool showAhead, (int Ahead, int Behind)? apart)
+        {
+            title.Text = $"Compared to {branch}";
+            var behindText = "Behind";
+            var aheadText = "Ahead";
+            if (apart is { } counts)
+            {
+                behindText = $"Behind ({counts.Behind})";
+                aheadText = $"Ahead ({counts.Ahead})";
+            }
+
+            behind.Text = behindText;
+            ahead.Text = aheadText;
+            behind.Checked = !showAhead;
+            ahead.Checked = showAhead;
+
+            // Merging brings in the commits behind, so is offered there, where there are any.
+            var behindCount = apart?.Behind ?? 0;
+            merge.Visible = !showAhead &&
+                            behindCount > 0;
+            merge.Text = $"Merge {GitState.CountOf(behindCount, "commit")}…";
+            Description = $"{title.Text}: {behindText}, {aheadText}";
+        }
+
+        protected override void OnPaint(PaintEventArgs args)
+        {
+            base.OnPaint(args);
+            using var pen = new Pen(DesktopStyle.Border);
+            args.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);
+        }
     }
 
     // Above the files, as Desktop shows a commit picked: its summary, larger and semibold, then

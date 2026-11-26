@@ -183,8 +183,17 @@ public class CodeMenuTests
                     }));
 
         await Assert.That(Describe(listing.Recent[0])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree… (disabled), ----, Delete…");
-        await Assert.That(Describe(listing.Recent[1])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree…, ----, Delete…");
-        await Assert.That(Describe(listing.Other[0])).IsEqualTo("Rename… (disabled), Copy branch name, Checkout in new worktree…, ----, Delete…");
+        await Assert.That(Describe(listing.Recent[1])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree…, ----, Merge into feature…, Squash and merge into feature…, Rebase feature onto this…, Compare feature to this, ----, Delete…");
+        await Assert.That(Describe(listing.Other[0])).IsEqualTo("Rename… (disabled), Copy branch name, Checkout in new worktree…, ----, Merge into feature…, Squash and merge into feature…, Rebase feature onto this…, Compare feature to this, ----, Delete…");
+
+        // Detached, there is no branch to bring another into.
+        var detached = listing with
+        {
+            Current = null
+        };
+        await Assert.That(
+                string.Join(", ", CodeMenu.BranchCommands(owner, @"C:\Code\Repo", detached, listing.Recent[1], _ => { }).Select(_ => _?.Text ?? "----")))
+            .IsEqualTo("Rename…, Copy branch name, Checkout in new worktree…, ----, Delete…");
     }
 
     // FolderViewTests swap the clipboard too.
@@ -240,6 +249,79 @@ public class CodeMenuTests
         await Assert.That(Offered([clone, other])).IsTrue();
         await Assert.That(Offered([code.Root])).IsFalse();
         await Assert.That(Offered([clone, code.Root])).IsFalse();
+    }
+
+    // Merge, Squash and merge and Rebase pick another branch of one repository's, so are for one
+    // repository only. Update from default branch is for any off it, as Switch to default is.
+    [Test]
+    public async Task MergeAndRebaseOnlyForOneRepository()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Repo");
+        var clone = code.Clone("Repo", "Clone");
+        var other = code.Clone("Repo", "Other");
+        CodeCommandsTests.Scratch.Git(other, "switch", "-c", "feature");
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var owner = new Control();
+        string Offered(IReadOnlyList<string> folders) =>
+            string.Join(
+                ", ",
+                CodeMenu.Commands(owner, settings, folders)
+                    .Select(_ => _?.Id)
+                    .Where(_ => _ is "gitUpdateFromDefault" or "gitMerge" or "gitSquashMerge" or "gitRebase"));
+
+        await Assert.That(Offered([clone])).IsEqualTo("gitMerge, gitSquashMerge, gitRebase");
+        await Assert.That(Offered([other])).IsEqualTo("gitUpdateFromDefault, gitMerge, gitSquashMerge, gitRebase");
+        await Assert.That(Offered([clone, other])).IsEqualTo("gitUpdateFromDefault");
+        await Assert.That(Offered([code.Root])).IsEqualTo("gitUpdateFromDefault");
+    }
+
+    // The branch dialog lists every branch but the one checked out, says what it would do with
+    // the one picked, and can be pressed only where that can go ahead. Force push is asked only
+    // where origin has commits a rebase rewrites.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public async Task BranchDialogSaysWhatItWouldDo()
+    {
+        var previews = new Dictionary<string, GitMerging.Preview>
+        {
+            ["main"] = new("This will merge 2 commits from main into feature.", true),
+            ["fix"] = new("feature is already up to date with fix.", false),
+            ["origin/elsewhere"] = new("This will update feature by applying its 1 commit on top of origin/elsewhere.", true, OnOrigin: 1)
+        };
+        using var form = new BranchActionForm("Merge into feature", "Create a merge commit", listing, (name, _) => previews[name]);
+        await Pump.Until(() => form.Previewing.IsCompleted);
+
+        await Assert.That(form.Listed).IsEquivalentTo(["main", "fix", "origin/elsewhere"]);
+        await Assert.That((form.Branch, form.PreviewText, form.CanAccept, form.ForcePush)).IsEqualTo(("main", "This will merge 2 commits from main into feature.", true, false));
+
+        form.Filter = "fix";
+        await Pump.Until(() => form.Previewing.IsCompleted);
+        await Assert.That((form.Branch, form.CanAccept)).IsEqualTo(("fix", false));
+
+        form.Filter = "else";
+        await Pump.Until(() => form.Previewing.IsCompleted);
+        await Assert.That((form.Branch, form.CanAccept)).IsEqualTo(("origin/elsewhere", true));
+        await Assert.That(form.OffersForcePush).IsTrue();
+
+        form.Filter = "nothing like it";
+        await Assert.That((form.Branch, form.CanAccept, form.PreviewText)).IsEqualTo(((string?) null, false, ""));
+    }
+
+    // A branch right-clicked in the status bar's list is picked as the dialog opens.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public async Task BranchDialogPicksTheBranchGiven()
+    {
+        using var form = new BranchActionForm("Rebase feature", "Rebase", listing, (name, _) => new($"Onto {name}", true), "fix");
+        await Pump.Until(() => form.Previewing.IsCompleted);
+
+        await Assert.That((form.Branch, form.PreviewText)).IsEqualTo(("fix", "Onto fix"));
     }
 
     // Tag's question offers the tag after the latest, and to commit the changes first only where
@@ -371,6 +453,58 @@ public class CodeMenuTests
         Application.DoEvents();
         form.Refresh();
         await Verify(form);
+    }
+
+    // As the readme shows them: main checked out, its branches to pick from, and what the one
+    // picked would do.
+    static readonly GitBranches.Listing readmeListing = new(
+        "main",
+        Branch("main"),
+        [Branch("feature/pin-network-folders"), Branch("fix/drive-letters")],
+        [Branch("docs/clone-dialog"), Branch("origin/release-1.0", remote: true)]);
+
+    // Merge into current branch, a branch picked, saying how many commits it brings in.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public Task MergeDialog() =>
+        CaptureBranchDialog(
+            CodeMenu.MergeTitle(GitMerging.Kind.Merge, "main"),
+            "Create a merge commit",
+            new("This will merge 3 commits from feature/pin-network-folders into main.", true));
+
+    // Rebase current branch, onto a branch origin's copy of the one checked out is behind:
+    // force push offered.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public Task RebaseDialog() =>
+        CaptureBranchDialog(
+            CodeMenu.MergeTitle(GitMerging.Kind.Rebase, "main"),
+            "Rebase",
+            new("This will update main by applying its 2 commits on top of feature/pin-network-folders. Should one conflict, the rebase is undone.\n\nOrigin has 2 commits of main that this rewrites, so pushing it afterwards needs force, and anyone else's copy of main is left behind.", true, OnOrigin: 2));
+
+    static async Task CaptureBranchDialog(string title, string accept, GitMerging.Preview preview)
+    {
+        using var form = new QuietBranchForm(title, accept, readmeListing, (_, _) => preview);
+        form.Show();
+        await Pump.Until(() => form.Previewing.IsCompleted);
+        form.ActiveControl = null;
+        form.Refresh();
+        await Verify(form);
+    }
+
+    sealed class QuietBranchForm(string title, string accept, GitBranches.Listing listing, Func<string, Cancel, GitMerging.Preview> previewOf) :
+        BranchActionForm(title, accept, listing, previewOf)
+    {
+        protected override bool ShowWithoutActivation => true;
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            StartPosition = FormStartPosition.Manual;
+            Location = new(-20000, -20000);
+        }
     }
 #endif
 

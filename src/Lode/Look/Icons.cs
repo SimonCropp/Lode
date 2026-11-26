@@ -64,6 +64,12 @@ static class Icons
     public const char Tag = '\uE8EC';
     // Two arrows, one each way.
     public const char SwitchBranch = '\uE8AB';
+    // The default branch brought down into the branch checked out: an arrow down.
+    public const char UpdateFromDefault = '';
+    // Arrows pointing in on each other: a branch's commits squashed into one.
+    public const char Squash = '';
+    // Two arrows round, as Repeat all has: a branch's commits played again on top of another.
+    public const char Rebase = '';
     public const char Discard = '\uE7A7';
     // A broom.
     public const char Purge = '\uEA99';

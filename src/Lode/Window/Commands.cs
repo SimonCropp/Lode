@@ -93,7 +93,7 @@ sealed class Commands
             }
         };
         var panes = window.GitPanes;
-        if (panes.Repo != null)
+        if (panes.Repo is { } repo)
         {
             var changesPinned = panes.IsPinned(GitPane.Changes);
             var historyPinned = panes.IsPinned(GitPane.History);
@@ -109,6 +109,10 @@ sealed class Commands
                 {
                     Glyph = Icons.History,
                     Shortcut = "Ctrl+Shift+H"
+                },
+                new("Compare to branch…", () => CodeMenu.CompareToBranch(window, repo))
+                {
+                    Glyph = Icons.History
                 },
                 new("Pin changes", () => panes.SetPinned(GitPane.Changes, !changesPinned))
                 {
@@ -184,10 +188,11 @@ sealed class Commands
         Add("Find in files", window.FindHost.Open, "Ctrl+Shift+F");
         Add("Clone a repository…", ShowClone, "Ctrl+Shift+O");
         Add("Purge NuGet cache", PurgeNugetCache);
-        if (panes.Repo != null)
+        if (panes.Repo is { } repo)
         {
             Add("Changes", () => panes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
             Add("History", () => panes.Toggle(GitPane.History), "Ctrl+Shift+H");
+            Add("Compare to branch…", () => CodeMenu.CompareToBranch(window, repo));
             Add(panes.IsPinned(GitPane.Changes) ? "Unpin changes" : "Pin changes", () => panes.SetPinned(GitPane.Changes, !panes.IsPinned(GitPane.Changes)));
             Add(panes.IsPinned(GitPane.History) ? "Unpin history" : "Pin history", () => panes.SetPinned(GitPane.History, !panes.IsPinned(GitPane.History)));
         }

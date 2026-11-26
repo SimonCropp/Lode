@@ -37,6 +37,20 @@ public class MenuTests
         await Verify(QuickMenu.Build(LodeActions.ForMenu(view.ItemCommands([docs]), settings), () => { }, _ => { }));
     }
 
+    // A branch right-clicked in the status bar's branches, with main checked out: what GitHub
+    // Desktop offers there, then merging it in, rebasing onto it, and comparing with it.
+    [Test]
+    public async Task BranchMenu()
+    {
+        using var owner = new Control();
+        GitBranches.Branch Branch(string name) =>
+            new(name, false, null, false);
+        var feature = Branch("feature/pin-network-folders");
+        var listing = new GitBranches.Listing("main", Branch("main"), [feature], []);
+
+        await Verify(QuickMenu.Build(CodeMenu.BranchCommands(owner, @"C:\Code\Lode", listing, feature, _ => { }), null, _ => { }));
+    }
+
     // New, from the right-click menu on empty space: Folder, then each file type with its icon.
     // A type's own icon is whichever program is installed to open it, so each is drawn with
     // one of Windows' own for its kind instead, the same on every machine.

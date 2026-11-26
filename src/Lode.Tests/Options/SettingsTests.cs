@@ -243,6 +243,34 @@ public class SettingsTests
                       menuNested: true
                     },
                     {
+                      id: gitUpdateFromDefault,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitMerge,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitSquashMerge,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
+                      id: gitRebase,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
                       id: gitPush,
                       button: true,
                       menu: false,

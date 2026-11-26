@@ -317,6 +317,23 @@ sealed class GitPanes : IDisposable
     }
 
     /// <summary>
+    /// Compare to branch: History lists how the branch checked out and <paramref name="branch"/>
+    /// differ, and shows, with the focus. False where <paramref name="compareRepo"/> isn't the
+    /// repository the panes are about, which History can't show.
+    /// </summary>
+    public bool Compare(string compareRepo, string branch)
+    {
+        if (!ChangesPane.SameRepo(repo, compareRepo))
+        {
+            return false;
+        }
+
+        history.Compare(branch);
+        Float(GitPane.History, focus: true);
+        return true;
+    }
+
+    /// <summary>
     /// Ctrl+Shift+G or Ctrl+Shift+H: a pinned pane takes the focus, or gives it back to the list;
     /// one slid out slides back; otherwise it slides out with the focus.
     /// </summary>

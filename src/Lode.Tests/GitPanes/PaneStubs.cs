@@ -12,6 +12,8 @@ sealed class PaneStubs : IDisposable
     Func<string, int, int, Cancel, List<GitCommit>?> readCommits = HistoryPane.ReadCommits;
     Func<string, GitCommit, Cancel, List<Change>?> readFiles = HistoryPane.ReadFiles;
     Func<string, Cancel, HashSet<string>> readUnpushed = HistoryPane.ReadUnpushed;
+    Func<string, string, int, int, Cancel, List<GitCommit>?> readRange = HistoryPane.ReadRange;
+    Func<string, string, Cancel, (int Ahead, int Behind)?> readApart = HistoryPane.ReadApart;
     TimeProvider time = HistoryPane.Time;
     TimeSpan slide = GitPanes.SlideDuration;
 
@@ -56,6 +58,8 @@ sealed class PaneStubs : IDisposable
         HistoryPane.ReadCommits = (_, skip, count, _) => History.Skip(skip).Take(count).ToList();
         HistoryPane.ReadFiles = (_, _, _) => CommitFiles;
         HistoryPane.ReadUnpushed = (_, _) => [History[0].Sha];
+        HistoryPane.ReadRange = (_, _, _, _, _) => [];
+        HistoryPane.ReadApart = (_, _, _) => (0, 0);
         HistoryPane.Time = new Clock(Now);
         GitPanes.SlideDuration = TimeSpan.Zero;
     }
@@ -67,6 +71,8 @@ sealed class PaneStubs : IDisposable
         HistoryPane.ReadCommits = readCommits;
         HistoryPane.ReadFiles = readFiles;
         HistoryPane.ReadUnpushed = readUnpushed;
+        HistoryPane.ReadRange = readRange;
+        HistoryPane.ReadApart = readApart;
         HistoryPane.Time = time;
         GitPanes.SlideDuration = slide;
         GitCache.Reset();

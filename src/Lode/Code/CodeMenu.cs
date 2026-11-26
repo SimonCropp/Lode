@@ -1,6 +1,6 @@
 /// <summary>
 /// The right-click entries for folders under the code folder: git fetch, pull, sync fork, switch
-/// to the default branch, push, tag, discard and purge across their repositories, and Update NuGets (optionally
+/// to the default branch, update from it, merge, squash and merge, rebase, push, tag, discard and purge across their repositories, and Update NuGets (optionally
 /// then building). With several folders selected, each command takes in all of them at once,
 /// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
@@ -15,7 +15,9 @@ static class CodeMenu
     /// when every one has nothing to push, and Discard when every one has nothing uncommitted,
     /// as <paramref name="stateOf"/> has it, which gives a repository's state where it has been
     /// read. Sync fork only where there may be a fork: a repository with an upstream remote, or a
-    /// folder holding repositories. Tag only for repositories, not a folder holding them.
+    /// folder holding repositories. Tag only for repositories, not a folder holding them. Update
+    /// from default branch goes with Switch to default branch, and Merge, Squash and merge and
+    /// Rebase are for one repository only, as they pick another of its branches.
     /// Deleting a tag is History's, on the commit picked.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
@@ -60,6 +62,20 @@ static class CodeMenu
         if (!onDefault)
         {
             commands.Add(LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)));
+            commands.Add(LodeActions.Command("gitUpdateFromDefault", () => UpdateFromDefault(folders, settings.CodeDirectory)));
+        }
+
+        // Another branch is picked of one repository's, so these are for one repository only.
+        if (allInRepos &&
+            repos.Count == 1)
+        {
+            var repo = repos[0]!;
+            commands.AddRange(
+            [
+                LodeActions.Command("gitMerge", () => MergeBranch(owner, repo, GitMerging.Kind.Merge), text: "Git merge into current branch…"),
+                LodeActions.Command("gitSquashMerge", () => MergeBranch(owner, repo, GitMerging.Kind.Squash), text: "Git squash and merge into current branch…"),
+                LodeActions.Command("gitRebase", () => MergeBranch(owner, repo, GitMerging.Kind.Rebase), text: "Git rebase current branch…")
+            ]);
         }
 
         if (!nothingToPush)
@@ -148,6 +164,152 @@ static class CodeMenu
                 var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
                 return CodeCommands.GitOutcome(await CodeCommands.SwitchToDefaultBranch(repos, progress, cancel));
             });
+
+    // Nothing to ask about, as Pull asks nothing: it merges without pushing, and a merge that
+    // would conflict is undone. Read again as it ends, for how far ahead each branch is now.
+    static void UpdateFromDefault(IReadOnlyList<string> folders, string? codeFolder) =>
+        _ = ActionLog.Run(
+            "Git update from default branch",
+            folders,
+            async (progress, cancel) =>
+            {
+                var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder), cancel);
+                var results = await GitMerging.UpdateFromDefault(repos, progress, cancel);
+                GitCache.MarkStale(repos);
+                return CodeCommands.GitOutcome(results);
+            });
+
+    /// <summary>
+    /// Merge, Squash and merge, or Rebase: asks which branch, <paramref name="branch"/> picked
+    /// first where given, one right-clicked in the status bar's branches say, saying what it
+    /// would do with it, then does it in the Actions panel. Detached, there is no branch to
+    /// bring another into.
+    /// </summary>
+    internal static async void MergeBranch(Control owner, string repo, GitMerging.Kind kind, string? branch = null)
+    {
+        var listing = await Task.Run(() => GitBranches.Read(repo, Cancel.None));
+        if (owner.IsDisposed ||
+            OnBranch(owner, listing, MergeTitle(kind, "the branch")) is not { } current)
+        {
+            return;
+        }
+
+        var accept = kind switch
+        {
+            GitMerging.Kind.Squash => "Squash and merge",
+            GitMerging.Kind.Rebase => "Rebase",
+            _ => "Create a merge commit"
+        };
+        using var form = new BranchActionForm(
+            MergeTitle(kind, current),
+            accept,
+            listing,
+            (name, cancel) => GitMerging.Of(repo, current, name, kind, cancel),
+            branch);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
+            form.Branch is not { } picked)
+        {
+            return;
+        }
+
+        var forcePush = form.ForcePush;
+        if (kind == GitMerging.Kind.Rebase)
+        {
+            _ = RunOnBranch($"Git rebase {current} onto {picked}", repo, cancel => GitMerging.Rebase(repo, picked, forcePush, cancel));
+            return;
+        }
+
+        var squash = kind == GitMerging.Kind.Squash;
+        var title = $"Git merge {picked} into {current}";
+        if (squash)
+        {
+            title = $"Git squash and merge {picked} into {current}";
+        }
+
+        _ = RunOnBranch(title, repo, cancel => GitMerging.Merge(repo, picked, squash, cancel));
+    }
+
+    /// <summary>
+    /// What Merge, Squash and merge, and Rebase dialogs are called, as GitHub Desktop's are.
+    /// </summary>
+    internal static string MergeTitle(GitMerging.Kind kind, string current) =>
+        kind switch
+        {
+            GitMerging.Kind.Squash => $"Squash and merge into {current}",
+            GitMerging.Kind.Rebase => $"Rebase {current}",
+            _ => $"Merge into {current}"
+        };
+
+    // The branch checked out, or null, having said why there is none: detached, or the branches
+    // couldn't be read.
+    static string? OnBranch(Control owner, GitBranches.Listing listing, string caption)
+    {
+        if (listing.Error != null)
+        {
+            MessageBox.Show(owner, $"Couldn't read the branches:\n{listing.Error}", caption, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return null;
+        }
+
+        if (listing.Current == null)
+        {
+            MessageBox.Show(owner, "No branch is checked out. Check one out first.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return null;
+        }
+
+        return listing.Current;
+    }
+
+    /// <summary>
+    /// Compare to branch: asks which branch, unless <paramref name="branch"/> is given, then has
+    /// History list how the branch checked out and it differ. Only for the repository the
+    /// window's panes show, as History shows only that.
+    /// </summary>
+    internal static async void CompareToBranch(Control owner, string repo, string? branch = null)
+    {
+        if (owner.FindForm() is not MainForm window)
+        {
+            return;
+        }
+
+        if (branch == null)
+        {
+            var listing = await Task.Run(() => GitBranches.Read(repo, Cancel.None));
+            if (owner.IsDisposed ||
+                OnBranch(owner, listing, "Compare to branch") is not { } current)
+            {
+                return;
+            }
+
+            using var form = new BranchActionForm(
+                "Compare to branch",
+                "Compare",
+                listing,
+                (name, cancel) => ComparePreview(repo, current, name, cancel));
+            if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
+                form.Branch is not { } picked)
+            {
+                return;
+            }
+
+            branch = picked;
+        }
+
+        if (!window.GitPanes.Compare(repo, branch))
+        {
+            MessageBox.Show(owner, $"History shows the repository open here. Open {Path.GetFileName(repo)} to compare its branches.", "Compare to branch", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    // What comparing would show: how many commits each has that the other hasn't.
+    static GitMerging.Preview ComparePreview(string repo, string current, string branch, Cancel cancel)
+    {
+        if (GitHistory.Apart(repo, branch, cancel) is not { } apart)
+        {
+            return new($"Couldn't compare {current} with {branch}.", false);
+        }
+
+        return new($"{current} is {GitState.CountOf(apart.Behind, "commit")} behind {branch}, and {GitState.CountOf(apart.Ahead, "commit")} ahead of it.", true);
+    }
 
     /// <summary>
     /// Switches the repository to <paramref name="target"/>, picked from the status bar's
@@ -263,14 +425,42 @@ static class CodeMenu
     {
         var current = !branch.Remote &&
                       branch.Name == listing.Current;
-        return
+        List<QuickMenu.Command?> commands =
         [
             new("Rename…", () => RenameBranch(owner, repo, branch), Enabled: !branch.Remote),
             new("Copy branch name", () => FolderView.SetClipboardText(branch.Name)),
-            new("Checkout in new worktree…", () => AddWorktree(owner, repo, branch, openFolder), Enabled: !current),
-            null,
-            new("Delete…", () => DeleteBranch(owner, repo, listing, branch))
+            new("Checkout in new worktree…", () => AddWorktree(owner, repo, branch, openFolder), Enabled: !current)
         ];
+
+        // Another branch, with one checked out to bring it into, or compare it with.
+        if (!current &&
+            listing.Current is { } checkedOut)
+        {
+            commands.AddRange(
+            [
+                null,
+                new($"Merge into {checkedOut}…", () => MergeBranch(owner, repo, GitMerging.Kind.Merge, branch.Name))
+                {
+                    Glyph = Icons.Branch
+                },
+                new($"Squash and merge into {checkedOut}…", () => MergeBranch(owner, repo, GitMerging.Kind.Squash, branch.Name))
+                {
+                    Glyph = Icons.Squash
+                },
+                new($"Rebase {checkedOut} onto this…", () => MergeBranch(owner, repo, GitMerging.Kind.Rebase, branch.Name))
+                {
+                    Glyph = Icons.Rebase
+                },
+                new($"Compare {checkedOut} to this", () => CompareToBranch(owner, repo, branch.Name))
+                {
+                    Glyph = Icons.History
+                }
+            ]);
+        }
+
+        commands.Add(null);
+        commands.Add(new("Delete…", () => DeleteBranch(owner, repo, listing, branch)));
+        return commands;
     }
 
     static async void RenameBranch(Control owner, string repo, GitBranches.Branch branch)

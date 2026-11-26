@@ -28,7 +28,15 @@ static class GitHistory
     /// The commits from HEAD back, after the first <paramref name="skip"/>. Empty before the first
     /// commit, where git has nothing to log; null when git can't be asked.
     /// </summary>
-    public static List<GitCommit>? Read(string repo, int skip, int count, Cancel cancel)
+    public static List<GitCommit>? Read(string repo, int skip, int count, Cancel cancel) =>
+        Read(repo, "HEAD", skip, count, cancel);
+
+    /// <summary>
+    /// The commits of <paramref name="range"/>, newest first, after the first
+    /// <paramref name="skip"/>: HEAD's, or, comparing with a branch, those only one of them has,
+    /// main..HEAD say.
+    /// </summary>
+    public static List<GitCommit>? Read(string repo, string range, int skip, int count, Cancel cancel)
     {
         // Each commit ended by a NUL, its fields apart by a unit separator, which no name or
         // subject has. Signatures not checked, as log.showSignature would have gpg write into
@@ -45,7 +53,7 @@ static class GitHistory
                 "--format=%H%x1f%P%x1f%aN%x1f%at%x1f%D%x1f%s",
                 $"--max-count={count}",
                 $"--skip={skip}",
-                "HEAD",
+                range,
                 "--"
             ]);
         if (result.Succeeded)
@@ -121,6 +129,26 @@ static class GitHistory
         return result.Output
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// How far HEAD and <paramref name="branch"/> are apart: the commits HEAD has that the branch
+    /// hasn't, and those the branch has that HEAD hasn't. Null when git can't say, the branch
+    /// since deleted say.
+    /// </summary>
+    public static (int Ahead, int Behind)? Apart(string repo, string branch, Cancel cancel)
+    {
+        var result = CodeCommands.GitOutput(repo, cancel, ["--no-optional-locks", "rev-list", "--left-right", "--count", $"HEAD...{branch}", "--"]);
+        var parts = result.Output.Split('\t', StringSplitOptions.TrimEntries);
+        if (!result.Succeeded ||
+            parts.Length != 2 ||
+            !int.TryParse(parts[0], out var ahead) ||
+            !int.TryParse(parts[1], out var behind))
+        {
+            return null;
+        }
+
+        return (ahead, behind);
     }
 
     /// <summary>

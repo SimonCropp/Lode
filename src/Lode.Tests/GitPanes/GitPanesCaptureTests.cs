@@ -54,6 +54,20 @@ public class GitPanesCaptureTests
                 commits.SelectedIndices.Add(1);
             });
 
+    // Compare to branch: the commits behind the branch compared with, how many each way, and
+    // the button merging them in.
+    [Test]
+    public Task HistoryComparing() =>
+        Capture(
+            changes: false,
+            history: true,
+            form =>
+            {
+                HistoryPane.ReadRange = (_, _, skip, count, _) => PaneStubs.History.Take(3).Skip(skip).Take(count).ToList();
+                HistoryPane.ReadApart = (_, _, _) => (2, 3);
+                form.GitPanes.Compare(form.GitPanes.Repo!, "develop");
+            });
+
     [Test]
     public Task BothPinned() =>
         Capture(changes: true, history: true);
