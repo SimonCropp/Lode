@@ -267,7 +267,7 @@ sealed class AccentButton : Button
 
         if (besideButtons)
         {
-            var inset = ExplorerStyle.PushButtonInset;
+            const int inset = ExplorerStyle.PushButtonInset;
             ExplorerStyle.FillButton(graphics, Rectangle.Inflate(ClientRectangle, -inset, -inset), fill, ExplorerStyle.PushButtonRadius);
         }
         else

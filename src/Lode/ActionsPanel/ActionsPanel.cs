@@ -301,7 +301,7 @@ sealed class ActionsPanel : Panel
         var lineHeight = font.Height;
         var left = mark.Right;
         var right = bounds.Right - 2;
-        var flags = TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+        const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
 
         var titleColour = selected ? ExplorerStyle.HighlightText : SystemColors.ControlText;
         TextRenderer.DrawText(

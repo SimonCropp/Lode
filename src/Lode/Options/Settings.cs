@@ -260,40 +260,39 @@ sealed class Settings
         }
     }
 
-    // Which of the Changes and History panes are pinned beside the list, for each repository
-    // either was pinned in. Neither pinned is the default, and isn't noted. The most recently
-    // changed last, as FolderSorts are.
-    public List<PinnedPanes> PinnedPanes { get; set; } = [];
+    // Which of the Changes and History panes shows, as tabs, where the window has room beside the
+    // list for only one, for each repository History was last chosen or used in. Changes is the
+    // default, and isn't noted. The most recently changed last, as FolderSorts are.
+    public List<PaneTab> PaneTabs { get; set; } = [];
 
-    const int maximumPinnedPanes = 500;
+    const int maximumPaneTabs = 500;
 
-    public PinnedPanes? PinnedPanesOf(string repo) =>
-        PinnedPanes.FindLast(_ => Locations.Same(_.Repo, repo));
+    public GitPane PaneTabOf(string repo) =>
+        PaneTabs.FindLast(_ => Locations.Same(_.Repo, repo))?.Tab ?? GitPane.Changes;
 
     /// <summary>
-    /// Notes which panes are pinned for a repository, or forgets it when neither is.
+    /// Notes which pane shows for a repository, or forgets it when that is Changes.
     /// </summary>
-    public void SetPinnedPanes(string repo, bool changes, bool history)
+    public void SetPaneTab(string repo, GitPane tab)
     {
-        PinnedPanes.RemoveAll(_ => Locations.Same(_.Repo, repo));
-        if (!changes &&
-            !history)
+        PaneTabs.RemoveAll(_ => Locations.Same(_.Repo, repo));
+        if (tab == GitPane.Changes)
         {
             return;
         }
 
-        PinnedPanes.Add(new(repo, changes, history));
-        if (PinnedPanes.Count > maximumPinnedPanes)
+        PaneTabs.Add(new(repo, tab));
+        if (PaneTabs.Count > maximumPaneTabs)
         {
-            PinnedPanes.RemoveRange(0, PinnedPanes.Count - maximumPinnedPanes);
+            PaneTabs.RemoveRange(0, PaneTabs.Count - maximumPaneTabs);
         }
     }
 
-    // How wide the Changes and History panes are, at 100% scale, pinned or slid out. 0 for the
-    // width they start at.
+    // How wide each of the Changes and History panes is, at 100% scale, beside the list or slid
+    // out. 0 for the width they start at.
     public int PaneWidth { get; set; }
 
-    // How much of the column Changes takes when both panes are pinned, from 0 to 1. 0 for half.
+    // How much of the room the two panes have side by side Changes takes, from 0 to 1. 0 for half.
     public double PaneSplit { get; set; }
 
     // How the tabs down the window's right edge are labelled: each pane's icon with its name

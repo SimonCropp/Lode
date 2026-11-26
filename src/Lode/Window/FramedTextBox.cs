@@ -348,10 +348,10 @@ static class TextFrame
     // beside push buttons, in from its edges and as round as one.
     static (Rectangle Bounds, int Radius) Frame(Control control, bool besideButtons)
     {
+        const int inset = ExplorerStyle.PushButtonInset;
         var bounds = control.ClientRectangle;
         if (besideButtons)
         {
-            var inset = ExplorerStyle.PushButtonInset;
             return (Rectangle.Inflate(bounds, -inset, -inset), ExplorerStyle.PushButtonRadius);
         }
 
