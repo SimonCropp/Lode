@@ -311,7 +311,7 @@ static class ExplorerStyle
         // Down the middle of the outermost pixels, its corners half a pixel less round.
         var diameter = Math.Max(0, radius * 2 - 1);
         shape.AddRoundedRectangle(
-            new RectangleF(bounds.X + 0.5f, bounds.Y + 0.5f, bounds.Width - 1, bounds.Height - 1),
+            new(bounds.X + 0.5f, bounds.Y + 0.5f, bounds.Width - 1, bounds.Height - 1),
             new SizeF(diameter, diameter));
         graphics.DrawPath(pen, shape);
         graphics.Restore(state);

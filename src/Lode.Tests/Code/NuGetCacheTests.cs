@@ -35,9 +35,9 @@ public class NuGetCacheTests
             NuGetCache.Run = _ => throw new System.ComponentModel.Win32Exception("The system cannot find the file specified.");
             var missing = await NuGetCache.Purge();
 
-            await Assert.That(cleared).IsEqualTo(new ActionLog.Outcome(true, "Cleared", "Clearing NuGet global packages folder: C:\\packages\nLocal resources cleared."));
-            await Assert.That(failed).IsEqualTo(new ActionLog.Outcome(false, "Failed", "Failed to delete 'C:\\packages\\verify\\lib.dll'.\nClearing local resources failed: Unable to delete one or more files."));
-            await Assert.That(missing).IsEqualTo(new ActionLog.Outcome(false, "Failed", "The system cannot find the file specified."));
+            await Assert.That(cleared).IsEqualTo(new(true, "Cleared", "Clearing NuGet global packages folder: C:\\packages\nLocal resources cleared."));
+            await Assert.That(failed).IsEqualTo(new(false, "Failed", "Failed to delete 'C:\\packages\\verify\\lib.dll'.\nClearing local resources failed: Unable to delete one or more files."));
+            await Assert.That(missing).IsEqualTo(new(false, "Failed", "The system cannot find the file specified."));
         }
         finally
         {
