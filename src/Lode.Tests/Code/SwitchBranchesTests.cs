@@ -154,6 +154,16 @@ public class SwitchBranchesTests
         await Verify(form);
     }
 
+    // Repositories with different default branches name each, the most of them first.
+    [Test]
+    public async Task DefaultBranchesNamedWhereTheyDiffer()
+    {
+        await Assert.That(CodeMenu.DefaultNames(["main"])).IsEqualTo(" (main)");
+        await Assert.That(CodeMenu.DefaultNames(["master", "develop", "develop", null])).IsEqualTo(" (develop, master)");
+        await Assert.That(CodeMenu.DefaultNames(["a", "b", "c", "d", "d"])).IsEqualTo(" (d, a, b, …)");
+        await Assert.That(CodeMenu.DefaultNames([null])).IsEqualTo("");
+    }
+
     static string Branch(string repo) =>
         CodeCommands.Git(repo, "branch", "--show-current").Output.Trim();
 }

@@ -63,15 +63,10 @@ static class CodeMenu
 
         if (!onDefault)
         {
-            // Named, main say, where every repository's is the same.
             var defaultName = "";
-            if (allInRepos &&
-                repos
-                    .Select(_ => CodeCommands.RecordedDefaultName(_!))
-                    .Distinct()
-                    .ToList() is [{ } name])
+            if (allInRepos)
             {
-                defaultName = $" ({name})";
+                defaultName = DefaultNames(repos.Select(_ => CodeCommands.RecordedDefaultName(_!)));
             }
 
             commands.Add(WithSuffix(LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)), defaultName));
@@ -115,6 +110,34 @@ static class CodeMenu
             LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folders))
         ]);
         return commands;
+    }
+
+    /// <summary>
+    /// What follows Switch to and Update from default branch: the default branches' names,
+    /// " (main)" say, or " (develop, master)" where the repositories' differ, the most of them
+    /// first, as many as three. Those with none recorded say nothing; nothing where none has.
+    /// </summary>
+    internal static string DefaultNames(IEnumerable<string?> names)
+    {
+        var known = names
+            .OfType<string>()
+            .GroupBy(_ => _, StringComparer.Ordinal)
+            .OrderByDescending(_ => _.Count())
+            .ThenBy(_ => _.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(_ => _.Key)
+            .ToList();
+        if (known.Count == 0)
+        {
+            return "";
+        }
+
+        var shown = string.Join(", ", known.Take(3));
+        if (known.Count > 3)
+        {
+            shown += ", …";
+        }
+
+        return $" ({shown})";
     }
 
     // The command, its name and its name nested under Git both ending with the suffix.
