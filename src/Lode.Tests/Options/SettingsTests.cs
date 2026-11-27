@@ -242,6 +242,13 @@ public class SettingsTests
                       menuNested: true
                     },
                     {
+                      id: gitSwitchBranch,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
                       id: gitSwitchToDefault,
                       button: true,
                       menu: false,

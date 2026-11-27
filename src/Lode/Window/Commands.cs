@@ -75,6 +75,10 @@ sealed class Commands
                 Glyph = Icons.Clone,
                 Shortcut = "Ctrl+Shift+O"
             },
+            new("Open NuGet cache", OpenNugetCache)
+            {
+                Glyph = Icons.OpenInNewTab
+            },
             new("Purge NuGet cache", PurgeNugetCache)
             {
                 Glyph = Icons.Purge
@@ -177,6 +181,7 @@ sealed class Commands
         Add("New window", window.NewWindow, "Ctrl+N");
         Add("Find in files", window.FindHost.Open, "Ctrl+Shift+F");
         Add("Clone a repository…", ShowClone, "Ctrl+Shift+O");
+        Add("Open NuGet cache", OpenNugetCache);
         Add("Purge NuGet cache", PurgeNugetCache);
         if (panes.Repo is { } repo)
         {
@@ -655,6 +660,20 @@ sealed class Commands
         {
             window.AddTab(destination, true);
         }
+    }
+
+    // Where restore puts the packages it fetches, in a tab of its own. Purged, or never restored
+    // to, it isn't there, and says so.
+    void OpenNugetCache()
+    {
+        var folder = NuGetCache.PackagesFolder();
+        if (!Directory.Exists(folder))
+        {
+            MessageBox.Show(window, $"The NuGet cache isn't there:\n{folder}", "Open NuGet cache", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        window.AddTab(folder, true);
     }
 
     // In the Actions panel, as Update NuGets is: deleting every package restored takes a while,

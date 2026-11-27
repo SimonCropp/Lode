@@ -50,7 +50,7 @@ static class LodeActions
     /// The git actions. Pull, push, discard and purge were one, Git, a submenu of them. See
     /// <see cref="Settings"/>.
     /// </summary>
-    public static IReadOnlyList<string> GitIds { get; } = ["gitFetch", "gitPull", "gitSyncFork", "gitSwitchToDefault", "gitUpdateFromDefault", "gitMerge", "gitSquashMerge", "gitRebase", "gitPush", "gitTag", "gitDiscard", "gitPurge"];
+    public static IReadOnlyList<string> GitIds { get; } = ["gitFetch", "gitPull", "gitSyncFork", "gitSwitchBranch", "gitSwitchToDefault", "gitUpdateFromDefault", "gitMerge", "gitSquashMerge", "gitRebase", "gitPush", "gitTag", "gitDiscard", "gitPurge"];
 
     /// <summary>
     /// Show more options: the full Windows menu. Not a command of its own in the menus, which
@@ -91,6 +91,7 @@ static class LodeActions
         new("gitFetch", "Git fetch", Icons.Fetch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Fetch"),
         new("gitPull", "Git pull", Icons.Pull, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Pull"),
         new("gitSyncFork", "Git sync fork", Icons.SyncFork, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Sync fork"),
+        new("gitSwitchBranch", "Git switch branch", Icons.SwitchBranch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Switch branch…"),
         new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Switch to default branch"),
         new("gitUpdateFromDefault", "Git update from default branch", Icons.UpdateFromDefault, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Update from default branch"),
         new("gitMerge", "Git merge into current branch", Icons.Branch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Merge into current branch…"),

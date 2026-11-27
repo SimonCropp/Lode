@@ -1,6 +1,6 @@
 /// <summary>
 /// The right-click entries for folders under the code folder: git fetch, pull, sync fork, switch
-/// to the default branch, update from it, merge, squash and merge, rebase, push, tag, discard and purge across their repositories, and Update NuGets (optionally
+/// branch, switch to the default branch, update from it, merge, squash and merge, rebase, push, tag, discard and purge across their repositories, and Update NuGets (optionally
 /// then building). With several folders selected, each command takes in all of them at once,
 /// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
@@ -59,10 +59,23 @@ static class CodeMenu
             commands.Add(LodeActions.Command("gitSyncFork", () => SyncFork(folders, settings.CodeDirectory)));
         }
 
+        commands.Add(LodeActions.Command("gitSwitchBranch", () => SwitchBranches(owner, folders, settings.CodeDirectory), text: "Git switch branch…"));
+
         if (!onDefault)
         {
-            commands.Add(LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)));
-            commands.Add(LodeActions.Command("gitUpdateFromDefault", () => UpdateFromDefault(folders, settings.CodeDirectory)));
+            // Named, main say, where every repository's is the same.
+            var defaultName = "";
+            if (allInRepos &&
+                repos
+                    .Select(_ => CodeCommands.RecordedDefaultName(_!))
+                    .Distinct()
+                    .ToList() is [{ } name])
+            {
+                defaultName = $" ({name})";
+            }
+
+            commands.Add(WithSuffix(LodeActions.Command("gitSwitchToDefault", () => SwitchToDefaultBranch(folders, settings.CodeDirectory)), defaultName));
+            commands.Add(WithSuffix(LodeActions.Command("gitUpdateFromDefault", () => UpdateFromDefault(folders, settings.CodeDirectory)), defaultName));
         }
 
         // Another branch is picked of one repository's, so these are for one repository only.
@@ -102,6 +115,21 @@ static class CodeMenu
             LodeActions.Command("updateNugetsAndBuild", () => UpdateNugetsAndBuild(folders))
         ]);
         return commands;
+    }
+
+    // The command, its name and its name nested under Git both ending with the suffix.
+    static QuickMenu.Command WithSuffix(QuickMenu.Command command, string suffix)
+    {
+        if (suffix.Length == 0)
+        {
+            return command;
+        }
+
+        return command with
+        {
+            Text = command.Text + suffix,
+            NestedText = command.NestedText + suffix
+        };
     }
 
     // What origin has now, for every repository, without changing any branch: the Git column's
@@ -344,6 +372,314 @@ static class CodeMenu
         _ = RunOnBranch($"Git switch to {target.Name}", repo, cancel => GitBranches.Switch(repo, current, target, leave, cancel));
     }
 
+    /// <summary>
+    /// What Switch branch knows of a repository as it asks: its branches, and its state, for
+    /// the branch checked out and what is uncommitted. A state that couldn't be read is null.
+    /// </summary>
+    internal sealed record SwitchRead(string Repo, GitBranches.Listing Listing, GitState? State);
+
+    /// <summary>
+    /// A repository Switch branch switches, and the branch of its own it switches to: a local
+    /// one, or one only on a remote, which gets a local branch tracking it.
+    /// </summary>
+    internal sealed record SwitchTarget(SwitchRead Read, GitBranches.Branch Branch);
+
+    // Reads each repository afresh, off the UI thread, then asks which branch, from those of
+    // every one, saying which would switch, then whether to leave what is uncommitted or bring
+    // it, where anything is. A repository on it already stays as it is.
+    static async void SwitchBranches(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    {
+        var reads = await Task.Run(
+            () => CodeCommands.InParallel(
+                CodeCommands.FindRepos(folders, codeFolder),
+                ReadForSwitch));
+        if (reads.Count == 0)
+        {
+            NoRepos("Git switch branch", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
+        if (reads is [{ Listing.Error: { } error }])
+        {
+            MessageBox.Show(owner, $"Couldn't read the branches:\n{error}", "Switch branch", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var title = "Switch branch";
+        if (reads.Count == 1)
+        {
+            title = $"Switch branch in {Path.GetFileName(reads[0].Repo)}";
+        }
+
+        var choices = SwitchChoices(reads);
+        if (choices.Count == 0)
+        {
+            var none = "There is no other branch to switch to.";
+            if (reads.Count > 1)
+            {
+                none = $"No other branch is in every one of the {Repositories(reads.Count)}.";
+            }
+
+            MessageBox.Show(owner, none, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var form = new SwitchBranchForm(
+            title,
+            SwitchHeading(reads),
+            choices,
+            name => SwitchPreview(reads, name).Text);
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
+            form.Branch is not { } picked)
+        {
+            return;
+        }
+
+        var targets = SwitchTargets(reads, picked);
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        var local = GitBranches.LocalName(targets[0].Branch);
+        var withChanges = targets
+            .Where(_ => _.Read.State is { Branch: not null, Changes: > 0 })
+            .ToList();
+        var leave = false;
+        if (withChanges.Count > 0)
+        {
+            bool? answer;
+            if (reads.Count == 1)
+            {
+                answer = AskLeaveChanges(owner, withChanges[0].Read.State!.Branch!, local);
+            }
+            else
+            {
+                answer = AskLeaveChangesIn(owner, withChanges.Count, local);
+            }
+
+            if (answer is not { } leaveChanges)
+            {
+                return;
+            }
+
+            leave = leaveChanges;
+        }
+
+        var byRepo = targets.ToDictionary(_ => _.Read.Repo);
+        var repos = targets
+            .Select(_ => _.Read.Repo)
+            .ToList();
+        _ = ActionLog.Run(
+            $"Git switch to {local}",
+            folders,
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.ForEach(
+                    repos,
+                    progress,
+                    cancel,
+                    repo =>
+                    {
+                        var target = byRepo[repo];
+                        return GitBranches.Switch(repo, target.Read.State?.Branch, target.Branch, leave, cancel);
+                    });
+                GitCache.MarkStale(repos);
+                return CodeCommands.GitOutcome(results);
+            });
+    }
+
+    // Above the branches: what is switched, "ElectorateReportingApi from develop to:" say.
+    internal static string SwitchHeading(IReadOnlyList<SwitchRead> reads)
+    {
+        if (reads is [{ Listing.Current: { } current } read])
+        {
+            return $"Switch {Path.GetFileName(read.Repo)} from {current} to:";
+        }
+
+        if (reads.Count == 1)
+        {
+            return $"Switch {Path.GetFileName(reads[0].Repo)} to:";
+        }
+
+        return $"Switch {Repositories(reads.Count)} to:";
+    }
+
+    internal static SwitchRead ReadForSwitch(string repo) =>
+        new(repo, GitBranches.Read(repo, Cancel.None), GitState.FromGit(repo, Cancel.None));
+
+    /// <summary>
+    /// The branches to pick from: those every repository has, by the name each is checked out
+    /// as, feature for origin/feature, the one with the most recent commit first. Not one every
+    /// repository is on already, as nothing would switch.
+    /// </summary>
+    internal static List<GitBranches.Branch> SwitchChoices(IReadOnlyList<SwitchRead> reads) =>
+        reads
+            .SelectMany(_ => AllBranches(_.Listing)
+                .DistinctBy(GitBranches.LocalName)
+                .Select(branch => (repo: _.Repo, branch)))
+            .GroupBy(_ => GitBranches.LocalName(_.branch), StringComparer.Ordinal)
+            .Where(_ => _.Count() == reads.Count)
+            .Select(_ => new GitBranches.Branch(_.Key, false, _.Max(entry => entry.branch.Committed), false))
+            .Where(_ => SwitchTargets(reads, _.Name).Count > 0)
+            .OrderByDescending(_ => _.Committed)
+            .ThenBy(_ => _.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    static IEnumerable<GitBranches.Branch> AllBranches(GitBranches.Listing listing)
+    {
+        if (listing.Default != null)
+        {
+            yield return listing.Default;
+        }
+
+        foreach (var branch in listing.Recent.Concat(listing.Other))
+        {
+            yield return branch;
+        }
+    }
+
+    /// <summary>
+    /// The repositories that would switch to <paramref name="picked"/>, each with its branch of
+    /// that name: one of the name itself, local before remote, otherwise one only on a remote
+    /// checked out as that name, origin's before another's. Not those on it already, or without it.
+    /// </summary>
+    internal static List<SwitchTarget> SwitchTargets(IReadOnlyList<SwitchRead> reads, string picked) =>
+        reads
+            .Select(_ => (read: _, branch: BranchFor(_, picked)))
+            .Where(_ => _.branch != null &&
+                        _.read.Listing.Current != GitBranches.LocalName(_.branch))
+            .Select(_ => new SwitchTarget(_.read, _.branch!))
+            .ToList();
+
+    static GitBranches.Branch? BranchFor(SwitchRead read, string picked)
+    {
+        var all = AllBranches(read.Listing).ToList();
+        var named = all
+            .Where(_ => _.Name == picked)
+            .OrderBy(_ => _.Remote)
+            .FirstOrDefault();
+        if (named != null)
+        {
+            return named;
+        }
+
+        return all
+            .Where(_ => _.Remote &&
+                        GitBranches.LocalName(_) == picked)
+            .OrderBy(_ => !_.Name.StartsWith("origin/", StringComparison.Ordinal))
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// What Switch branch would do with <paramref name="picked"/>: which repositories switch to
+    /// it, which are on it already, and which have changes, that it asks
+    /// about. It can go where any would switch.
+    /// </summary>
+    internal static GitMerging.Preview SwitchPreview(IReadOnlyList<SwitchRead> reads, string picked)
+    {
+        var targets = SwitchTargets(reads, picked);
+        var local = picked;
+        if (targets.Count > 0)
+        {
+            local = GitBranches.LocalName(targets[0].Branch);
+        }
+
+        if (reads.Count == 1)
+        {
+            if (targets is not [var target])
+            {
+                return new($"{Path.GetFileName(reads[0].Repo)} is on {local} already.", false);
+            }
+
+            var lines = new List<string>();
+            if (target.Read.State?.Branch is { } current)
+            {
+                lines.Add($"Switch {Path.GetFileName(target.Read.Repo)} from {current} to {local}.");
+            }
+            else
+            {
+                lines.Add($"Switch {Path.GetFileName(target.Read.Repo)} to {local}.");
+            }
+
+            if (target.Branch.Remote)
+            {
+                lines.Add($"A local {local} is made, tracking {target.Branch.Name}.");
+            }
+
+            if (target.Read.State is { Changes: > 0 } state)
+            {
+                lines.Add($"Its {GitState.CountOf(state.Changes, "uncommitted change")}: you'll be asked whether to leave them or bring them.");
+            }
+
+            return new(string.Join("\n\n", lines), true);
+        }
+
+        var switching = targets
+            .Select(_ => Path.GetFileName(_.Read.Repo))
+            .ToList();
+        var onIt = reads
+            .Where(_ => _.Listing.Current == local)
+            .Select(_ => Path.GetFileName(_.Repo))
+            .ToList();
+        var notes = new List<string>();
+        if (switching.Count == 0)
+        {
+            notes.Add($"Every repository is on {local} already.");
+        }
+        else
+        {
+            notes.Add($"Switch {switching.Count} of {Repositories(reads.Count)} to {local}: {NameList(switching)}.");
+        }
+
+        if (onIt.Count > 0)
+        {
+            notes.Add($"On it already: {NameList(onIt)}.");
+        }
+
+        var changed = targets
+            .Where(_ => _.Read.State is { Changes: > 0 })
+            .Select(_ => Path.GetFileName(_.Read.Repo))
+            .ToList();
+        if (changed.Count > 0)
+        {
+            notes.Add($"With uncommitted changes, which you'll be asked whether to leave or bring: {NameList(changed)}.");
+        }
+
+        return new(string.Join("\n\n", notes), switching.Count > 0);
+    }
+
+    static string Repositories(int count)
+    {
+        if (count == 1)
+        {
+            return "1 repository";
+        }
+
+        return $"{count:N0} repositories";
+    }
+
+    // "A, B and C", or the first eight and how many more.
+    static string NameList(IReadOnlyList<string> names)
+    {
+        if (names.Count > 8)
+        {
+            return $"{string.Join(", ", names.Take(8))} and {names.Count - 8} more";
+        }
+
+        if (names.Count == 1)
+        {
+            return names[0];
+        }
+
+        return $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}";
+    }
+
     // In the Actions panel, off the UI thread. The repository is marked stale before the entry
     // ends, which has the windows read the states again: the watch may not have heard of the
     // change yet, and the state would still be fresh.
@@ -366,17 +702,48 @@ static class CodeMenu
     /// switched to: true to leave them, null when cancelled. Tests answer for the user.
     /// </summary>
     internal static Func<Control, string, string, bool?> AskLeaveChanges = (owner, current, target) =>
+        AskLeaveOrBring(
+            owner,
+            $"There are uncommitted changes on {current}",
+            new(
+                $"Leave my changes on {current}",
+                $"They are stashed, and put back when you switch to {current} again from the status bar."),
+            new(
+                $"Bring my changes to {target}",
+                "They come along. If git would have to overwrite any of them, nothing is switched."));
+
+    /// <summary>
+    /// Asks, for <paramref name="count"/> repositories with uncommitted changes, whether to leave
+    /// each one's on the branch it has checked out or bring them to <paramref name="target"/>:
+    /// true to leave them, null when cancelled. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, int, string, bool?> AskLeaveChangesIn = (owner, count, target) =>
+        AskLeaveOrBring(
+            owner,
+            $"{Repositories(count)} {Has(count)} uncommitted changes",
+            new(
+                "Leave my changes on their branches",
+                "They are stashed in each, and put back when you switch to its branch again from the status bar."),
+            new(
+                $"Bring my changes to {target}",
+                "They come along. Where git would have to overwrite any of them, that repository isn't switched."));
+
+    static string Has(int count)
     {
-        var leave = new TaskDialogCommandLinkButton(
-            $"Leave my changes on {current}",
-            $"They are stashed, and put back when you switch to {current} again from the status bar.");
-        var bring = new TaskDialogCommandLinkButton(
-            $"Bring my changes to {target}",
-            "They come along. If git would have to overwrite any of them, nothing is switched.");
+        if (count == 1)
+        {
+            return "has";
+        }
+
+        return "have";
+    }
+
+    static bool? AskLeaveOrBring(Control owner, string heading, TaskDialogCommandLinkButton leave, TaskDialogCommandLinkButton bring)
+    {
         var page = new TaskDialogPage
         {
             Caption = "Switch branch",
-            Heading = $"There are uncommitted changes on {current}",
+            Heading = heading,
             Text = "Where should they go?",
             Buttons =
             {
@@ -399,7 +766,7 @@ static class CodeMenu
         }
 
         return null;
-    };
+    }
 
     /// <summary>
     /// Asks for the name of a new branch, starting from <paramref name="name"/>, then makes it at

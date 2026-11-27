@@ -106,19 +106,17 @@ static class CodeCommands
     internal static bool OnDefaultBranch(string repo)
     {
         const string local = "ref: refs/heads/";
-        const string remote = "ref: " + originHead;
         try
         {
-            if (GitDirectory(repo) is not { } git)
+            if (GitDirectory(repo) is not { } git ||
+                RecordedDefaultName(repo) is not { } defaultBranch)
             {
                 return false;
             }
 
             var head = File.ReadAllText(Path.Combine(git, "HEAD")).Trim();
-            var origin = File.ReadAllText(Path.Combine(CommonDirectory(git), "refs", "remotes", "origin", "HEAD")).Trim();
             return head.StartsWith(local, StringComparison.Ordinal) &&
-                   origin.StartsWith(remote, StringComparison.Ordinal) &&
-                   head[local.Length..] == origin[remote.Length..];
+                   head[local.Length..] == defaultBranch;
         }
         catch (Exception exception)
             when (
@@ -128,6 +126,40 @@ static class CodeCommands
                     ArgumentException)
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// The branch origin's HEAD names, main say, read from the file clone recorded it in, without
+    /// running git, for the menus to name it. Null where that can't be told: no origin, or a
+    /// repository made by init and given an origin later, which has none recorded.
+    /// </summary>
+    internal static string? RecordedDefaultName(string repo)
+    {
+        const string remote = "ref: " + originHead;
+        try
+        {
+            if (GitDirectory(repo) is not { } git)
+            {
+                return null;
+            }
+
+            var origin = File.ReadAllText(Path.Combine(CommonDirectory(git), "refs", "remotes", "origin", "HEAD")).Trim();
+            if (!origin.StartsWith(remote, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return origin[remote.Length..];
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
+        {
+            return null;
         }
     }
 
