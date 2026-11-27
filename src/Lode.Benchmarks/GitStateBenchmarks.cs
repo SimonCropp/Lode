@@ -1,9 +1,8 @@
 /// <summary>
 /// Reading repositories' state by running git status, as Lode's git actions run git, against
-/// reading it in process with LibGit2Sharp, and against each repository read by whichever of the
-/// two is faster for how many files it has. One is what the status bar waits on for the folder
-/// open; All is the Git column filled for a folder of repositories, six read at a time, as Lode
-/// reads them.
+/// reading it in process from the files git keeps, as Lode reads it. One is what the status bar
+/// waits on for the folder open; All is the Git column filled for a folder of repositories, six
+/// read at a time, as Lode reads them.
 /// Small is 30 repositories of 50 files, some changed, some ahead and some behind; Large is one
 /// of 20,000 files, a few changed. They are made once, in the temp folder, and kept for the next
 /// run. Code is every repository in the folder the LodeBenchmarkCode environment variable names,
@@ -15,8 +14,7 @@ public class GitStateBenchmarks
 {
     const string codeVariable = "LodeBenchmarkCode";
 
-    // Faster is LibGit2Sharp for a repository of few files, and git for one of many.
-    [Params("git", "LibGit2Sharp", "Faster")]
+    [Params("git", "InProcess")]
     public string Reader { get; set; } = "git";
 
     [ParamsSource(nameof(Sets))]
@@ -41,13 +39,9 @@ public class GitStateBenchmarks
     public void Setup()
     {
         repos = Repos(Set);
-        if (Reader == "LibGit2Sharp")
+        if (Reader == "InProcess")
         {
-            read = LibGitState.FromLibGit2;
-        }
-        else if (Reader == "Faster")
-        {
-            read = LibGitState.FromFaster;
+            read = InProcessState.FromFiles;
         }
 
         Agree(repos, strict: Set != "Code");
@@ -182,13 +176,13 @@ public class GitStateBenchmarks
         foreach (var repo in repos)
         {
             var git = GitState.FromGit(repo, Cancel.None);
-            var libGit = LibGitState.FromLibGit2(repo, Cancel.None);
-            if (git == libGit)
+            var inProcess = InProcessState.FromFiles(repo, Cancel.None);
+            if (git == inProcess)
             {
                 continue;
             }
 
-            var message = $"{repo}: git {git}, LibGit2Sharp {libGit}";
+            var message = $"{repo}: git {git}, in process {inProcess}";
             if (strict)
             {
                 throw new(message);

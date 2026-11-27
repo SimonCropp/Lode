@@ -1,6 +1,6 @@
 /// <summary>
 /// Reading a repository's history for the History pane by running git, as Lode does, against
-/// reading it in process with LibGit2Sharp.
+/// reading it in process from the files git keeps.
 /// Page is the first 200 commits, newest first, as History lists them when it opens. LaterPage is
 /// 200 after the first 2,000, as the list scrolled far down reads. Unpushed is the commits not
 /// pushed yet, which get an arrow. Start is all History waits on as it opens: the first page,
@@ -19,7 +19,7 @@ public class HistoryBenchmarks
     const string repoVariable = "LodeBenchmarkRepo";
     const int laterSkip = 2_000;
 
-    [Params("git", "LibGit2Sharp")]
+    [Params("git", "InProcess")]
     public string Reader { get; set; } = "git";
 
     [ParamsSource(nameof(Sets))]
@@ -36,13 +36,11 @@ public class HistoryBenchmarks
     }
 
     string repo = "";
-    bool libGit;
 
     [GlobalSetup]
     public void Setup()
     {
         repo = Repo(Set);
-        libGit = Reader == "LibGit2Sharp";
         Agree(repo, strict: Set != "Real");
     }
 
@@ -76,9 +74,9 @@ public class HistoryBenchmarks
 
     List<GitCommit>? ReadCommits(int skip)
     {
-        if (libGit)
+        if (Reader == "InProcess")
         {
-            return LibGitHistory.Read(repo, skip, GitHistory.Page, Cancel.None);
+            return InProcessHistory.Read(repo, skip, GitHistory.Page, Cancel.None);
         }
 
         return GitHistory.Read(repo, skip, GitHistory.Page, Cancel.None);
@@ -86,9 +84,9 @@ public class HistoryBenchmarks
 
     HashSet<string>? ReadUnpushed()
     {
-        if (libGit)
+        if (Reader == "InProcess")
         {
-            return LibGitHistory.Unpushed(repo, Cancel.None);
+            return InProcessHistory.Unpushed(repo, Cancel.None);
         }
 
         return GitHistory.Unpushed(repo, Cancel.None);
@@ -96,9 +94,9 @@ public class HistoryBenchmarks
 
     List<Change>? ReadFiles(GitCommit commit)
     {
-        if (libGit)
+        if (Reader == "InProcess")
         {
-            return LibGitHistory.FilesOf(repo, commit, Cancel.None);
+            return InProcessHistory.FilesOf(repo, commit, Cancel.None);
         }
 
         return GitHistory.FilesOf(repo, commit, Cancel.None);
@@ -314,14 +312,14 @@ public class HistoryBenchmarks
         history.Append($"data {Encoding.UTF8.GetByteCount(text)}\n{text}\n");
 
     // Timing two readers is only fair if they read the same. A real repository may hold what
-    // they read differently, a .mailmap renaming an author say, which git log follows and
-    // LibGit2Sharp doesn't, so there that is said rather than thrown.
+    // they read differently, a commit message in another encoding say, which git log turns into
+    // UTF-8 and isn't read in process, so there that is said rather than thrown.
     static void Agree(string repo, bool strict)
     {
         var differences = new List<string>();
-        Compare(differences, "Page", Lines(GitHistory.Read(repo, 0, GitHistory.Page, Cancel.None)), Lines(LibGitHistory.Read(repo, 0, GitHistory.Page, Cancel.None)));
-        Compare(differences, "LaterPage", Lines(GitHistory.Read(repo, laterSkip, GitHistory.Page, Cancel.None)), Lines(LibGitHistory.Read(repo, laterSkip, GitHistory.Page, Cancel.None)));
-        Compare(differences, "Unpushed", GitHistory.Unpushed(repo, Cancel.None).Order().ToList(), LibGitHistory.Unpushed(repo, Cancel.None)?.Order().ToList());
+        Compare(differences, "Page", Lines(GitHistory.Read(repo, 0, GitHistory.Page, Cancel.None)), Lines(InProcessHistory.Read(repo, 0, GitHistory.Page, Cancel.None)));
+        Compare(differences, "LaterPage", Lines(GitHistory.Read(repo, laterSkip, GitHistory.Page, Cancel.None)), Lines(InProcessHistory.Read(repo, laterSkip, GitHistory.Page, Cancel.None)));
+        Compare(differences, "Unpushed", GitHistory.Unpushed(repo, Cancel.None).Order().ToList(), InProcessHistory.Unpushed(repo, Cancel.None)?.Order().ToList());
 
         var gitCommits = GitHistory.Read(repo, 0, GitHistory.Page, Cancel.None);
         if (gitCommits is not [var newest, ..])
@@ -329,12 +327,12 @@ public class HistoryBenchmarks
             throw new($"{repo}: git read no commits");
         }
 
-        Compare(differences, "Files", Lines(GitHistory.FilesOf(repo, newest, Cancel.None)), Lines(LibGitHistory.FilesOf(repo, newest, Cancel.None)));
+        Compare(differences, "Files", Lines(GitHistory.FilesOf(repo, newest, Cancel.None)), Lines(InProcessHistory.FilesOf(repo, newest, Cancel.None)));
 
         // A merge's, against its first parent.
         if (gitCommits.FirstOrDefault(_ => _.Parents.Count > 1) is { } merge)
         {
-            Compare(differences, "Merge's files", Lines(GitHistory.FilesOf(repo, merge, Cancel.None)), Lines(LibGitHistory.FilesOf(repo, merge, Cancel.None)));
+            Compare(differences, "Merge's files", Lines(GitHistory.FilesOf(repo, merge, Cancel.None)), Lines(InProcessHistory.FilesOf(repo, merge, Cancel.None)));
         }
 
         if (differences.Count == 0)
@@ -352,29 +350,29 @@ public class HistoryBenchmarks
     }
 
     // The first line the two differ at, and how many each read.
-    static void Compare(List<string> differences, string what, List<string>? git, List<string>? libGit)
+    static void Compare(List<string> differences, string what, List<string>? git, List<string>? inProcess)
     {
         if (git == null ||
-            libGit == null)
+            inProcess == null)
         {
-            if (git != libGit)
+            if (git != inProcess)
             {
-                differences.Add($"{what}: git read {git?.Count.ToString() ?? "nothing"}, LibGit2Sharp {libGit?.Count.ToString() ?? "nothing"}");
+                differences.Add($"{what}: git read {git?.Count.ToString() ?? "nothing"}, in process {inProcess?.Count.ToString() ?? "nothing"}");
             }
 
             return;
         }
 
-        for (var index = 0; index < Math.Max(git.Count, libGit.Count); index++)
+        for (var index = 0; index < Math.Max(git.Count, inProcess.Count); index++)
         {
             var gitLine = git.ElementAtOrDefault(index);
-            var libGitLine = libGit.ElementAtOrDefault(index);
-            if (gitLine == libGitLine)
+            var inProcessLine = inProcess.ElementAtOrDefault(index);
+            if (gitLine == inProcessLine)
             {
                 continue;
             }
 
-            differences.Add($"{what} differs at {index} of {git.Count} and {libGit.Count}: git '{gitLine}', LibGit2Sharp '{libGitLine}'");
+            differences.Add($"{what} differs at {index} of {git.Count} and {inProcess.Count}: git '{gitLine}', in process '{inProcessLine}'");
             return;
         }
     }

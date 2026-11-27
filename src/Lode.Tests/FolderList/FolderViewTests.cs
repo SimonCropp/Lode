@@ -3381,7 +3381,7 @@ public class FolderViewTests
         }
     }
 
-    // Which folders git ignores, as libgit2 has it: one ignored, and the one it is in, which
+    // Which folders git ignores, as read in process: one ignored, and the one it is in, which
     // isn't. Nothing below the first ignored is asked of, as all of it is ignored too. One
     // ignored that holds a file git tracks all the same isn't given as ignored: a change to
     // that file is a change.
@@ -3398,7 +3398,7 @@ public class FolderViewTests
         var debug = Path.Combine(repo, "src", "Project", "obj", "Debug");
         Directory.CreateDirectory(debug);
 
-        var found = LibGitState.Ignored(repo, [debug, Path.Combine(repo, "bin")]);
+        var found = InProcessState.Ignored(repo, [debug, Path.Combine(repo, "bin")]);
 
         var said = found
             .OrderBy(_ => _.Key, StringComparer.Ordinal)

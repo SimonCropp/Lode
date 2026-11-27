@@ -82,17 +82,17 @@ sealed class HistoryPane : UserControl
     /// <summary>
     /// Reads a page of commits, in process where it can. Tests answer for git.
     /// </summary>
-    internal static Func<string, int, int, Cancel, List<GitCommit>?> ReadCommits { get; set; } = LibGitHistory.ReadFaster;
+    internal static Func<string, int, int, Cancel, List<GitCommit>?> ReadCommits { get; set; } = InProcessHistory.ReadFaster;
 
     /// <summary>
     /// Reads the files a commit changed, in process where it can. Tests answer for git.
     /// </summary>
-    internal static Func<string, GitCommit, Cancel, List<Change>?> ReadFiles { get; set; } = LibGitHistory.FilesOfFaster;
+    internal static Func<string, GitCommit, Cancel, List<Change>?> ReadFiles { get; set; } = InProcessHistory.FilesOfFaster;
 
     /// <summary>
     /// Reads which commits aren't pushed, in process where it can. Tests answer for git.
     /// </summary>
-    internal static Func<string, Cancel, HashSet<string>> ReadUnpushed { get; set; } = LibGitHistory.UnpushedFaster;
+    internal static Func<string, Cancel, HashSet<string>> ReadUnpushed { get; set; } = InProcessHistory.UnpushedFaster;
 
     /// <summary>
     /// How long ago is measured from. Tests put in a clock of their own.

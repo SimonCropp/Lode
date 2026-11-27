@@ -7,7 +7,8 @@ The short version: each repository is read once and cached. One watch on the cod
 | Part | File | What it does |
 | --- | --- | --- |
 | `GitState` | [src/Lode/Git/GitState.cs](../src/Lode/Git/GitState.cs) | What is known of a repository, and the reader that runs `git status` |
-| `LibGitState` | [src/Lode/Git/LibGitState.cs](../src/Lode/Git/LibGitState.cs) | The in-process reader, and which folders git ignores |
+| `InProcessState` | [src/Lode/Git/InProcessState.cs](../src/Lode/Git/InProcessState.cs) | The in-process reader, and which folders git ignores |
+| `GitFiles` | [src/Lode/GitFiles](../src/Lode/GitFiles) | Reading the files git keeps: config, refs, objects, the commit graph, the index, ignore and attribute rules |
 | `GitCache` | [src/Lode/Git/GitCache.cs](../src/Lode/Git/GitCache.cs) | The cache, the watch on the code folder, and when a repository is read again |
 | `FolderView` | [src/Lode/FolderList/FolderView.cs](../src/Lode/FolderList/FolderView.cs) | Decides which repositories it shows, reads them, and draws the result |
 
@@ -20,7 +21,7 @@ flowchart TD
     Watch -->|path| Filter["GitCache.ChangedAt<br/>drops what doesn't matter"]
     Filter -->|repository is stale| Timer["Settle timer"]
     Timer -->|Stale event| Views["FolderViews that show<br/>one of the repositories"]
-    Views -->|"GitCache.Read"| Reader["LibGit2Sharp or git status"]
+    Views -->|"GitCache.Read"| Reader["In process, or git status"]
     Reader -->|"GitCache.Store"| Cache[("Cached GitState<br/>per repository")]
     Cache -->|"GitCache.TryGet"| Views
 ```
@@ -60,36 +61,51 @@ For each repository wanted, `ShowCached` asks `GitCache.TryGet`. Whatever is cac
 
 ## Reading a repository
 
-There are two readers, and `LibGitState.FromFaster` picks between them by the number of entries in the repository's index, read from the 12-byte header of `.git/index`.
+`InProcessState.FromFaster` reads a repository in Lode's own process, from the files git keeps, with the code in [src/Lode/GitFiles](../src/Lode/GitFiles). Where the repository has what isn't read there as git would read it, it runs `git status` instead.
 
 ```mermaid
 flowchart TD
-    Start(["FromFaster(repo)"]) --> Count["Read the entry count<br/>from the index header"]
-    Count --> Small{"Fewer than<br/>2,000 files?"}
-    Small -->|yes| Lib["LibGit2Sharp, in process"]
-    Small -->|no| Git["git status --porcelain=v2<br/>--branch -z"]
-    Lib --> Ok{"Read?"}
+    Start(["FromFaster(repo)"]) --> Read["Read in process,<br/>from the files git keeps"]
+    Read --> Ok{"Read?"}
     Ok -->|yes| Done(["GitState"])
-    Ok -->|"no: a format libgit2<br/>doesn't know, say"| Git
+    Ok -->|"no: a filter only git<br/>can run, say"| Git["git status --porcelain=v2<br/>--branch -z"]
     Git --> Done
 ```
 
-- **LibGit2Sharp** saves starting a process, which matters most for small repositories.
-- **`git status`** looks over the files on several threads, so it wins on large ones. It runs with `--no-optional-locks`, so it never takes the index lock, and a commit made at the same time doesn't fail on it. `--ignore-submodules=dirty` leaves out what is uncommitted inside a submodule.
+In process, the reader:
 
-For a code folder of 91 repositories, picking per repository took 341 ms, against 590 ms for git alone and 534 ms for LibGit2Sharp alone.
+- compares HEAD's tree with the index a folder at a time, passing over each folder whose tree the index's cache tree says is HEAD's, which is usually all of them
+- lists each folder the index has files in, once. The listing gives each file's size and times without opening it, as git for Windows' fscache does. A repository of 500 folders or more has them listed on four threads.
+- hashes only a file whose times aren't those staged, its line endings converted as `core.autocrlf` and `.gitattributes` say, as git would stage it
+- lists what isn't tracked, as `status.showUntrackedFiles` says, by `.gitignore`, `info/exclude` and `core.excludesFile`
+- finds staged renames as git does, by how alike the files are
+- walks commits by the commit graph, where git has written one, for ahead, behind, how far behind upstream a fork is, and the tag
+
+It leaves to git a repository with:
+
+- a file to hash that a filter, LFS's say, `ident`, or a `working-tree-encoding` other than UTF-8 applies to
+- a split or sparse index
+- SHA-256 objects, reftable refs, or a partial clone's objects left on the server
+- objects replaced, or grafts
+- `core.fileMode` on, or `status.renames` set to copies
+- a config include on a condition other than `gitdir:` and `onbranch:`
+- a folder it isn't allowed to list, or a file deleted between being listed and being hashed
+
+`git status` runs with `--no-optional-locks`, so it never takes the index lock, and a commit made at the same time doesn't fail on it. `--ignore-submodules=dirty` leaves out what is uncommitted inside a submodule; in process, a submodule's commit is all that is compared too.
+
+For a code folder of 187 repositories, read six at a time, reading all of them took 310 ms in process, against 2,678 ms for git and 1,155 ms for LibGit2Sharp, which Lode read them with before. A repository of 20,000 files took 10 ms, against 53 ms for git and 27 ms for LibGit2Sharp. See `GitStateBenchmarks`.
 
 A fork is a repository with an `upstream` remote, as GitHub Desktop sets one up. Its upstream's default branch is `refs/remotes/upstream/HEAD`, which GitHub Desktop records, as do Lode's Clone and Sync fork. How far behind that the commit checked out is, is counted by each reader its own way:
 
-- **LibGit2Sharp**: `CalculateHistoryDivergence` between HEAD and upstream's HEAD, in the same pass.
+- **In process**: the commits upstream's HEAD has that HEAD hasn't, found walking back from both by date until what is left is in both, in the same pass.
 - **`git status`**: only in a fork, as the config says, one more run, `git rev-list --count HEAD..refs/remotes/upstream/HEAD`. Other repositories pay nothing for it.
 
 Without `upstream/HEAD` recorded, an upstream added by hand say, it counts as 0.
 
 The most recent tag is found by each reader its own way too:
 
-- **LibGit2Sharp**: `Describe` with the tags strategy, in the same pass. Under a millisecond for most repositories, but it slows with a long history and many tags: efcore's 19,000 commits and 282 tags take 170 ms, and 57,000 commits and 13,000 tags take 500 ms.
-- **`git status`**: one more run, `git describe --tags --abbrev=0`, some 55 ms however long the history, most of it git starting. A repository with a history that long usually has more than 2,000 files too, so is read by git.
+- **In process**: as `git describe --tags` finds it, walking back by date until ten tags are found, in the same pass. With the commit graph a walk of the whole history takes a few milliseconds even for a long one.
+- **`git status`**: one more run, `git describe --tags --abbrev=0`, some 55 ms however long the history, most of it git starting.
 
 A repository with no tags, or none its commit reaches, has no tag. A new tag, or one fetched, changes `.git/refs/tags` or `packed-refs`, which makes the repository stale like any other change.
 
@@ -161,7 +177,7 @@ What a state is made of still counts: `index`, `HEAD`, `refs/`, `packed-refs`, `
 A build writes thousands of files to `bin` and `obj`, none of which change the state. So:
 
 1. The first change in a folder still counts. It also queues the folder to be looked at.
-2. On a background task, `LibGitState.Ignored` asks the repository whether git ignores the folder, or a folder it is in.
+2. On a background task, `InProcessState.Ignored` asks the repository whether git ignores the folder, or a folder it is in.
 3. If it does, later changes in it are dropped without the repository going stale.
 
 A folder that is ignored but holds a file git tracks all the same, one added by force say, is not treated as ignored, as a change to that file is a real change.

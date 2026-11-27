@@ -1,6 +1,6 @@
 /// <summary>
-/// A repository's state as git status reports it, and as LibGit2Sharp reads it, which must agree,
-/// run for real against throwaway repositories in the temp folder.
+/// A repository's state as git status reports it, and as it is read in process from the files
+/// git keeps, which must agree, run for real against throwaway repositories in the temp folder.
 /// </summary>
 public class GitStateTests
 {
@@ -384,9 +384,11 @@ public class GitStateTests
         await Assert.That(state.Files).IsEquivalentTo([new GitFile("Two Words", GitChange.Untracked)]);
     }
 
-    // As many as git lists, read from the index's header, for a worktree from its own.
+    // A worktree's staged changes are in its own index, in the folder its .git file names, and
+    // the repository's are in its: neither has the other's. One with nothing staged yet has no
+    // index at all.
     [Test]
-    public async Task CountsTheIndexsFiles()
+    public async Task ReadsEachWorktreesOwnIndex()
     {
         using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
@@ -394,14 +396,18 @@ public class GitStateTests
         Commit(repo, "third.txt");
         var tree = code.At("Tree");
         CodeCommandsTests.Scratch.Git(repo, "worktree", "add", "-b", "feature", tree);
-        CodeCommandsTests.Scratch.Git(tree, "rm", "third.txt");
+        CodeCommandsTests.Scratch.Git(tree, "rm", "-q", "third.txt");
         var empty = code.At("Empty");
         Directory.CreateDirectory(empty);
-        CodeCommandsTests.Scratch.Git(empty, "init");
+        CodeCommandsTests.Scratch.Git(empty, "init", "-q");
 
-        await Assert.That(LibGitState.IndexEntries(repo)).IsEqualTo(3);
-        await Assert.That(LibGitState.IndexEntries(tree)).IsEqualTo(2);
-        await Assert.That(LibGitState.IndexEntries(empty)).IsEqualTo(0);
+        var main = await Read(repo);
+        var worktree = await Read(tree);
+        var none = await Read(empty);
+
+        await Assert.That(main.Files).IsEmpty();
+        await Assert.That(worktree.Files).IsEquivalentTo([new GitFile("third.txt", GitChange.Deleted)]);
+        await Assert.That(none.Files).IsEmpty();
     }
 
     // The most recent tag the commit has in its history, annotated or not: its own, else the
@@ -448,7 +454,7 @@ public class GitStateTests
         var git = GitState.FromGit(repo, Cancel.None);
 
         await Assert.That(git?.Tag).IsEqualTo("v1.0");
-        await Assert.That(LibGitState.FromFaster(repo, Cancel.None)).IsEqualTo(git);
+        await Assert.That(InProcessState.FromFaster(repo, Cancel.None)).IsEqualTo(git);
     }
 
     [Test]
@@ -459,16 +465,333 @@ public class GitStateTests
         Directory.CreateDirectory(folder);
 
         await Assert.That(GitState.FromGit(folder, Cancel.None)).IsNull();
-        await Assert.That(LibGitState.FromLibGit2(folder, Cancel.None)).IsNull();
+        await Assert.That(InProcessState.FromFiles(folder, Cancel.None)).IsNull();
+    }
+
+    // A file whose times aren't those staged, touched say, is hashed as git would stage it to see
+    // whether it changed: CRLFs in it made LFs where core.autocrlf or text says, but not where
+    // what is staged has CRLFs already, nor in a binary file. One changed to the same size is a
+    // change.
+    [Test]
+    public async Task HashesAFileWhoseTimesChanged()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "config", "core.autocrlf", "true");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitattributes"), "*.bin binary\n*.text text\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "lines.txt"), "one\r\ntwo\r\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "lines.text"), "one\r\ntwo\r\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "data.bin"), "a\r\nb\0\r\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "same.txt"), "abc\n");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Lines");
+        await File.WriteAllTextAsync(Path.Combine(repo, "staged.txt"), "one\r\ntwo\r\n");
+        CodeCommandsTests.Scratch.Git(repo, "-c", "core.autocrlf=false", "add", "staged.txt");
+        CodeCommandsTests.Scratch.Git(repo, "-c", "core.autocrlf=false", "commit", "-m", "CRLF staged");
+        await File.WriteAllTextAsync(Path.Combine(repo, "same.txt"), "abd\n");
+
+        var earlier = DateTime.UtcNow.AddMinutes(-5);
+        foreach (var file in new[] { "lines.txt", "lines.text", "data.bin", "staged.txt", "same.txt", "tracked.txt" })
+        {
+            File.SetLastWriteTimeUtc(Path.Combine(repo, file), earlier);
+        }
+
+        var state = await Read(repo);
+
+        await Assert.That(state.Files).IsEquivalentTo([new GitFile("same.txt", GitChange.Modified)]);
+    }
+
+    // Read from packs as git gc leaves them, deltas and all, its commit graph walked for ahead,
+    // behind and the tag, and from an index of version 4, each path only what differs from the
+    // one before.
+    [Test]
+    public async Task ReadsAPackedRepository()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        Directory.CreateDirectory(Path.Combine(repo, "src", "deep"));
+        for (var index = 0; index < 5; index++)
+        {
+            var lines = string.Join('\n', Enumerable.Range(0, 200).Select(_ => $"line {_} of {index}"));
+            await File.WriteAllTextAsync(Path.Combine(repo, "src", "deep", "file.txt"), lines);
+            await File.WriteAllTextAsync(Path.Combine(repo, "src", $"other{index}.txt"), lines);
+            CodeCommandsTests.Scratch.Git(repo, "add", ".");
+            CodeCommandsTests.Scratch.Git(repo, "commit", "-m", $"Commit {index}");
+            if (index == 1)
+            {
+                CodeCommandsTests.Scratch.Git(repo, "tag", "-a", "v1.0", "-m", "One");
+            }
+        }
+
+        CodeCommandsTests.Scratch.Git(repo, "push");
+        CodeCommandsTests.Scratch.Git(repo, "reset", "--hard", "HEAD~1");
+        Commit(repo, "ahead.txt");
+        CodeCommandsTests.Scratch.Git(repo, "gc", "--quiet");
+        CodeCommandsTests.Scratch.Git(repo, "update-index", "--index-version", "4");
+        await File.WriteAllTextAsync(Path.Combine(repo, "src", "other0.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "src", "deep", "new.txt"), "new");
+        CodeCommandsTests.Scratch.Git(repo, "rm", "--cached", "-q", "src/other2.txt");
+
+        var state = await Read(repo);
+
+        await Assert.That(state with { Files = [] }).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { Upstream = true, Tag = "v1.0" });
+        await Assert.That(state.Files)
+            .IsEquivalentTo<IReadOnlyList<GitFile>, GitFile>(
+                [
+                    new("src/deep/new.txt", GitChange.Untracked),
+                    new("src/other0.txt", GitChange.Modified),
+                    new("src/other2.txt", GitChange.Deleted),
+                    new("src/other2.txt", GitChange.Untracked)
+                ],
+                CollectionOrdering.Matching);
+    }
+
+    // As git ignores: a pattern undone by a !, a .gitignore in a folder for what is in it, one
+    // anchored to the top, ** across folders, info/exclude. A folder of nothing but what is
+    // ignored isn't listed; one with a repository in it is, and so is a repository itself.
+    [Test]
+    public async Task IgnoresAsGitDoes()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "*.log\n!keep.log\nbuild/\n/top.txt\ndocs/**/*.tmp\n[Oo]bj/\n");
+        Directory.CreateDirectory(Path.Combine(repo, "sub"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "sub", ".gitignore"), "*.cache\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "sub", "kept.txt"), "kept");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Ignores");
+        await File.AppendAllTextAsync(Path.Combine(repo, ".git", "info", "exclude"), "excluded.txt\n");
+
+        foreach (var file in new[]
+                 {
+                     "a.log", "keep.log", "build/out.dll", "top.txt", "sub/top.txt", "sub/y.cache", "sub/z.txt",
+                     "only/a.log", "only/build/x.txt", "only/.keep.log", "docs/a/b/c.tmp", "docs/d.txt", "excluded.txt",
+                     "Obj/x.txt", "sub/obj/y.txt", "holds/inner/keep.log"
+                 })
+        {
+            var path = Path.Combine(repo, file);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllTextAsync(path, file);
+        }
+
+        var nested = Path.Combine(repo, "nested");
+        Directory.CreateDirectory(nested);
+        CodeCommandsTests.Scratch.Git(nested, "init", "-q");
+        Directory.CreateDirectory(Path.Combine(repo, "empty"));
+        var inside = Path.Combine(repo, "outer", "repo");
+        Directory.CreateDirectory(inside);
+        CodeCommandsTests.Scratch.Git(inside, "init", "-q");
+
+        var state = await Read(repo);
+
+        await Assert.That(state.Files.Select(_ => $"{_.Change} {_.Path}"))
+            .IsEquivalentTo(
+                [
+                    "Untracked docs",
+                    "Untracked holds",
+                    "Untracked keep.log",
+                    "Untracked nested",
+                    "Untracked outer",
+                    "Untracked sub/top.txt",
+                    "Untracked sub/z.txt"
+                ],
+                CollectionOrdering.Matching);
+    }
+
+    // As status.showUntrackedFiles says: all lists each file, no lists none.
+    [Test]
+    public async Task ListsUntrackedFilesAsConfigured()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        Directory.CreateDirectory(Path.Combine(repo, "New", "Deeper"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "New", "one.txt"), "one");
+        await File.WriteAllTextAsync(Path.Combine(repo, "New", "Deeper", "two.txt"), "two");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+
+        CodeCommandsTests.Scratch.Git(repo, "config", "status.showUntrackedFiles", "all");
+        var all = await Read(repo);
+        CodeCommandsTests.Scratch.Git(repo, "config", "status.showUntrackedFiles", "no");
+        var none = await Read(repo);
+
+        await Assert.That(all.Files.Select(_ => _.Path)).IsEquivalentTo(["New/Deeper/two.txt", "New/one.txt", "tracked.txt"], CollectionOrdering.Matching);
+        await Assert.That(none.Files.Select(_ => _.Path)).IsEquivalentTo(["tracked.txt"]);
+    }
+
+    // Staged as a rename with lines changed, a file is still one renamed, git finding the two
+    // alike enough; changed beyond that, it is one deleted and one added. A rename of a folder
+    // renames each file in it.
+    [Test]
+    public async Task ReadsRenamesWithChanges()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        var lines = Enumerable.Range(0, 40).Select(_ => $"Line number {_}").ToList();
+        await File.WriteAllTextAsync(Path.Combine(repo, "alike.txt"), string.Join('\n', lines));
+        await File.WriteAllTextAsync(Path.Combine(repo, "unlike.txt"), string.Join('\n', lines));
+        Directory.CreateDirectory(Path.Combine(repo, "folder"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "folder", "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(repo, "folder", "b.txt"), "b");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Lines");
+        Directory.CreateDirectory(Path.Combine(repo, "moved"));
+        CodeCommandsTests.Scratch.Git(repo, "mv", "alike.txt", "moved/alike2.txt");
+        CodeCommandsTests.Scratch.Git(repo, "mv", "unlike.txt", "unlike2.txt");
+        CodeCommandsTests.Scratch.Git(repo, "mv", "folder", "renamed");
+        lines[3] = "Line three changed";
+        await File.WriteAllTextAsync(Path.Combine(repo, "moved", "alike2.txt"), string.Join('\n', lines));
+        await File.WriteAllTextAsync(Path.Combine(repo, "unlike2.txt"), "Nothing like it");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+
+        var state = await Read(repo);
+
+        await Assert.That(state.Files.Select(_ => $"{_.Change} {_.Path}"))
+            .IsEquivalentTo(
+                [
+                    "Renamed moved/alike2.txt",
+                    "Renamed renamed/a.txt",
+                    "Renamed renamed/b.txt",
+                    "Deleted unlike.txt",
+                    "Added unlike2.txt"
+                ],
+                CollectionOrdering.Matching);
+    }
+
+    // Of tags on one commit, git describe takes an annotated one over light ones, and the first
+    // by name of light ones; going back, the nearest of the first ten it finds.
+    [Test]
+    public async Task ReadsTheTagDescribeChooses()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "b-light");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "a-light");
+        var light = (await Read(repo)).Tag;
+
+        CodeCommandsTests.Scratch.Git(repo, "tag", "-a", "z-annotated", "-m", "Annotated");
+        var annotated = (await Read(repo)).Tag;
+
+        for (var index = 0; index < 12; index++)
+        {
+            Commit(repo, $"file{index}.txt");
+            if (index % 2 == 0)
+            {
+                CodeCommandsTests.Scratch.Git(repo, "tag", $"t{index}");
+            }
+        }
+
+        Commit(repo, "last.txt");
+        CodeCommandsTests.Scratch.Git(repo, "pack-refs", "--all");
+        var back = (await Read(repo)).Tag;
+
+        await Assert.That(light).IsEqualTo("a-light");
+        await Assert.That(annotated).IsEqualTo("z-annotated");
+        await Assert.That(back).IsEqualTo("t10");
+    }
+
+    // A submodule is changed only where it has another commit checked out: what is uncommitted
+    // inside one is its own, as --ignore-submodules=dirty has it.
+    [Test]
+    public async Task ReadsASubmoduleAtAnotherCommit()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        code.CreateRepo("Library");
+        CodeCommandsTests.Scratch.Git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", code.Origin("Library"), "library");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Library");
+        var library = Path.Combine(repo, "library");
+        await File.WriteAllTextAsync(Path.Combine(library, "tracked.txt"), "dirty");
+        var dirty = await Read(repo);
+
+        // Read itself, its git folder in the repository's, naming it as its working tree.
+        var inside = await Read(library);
+        await Assert.That(inside.Files).IsEquivalentTo([new GitFile("tracked.txt", GitChange.Modified)]);
+
+        CodeCommandsTests.Scratch.Git(library, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-am", "Moved on");
+        var moved = await Read(repo);
+
+        await Assert.That(dirty.Files).IsEmpty();
+        await Assert.That(moved.Files).IsEquivalentTo([new GitFile("library", GitChange.Modified)]);
+    }
+
+    // A file deleted where a folder now is, a folder of files deleted, and one staged as deleted
+    // that is in the working tree still.
+    [Test]
+    public async Task ReadsWhatWasAFile()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        Directory.CreateDirectory(Path.Combine(repo, "gone"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "gone", "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(repo, "gone", "b.txt"), "b");
+        Commit(repo, "kept.txt");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Files");
+        Directory.Delete(Path.Combine(repo, "gone"), true);
+        File.Delete(Path.Combine(repo, "tracked.txt"));
+        Directory.CreateDirectory(Path.Combine(repo, "tracked.txt"));
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt", "inside.txt"), "inside");
+        CodeCommandsTests.Scratch.Git(repo, "rm", "--cached", "-q", "kept.txt");
+
+        var state = await Read(repo);
+        CodeCommandsTests.Scratch.Git(repo, "config", "status.showUntrackedFiles", "all");
+        var all = await Read(repo);
+
+        await Assert.That(state.Files.Select(_ => $"{_.Change} {_.Path}"))
+            .IsEquivalentTo(
+                [
+                    "Deleted gone/a.txt",
+                    "Deleted gone/b.txt",
+                    "Deleted kept.txt",
+                    "Untracked kept.txt",
+                    "Deleted tracked.txt"
+                ],
+                CollectionOrdering.Matching);
+        await Assert.That(all.Files.Select(_ => _.Path)).Contains("tracked.txt/inside.txt");
+    }
+
+    // A file only meant to be added, by git add -N, is one not yet staged.
+    [Test]
+    public async Task ReadsAFileIntendedToBeAdded()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "intended.txt"), "intended");
+        CodeCommandsTests.Scratch.Git(repo, "add", "-N", "intended.txt");
+
+        var state = await Read(repo);
+
+        await Assert.That(state.Files).IsEquivalentTo([new GitFile("intended.txt", GitChange.Modified)]);
+    }
+
+    // A file git can only hash by running a filter, LFS's say, is left to git once its times
+    // aren't those staged.
+    [Test]
+    public async Task LeavesAFilterToGit()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "config", "filter.upper.clean", "cat");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitattributes"), "*.up filter=upper\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "file.up"), "content");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Filtered");
+        var clean = InProcessState.FromFiles(repo, Cancel.None);
+
+        File.SetLastWriteTimeUtc(Path.Combine(repo, "file.up"), DateTime.UtcNow.AddMinutes(-5));
+
+        await Assert.That(clean).IsEqualTo(GitState.FromGit(repo, Cancel.None));
+        await Assert.That(InProcessState.FromFiles(repo, Cancel.None)).IsNull();
+        await Assert.That(InProcessState.FromFaster(repo, Cancel.None)).IsEqualTo(GitState.FromGit(repo, Cancel.None));
     }
 
     // By both readers, which must agree.
     static async Task<GitState> Read(string repo)
     {
         var git = GitState.FromGit(repo, Cancel.None);
-        var libGit = LibGitState.FromLibGit2(repo, Cancel.None);
+        var inProcess = InProcessState.FromFiles(repo, Cancel.None);
         await Assert.That(git).IsNotNull();
-        await Assert.That(libGit).IsEqualTo(git);
+        await Assert.That(inProcess).IsEqualTo(git);
         return git!;
     }
 

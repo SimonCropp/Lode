@@ -476,7 +476,7 @@ static class GitCache
     /// <summary>
     /// Asks which of a repository's folders git ignores. Tests swap it.
     /// </summary>
-    internal static Func<string, IReadOnlyCollection<string>, Dictionary<string, bool>> AskIgnored = LibGitState.Ignored;
+    internal static Func<string, IReadOnlyCollection<string>, Dictionary<string, bool>> AskIgnored = InProcessState.Ignored;
 
     /// <summary>
     /// Whether git ignores <paramref name="folder"/>, so that changes in it are dropped. Null

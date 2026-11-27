@@ -13,7 +13,10 @@
     <PackageTags>file-manager;explorer;windows;winforms;dotnet-tool</PackageTags>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <RollForward>LatestMajor</RollForward>
-    <!-- LibraryImport generates unsafe marshalling code. -->
+    <!--
+    LibraryImport generates unsafe marshalling code, and git's packs and commit graphs are read
+    through pointers into maps of them.
+    -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Long path support. Copied into the apphost, and the tool shim dotnet tool install makes. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -24,18 +27,5 @@
     <InternalsVisibleTo Include="Lode.Benchmarks" />
     <PackageReference Include="ProjectDefaults" PrivateAssets="all" />
     <PackageReference Include="PackageUpdateLib" />
-    <PackageReference Include="LibGit2Sharp" />
   </ItemGroup>
-  <!--
-  Lode runs only on Windows, so libgit2 built for Linux and macOS, nine of the twelve builds
-  LibGit2Sharp brings, is left out of the output, the tool's deps.json and its package: 16 MB of
-  the 22 MB.
-  -->
-  <Target Name="WindowsLibGit2Only" AfterTargets="ResolvePackageAssets">
-    <ItemGroup>
-      <RuntimeTargetsCopyLocalItems
-        Remove="@(RuntimeTargetsCopyLocalItems)"
-        Condition="'%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'LibGit2Sharp.NativeBinaries' and !$([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier)').StartsWith('win-'))" />
-    </ItemGroup>
-  </Target>
 </Project>

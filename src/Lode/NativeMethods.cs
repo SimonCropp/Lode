@@ -345,6 +345,29 @@ static partial class NativeMethods
     [LibraryImport("kernel32.dll")]
     public static partial IntPtr GetStdHandle(int handle);
 
+    // A file opened as itself, not what a link of it points at, to ask only its attributes.
+    public const uint FileReadAttributes = 0x0080;
+    public const uint FileShareAll = 0x0007;
+    public const uint OpenExisting = 3;
+    public const uint FlagOpenReparsePoint = 0x0020_0000;
+    public const uint FlagBackupSemantics = 0x0200_0000;
+    public const int FileAttributeTagInfo = 9;
+    public const uint ReparseTagSymlink = 0xA000_000C;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FileAttributeTag
+    {
+        public uint FileAttributes;
+        public uint ReparseTag;
+    }
+
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, out FileAttributeTag info, uint size);
+
     // Asking a service how it is needs no administrator permission, only these rights.
     public const uint ServiceManagerConnect = 0x0001;
     public const uint ServiceQueryStatus = 0x0004;

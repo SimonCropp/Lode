@@ -16,8 +16,8 @@ sealed record GitCommit(
 /// <summary>
 /// Reads a repository's history for the History pane, with the git the user has installed: the
 /// commits of the branch checked out, newest first, a page at a time, and the files each changed.
-/// History reads them with <see cref="LibGitHistory"/> first, in process, and with this where
-/// that can't, or far down a long history, where git is quicker.
+/// History reads them with <see cref="InProcessHistory"/> first, in process, and with this where
+/// that can't.
 /// </summary>
 static class GitHistory
 {

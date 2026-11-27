@@ -145,10 +145,10 @@ sealed class FolderView : UserControl
     bool foundPending;
 
     /// <summary>
-    /// Reads a repository's state, for the status bar and the Git column: with LibGit2Sharp, or
-    /// git for a repository of many files, whichever is faster (GitStateBenchmarks).
+    /// Reads a repository's state, for the status bar and the Git column: in process, from the
+    /// files git keeps, or by git where that can't (GitStateBenchmarks).
     /// </summary>
-    internal static GitState.Reader ReadGit = LibGitState.FromFaster;
+    internal static GitState.Reader ReadGit = InProcessState.FromFaster;
 
     // The folders listed that are repositories, found as the folder is read, and the repository
     // the folder is in, for the status bar. Only in the code folder, where the git actions are
