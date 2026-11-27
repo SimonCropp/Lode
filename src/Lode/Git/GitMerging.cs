@@ -467,7 +467,7 @@ static class GitMerging
             }
 
             // Stopped by conflicts, it is left part way, for them to be settled in Changes.
-            var conflicted = CodeCommands.Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
+            var conflicted = CodeCommands.ConflictedFiles(repo);
             if (conflicted.Length > 0)
             {
                 var count = conflicted.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
@@ -504,7 +504,7 @@ static class GitMerging
     // nothing was changed but what it staged, as nothing tracked was changed before it.
     static CodeCommands.RepoResult Unsquash(string repo, string branch, CodeCommands.RepoResult failed)
     {
-        var conflicted = CodeCommands.Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
+        var conflicted = CodeCommands.ConflictedFiles(repo);
         var reset = CodeCommands.Git(repo, "reset", "--merge");
         var undone = "It was undone: merge it yourself, settling the conflicts.";
         if (!reset.Succeeded)
@@ -569,7 +569,7 @@ static class GitMerging
             };
         }
 
-        var conflicted = CodeCommands.Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
+        var conflicted = CodeCommands.ConflictedFiles(repo);
         var abort = CodeCommands.Git(repo, "rebase", "--abort");
         var undone = "The rebase was undone: rebase it yourself, settling the conflicts.";
         if (!abort.Succeeded)

@@ -1011,9 +1011,8 @@ public class GitPanesTests
             ShowInTaskbar = false,
             StartPosition = FormStartPosition.Manual,
             Location = new(-20000, -20000),
-            // WinForms keeps a window no wider than the screen unless it has a maximum size of
-            // its own, and CI's screen is 1024 wide, where the panes would have no room beside
-            // the list.
+            // Wider than CI's screen, which Windows lets a window be only with a maximum size of
+            // its own: WindowSize has it so.
             MaximumSize = new(10_000, 10_000)
         };
         Resize(form, width);
@@ -1023,7 +1022,7 @@ public class GitPanesTests
     }
 
     static void Resize(Form form, int width) =>
-        form.Size = new(form.LogicalToDeviceUnits(width), form.LogicalToDeviceUnits(700));
+        WindowSize.Set(form, form.LogicalToDeviceUnits(width), form.LogicalToDeviceUnits(700));
 
     static void Press(QuietForm form, Keys keys) =>
         form.Press(keys);

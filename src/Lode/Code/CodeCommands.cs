@@ -437,7 +437,7 @@ static class CodeCommands
     // conflict.
     static string Undo(string repo, string unfinished, Func<string> doing, string? notDone, string yourself)
     {
-        var conflicted = Git(repo, "diff", "--name-only", "--diff-filter=U").Output;
+        var conflicted = ConflictedFiles(repo);
         var abort = Git(repo, unfinished, "--abort");
         var undone = $"The {unfinished} was undone: {yourself}, settling the conflicts.";
         if (!abort.Succeeded)
@@ -1299,6 +1299,14 @@ static class CodeCommands
             return new(false, "", exception.Message);
         }
     }
+
+    /// <summary>
+    /// The files in conflict, one a line, as diff --name-only lists them: its output alone, as
+    /// what it warns of on its error stream, a file whose line endings git would change say, is
+    /// no file in conflict.
+    /// </summary>
+    internal static string ConflictedFiles(string repo) =>
+        GitOutput(repo, Cancel.None, ["diff", "--name-only", "--diff-filter=U"]).Output.Trim();
 
     /// <summary>
     /// Runs git writing what it outputs, byte for byte, to <paramref name="path"/>: a file as a

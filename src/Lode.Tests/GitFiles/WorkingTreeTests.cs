@@ -74,11 +74,16 @@ public class WorkingTreeTests
     // Staged otherwise than by add: a file HEAD has, taken out and only meant to be added back;
     // one staged as a link; a submodule staged where a file is, and a file where a submodule is;
     // a repository where a file is staged; a file git is told is unchanged, or not to look at.
+    // The link, checked out as a file, is a change of type only where git makes links, which
+    // git init turns off where Windows makes none, and leaves on for an administrator, as CI's.
     [Test]
-    public async Task ReadsWhatIsStagedOddlyAsGitDoes()
+    [Arguments("false")]
+    [Arguments("true")]
+    public async Task ReadsWhatIsStagedOddlyAsGitDoes(string symlinks)
     {
         using var scratch = new CodeCommandsTests.Scratch();
         var repo = scratch.CreateRepo("Repo");
+        Git(repo, "config", "core.symlinks", symlinks);
         foreach (var file in new[] { "intended.txt", "link.txt", "sub.txt", "nested.txt", "committed.txt", "assumed.txt", "skipped.txt", "assumedgone.txt", "skippedgone.txt" })
         {
             await File.WriteAllTextAsync(Path.Combine(repo, file), file);
@@ -178,6 +183,8 @@ public class WorkingTreeTests
     {
         using var scratch = new CodeCommandsTests.Scratch();
         var repo = scratch.CreateRepo("Repo");
+        // Past MAX_PATH, which git for Windows only goes beyond told to.
+        Git(repo, "config", "core.longpaths", "true");
         var name = new string('é', 200);
         Directory.CreateDirectory(Path.Combine(repo, name));
         await File.WriteAllTextAsync(Path.Combine(repo, name, name + ".txt"), "long");
@@ -241,6 +248,8 @@ public class WorkingTreeTests
     {
         using var scratch = new CodeCommandsTests.Scratch();
         var repo = scratch.CreateRepo("Repo");
+        // Past MAX_PATH, which git for Windows only goes beyond told to.
+        Git(repo, "config", "core.longpaths", "true");
         var deep = string.Join('/', Enumerable.Range(0, 12).Select(_ => $"folder{_:00}longname"));
         foreach (var start in new[] { "a", "b" })
         {

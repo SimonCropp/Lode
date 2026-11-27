@@ -205,7 +205,7 @@ public class GitChangesTests
     }
 
     // The branch checked out's file whole, or the branch merged in's, and Mark as resolved
-    // taking a file as it is.
+    // taking a file as it is. Each is checked out with the line endings git gives it.
     [Test]
     public async Task UsesEitherSidesFile()
     {
@@ -218,10 +218,11 @@ public class GitChangesTests
         var afterTheirs = await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"));
         var gone = read.Files.Single(_ => _.Path == "gone.txt");
         var ours = GitChanges.UseSide(repo, gone, ours: true, Cancel.None);
+        var afterOurs = await File.ReadAllTextAsync(Path.Combine(repo, "gone.txt"));
 
         await Assert.That((theirs.Succeeded, ours.Succeeded)).IsEqualTo((true, true));
-        await Assert.That(afterTheirs).IsEqualTo("feature one\na\nb\nc\nd\nfeature two\n");
-        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "gone.txt"))).IsEqualTo("main changed it\n");
+        await Assert.That(afterTheirs.ReplaceLineEndings("\n")).IsEqualTo("feature one\na\nb\nc\nd\nfeature two\n");
+        await Assert.That(afterOurs.ReplaceLineEndings("\n")).IsEqualTo("main changed it\n");
         await Assert.That(GitChanges.Read(repo, Cancel.None)!.Conflicted).IsFalse();
         await Assert.That(Git(repo, "diff", "--name-only", "--diff-filter=U")).IsEqualTo("");
     }
@@ -253,10 +254,13 @@ public class GitChangesTests
     }
 
     // Main and feature both changed tracked.txt, twice apart, and feature deleted gone.txt that
-    // main changed, then feature merged into main, left part way.
+    // main changed, then feature merged into main, left part way. Line endings are changed as
+    // git for Windows has them unless told otherwise, as CI's does, so git warns of gone.txt's,
+    // which is no file in conflict.
     static async Task<string> Conflicting(Scratch scratch)
     {
         var repo = scratch.CreateRepo("Repo");
+        Git(repo, "config", "core.autocrlf", "true");
         await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "one\na\nb\nc\nd\ntwo\n");
         await File.WriteAllTextAsync(Path.Combine(repo, "gone.txt"), "gone\n");
         Git(repo, "add", ".");

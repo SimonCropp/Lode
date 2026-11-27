@@ -462,6 +462,8 @@ public class ObjectStoreTests
         var repo = scratch.At("Octopus");
         Directory.CreateDirectory(repo);
         CodeCommandsTests.Scratch.Git(repo, "init", "-q", "--initial-branch=main");
+        // For the commits made after the graph is written; those imported name their own.
+        CodeCommandsTests.Scratch.Identify(repo);
         var stream = new StringBuilder();
         void Commit(string branch, int mark, long time, string file, string? from, IEnumerable<int> merges)
         {

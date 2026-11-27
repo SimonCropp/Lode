@@ -1687,17 +1687,9 @@ public class WindowsTests
 
     // Once a window is open, WinForms keeps it no wider than the screen, maximum size or not, so
     // on CI's 1024 wide screen setting Width back to what Show opened it at gives one too narrow
-    // for every button. Windows itself goes by the maximum size, so is asked directly.
-    static void Widen(Form form, int width)
-    {
-        const uint noMove = 0x2;
-        const uint noZOrder = 0x4;
-        const uint noActivate = 0x10;
-        SetWindowPos(form.Handle, IntPtr.Zero, 0, 0, width, form.Height, noMove | noZOrder | noActivate);
-    }
-
-    [DllImport("user32.dll")]
-    static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+    // for every button.
+    static void Widen(Form form, int width) =>
+        WindowSize.Set(form, width, form.Height);
 
     // Without the Claude desktop app or a coding agent, neither See more nor the palette offers
     // Open in Claude or Coding agent, even greyed out.

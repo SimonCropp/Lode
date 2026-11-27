@@ -1631,7 +1631,9 @@ public class CodeCommandsTests
             return clone;
         }
 
-        static void Identify(string repo)
+        // Who commits, in the repository itself, as CI's git has nobody set, and can't make
+        // anybody up from a machine with no domain.
+        public static void Identify(string repo)
         {
             Git(repo, "config", "user.name", "Test");
             Git(repo, "config", "user.email", "test@example.com");

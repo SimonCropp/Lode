@@ -17,6 +17,7 @@ sealed class WorkingTree
     readonly Untracked untracked;
     readonly bool checkStat;
     readonly bool trustCtime;
+    readonly bool symlinks;
     readonly Dictionary<string, Status> statuses = new(StringComparer.Ordinal);
     readonly List<Renames.File> deleted = [];
     readonly List<Renames.File> added = [];
@@ -55,6 +56,10 @@ sealed class WorkingTree
         ignore = new(repository, workTree);
         checkStat = !string.Equals(config.Get("core.checkstat"), "minimal", StringComparison.OrdinalIgnoreCase);
         trustCtime = config.GetBool("core.trustctime", true);
+        // On unless it is set off, as git has it: git for Windows' installer sets it off unless
+        // told to make links, and git init does where Windows makes it none, so where Windows
+        // does, for an administrator say, a repository can have it on.
+        symlinks = config.GetBool("core.symlinks", true);
         untracked = (config.Get("status.showuntrackedfiles") ?? "normal").ToLowerInvariant() switch
         {
             "no" or "false" or "off" or "0" => Untracked.No,
@@ -755,6 +760,25 @@ sealed class WorkingTree
         {
             StatusOf(index.PathText(start)).Unstaged = 'T';
             return;
+        }
+
+        // A file where a link is staged is a change of type where git makes links, as git's
+        // ce_match_stat_basic has it; where it doesn't, the link is checked out as a file
+        // holding the name it points at, and compared by that, as any file is.
+        if (type == Trees.Link &&
+            !file.IsLink &&
+            symlinks)
+        {
+            StatusOf(index.PathText(start)).Unstaged = 'T';
+            return;
+        }
+
+        // A link where one is staged: git compares the name it holds, its length and then what
+        // it says, where the listing gives a link no length, and reading it would read what it
+        // points at, so it is left to git.
+        if (file.IsLink)
+        {
+            throw new GitFilesException("A link staged as one needs git");
         }
 
         var (mtimeSeconds, mtimeNanoseconds) = IndexFile.UnixTime(new(file.WriteTicks, DateTimeKind.Utc));
