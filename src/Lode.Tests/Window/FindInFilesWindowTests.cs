@@ -271,6 +271,100 @@ public class FindInFilesWindowTests
         await Assert.That(form.CanReopenClosedTab).IsFalse();
     }
 
+    // A folder picked in the tree while Find Results shows, which has no folder: the folder's tab
+    // that showed before it goes there, and shows in its place, rather than the tab beside it.
+    // Find Results stays open behind.
+    [Test]
+    public async Task TheTreeGoesToTheTabFindResultsWasOpenedOver()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, new(), fixture.At("Docs"), fixture.At("Archive"));
+        var docs = form.Views.ElementAt(0);
+        var archive = form.Views.ElementAt(1);
+        await Pick(form, docs);
+        await Find(form);
+
+        PickRootInTree(form);
+        await Pump.Loaded(docs);
+
+        await Assert.That(form.ActiveView).IsEqualTo(docs);
+        await Assert.That(docs.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(archive.CurrentPath).IsEqualTo(fixture.At("Archive"));
+        await Assert.That(form.FindHost.ResultsView).IsNotNull();
+    }
+
+    // With the tab Find Results was opened over closed since, the tree goes to the folder's tab
+    // looked at last, not the one beside Find Results; and with no folder's tab left, to a new
+    // one.
+    [Test]
+    public async Task TheTreeFromFindResultsOnceTheTabBeforeItHasClosed()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, new(), fixture.At("Docs"), fixture.At("Archive"), fixture.At("Source"));
+        var docs = form.Views.ElementAt(0);
+        var archive = form.Views.ElementAt(1);
+        var source = form.Views.ElementAt(2);
+        await Pick(form, archive);
+        await Pick(form, docs);
+        await Find(form);
+        form.CloseTab((TabPage)docs.Parent!);
+
+        PickRootInTree(form);
+        await Pump.Loaded(archive);
+
+        await Assert.That(form.ActiveView).IsEqualTo(archive);
+        await Assert.That(archive.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(source.CurrentPath).IsEqualTo(fixture.At("Source"));
+
+        form.CloseTab((TabPage)archive.Parent!);
+        form.CloseTab((TabPage)source.Parent!);
+        await Assert.That(form.FindHost.ResultsShowing).IsTrue();
+
+        PickRootInTree(form);
+        var made = form.ActiveView!;
+        await Pump.Loaded(made);
+
+        await Assert.That(made.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(form.Views.Count()).IsEqualTo(1);
+        await Assert.That(form.FindHost.ResultsView).IsNotNull();
+    }
+
+    // New on the tree's right-click menu while Find Results shows: made in the folder's tab that
+    // showed before it.
+    [Test]
+    public async Task NewInTheTreeFromFindResults()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, new(), fixture.Root);
+        var view = form.ActiveView!;
+        await Find(form);
+
+        await form.CreateFromTree(fixture.At("Docs"), null);
+        await Pump.Loaded(view);
+
+        await Assert.That(form.ActiveView).IsEqualTo(view);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Docs"));
+        await Assert.That(Directory.Exists(fixture.At("Docs", "New folder"))).IsTrue();
+    }
+
+    static Task Pick(MainForm form, FolderView view)
+    {
+        form.Tabs.SelectedTab = (TabPage)view.Parent!;
+        return Pump.Loaded(view);
+    }
+
+    static async Task Find(MainForm form)
+    {
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
+    }
+
+    // Pinned's one folder, the fixture's, clicked.
+    static void PickRootInTree(MainForm form) =>
+        form.Tree.SelectByUser(form.Tree.Nodes[0].Nodes[0]);
+
     static async Task<MainForm> Show(Fixture fixture, Settings settings, params string[] paths)
     {
         var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");

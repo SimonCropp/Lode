@@ -197,20 +197,18 @@ class MainForm : Form
     }
 
     /// <summary>
-    /// New on the tree's right-click menu: the folder opens in the tab, and once it has been
-    /// read, New does there what it does in the list, making the item with its name ready to
-    /// edit. Nothing is made if the tab ends up somewhere else, as when the folder has gone.
+    /// New on the tree's right-click menu: the folder opens in the tab the tree goes to, see
+    /// <see cref="GoFromTree"/>, and once it has been read, New does there what it does in the
+    /// list, making the item with its name ready to edit. Nothing is made if the tab ends up
+    /// somewhere else, as when the folder has gone.
     /// </summary>
     internal async Task CreateFromTree(string folder, ShellNew.Entry? type)
     {
-        if (ActiveView is not { } view)
+        var view = ActiveView;
+        if (view == null ||
+            !Locations.Same(view.CurrentPath, folder))
         {
-            return;
-        }
-
-        if (!Locations.Same(view.CurrentPath, folder))
-        {
-            view.Navigate(folder);
+            view = GoFromTree(folder);
             await view.Loading;
         }
 
@@ -229,10 +227,47 @@ class MainForm : Form
         view.CreateFile(type);
     }
 
+    // The folder's tab last showing, which the tree goes to while the Diff tab or Find Results
+    // shows.
+    FolderView? lastView;
+
+    /// <summary>
+    /// A folder picked in the tree: the tab showing goes there. The Diff tab and Find Results
+    /// have no folder, so with one of them showing, the folder's tab that showed before it goes
+    /// there instead, and shows in its place, the other staying open behind: or, that tab closed
+    /// since, the folder's tab looked at last, or, with none left, a new tab.
+    /// </summary>
+    FolderView GoFromTree(string path)
+    {
+        if (ActiveView is { } active)
+        {
+            active.Navigate(path);
+            return active;
+        }
+
+        var view = lastView;
+        if (view == null ||
+            !Views.Contains(view))
+        {
+            view = Views.MaxBy(_ => _.LastShown);
+        }
+
+        if (view == null)
+        {
+            return AddTab(path, true);
+        }
+
+        // Before the tab shows, as AddTab does, so it reads only the folder picked, and the tree
+        // isn't walked back to the folder it had on the way.
+        view.Navigate(path);
+        Tabs.SelectedTab = (TabPage)view.Parent!;
+        return view;
+    }
+
     Control BuildContent()
     {
         Tree.Dock = DockStyle.Fill;
-        Tree.PathSelected += _ => ActiveView?.Navigate(_);
+        Tree.PathSelected += _ => GoFromTree(_);
         Tree.NewTabRequested += _ => AddTab(_, false);
         Tree.NewWindowRequested += NewWindow;
         Tree.NewRequested += (folder, type) => _ = CreateFromTree(folder, type);
@@ -970,6 +1005,7 @@ class MainForm : Form
     {
         if (ActiveView is { } synced)
         {
+            lastView = synced;
             Synced?.Invoke(synced);
         }
 

@@ -50,6 +50,34 @@ public class DiffPlacementTests
         await Assert.That(host.TabShowing).IsTrue();
     }
 
+    // A folder picked in the tree while the Diff tab shows, which has no folder: the folder's tab
+    // that showed before it goes there, and shows in its place, the Diff tab staying open behind.
+    [Test]
+    public async Task TheTreeGoesToTheTabTheDiffShowedOver()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Tab;
+        using var form = await Show(fixture.Root, settings);
+        var view = form.ActiveView!;
+        view.Navigate(fixture.At("Docs"));
+        await PaneStubs.Settled(form);
+        await Pick(form, 0);
+        var host = form.DiffHost;
+        await Pump.Until(() => host.TabShowing);
+
+        // Pinned's one folder, the repository's.
+        form.Tree.SelectByUser(form.Tree.Nodes[0].Nodes[0]);
+        await Pump.Loaded(view);
+
+        await Assert.That(form.ActiveView).IsEqualTo(view);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+        await Assert.That(host.Page).IsNotNull();
+        await Assert.That(host.TabView!.Source!.File).IsEqualTo(PaneStubs.Files[0]);
+    }
+
     // The status bar stays as the folder's tab had it while the Diff tab shows, and acts on what
     // it says there too: the commits ahead clicked offer to push them.
     [Test]
