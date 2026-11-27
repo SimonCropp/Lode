@@ -261,7 +261,7 @@ public class ObjectStoreTests
                 break;
             case "mixed":
                 CodeCommandsTests.Scratch.Git(repo, "gc", "-q");
-                File.AppendAllText(Path.Combine(repo, "big.txt"), "\nAfter the pack");
+                await File.AppendAllTextAsync(Path.Combine(repo, "big.txt"), "\nAfter the pack");
                 CodeCommandsTests.Scratch.Git(repo, "commit", "-q", "-am", "Loose");
                 break;
             case "ids":

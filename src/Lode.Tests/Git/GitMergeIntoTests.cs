@@ -81,7 +81,7 @@ public class GitMergeIntoTests
     public async Task AConflictChangesNothing()
     {
         using var code = new CodeCommandsTests.Scratch();
-        var repo = await OnDevelop(code, "shared.txt", "develop");
+        var repo = await OnDevelop(code, "shared.txt");
         Git(repo, "switch", "main");
         await Commit(repo, "shared.txt", "main");
         var main = Git(repo, "rev-parse", "main");

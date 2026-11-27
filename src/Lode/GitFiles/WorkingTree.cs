@@ -180,9 +180,9 @@ sealed class WorkingTree
     {
         var prefixLength = prefix.Length;
         if (tree is { } id &&
-            cache is { EntryCount: >= 0 } known &&
-            known.Id == id &&
-            known.EntryCount == end - start)
+            cache is { EntryCount: >= 0 } &&
+            cache.Id == id &&
+            cache.EntryCount == end - start)
         {
             return;
         }
