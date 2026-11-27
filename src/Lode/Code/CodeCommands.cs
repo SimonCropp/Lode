@@ -596,28 +596,14 @@ static class CodeCommands
 
     /// <summary>
     /// Tags <paramref name="commit"/> with <paramref name="name"/>, as History tags the commit
-    /// picked, then pushes the tag to origin. One that has a tag of that name already fails, and
-    /// keeps the tag it has.
+    /// picked, then pushes the tag to origin. A commit on the branch checked out that origin's
+    /// hasn't got goes with the tag, with those before it, as the commit checked out goes with
+    /// its tag, so the commit tagged is on origin's branch, not only under the tag. One on
+    /// origin's already, or on another branch, or detached, has the tag go alone. One that has a
+    /// tag of that name already fails, and keeps the tag it has.
     /// </summary>
     public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, string commit, IProgress<string>? progress = null, Cancel cancel = default) =>
-        ForEach(
-            repos,
-            progress,
-            cancel,
-            repo =>
-            {
-                var tag = GitToItsEnd(repo, cancel, "tag", name, commit);
-                if (!tag.Succeeded)
-                {
-                    return tag;
-                }
-
-                var push = Git(repo, cancel, network: true, "push", "origin", $"refs/tags/{name}");
-                return push with
-                {
-                    Output = $"Tagged {name}\n{push.Output}".Trim()
-                };
-            });
+        ForEach(repos, progress, cancel, repo => TagAndPush(repo, name, commit, null, cancel));
 
     /// <summary>
     /// Tags the commit each repository has checked out with <paramref name="name"/>, and pushes
@@ -631,24 +617,26 @@ static class CodeCommands
     /// One that has a tag of that name already fails, and keeps the tag it has.
     /// </summary>
     public static Task<List<RepoResult>> Tag(IReadOnlyList<string> repos, string name, IProgress<string>? progress = null, Cancel cancel = default, string? commitMessage = null) =>
-        ForEach(repos, progress, cancel, repo => TagCheckedOut(repo, name, commitMessage, cancel));
+        ForEach(repos, progress, cancel, repo => TagAndPush(repo, name, "HEAD", commitMessage, cancel));
 
-    static RepoResult TagCheckedOut(string repo, string name, string? commitMessage, Cancel cancel)
+    // Tags commit, HEAD or the SHA History picked, and pushes the tag, with what of the branch
+    // checked out origin's hasn't got, up to the commit: see BranchToPushWithTag.
+    static RepoResult TagAndPush(string repo, string name, string commit, string? commitMessage, Cancel cancel)
     {
         var committed = "";
         if (commitMessage != null &&
             HasChanges(repo))
         {
-            var commit = CommitAll(repo, commitMessage, "nothing was committed, tagged or pushed", cancel);
-            if (!commit.Succeeded)
+            var commitResult = CommitAll(repo, commitMessage, "nothing was committed, tagged or pushed", cancel);
+            if (!commitResult.Succeeded)
             {
-                return commit;
+                return commitResult;
             }
 
-            committed = commit.Output;
+            committed = commitResult.Output;
         }
 
-        var (branchRef, newBranch, failed) = BranchToPushWithTag(repo);
+        var (branchRef, newBranch, failed, branch, _) = BranchToPushWithTag(repo, commit);
         if (failed != null)
         {
             return failed with
@@ -657,7 +645,7 @@ static class CodeCommands
             };
         }
 
-        var tag = GitToItsEnd(repo, cancel, "tag", name);
+        var tag = GitToItsEnd(repo, cancel, "tag", name, commit);
         if (!tag.Succeeded)
         {
             return tag with
@@ -687,6 +675,15 @@ static class CodeCommands
             };
         }
 
+        // --set-upstream tracks only a branch pushed by name, HEAD among them, not a SHA. Not
+        // cancellable: the branch is on origin now.
+        if (newBranch &&
+            commit != "HEAD")
+        {
+            GitToItsEnd(repo, Cancel.None, "config", $"branch.{branch}.remote", "origin");
+            GitToItsEnd(repo, Cancel.None, "config", $"branch.{branch}.merge", $"refs/heads/{branch}");
+        }
+
         return push with
         {
             Output = $"{committed}\nTagged {name}\n{push.Output}".Trim()
@@ -694,15 +691,18 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// What to push with a tag of the commit checked out, so origin's branch has the commit too:
-    /// HEAD to the branch on origin it tracks, where it is ahead of it, or to a branch of the
-    /// same name, for one tracking none, which is <paramref name="NewBranch"/>. Nothing, where
-    /// origin's has the commit already, or detached, or tracking another remote. Failed where it
-    /// has diverged from origin's, which would refuse the push.
+    /// What to push with a tag of <paramref name="commit"/>, so origin's branch has the commit
+    /// too: the commit to the branch on origin the branch checked out tracks, where origin's
+    /// hasn't got it, with <paramref name="Ahead"/> commits, it among them, that origin's hasn't
+    /// got; or to a branch of the same name, for one tracking none, which is
+    /// <paramref name="NewBranch"/>. Nothing, where origin's has the commit already, or detached,
+    /// or tracking another remote, or for a commit not on the branch checked out, as History
+    /// shows another branch's while comparing. Failed where it has diverged from origin's, which
+    /// would refuse the push. <paramref name="Branch"/> is the branch checked out, where one is.
     /// </summary>
-    internal readonly record struct WithTag(string? BranchRef, bool NewBranch, RepoResult? Failed);
+    internal readonly record struct WithTag(string? BranchRef, bool NewBranch, RepoResult? Failed, string? Branch = null, int Ahead = 0);
 
-    internal static WithTag BranchToPushWithTag(string repo)
+    internal static WithTag BranchToPushWithTag(string repo, string commit = "HEAD")
     {
         var symbolic = Git(repo, "symbolic-ref", "--quiet", "--short", "HEAD");
         if (!symbolic.Succeeded)
@@ -711,21 +711,27 @@ static class CodeCommands
         }
 
         var branch = symbolic.Output.Trim();
+        if (commit != "HEAD" &&
+            !Git(repo, "merge-base", "--is-ancestor", commit, "HEAD").Succeeded)
+        {
+            return new(null, false, null, branch);
+        }
+
         var remote = Git(repo, "config", "--get", $"branch.{branch}.remote");
         var merge = Git(repo, "config", "--get", $"branch.{branch}.merge");
         if (!remote.Succeeded ||
             !merge.Succeeded)
         {
-            return new($"HEAD:refs/heads/{branch}", true, null);
+            return new($"{commit}:refs/heads/{branch}", true, null, branch);
         }
 
         if (remote.Output.Trim() != "origin")
         {
-            return default;
+            return new(null, false, null, branch);
         }
 
         // "ahead<tab>behind", as of the last fetch.
-        var counts = Git(repo, "rev-list", "--left-right", "--count", "HEAD...@{upstream}");
+        var counts = Git(repo, "rev-list", "--left-right", "--count", $"{commit}...@{{upstream}}");
         var parts = counts.Output.Split('\t', StringSplitOptions.TrimEntries);
         if (!counts.Succeeded ||
             parts.Length != 2 ||
@@ -733,20 +739,20 @@ static class CodeCommands
             !int.TryParse(parts[1], out var behind))
         {
             // Origin's branch not fetched yet, or gone: pushed to, it is made again.
-            return new($"HEAD:{merge.Output.Trim()}", false, null);
+            return new($"{commit}:{merge.Output.Trim()}", false, null, branch);
         }
 
         if (ahead == 0)
         {
-            return default;
+            return new(null, false, null, branch);
         }
 
         if (behind > 0)
         {
-            return new(null, false, new(repo, false, $"{branch} and origin's have each got commits the other hasn't, so nothing was tagged or pushed. Pull first."));
+            return new(null, false, new(repo, false, $"{branch} and origin's have each got commits the other hasn't, so nothing was tagged or pushed. Pull first."), branch, ahead);
         }
 
-        return new($"HEAD:{merge.Output.Trim()}", false, null);
+        return new($"{commit}:{merge.Output.Trim()}", false, null, branch, ahead);
     }
 
     /// <summary>

@@ -1571,14 +1571,22 @@ static class CodeMenu
 
     /// <summary>
     /// History's Tag: asks for the tag's name, then tags the commit picked, rather than the one
-    /// checked out, and pushes the tag. The repository is read again once it is done, for History
-    /// to show the tag.
+    /// checked out, and pushes the tag, with the commit, and those before it, where origin's
+    /// branch hasn't got it yet. What goes is read off the UI thread first, for the question to
+    /// say. The repository is read again once it is done, for History to show the tag, and the
+    /// commits pushed as pushed.
     /// </summary>
     internal static async void TagCommit(Control owner, string repo, GitCommit commit)
     {
+        var goes = await Task.Run(() => CodeCommands.BranchToPushWithTag(repo, commit.Sha));
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
         using var form = new GitTextForm(
             "Git tag",
-            TagCommitQuestion(repo, commit),
+            TagCommitQuestion(repo, commit, goes),
             "Tag:",
             "",
             "Tag",
@@ -1602,10 +1610,38 @@ static class CodeMenu
     }
 
     /// <summary>
-    /// What History's Tag asks: the commit picked, its short SHA and subject.
+    /// What History's Tag asks: the commit picked, its short SHA and subject, then what else
+    /// goes, as Tag's question says it: the commit, and those before it, not yet on origin's
+    /// branch, which go with the tag; a branch origin hasn't got, which goes too; or a branch
+    /// diverged from origin's, left till pulled.
     /// </summary>
-    internal static string TagCommitQuestion(string repo, GitCommit commit) =>
-        $"Tag this commit in {Path.GetFileName(repo)}, and push the tag to origin:\n{commit.ShortSha} {commit.Subject}";
+    internal static string TagCommitQuestion(string repo, GitCommit commit, CodeCommands.WithTag goes = default)
+    {
+        var question = $"Tag this commit in {Path.GetFileName(repo)}, and push the tag to origin:\n{commit.ShortSha} {commit.Subject}";
+        var branch = goes.Branch;
+        if (goes.Failed != null)
+        {
+            return $"{question}\n\n{branch} and origin's have each got commits the other hasn't, so it can't be tagged till pulled.";
+        }
+
+        if (goes.BranchRef == null)
+        {
+            return question;
+        }
+
+        if (goes.NewBranch)
+        {
+            return $"{question}\n\n{branch} goes to origin with the tag, up to this commit, as origin hasn't got it yet.";
+        }
+
+        if (goes.Ahead > 1)
+        {
+            var before = goes.Ahead - 1;
+            return $"{question}\n\nIt and the {GitState.CountOf(before, "commit")} before it not yet pushed go with the tag, so origin's {branch} has the commit tagged.";
+        }
+
+        return $"{question}\n\nIt isn't pushed yet, so it goes with the tag, and origin's {branch} has the commit tagged.";
+    }
 
     /// <summary>
     /// What History's Delete tag asks: the commit picked, its short SHA and subject.

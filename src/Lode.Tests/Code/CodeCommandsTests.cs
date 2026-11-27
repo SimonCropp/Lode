@@ -957,6 +957,71 @@ public class CodeCommandsTests
         await Assert.That(tagged.Succeeded).IsTrue();
         await Assert.That(Scratch.Git(repo, "rev-parse", "v0.9^{commit}")).IsEqualTo(first);
         await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "v0.9^{commit}")).IsEqualTo(first);
+        // On origin's branch already, the tag goes alone: the commit after it stays unpushed.
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(first);
+    }
+
+    // Given a commit not yet pushed, as History tags one, it goes with the tag, with those
+    // before it, but not those after it, so origin's branch has the commit tagged, not only the
+    // tag, and the branch is no longer ahead by it.
+    [Test]
+    public async Task TagPushesTheCommitGivenWhereNotYetPushed()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        foreach (var name in new[] { "Second", "Third", "Fourth" })
+        {
+            await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), name);
+            Scratch.Git(repo, "commit", "-am", name);
+        }
+
+        var third = Scratch.Git(repo, "rev-parse", "HEAD~1");
+        var head = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var older = (await CodeCommands.Tag([repo], "v0.9", commit: third)).Single();
+
+        await Assert.That(older.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(third);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "v0.9^{commit}")).IsEqualTo(third);
+        await Assert.That(Scratch.Git(repo, "rev-list", "--count", "@{upstream}..HEAD")).IsEqualTo("1");
+
+        var checkedOut = (await CodeCommands.Tag([repo], "v1.0", commit: head)).Single();
+
+        await Assert.That(checkedOut.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "main")).IsEqualTo(head);
+        await Assert.That(Scratch.Git(repo, "rev-list", "--count", "@{upstream}..HEAD")).IsEqualTo("0");
+    }
+
+    // Given a commit on a branch origin hasn't got, the branch goes up to it with the tag, and
+    // tracks origin's from then on, though git tracks only a branch pushed by name. Given another
+    // branch's, as History shows while comparing, the tag goes alone.
+    [Test]
+    public async Task TagOfACommitGivenPushesANewBranchUpToIt()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "other");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "other");
+        Scratch.Git(repo, "commit", "-am", "Other");
+        var other = Scratch.Git(repo, "rev-parse", "HEAD");
+        Scratch.Git(repo, "switch", "main");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        foreach (var name in new[] { "First", "Second" })
+        {
+            await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), name);
+            Scratch.Git(repo, "commit", "-am", name);
+        }
+
+        var first = Scratch.Git(repo, "rev-parse", "HEAD~1");
+
+        var branch = (await CodeCommands.Tag([repo], "v1.0", commit: first)).Single();
+        var otherBranch = (await CodeCommands.Tag([repo], "v0.1", commit: other)).Single();
+
+        await Assert.That((branch.Succeeded, otherBranch.Succeeded)).IsEqualTo((true, true));
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "feature")).IsEqualTo(first);
+        await Assert.That(Scratch.Git(repo, "rev-parse", "--abbrev-ref", "@{upstream}")).IsEqualTo("origin/feature");
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "v0.1^{commit}")).IsEqualTo(other);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "branch", "--list", "other")).IsEqualTo("");
     }
 
     // Commits not yet pushed go with the tag, so origin's branch has the commit tagged, not only

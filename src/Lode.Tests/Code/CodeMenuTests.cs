@@ -433,6 +433,28 @@ public class CodeMenuTests
         await Assert.That(question.GetPositionFromCharIndex(question.TextLength - 1).Y).IsLessThan(question.ClientSize.Height);
     }
 
+    // History's Tag says what goes with the tag, as Tag does: the commit, and those before it,
+    // where origin's branch hasn't got them, a branch origin hasn't got, or a branch diverged,
+    // left till pulled. One on origin's already says nothing more.
+    [Test]
+    public async Task HistorysTagQuestionSaysWhatGoesWithTheTag()
+    {
+        var repo = @"C:\Code\Lode";
+        var commit = new GitCommit("eaae4361234", [], "Ada", DateTimeOffset.UnixEpoch, [], "refs or cleanup");
+        var asked = "Tag this commit in Lode, and push the tag to origin:\neaae436 refs or cleanup";
+
+        await Assert.That(CodeMenu.TagCommitQuestion(repo, commit, new(null, false, null, "main")))
+            .IsEqualTo(asked);
+        await Assert.That(CodeMenu.TagCommitQuestion(repo, commit, new("eaae4361234:refs/heads/main", false, null, "main", 1)))
+            .IsEqualTo($"{asked}\n\nIt isn't pushed yet, so it goes with the tag, and origin's main has the commit tagged.");
+        await Assert.That(CodeMenu.TagCommitQuestion(repo, commit, new("eaae4361234:refs/heads/main", false, null, "main", 3)))
+            .IsEqualTo($"{asked}\n\nIt and the 2 commits before it not yet pushed go with the tag, so origin's main has the commit tagged.");
+        await Assert.That(CodeMenu.TagCommitQuestion(repo, commit, new("eaae4361234:refs/heads/feature", true, null, "feature")))
+            .IsEqualTo($"{asked}\n\nfeature goes to origin with the tag, up to this commit, as origin hasn't got it yet.");
+        await Assert.That(CodeMenu.TagCommitQuestion(repo, commit, new(null, false, new(repo, false, "Pull first."), "main", 1)))
+            .IsEqualTo($"{asked}\n\nmain and origin's have each got commits the other hasn't, so it can't be tagged till pulled.");
+    }
+
 #if DEBUG
     [Test]
     public async Task TagsQuestion()
