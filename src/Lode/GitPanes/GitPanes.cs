@@ -99,6 +99,7 @@ sealed class GitPanes : IDisposable
     internal ChangesPane ChangesPane => changes;
     internal HistoryPane HistoryPane => history;
     internal PaneSplitContainer PaneSplit => paneSplit;
+    internal PaneSplitContainer ColumnSplit => columnSplit;
     internal GitPane? Floating => floating;
 
     /// <summary>
@@ -686,6 +687,7 @@ sealed class GitPanes : IDisposable
             paneSplit.SetPanel2Size(ColumnWidth(both));
             if (both)
             {
+                SetColumnLeastSizes();
                 PlaceColumnSplit();
             }
         }
@@ -751,13 +753,30 @@ sealed class GitPanes : IDisposable
         paneSplit.Panel2MinSize = panes;
     }
 
-    // How wide a pane is, from the width kept, at the window's scale.
+    // Side by side, neither pane narrower than the least either, however the line between them is
+    // dragged: the line beside the list kept the two together that wide, while either could be
+    // dragged down to a sliver, its rows a letter or two wide. Once the column is as wide as it is
+    // to be, as SplitContainer throws for least sizes that don't fit.
+    void SetColumnLeastSizes()
+    {
+        var least = columnSplit.LogicalToDeviceUnits(leastWidth);
+        if (columnSplit.Width < least * 2 + columnSplit.SplitterWidth)
+        {
+            return;
+        }
+
+        columnSplit.Panel1MinSize = least;
+        columnSplit.Panel2MinSize = least;
+    }
+
+    // How wide a pane is, from the width kept, at the window's scale: never less than the least,
+    // slid out over the list too.
     int Width()
     {
         var width = defaultWidth;
         if (settings.PaneWidth > 0)
         {
-            width = settings.PaneWidth;
+            width = Math.Max(settings.PaneWidth, leastWidth);
         }
 
         return paneSplit.LogicalToDeviceUnits(width);
@@ -801,9 +820,15 @@ sealed class GitPanes : IDisposable
             share = settings.PaneSplit;
         }
 
-        var distance = (int) (room * share);
-        if (distance > columnSplit.Panel1MinSize &&
-            distance < room - columnSplit.Panel2MinSize)
+        // A share kept from before the panes had a least width held to it.
+        var furthest = room - columnSplit.Panel2MinSize;
+        if (furthest < columnSplit.Panel1MinSize)
+        {
+            return;
+        }
+
+        var distance = Math.Clamp((int) (room * share), columnSplit.Panel1MinSize, furthest);
+        if (distance != columnSplit.SplitterDistance)
         {
             columnSplit.SplitterDistance = distance;
         }

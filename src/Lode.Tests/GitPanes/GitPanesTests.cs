@@ -89,6 +89,48 @@ public class GitPanesTests
         await Assert.That(panes.Describe()).IsEqualTo("Docs: narrow, Changes hidden, History hidden, strip Changes (6) and History");
     }
 
+    // Side by side, neither pane is narrower than 240 at 100%, however the line between them is
+    // dragged, as the two together beside the list aren't narrower than both: a split kept from
+    // before that leaves one narrower is held to it, at either side. Slid out, a pane's width kept
+    // from before, narrower, is taken as the least too.
+    [Test]
+    public async Task NeitherPaneNarrowerThanTheLeast()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root,
+            PaneSplit = 0.05
+        };
+        using var form = await Show(fixture.At("Docs"), settings, wide);
+        await PaneStubs.Settled(form);
+        var panes = form.GitPanes;
+        var column = panes.ColumnSplit;
+        var least = form.LogicalToDeviceUnits(240);
+        await Assert.That(panes.Describe()).IsEqualTo("Docs: wide, Changes beside, History beside, strip hidden");
+        await Assert.That(column.Panel1MinSize).IsEqualTo(least);
+        await Assert.That(column.Panel2MinSize).IsEqualTo(least);
+        await Assert.That(panes.ChangesPane.Width).IsEqualTo(least);
+        await Assert.That(panes.HistoryPane.Width).IsGreaterThan(least);
+
+        settings.PaneSplit = 0.95;
+        Resize(form, medium);
+        await PaneStubs.Settled(form);
+        Resize(form, wide);
+        await PaneStubs.Settled(form);
+
+        await Assert.That(panes.ChangesPane.Width).IsGreaterThan(least);
+        await Assert.That(panes.HistoryPane.Width).IsEqualTo(least);
+
+        settings.PaneWidth = 100;
+        Resize(form, narrow);
+        await PaneStubs.Settled(form);
+        panes.Float(GitPane.Changes, focus: false, animate: false);
+
+        await Assert.That(panes.ChangesPane.Width).IsEqualTo(least);
+    }
+
     // Where there is room for one pane beside the list, the two are tabs along its top, Changes
     // showing to start with. The tab chosen in a repository shows there again, and only there,
     // kept in the settings.
@@ -418,6 +460,7 @@ public class GitPanesTests
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
+
         string Entries(int index) =>
             string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[index]).Select(_ => _?.Text ?? "----"));
 
@@ -442,6 +485,7 @@ public class GitPanesTests
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.HistoryPane;
+
         string Entries() =>
             string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[0]).Select(_ => _?.Text ?? "----"));
 
@@ -484,7 +528,12 @@ public class GitPanesTests
         history.CommitCommands(repo, PaneStubs.History[0]).Single(_ => _?.Text == "Amend commit…")!.Action();
 
         // Changes read once it shows, which it does for the amend.
-        await Pump.Until(() => changes.Amending && changes.Reading.IsCompleted && changes.Changes.Files.Count > 0);
+        await Pump.Until(() => changes is
+        {
+            Amending: true,
+            Reading.IsCompleted: true,
+            Changes.Files.Count: > 0
+        });
 
         await Assert.That(form.GitPanes.IsBeside(GitPane.Changes)).IsTrue();
         await Assert.That(changes.SummaryBox.Text).IsEqualTo(PaneStubs.History[0].Subject);
@@ -928,6 +977,7 @@ public class GitPanesTests
         using var form = await Show(fixture.At("Docs"), settings);
         await PaneStubs.Settled(form);
         var pane = form.GitPanes.ChangesPane;
+
         string Entries(Change change) =>
             string.Join(
                 ", ",
