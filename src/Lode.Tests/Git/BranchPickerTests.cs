@@ -23,9 +23,22 @@ public class BranchPickerTests
         ],
         [
             Branch("cleanup", 24 * 40),
-            // Long enough that the note gives way to it.
+            // Long enough that it widens, for its note to show whole beside it.
             Branch("feature/sign-in-with-the-new-provider", 24 * 6, stashed: true),
             Branch("origin/feature-on-origin", 24 * 3, remote: true)
+        ]);
+
+    const string longName = "origin/fix/null-default-variable-in-non-null-position-and-every-case-that-comes-after-it";
+
+    // A name too long for it even half as wide again, so cut short, beside one that fits.
+    internal static readonly GitBranches.Listing LongNames = new(
+        "main",
+        Branch("main", 15),
+        [],
+        [
+            Branch("short", 2),
+            Branch(longName, 24 * 90, remote: true),
+            Branch("origin/fix/per-schema-builtin-scalars", 24 * 60, remote: true)
         ]);
 
     // A row as the tests show it: a heading in capitals, a branch indented under it, the one
@@ -126,6 +139,54 @@ public class BranchPickerTests
         await Assert.That(BranchPicker.Place(new(900, 1010, 150, 22), size, area)).IsEqualTo(new(900, 590));
         await Assert.That(BranchPicker.Place(new(1800, 1010, 100, 22), size, area)).IsEqualTo(new(1540, 590));
         await Assert.That(BranchPicker.Place(new(10, 100, 100, 22), size, area)).IsEqualTo(new(10, 122));
+    }
+
+    // Long names widen it, to half as wide again at most. Past that a name is cut short, its
+    // note left whole beside it, and hovering the name shows it whole, as GitHub Desktop has it.
+    // Names that fit leave it as wide as it opens.
+    [Test]
+    public async Task LongNamesWidenItThenAreCutShort()
+    {
+        var shortNames = LongNames with
+        {
+            Other = [LongNames.Other[0]]
+        };
+        var longNames = LongNames;
+        using var fits = new BranchPicker
+        {
+            Location = new(-20000, -20000)
+        };
+        fits.Show();
+        var opened = fits.Width;
+        await fits.Fill(Task.FromResult(shortNames));
+        using var picker = new BranchPicker
+        {
+            Location = new(-20000, -20000)
+        };
+        picker.Show();
+        await picker.Fill(Task.FromResult(longNames));
+
+        await Assert.That(fits.Width).IsEqualTo(opened);
+        await Assert.That(picker.Width).IsEqualTo((int) (opened * BranchPicker.WidestGrowth));
+
+        var list = picker.Controls.OfType<ListBox>().Single();
+        using var graphics = list.CreateGraphics();
+        var rows = picker.Rows.ToList();
+        var longIndex = rows.FindIndex(_ => _.Branch?.Name == longName);
+        var shortIndex = rows.FindIndex(_ => _.Branch?.Name == "short");
+        var cut = picker.LayoutRow(graphics, list.GetItemRectangle(longIndex), rows[longIndex].Branch!);
+        var whole = picker.LayoutRow(graphics, list.GetItemRectangle(shortIndex), rows[shortIndex].Branch!);
+        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+
+        await Assert.That((cut.NameCut, whole.NameCut)).IsEqualTo((true, false));
+        await Assert.That(cut.Note.Width).IsEqualTo(TextRenderer.MeasureText(graphics, cut.NoteText, list.Font, Size.Empty, flags).Width);
+        await Assert.That(cut.Name.Right).IsLessThan(cut.Note.Left);
+        await Assert.That(picker.NameTipAt(Middle(cut.Name))).IsEqualTo(longName);
+        await Assert.That(picker.NameTipAt(Middle(cut.Note))).IsNull();
+        await Assert.That(picker.NameTipAt(Middle(whole.Name))).IsNull();
+
+        static Point Middle(Rectangle bounds) =>
+            new(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
     }
 
     static async Task<BranchPicker> Open(string search = "")

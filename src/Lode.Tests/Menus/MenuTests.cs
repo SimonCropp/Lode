@@ -228,6 +228,30 @@ public class MenuTests
         }
     }
 
+    // A name too long for it even widened, cut short as GitHub Desktop cuts one, how long ago
+    // whole beside it.
+    [Test]
+    public async Task BranchPickerLongNames()
+    {
+        BranchPicker.Time = new Clock(new(2026, 11, 21, 12, 0, 0, TimeSpan.Zero));
+        try
+        {
+            using var picker = new BranchPicker
+            {
+                Location = new(-20000, -20000)
+            };
+            picker.Show();
+            await picker.Fill(Task.FromResult(BranchPickerTests.LongNames));
+            Application.DoEvents();
+
+            await Verify(picker);
+        }
+        finally
+        {
+            BranchPicker.Time = TimeProvider.System;
+        }
+    }
+
     static async Task<FolderView> Open(string path, Settings settings)
     {
         var view = new FolderView(settings, noPlaces);

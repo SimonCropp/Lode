@@ -23,6 +23,15 @@ sealed class BranchPicker : Form
     List<Row> shown = [];
     Font? headingFont;
     bool closing;
+    RowTip nameTip;
+
+    // How wide it opens, scaled for the screen, before it widens for long names: see FitWidth.
+    int? openWidth;
+
+    /// <summary>
+    /// How much wider than it opens it can grow for long names: half as wide again.
+    /// </summary>
+    internal const double WidestGrowth = 1.5;
 
     // On screen, what opened it: the status bar's branch. It opens above that, as a drop-down on
     // a bar at the bottom of a window does. Empty, it is left where it was put.
@@ -155,6 +164,7 @@ sealed class BranchPicker : Form
                 ShowMenu(list.IndexFromPoint(args.Location), args.Location);
             }
         };
+        nameTip = new(list, NameTipAt);
 
         var gap = new Panel
         {
@@ -225,6 +235,7 @@ sealed class BranchPicker : Form
 
         listing = found;
         Refill();
+        FitWidth();
     }
 
     protected override void OnLoad(EventArgs args)
@@ -232,11 +243,88 @@ sealed class BranchPicker : Form
         base.OnLoad(args);
         list.ItemHeight = Math.Max(list.Font.Height + LogicalToDeviceUnits(8), list.ItemHeight);
         headingFont = new(list.Font, FontStyle.Bold);
+        openWidth = Width;
 
         // Placed once scaled for the screen it is on, so its bottom is where the branch's top is.
         if (!opener.IsEmpty)
         {
             Location = Place(opener, Size, Screen.FromRectangle(opener).WorkingArea);
+        }
+
+        FitWidth();
+    }
+
+    /// <summary>
+    /// Widens it for the longest of the branches, all of them, not only those the filter leaves,
+    /// so it keeps its width as names are typed: as wide as that one's name and note need, from
+    /// as wide as it opens to <see cref="WidestGrowth"/> times that, and the screen's width at
+    /// most. Past that, a name is cut short, as GitHub Desktop cuts one, its note left whole.
+    /// Once the branches are found and it is scaled for the screen, whichever is last.
+    /// </summary>
+    void FitWidth()
+    {
+        if (listing == null ||
+            openWidth is not { } open)
+        {
+            return;
+        }
+
+        var tick = LogicalToDeviceUnits(22);
+        var gap = LogicalToDeviceUnits(12);
+        var now = Time.GetUtcNow();
+        using var graphics = list.CreateGraphics();
+        var notes = new Dictionary<string, int>(StringComparer.Ordinal);
+        var longest = 0;
+        foreach (var branch in AllBranches(listing))
+        {
+            var row = Measure(graphics, branch.Name);
+            var note = Note(branch, now);
+            if (note.Length > 0)
+            {
+                if (!notes.TryGetValue(note, out var noteWidth))
+                {
+                    noteWidth = Measure(graphics, note);
+                    notes[note] = noteWidth;
+                }
+
+                row += gap + noteWidth;
+            }
+
+            longest = Math.Max(longest, row);
+        }
+
+        var needed = RowMargin * 2 + tick + longest;
+        var widest = (int) (open * WidestGrowth);
+        Rectangle? area = null;
+        if (!opener.IsEmpty)
+        {
+            area = Screen.FromRectangle(opener).WorkingArea;
+            widest = Math.Min(widest, area.Value.Width);
+        }
+
+        var width = Math.Clamp(Width + needed - list.ClientSize.Width, open, Math.Max(open, widest));
+        if (width == Width)
+        {
+            return;
+        }
+
+        Width = width;
+        if (area is { } onScreen)
+        {
+            Location = Place(opener, Size, onScreen);
+        }
+    }
+
+    static IEnumerable<GitBranches.Branch> AllBranches(GitBranches.Listing listing)
+    {
+        if (listing.Default != null)
+        {
+            yield return listing.Default;
+        }
+
+        foreach (var branch in listing.Recent.Concat(listing.Other))
+        {
+            yield return branch;
         }
     }
 
@@ -274,6 +362,7 @@ sealed class BranchPicker : Form
         if (disposing)
         {
             headingFont?.Dispose();
+            nameTip.Dispose();
         }
 
         base.Dispose(disposing);
@@ -603,6 +692,77 @@ sealed class BranchPicker : Form
         return ago;
     }
 
+    const TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+
+    // Each side of a row, between the list's edge and what is drawn in it.
+    int RowMargin => LogicalToDeviceUnits(6);
+
+    int Measure(IDeviceContext graphics, string text) =>
+        TextRenderer.MeasureText(graphics, text, list.Font, Size.Empty, flags).Width;
+
+    /// <summary>
+    /// Where a branch's row draws its name and its note, and which note: the note whole, at the
+    /// right, as GitHub Desktop has how long ago, and the name in the room it leaves, cut short
+    /// with an ellipsis where it hasn't enough, <paramref name="NameCut"/>, when hovering it
+    /// shows it whole. Short of room for the name beside the whole note, how long ago goes
+    /// before that changes are stashed. A note wider than half the row is cut short too.
+    /// </summary>
+    internal readonly record struct RowLayout(Rectangle Name, bool NameCut, Rectangle Note, string NoteText);
+
+    internal RowLayout LayoutRow(IDeviceContext graphics, Rectangle row, GitBranches.Branch branch)
+    {
+        var bounds = Rectangle.Inflate(row, -RowMargin, 0);
+
+        // A column for the tick the branch checked out has, as a menu has for a ticked entry.
+        var tick = LogicalToDeviceUnits(22);
+        var gap = LogicalToDeviceUnits(12);
+        var space = bounds.Width - tick;
+        var nameWidth = Measure(graphics, branch.Name);
+        var note = Note(branch, Time.GetUtcNow());
+        if (branch.Stashed &&
+            nameWidth + gap + Measure(graphics, note) > space)
+        {
+            note = stashedNote;
+        }
+
+        var nameRight = bounds.Right;
+        var noteWidth = 0;
+        if (note.Length > 0)
+        {
+            noteWidth = Math.Min(Measure(graphics, note), Math.Max(0, space / 2));
+            nameRight -= noteWidth + gap;
+        }
+
+        var name = Rectangle.FromLTRB(bounds.Left + tick, bounds.Top, Math.Max(bounds.Left + tick, nameRight), bounds.Bottom);
+        var noteBounds = Rectangle.FromLTRB(bounds.Right - noteWidth, bounds.Top, bounds.Right, bounds.Bottom);
+        return new(name, nameWidth > name.Width, noteBounds, note);
+    }
+
+    /// <summary>
+    /// The whole name of the branch whose name is cut short under <paramref name="point"/>, as
+    /// GitHub Desktop shows it over the name. Null elsewhere, and over a name shown whole.
+    /// </summary>
+    internal string? NameTipAt(Point point)
+    {
+        var index = list.IndexFromPoint(point);
+        if (index < 0 ||
+            index >= shown.Count ||
+            shown[index].Branch is not { } branch)
+        {
+            return null;
+        }
+
+        using var graphics = list.CreateGraphics();
+        var layout = LayoutRow(graphics, list.GetItemRectangle(index), branch);
+        if (layout.NameCut &&
+            layout.Name.Contains(point))
+        {
+            return branch.Name;
+        }
+
+        return null;
+    }
+
     void DrawRow(object? sender, DrawItemEventArgs args)
     {
         if (args.Index < 0 ||
@@ -612,8 +772,7 @@ sealed class BranchPicker : Form
         }
 
         var row = shown[args.Index];
-        var bounds = Rectangle.Inflate(args.Bounds, -LogicalToDeviceUnits(6), 0);
-        const TextFormatFlags flags = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+        var bounds = Rectangle.Inflate(args.Bounds, -RowMargin, 0);
         if (row.Branch is not { } branch)
         {
             // A heading or a message: never highlighted, as it can't be picked.
@@ -640,8 +799,6 @@ sealed class BranchPicker : Form
             dimmed = ExplorerStyle.HighlightText;
         }
 
-        // A column for the tick the branch checked out has, as a menu has for a ticked entry.
-        var tick = LogicalToDeviceUnits(22);
         if (IsCurrent(branch))
         {
             var size = LogicalToDeviceUnits(12);
@@ -649,32 +806,12 @@ sealed class BranchPicker : Form
             args.Graphics.DrawImage(glyph, bounds.Left, bounds.Top + (bounds.Height - size) / 2, size, size);
         }
 
-        // The name comes first: the note has what room it leaves. Short of room, how long ago
-        // goes before that changes are stashed, then the note is cut short, then left off.
-        var space = bounds.Width - tick;
-        var gap = LogicalToDeviceUnits(12);
-        var room = space - Math.Min(Measure(branch.Name), space) - gap;
-        var note = Note(branch, Time.GetUtcNow());
-        if (branch.Stashed &&
-            Measure(note) > room)
+        var layout = LayoutRow(args.Graphics, args.Bounds, branch);
+        if (layout.NoteText.Length > 0)
         {
-            note = stashedNote;
+            TextRenderer.DrawText(args.Graphics, layout.NoteText, list.Font, layout.Note, dimmed, flags | TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
         }
 
-        var noteWidth = 0;
-        if (note.Length > 0 &&
-            room >= LogicalToDeviceUnits(24))
-        {
-            noteWidth = Math.Min(Measure(note), room);
-            var noteBounds = Rectangle.FromLTRB(bounds.Right - noteWidth, bounds.Top, bounds.Right, bounds.Bottom);
-            TextRenderer.DrawText(args.Graphics, note, list.Font, noteBounds, dimmed, flags | TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
-            noteWidth += gap;
-        }
-
-        var name = Rectangle.FromLTRB(bounds.Left + tick, bounds.Top, bounds.Right - noteWidth, bounds.Bottom);
-        TextRenderer.DrawText(args.Graphics, branch.Name, list.Font, name, color, flags | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
-
-        int Measure(string text) =>
-            TextRenderer.MeasureText(args.Graphics, text, list.Font, Size.Empty, flags).Width;
+        TextRenderer.DrawText(args.Graphics, branch.Name, list.Font, layout.Name, color, flags | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
     }
 }
