@@ -2308,6 +2308,58 @@ public class WindowsTests
         ]);
     }
 
+    // A repository cloned from the Clone dialog opens in a tab of its own once it is there, the
+    // tab showing, and the tab open before stays.
+    [Test]
+    public async Task CloneOpensTheCloneInANewTab()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Repo");
+        using var fixture = Fixture.Create();
+        // In the scratch folder, which takes git's read-only objects away, as the fixture can't.
+        var destination = code.At("Cloned");
+        var list = HostedRepos.ListGitHub;
+        HostedRepos.ListGitHub = _ => Task.FromResult(
+            new HostedListing(
+                [new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Repo", code.Origin("Repo"), "https://github.com/octo/Repo", false, false)],
+                []));
+        CloneDialog.Forget();
+        try
+        {
+            using var form = await Show(fixture, new Settings { CodeDirectory = fixture.Root }, fixture.Root);
+            form.Commands.ShowCloneDialog = dialog =>
+            {
+                dialog.ShowInTaskbar = false;
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new(-20000, -20000);
+                dialog.Show();
+                var waited = Stopwatch.StartNew();
+                while (!(dialog.Rows.Count > 1 && dialog.Loaded.IsCompleted) &&
+                       waited.Elapsed < TimeSpan.FromSeconds(20))
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(10);
+                }
+
+                dialog.List.SelectedIndex = 1;
+                dialog.PathBox.Text = destination;
+                dialog.CloneButton.PerformClick();
+                return dialog.DialogResult;
+            };
+
+            form.Commands.ShowClone();
+            await Pump.Until(() => form.Views.Count() == 2);
+
+            await Assert.That(Directory.Exists(Path.Combine(destination, ".git"))).IsTrue();
+            await Assert.That(form.Views.Select(_ => _.CurrentPath).ToList()).IsEquivalentTo(new List<string> { fixture.Root, destination }, CollectionOrdering.Matching);
+            await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(destination);
+        }
+        finally
+        {
+            HostedRepos.ListGitHub = list;
+        }
+    }
+
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
         Show(fixture, new(), paths);
 
