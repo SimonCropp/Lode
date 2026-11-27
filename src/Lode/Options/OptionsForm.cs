@@ -386,6 +386,9 @@ class OptionsForm : Form
     // In the list's order, only the one picked there shown.
     List<Panel> pages = [];
 
+    // The actions pages' tables, for the dialog to be made wide enough for.
+    List<HeadedTable> headedTables = [];
+
     // A page's name over it, and the headings of its sections.
     Font headingFont;
     Font sectionFont;
@@ -575,11 +578,33 @@ class OptionsForm : Form
         UpdateWindowsSearchState();
     }
 
-    // Brought within the screen it opens on, once it knows which.
+    // Made wide enough for the actions tables, then brought within the screen it opens on, once
+    // it knows which.
     protected override void OnLoad(EventArgs args)
     {
         base.OnLoad(args);
+        WidenForTables();
         FitWithin(Screen.FromControl(this).WorkingArea);
+    }
+
+    /// <summary>
+    /// Widens the dialog by as much as the widest actions table runs past the room a page has,
+    /// its scroll bar counted, staying centred where it was. Otherwise the scroll bar covers the
+    /// last column, and the rows scroll sideways too. Each table is as wide as its longest name,
+    /// which measures wider on a screen scaled up than the dialog scales. Measured against the
+    /// room every page gets, as a page not shown isn't laid out, so has no width of its own yet.
+    /// </summary>
+    internal void WidenForTables()
+    {
+        var room = host.DisplayRectangle.Width;
+        var overflow = headedTables.Max(_ => _.Overflow(room));
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        Width += overflow;
+        Left -= overflow / 2;
     }
 
     /// <summary>
@@ -1464,13 +1489,15 @@ class OptionsForm : Form
             refreshing = false;
             Placed();
         };
+        var headedTable = new HeadedTable(headings, table);
+        headedTables.Add(headedTable);
         var resetRow = Row(resetButton);
         resetRow.Dock = DockStyle.Bottom;
         resetRow.Padding = new(0, 9, 0, 0);
         return
         [
             Description(description, new(3, 0, 3, 9)),
-            new HeadedTable(headings, table),
+            headedTable,
             resetRow
         ];
     }
@@ -1780,10 +1807,21 @@ class OptionsForm : Form
     // what each column is shows however far down they are scrolled.
     sealed class HeadedTable : TableLayoutPanel
     {
+        LaidOutTable table;
+
+        /// <summary>
+        /// How far the table runs past <paramref name="room"/>, the width of its page, with the
+        /// scroll bar it has, as its rows are many more than fit: none where it fits. As wide as
+        /// it would make itself, as it hasn't been laid out where its page isn't shown.
+        /// </summary>
+        public int Overflow(int room) =>
+            table.PreferredSize.Width + SystemInformation.VerticalScrollBarWidth - room;
+
         /// <param name="headings">By column, null for one without.</param>
         /// <param name="table">Its first row a <see cref="HeadingWidth"/> under each heading.</param>
         public HeadedTable(Control?[] headings, LaidOutTable table)
         {
+            this.table = table;
             Dock = DockStyle.Fill;
             ColumnCount = 1;
             Margin = Padding.Empty;
