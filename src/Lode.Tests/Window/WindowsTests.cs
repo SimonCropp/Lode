@@ -2303,6 +2303,7 @@ public class WindowsTests
             "Menu | Menu",
             "Filter changed files | Filter the files by name",
             "Add a description | Add a description",
+            "Copy the full SHA | Copy the full SHA",
             "Close | Close (Esc)"
         ]);
     }

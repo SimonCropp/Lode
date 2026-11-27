@@ -839,6 +839,68 @@ public class GitPanesTests
         await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(0);
     }
 
+    // As in Desktop: the picked commit's short sha, between its author and when, can be selected,
+    // dragged across or double-clicked, and what is selected copied, all of it in sight, a margin
+    // before its first letter, whose smoothed edge an edit box cut off; and the button beside it
+    // copies the whole sha. Another commit picked, its sha, nothing of it selected.
+    [Test]
+    public async Task ShaSelectableAndCopied()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var sha = pane.HeadingSha;
+        var copy = pane.CopyShaButton;
+        var newest = PaneStubs.History[0];
+        await Assert.That(sha.Text).IsEqualTo(newest.ShortSha);
+        await Assert.That(sha.Visible).IsTrue();
+        await Assert.That(sha.TextInset).IsGreaterThan(0);
+        await Assert.That(sha.Width).IsEqualTo(sha.TextWidth);
+        await Assert.That(copy.Left).IsGreaterThanOrEqualTo(sha.Right);
+        await Assert.That(Math.Abs(copy.Top + copy.Height / 2 - (sha.Top + sha.Height / 2))).IsLessThanOrEqualTo(1);
+
+        // Dragged from before its first letter to the middle of its fourth's.
+        var fourth = TextRenderer.MeasureText(sha.Text[..4], sha.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
+        var y = sha.Height / 2;
+        Send(sha, leftButtonDown, new(0, y));
+        Send(sha, mouseMove, new(sha.TextInset + fourth - 1, y));
+        Send(sha, leftButtonUp, new(sha.TextInset + fourth - 1, y));
+        var dragged = sha.SelectedText;
+        Send(sha, leftButtonDoubleClick, new(sha.TextInset + 1, y));
+        Send(sha, leftButtonUp, new(sha.TextInset + 1, y));
+        var doubleClicked = sha.SelectedText;
+
+        var copied = new List<string>();
+        var setClipboardText = FolderView.SetClipboardText;
+        FolderView.SetClipboardText = copied.Add;
+        try
+        {
+            sha.Copy();
+            copy.PerformClick();
+        }
+        finally
+        {
+            FolderView.SetClipboardText = setClipboardText;
+        }
+
+        await Assert.That(dragged).IsEqualTo(newest.ShortSha[..4]);
+        await Assert.That(doubleClicked).IsEqualTo(newest.ShortSha);
+        await Assert.That(copied).IsEquivalentTo([newest.ShortSha, newest.Sha]);
+
+        pane.CommitList.SelectedIndices.Clear();
+        pane.CommitList.SelectedIndices.Add(1);
+        await PaneStubs.Settled(form);
+        await Assert.That(sha.Text).IsEqualTo(PaneStubs.History[1].ShortSha);
+        await Assert.That(sha.SelectedText).IsEmpty();
+    }
+
     // A commit picked that is gone once the commits are read again, as an amended one is, gives
     // way to the newest, with its files.
     [Test]
@@ -1112,6 +1174,23 @@ public class GitPanesTests
 
     [DllImport("user32.dll", EntryPoint = "PostMessageW")]
     static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+    const int mouseMove = 0x0200;
+    const int leftButtonDown = 0x0201;
+    const int leftButtonUp = 0x0202;
+    const int leftButtonDoubleClick = 0x0203;
+
+    // The mouse at a point of the control, the left button held for all but its letting go.
+    static void Send(Control control, int message, Point point)
+    {
+        var buttons = 1;
+        if (message == leftButtonUp)
+        {
+            buttons = 0;
+        }
+
+        NativeMethods.SendMessage(control.Handle, message, buttons, (point.Y << 16) | (point.X & 0xFFFF));
+    }
 
     static int TopLine(Control control)
     {

@@ -154,6 +154,16 @@ sealed class HistoryPane : UserControl
     internal Control Heading => heading;
 
     /// <summary>
+    /// The picked commit's short sha in its heading, which can be selected and copied. For tests.
+    /// </summary>
+    internal SelectableLine HeadingSha => heading.Sha;
+
+    /// <summary>
+    /// The button beside it, which copies the whole sha. For tests.
+    /// </summary>
+    internal GlyphButton CopyShaButton => heading.CopyButton;
+
+    /// <summary>
     /// The reading under way, for tests to wait on.
     /// </summary>
     internal Task Reading { get; private set; } = Task.CompletedTask;
@@ -1230,11 +1240,13 @@ sealed class HistoryPane : UserControl
     // its author, its sha and when, smaller, and a grey bar saying how many files it changed; with
     // none picked, saying to pick one. A line along its top, between it and the commits: with the
     // commits cut off part way through a row, above that row's own line, nothing else stands
-    // between them.
+    // between them. The sha can be selected and copied, as in Desktop, and the button beside it
+    // copies the whole of it.
     sealed class CommitHeading : Panel
     {
         // Pixels at 100% scale.
         const int barHeight = 30;
+        const int copySize = 20;
 
         HistoryPane pane;
 
@@ -1255,13 +1267,29 @@ sealed class HistoryPane : UserControl
             ForeColor = DesktopStyle.Text
         };
 
-        Label meta = new()
+        SelectableLine sha = new()
         {
-            AutoSize = false,
-            AutoEllipsis = true,
-            UseMnemonic = false,
-            ForeColor = DesktopStyle.SecondaryText
+            AccessibleName = "SHA"
         };
+
+        GlyphButton copy = new()
+        {
+            TabStop = false,
+            Text = Icons.Copy.ToString(),
+            AccessibleName = "Copy the full SHA",
+            AccessibleDescription = "Copy the full SHA"
+        };
+
+        ToolTip tip = new();
+
+        // The author and when, either side of the sha, drawn here, as a label would draw them,
+        // rather than labels: a label reaches a pixel or two past its text, over the sha beside it,
+        // which DrawToBitmap, drawing children the other way round to the screen, drew it over.
+        // Where each is drawn.
+        string author = "";
+        string when = "";
+        Rectangle authorBounds;
+        Rectangle whenBounds;
 
         // In the grey bar, between its lines.
         Label count = new()
@@ -1281,12 +1309,28 @@ sealed class HistoryPane : UserControl
             Height = 10 + pane.title.Height + 5 + pane.small.Height + 10 + barHeight;
             BackColor = DesktopStyle.Background;
             subject.Font = pane.title;
-            meta.Font = pane.small;
+            sha.Font = pane.small;
+            copy.Click += (_, _) => CopySha();
+            tip.SetToolTip(copy, copy.AccessibleDescription);
+            sha.MenuOpened += open => pane.MenuOpen = open;
             Controls.Add(prompt);
             Controls.Add(subject);
-            Controls.Add(meta);
+            Controls.Add(sha);
+            Controls.Add(copy);
             Controls.Add(count);
             ShowPicked();
+        }
+
+        public SelectableLine Sha => sha;
+
+        public GlyphButton CopyButton => copy;
+
+        void CopySha()
+        {
+            if (pane.selected is { } picked)
+            {
+                FolderView.SetClipboardText(picked.Sha);
+            }
         }
 
         /// <summary>
@@ -1296,16 +1340,25 @@ sealed class HistoryPane : UserControl
         {
             var picked = pane.selected;
             prompt.Visible = picked == null;
-            subject.Visible = picked != null;
-            meta.Visible = picked != null;
-            count.Visible = picked != null;
+            foreach (var control in (Control[]) [subject, sha, copy, count])
+            {
+                control.Visible = picked != null;
+            }
+
             if (picked != null)
             {
                 subject.Text = picked.Subject;
-                meta.Text = $"{picked.Author} • {picked.ShortSha} • {picked.When.ToLocalTime():g}";
+                author = $"{picked.Author} •";
+                sha.Text = picked.ShortSha;
+                when = $"• {picked.When.ToLocalTime():g}";
                 count.Text = GitState.CountOf(pane.changed.Count, "changed file");
+
+                // The line under the subject, which is drawn, said as the label it was said.
+                AccessibleDescription = $"{picked.Author} • {picked.ShortSha} • {picked.When.ToLocalTime():g}";
             }
 
+            // Each part of the line under the subject is as wide as its text.
+            PerformLayout();
             Invalidate();
         }
 
@@ -1321,7 +1374,7 @@ sealed class HistoryPane : UserControl
             Place(prompt, left, (Height - line) / 2, line);
             var top = LogicalToDeviceUnits(10);
             Place(subject, left, top, pane.title.Height);
-            Place(meta, left, top + pane.title.Height + LogicalToDeviceUnits(5), pane.small.Height);
+            PlaceMeta(left, top + pane.title.Height + LogicalToDeviceUnits(5), pane.small.Height);
 
             // Half way down the bar, and across it, widened by its padding either side, so the
             // count is centred on it.
@@ -1341,6 +1394,49 @@ sealed class HistoryPane : UserControl
             label.SetBounds(left - padding, top, Math.Max(0, Width - left * 2 + padding * 2), height);
         }
 
+        // The author, the sha and its button, and when, along one line, a space apart, as the line
+        // of text they were. What runs past the inset at the right is cut short: the author and
+        // when with an ellipsis, the sha where it ends.
+        void PlaceMeta(int left, int top, int height)
+        {
+            var font = pane.small;
+            var space = TextWidth("a a", font) - TextWidth("aa", font);
+            var right = Width - left;
+            authorBounds = Inline(author, left, right, top, height);
+            var x = authorBounds.Right + space;
+
+            // Its text where the author's would be followed, its inset either side.
+            var inset = sha.TextInset;
+            sha.SetBounds(x - inset, top, Math.Clamp(right - x + inset, 0, sha.TextWidth), height);
+
+            // Square, centred on the line, from where the sha ends, and as far again after it to
+            // when, so the glyph is as far from either.
+            var size = LogicalToDeviceUnits(copySize);
+            copy.SetBounds(sha.Right, top + (height - size) / 2, size, size);
+            whenBounds = Inline(when, copy.Right + inset, right, top, height);
+        }
+
+        // Where text is drawn from x, as wide as it is, but no further than right.
+        Rectangle Inline(string text, int x, int right, int top, int height)
+        {
+            var width = Math.Clamp(right - x, 0, TextWidth(text, pane.small));
+            return new(x, top, width, height);
+        }
+
+        static int TextWidth(string text, Font font) =>
+            TextRenderer.MeasureText(text, font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
+
+        // As a label draws its text: in a rectangle its padding wider either side, from where the
+        // text starts, so the smoothed edge of a first letter isn't cut off, and an ellipsis where
+        // it doesn't fit.
+        void DrawMeta(Graphics graphics, string text, Rectangle bounds)
+        {
+            var font = pane.small;
+            var padding = DesktopStyle.LabelPadding(font);
+            var room = Rectangle.FromLTRB(bounds.Left - padding, bounds.Top, bounds.Right + 1 + DesktopStyle.LabelPaddingRight(font), bounds.Bottom);
+            TextRenderer.DrawText(graphics, text, font, room, DesktopStyle.SecondaryText, TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
         // The line along the top, and, with a commit picked, the bar along the foot, a line above
         // it and below.
         protected override void OnPaint(PaintEventArgs args)
@@ -1357,6 +1453,8 @@ sealed class HistoryPane : UserControl
                 return;
             }
 
+            DrawMeta(graphics, author, authorBounds);
+            DrawMeta(graphics, when, whenBounds);
             var bar = Rectangle.FromLTRB(0, Height - LogicalToDeviceUnits(barHeight), Width, Height);
             using (var fill = new SolidBrush(DesktopStyle.AltBackground))
             {
@@ -1372,6 +1470,254 @@ sealed class HistoryPane : UserControl
         {
             base.OnResize(args);
             Invalidate();
+        }
+    }
+
+    // A line of text drawn as the text either side of it is, so the three read as the one line of
+    // text they were, that can be selected, by dragging across it, double-clicking it or Ctrl+A,
+    // and what is selected copied, with Ctrl+C or its right-click menu. Rather than an edit box,
+    // read-only, which draws its text its own way, with margins of its own. The smoothed edge of
+    // a first letter reaches a pixel before where its text starts, the bowl of a sha's d say: so
+    // drawn from a little in from its left, unclipped, and put that much further left.
+    internal sealed class SelectableLine : Control
+    {
+        // Pixels at 100% scale.
+        const int margin = 2;
+
+        const TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoClipping;
+
+        // Where the selection was started, and where it runs to, either side of it.
+        int anchor;
+        int end;
+
+        public SelectableLine()
+        {
+            SetStyle(
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.UserPaint |
+                ControlStyles.ResizeRedraw |
+                ControlStyles.Selectable,
+                true);
+            TabStop = false;
+            Cursor = Cursors.IBeam;
+            BackColor = DesktopStyle.Background;
+            ForeColor = DesktopStyle.SecondaryText;
+            AccessibleRole = AccessibleRole.StaticText;
+        }
+
+        /// <summary>
+        /// How far in from its left its text starts.
+        /// </summary>
+        public int TextInset => LogicalToDeviceUnits(margin);
+
+        /// <summary>
+        /// How wide it is to be, for all of its text, the inset either side of it.
+        /// </summary>
+        public int TextWidth => TextInset + Measure(Text) + TextInset;
+
+        int Start => Math.Min(anchor, end);
+        int Finish => Math.Max(anchor, end);
+
+        public string SelectedText => Text[Start..Finish];
+
+        public void SelectAll()
+        {
+            anchor = 0;
+            end = Text.Length;
+            Invalidate();
+        }
+
+        internal void Copy()
+        {
+            if (Start != Finish)
+            {
+                FolderView.SetClipboardText(SelectedText);
+            }
+        }
+
+        // Another text, nothing of it selected.
+        protected override void OnTextChanged(EventArgs args)
+        {
+            base.OnTextChanged(args);
+            anchor = 0;
+            end = 0;
+            Invalidate();
+        }
+
+        protected override void OnFontChanged(EventArgs args)
+        {
+            base.OnFontChanged(args);
+            Invalidate();
+        }
+
+        int Measure(string text)
+        {
+            if (text.Length == 0)
+            {
+                return 0;
+            }
+
+            return TextRenderer.MeasureText(text, Font, Size.Empty, flags).Width;
+        }
+
+        // The place between letters nearest x: before a letter left of its middle, after it right.
+        int IndexAt(int x)
+        {
+            var left = x - TextInset;
+            for (var index = 0; index < Text.Length; index++)
+            {
+                var before = Measure(Text[..index]);
+                var through = Measure(Text[..(index + 1)]);
+                if (left < (before + through) / 2)
+                {
+                    return index;
+                }
+            }
+
+            return Text.Length;
+        }
+
+        protected override void OnMouseDown(MouseEventArgs args)
+        {
+            base.OnMouseDown(args);
+            Focus();
+            if (args.Button != MouseButtons.Left)
+            {
+                return;
+            }
+
+            // The second click of a double-click selects it all, as for a word in an edit box: a
+            // sha is one.
+            if (args.Clicks > 1)
+            {
+                dragging = false;
+                SelectAll();
+                return;
+            }
+
+            dragging = true;
+            anchor = IndexAt(args.X);
+            end = anchor;
+            Invalidate();
+        }
+
+        // Pressed once, and not let go of yet: moving selects from where it was pressed.
+        bool dragging;
+
+        protected override void OnMouseMove(MouseEventArgs args)
+        {
+            base.OnMouseMove(args);
+            if (!dragging)
+            {
+                return;
+            }
+
+            var at = IndexAt(args.X);
+            if (at != end)
+            {
+                end = at;
+                Invalidate();
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs args)
+        {
+            base.OnMouseUp(args);
+            if (args.Button == MouseButtons.Left)
+            {
+                dragging = false;
+                return;
+            }
+
+            if (args.Button == MouseButtons.Right)
+            {
+                ShowMenu(args.Location);
+            }
+        }
+
+        // The mouse taken by another window part way through a drag, Alt+Tab say, ends it.
+        protected override void OnMouseCaptureChanged(EventArgs args)
+        {
+            base.OnMouseCaptureChanged(args);
+            dragging = false;
+        }
+
+        void ShowMenu(Point location)
+        {
+            List<QuickMenu.Command?> commands =
+            [
+                new("Copy", Copy, Start != Finish)
+                {
+                    Glyph = Icons.Copy,
+                    Shortcut = "Ctrl+C"
+                },
+                new("Select all", SelectAll)
+                {
+                    Shortcut = "Ctrl+A"
+                }
+            ];
+            PaneMenu.Show(this, location, commands, open => MenuOpened?.Invoke(open));
+        }
+
+        /// <summary>
+        /// Its menu opened, or closed, for the pane it is in not to slide away while it is open.
+        /// </summary>
+        public event Action<bool>? MenuOpened;
+
+        protected override void OnKeyDown(KeyEventArgs args)
+        {
+            base.OnKeyDown(args);
+            switch (args.KeyData)
+            {
+                case Keys.Control | Keys.C:
+                case Keys.Control | Keys.Insert:
+                    Copy();
+                    args.Handled = true;
+                    break;
+                case Keys.Control | Keys.A:
+                    SelectAll();
+                    args.Handled = true;
+                    break;
+            }
+        }
+
+        // The selection shows only while it has the focus, as an edit box's does.
+        protected override void OnGotFocus(EventArgs args)
+        {
+            base.OnGotFocus(args);
+            Invalidate();
+        }
+
+        protected override void OnLostFocus(EventArgs args)
+        {
+            base.OnLostFocus(args);
+            Invalidate();
+        }
+
+        // The text, and what of it is selected in the system's colours for that, its letters
+        // drawn again over the highlight, clipped to it, so they sit just where they were.
+        protected override void OnPaint(PaintEventArgs args)
+        {
+            var graphics = args.Graphics;
+            graphics.Clear(BackColor);
+            var origin = new Point(TextInset, 0);
+            TextRenderer.DrawText(graphics, Text, Font, origin, ForeColor, BackColor, flags);
+            if (!Focused ||
+                Start == Finish)
+            {
+                return;
+            }
+
+            var selected = Rectangle.FromLTRB(TextInset + Measure(Text[..Start]), 0, TextInset + Measure(Text[..Finish]), Height);
+            using (var highlight = new SolidBrush(SystemColors.Highlight))
+            {
+                graphics.FillRectangle(highlight, selected);
+            }
+
+            graphics.SetClip(selected);
+            TextRenderer.DrawText(graphics, Text, Font, origin, ExplorerStyle.HighlightText, SystemColors.Highlight, flags | TextFormatFlags.PreserveGraphicsClipping);
+            graphics.ResetClip();
         }
     }
 }
