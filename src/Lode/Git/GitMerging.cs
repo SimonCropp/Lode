@@ -6,6 +6,8 @@
 /// default branch that conflicts is undone, saying which files, as Changes has no squash or
 /// rebase under way to settle. Each refuses with changes to tracked files, which giving it up
 /// could take with it. Nothing is pushed, but for a rebase asked to force push.
+/// And the other way: the branch checked out merged into another without checking that out, so
+/// it, and the folder, stay as they are, pushed after where asked.
 /// </summary>
 static class GitMerging
 {
@@ -116,6 +118,333 @@ static class GitMerging
 
     static string FirstLine(string text) =>
         text.Split('\n', 2)[0].Trim();
+
+    /// <summary>
+    /// A branch the branch checked out is merged into: a local one, or one only on a remote,
+    /// origin/master say, which gets a local branch of its name, <paramref name="Name"/>,
+    /// tracking it. <paramref name="Ref"/> is what is read for it, <paramref name="Tip"/> the
+    /// commit it is at, and <paramref name="Remote"/> the remote branch, where it is one.
+    /// </summary>
+    internal sealed record Target(string Name, string Ref, string Tip, string? Remote);
+
+    // The branch picked, as a local branch where there is one of the name, otherwise as a
+    // remote's. Null where it is neither.
+    static Target? TargetOf(string repo, string picked, Cancel cancel)
+    {
+        if (TipOf(repo, $"refs/heads/{picked}", cancel) is { } local)
+        {
+            return new(picked, $"refs/heads/{picked}", local, null);
+        }
+
+        var slash = picked.IndexOf('/');
+        if (slash > 0 &&
+            TipOf(repo, $"refs/remotes/{picked}", cancel) is { } remote)
+        {
+            return new(picked[(slash + 1)..], $"refs/remotes/{picked}", remote, picked);
+        }
+
+        return null;
+    }
+
+    // The commit a ref is at, from what git writes to its output alone.
+    static string? TipOf(string repo, string reference, Cancel cancel)
+    {
+        var tip = CodeCommands.GitOutput(repo, cancel, ["rev-parse", "--verify", "--quiet", $"{reference}^{{commit}}"]);
+        if (tip.Succeeded &&
+            tip.Output.Trim().Length > 0)
+        {
+            return tip.Output.Trim();
+        }
+
+        return null;
+    }
+
+    // Why the branch checked out can't be merged into the target from here, or null where it
+    // can: a target only on a remote whose name a local branch has already, or one checked out
+    // in another worktree, whose folder would no longer match it.
+    static string? WhyNotInto(string repo, string current, Target target, Cancel cancel)
+    {
+        if (target.Remote != null &&
+            TipOf(repo, $"refs/heads/{target.Name}", cancel) != null)
+        {
+            return $"There is a local {target.Name} already, not tracking {target.Remote}: merge {current} into that instead.";
+        }
+
+        if (target.Remote == null &&
+            CheckedOutAt(repo, target.Ref, cancel) is { } folder)
+        {
+            return $"{target.Name} is checked out in {folder}, so it can't be changed from here: merge {current} into it there.";
+        }
+
+        return null;
+    }
+
+    // The folder of the worktree with the branch checked out, or null where none has.
+    static string? CheckedOutAt(string repo, string reference, Cancel cancel)
+    {
+        var list = CodeCommands.Git(repo, cancel, network: false, "worktree", "list", "--porcelain");
+        if (!list.Succeeded)
+        {
+            return null;
+        }
+
+        string? folder = null;
+        foreach (var line in list.Output.Split('\n', StringSplitOptions.TrimEntries))
+        {
+            if (line.StartsWith("worktree ", StringComparison.Ordinal))
+            {
+                folder = line["worktree ".Length..];
+            }
+            else if (line == $"branch {reference}")
+            {
+                return Path.GetFullPath(folder ?? repo);
+            }
+        }
+
+        return null;
+    }
+
+    // "target-only<tab>current-only": the commits the target has that the branch checked out
+    // hasn't, then those it has that the target hasn't. Null where git couldn't count them.
+    static (int TargetOnly, int CurrentOnly)? Apart(string repo, Target target, Cancel cancel)
+    {
+        var counts = CodeCommands.Git(repo, cancel, network: false, "rev-list", "--left-right", "--count", $"{target.Tip}...HEAD");
+        var parts = counts.Output.Split('\t', StringSplitOptions.TrimEntries);
+        if (counts.Succeeded &&
+            parts.Length == 2 &&
+            int.TryParse(parts[0], out var targetOnly) &&
+            int.TryParse(parts[1], out var currentOnly))
+        {
+            return (targetOnly, currentOnly);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// What merging the branch checked out, <paramref name="current"/>, into
+    /// <paramref name="picked"/> would do, leaving <paramref name="current"/> checked out: fast
+    /// forward it, where it has nothing the branch checked out hasn't, otherwise merge, with a
+    /// merge commit. One that would conflict can't go, as the conflicts could only be settled
+    /// with the other branch checked out.
+    /// </summary>
+    public static Preview IntoOf(string repo, string current, string picked, Cancel cancel) =>
+        CheckInto(repo, current, picked, cancel).Preview;
+
+    /// <summary>
+    /// What merging into another branch would come to in a repository: moved up to the branch
+    /// checked out, a merge commit, nothing as it has it all already, a conflict, or not from
+    /// here at all.
+    /// </summary>
+    internal enum IntoKind
+    {
+        FastForward,
+        Merge,
+        UpToDate,
+        Conflict,
+        Cannot
+    }
+
+    /// <summary>
+    /// <see cref="IntoOf"/>, with which <see cref="IntoKind"/> it is, for several
+    /// repositories' to be told together.
+    /// </summary>
+    internal sealed record IntoCheck(IntoKind Kind, Preview Preview);
+
+    internal static IntoCheck CheckInto(string repo, string current, string picked, Cancel cancel)
+    {
+        if (TargetOf(repo, picked, cancel) is not { } target)
+        {
+            return new(IntoKind.Cannot, new($"Couldn't find {picked}.", false));
+        }
+
+        if (WhyNotInto(repo, current, target, cancel) is { } why)
+        {
+            return new(IntoKind.Cannot, new(why, false));
+        }
+
+        if (Apart(repo, target, cancel) is not var (targetOnly, currentOnly))
+        {
+            return new(IntoKind.Cannot, new($"Couldn't compare {current} with {picked}.", false));
+        }
+
+        if (currentOnly == 0)
+        {
+            return new(IntoKind.UpToDate, new($"{picked} already has every commit on {current}.", false));
+        }
+
+        var made = "";
+        if (target.Remote != null)
+        {
+            made = $"\n\nA local {target.Name} is made for it, tracking {target.Remote}.";
+        }
+
+        if (targetOnly == 0)
+        {
+            return new(IntoKind.FastForward, new($"This will fast-forward {target.Name} by {GitState.CountOf(currentOnly, "commit")} to match {current}, leaving {current} checked out.{made}", true));
+        }
+
+        var tree = CodeCommands.GitOutput(repo, cancel, ["merge-tree", "--write-tree", "--name-only", "--no-messages", target.Tip, "HEAD"]);
+        if (tree.ExitCode == 1)
+        {
+            var conflicted = Conflicted(tree.Output);
+            return new(IntoKind.Conflict, new($"There will be {GitState.CountOf(conflicted.Count, "conflicted file")} when merging {current} into {target.Name}, which can only be settled with {target.Name} checked out: switch to it, and merge {current} into it there.\n{string.Join('\n', conflicted)}", false));
+        }
+
+        if (!tree.Succeeded)
+        {
+            return new(IntoKind.Cannot, new($"Couldn't merge {current} into {target.Name}: {FirstLine(tree.Error)}", false));
+        }
+
+        return new(IntoKind.Merge, new($"This will merge {GitState.CountOf(currentOnly, "commit")} from {current} into {target.Name}, with a merge commit, leaving {current} checked out.{made}", true));
+    }
+
+    // The files merge-tree says are in conflict: after the tree it would make, one a line.
+    static List<string> Conflicted(string output) =>
+        output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Skip(1)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// Merges the branch checked out, <paramref name="current"/>, into <paramref name="picked"/>,
+    /// without checking it out, so the folder, and anything uncommitted in it, stays as it is:
+    /// fast-forwarded where it can be, otherwise with a merge commit made as git would merge
+    /// them, then the branch moved to it, only if it is still where it was. One that would
+    /// conflict changes nothing. A branch only on a remote gets a local branch, tracking it.
+    /// With <paramref name="push"/>, the branch is pushed after, to the remote it tracks, or
+    /// origin, as it has no upstream then, which it is given.
+    /// </summary>
+    public static CodeCommands.RepoResult Into(string repo, string current, string picked, bool push, Cancel cancel)
+    {
+        if (TargetOf(repo, picked, cancel) is not { } target)
+        {
+            return new(repo, false, $"Couldn't find {picked}, so nothing was merged.");
+        }
+
+        if (WhyNotInto(repo, current, target, cancel) is { } why)
+        {
+            return new(repo, false, why);
+        }
+
+        var head = TipOf(repo, "HEAD", cancel);
+        if (head == null ||
+            Apart(repo, target, cancel) is not var (targetOnly, currentOnly))
+        {
+            return new(repo, false, $"Couldn't compare {current} with {picked}, so nothing was merged.");
+        }
+
+        if (currentOnly == 0)
+        {
+            return new(repo, true, $"{picked} already has every commit on {current}.");
+        }
+
+        string tip;
+        string done;
+        string reason;
+        if (targetOnly == 0)
+        {
+            tip = head;
+            done = $"Fast-forwarded {target.Name} by {GitState.CountOf(currentOnly, "commit")} to match {current}.";
+            reason = $"merge {current}: Fast-forward";
+        }
+        else
+        {
+            var tree = CodeCommands.GitOutput(repo, cancel, ["merge-tree", "--write-tree", "--name-only", "--no-messages", target.Tip, head]);
+            if (tree.ExitCode == 1)
+            {
+                return new(repo, false, $"Merging {current} into {target.Name} would conflict, so nothing was merged: switch to {target.Name}, and merge {current} into it there.\nIn conflict:\n{string.Join('\n', Conflicted(tree.Output))}");
+            }
+
+            if (!tree.Succeeded)
+            {
+                return new(repo, false, $"Couldn't merge {current} into {target.Name}, so nothing was merged:\n{tree.Error}");
+            }
+
+            // The new commit's id is all git writes to its output: signing it, as commit.gpgSign
+            // may have it, writes to the errors.
+            var commit = CodeCommands.GitOutput(
+                repo,
+                cancel,
+                [
+                    "commit-tree",
+                    FirstLine(tree.Output),
+                    "-p",
+                    target.Tip,
+                    "-p",
+                    head,
+                    "-m",
+                    $"Merge branch '{current}' into {target.Name}"
+                ]);
+            if (!commit.Succeeded)
+            {
+                return new(repo, false, $"Couldn't make the merge commit, so nothing was merged:\n{commit.Error}");
+            }
+
+            tip = commit.Output.Trim();
+            done = $"Merged {GitState.CountOf(currentOnly, "commit")} from {current} into {target.Name}.";
+            reason = $"merge {current}: Merge made by Lode";
+        }
+
+        // Moved only from where it was read, or, for a new local branch, only if there still is
+        // none: anything else moving it since, it is left as that left it.
+        var old = target.Tip;
+        if (target.Remote != null)
+        {
+            old = "";
+        }
+
+        var moved = CodeCommands.GitToItsEnd(repo, cancel, "update-ref", "-m", reason, $"refs/heads/{target.Name}", tip, old);
+        if (!moved.Succeeded)
+        {
+            return moved with
+            {
+                Output = $"Couldn't move {target.Name}, so nothing was merged:\n{moved.Output}"
+            };
+        }
+
+        var said = new List<string> { done };
+        if (target.Remote != null)
+        {
+            var tracked = CodeCommands.Git(repo, cancel, network: false, "branch", $"--set-upstream-to={target.Remote}", target.Name);
+            if (tracked.Succeeded)
+            {
+                said.Add($"Made a local {target.Name}, tracking {target.Remote}.");
+            }
+            else
+            {
+                said.Add($"Made a local {target.Name}, but couldn't have it track {target.Remote}:\n{tracked.Output}");
+            }
+        }
+
+        if (!push)
+        {
+            return new(repo, true, string.Join('\n', said));
+        }
+
+        var pushed = PushBranch(repo, target.Name, cancel);
+        said.Add(pushed.Output);
+        return pushed with
+        {
+            Output = string.Join('\n', said).Trim()
+        };
+    }
+
+    // Pushes a branch not checked out to the branch it tracks, or, with none, to origin, under
+    // its own name, which it then tracks.
+    static CodeCommands.RepoResult PushBranch(string repo, string branch, Cancel cancel)
+    {
+        var remote = CodeCommands.Git(repo, cancel, network: false, "config", "--get", $"branch.{branch}.remote");
+        var merge = CodeCommands.Git(repo, cancel, network: false, "config", "--get", $"branch.{branch}.merge");
+        if (remote is { Succeeded: true, Output.Length: > 0 } &&
+            merge is { Succeeded: true, Output.Length: > 0 })
+        {
+            return CodeCommands.Git(repo, cancel, network: true, "push", remote.Output.Trim(), $"refs/heads/{branch}:{merge.Output.Trim()}");
+        }
+
+        return CodeCommands.Git(repo, cancel, network: true, "push", "--set-upstream", "origin", $"refs/heads/{branch}:refs/heads/{branch}");
+    }
 
     /// <summary>
     /// Merges <paramref name="branch"/> into the branch checked out, or with

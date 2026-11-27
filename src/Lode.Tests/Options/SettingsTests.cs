@@ -270,6 +270,13 @@ public class SettingsTests
                       menuNested: true
                     },
                     {
+                      id: gitMergeInto,
+                      button: true,
+                      menu: false,
+                      buttonNested: true,
+                      menuNested: true
+                    },
+                    {
                       id: gitSquashMerge,
                       button: true,
                       menu: false,

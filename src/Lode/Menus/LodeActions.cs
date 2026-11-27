@@ -50,7 +50,7 @@ static class LodeActions
     /// The git actions. Pull, push, discard and purge were one, Git, a submenu of them. See
     /// <see cref="Settings"/>.
     /// </summary>
-    public static IReadOnlyList<string> GitIds { get; } = ["gitFetch", "gitPull", "gitSyncFork", "gitSwitchBranch", "gitSwitchToDefault", "gitUpdateFromDefault", "gitMerge", "gitSquashMerge", "gitRebase", "gitPush", "gitTag", "gitDiscard", "gitPurge"];
+    public static IReadOnlyList<string> GitIds { get; } = ["gitFetch", "gitPull", "gitSyncFork", "gitSwitchBranch", "gitSwitchToDefault", "gitUpdateFromDefault", "gitMerge", "gitMergeInto", "gitSquashMerge", "gitRebase", "gitPush", "gitTag", "gitDiscard", "gitPurge"];
 
     /// <summary>
     /// Show more options: the full Windows menu. Not a command of its own in the menus, which
@@ -95,6 +95,7 @@ static class LodeActions
         new("gitSwitchToDefault", "Git switch to default branch", Icons.SwitchBranch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Switch to default branch"),
         new("gitUpdateFromDefault", "Git update from default branch", Icons.UpdateFromDefault, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Update from default branch"),
         new("gitMerge", "Git merge into current branch", Icons.Branch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Merge into current branch…"),
+        new("gitMergeInto", "Git merge current branch into", Icons.MergeInto, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Merge current branch into…"),
         new("gitSquashMerge", "Git squash and merge into current branch", Icons.Squash, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Squash and merge into current branch…"),
         new("gitRebase", "Git rebase current branch", Icons.Rebase, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Rebase current branch…"),
         new("gitPush", "Git push", Icons.Push, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Push…"),

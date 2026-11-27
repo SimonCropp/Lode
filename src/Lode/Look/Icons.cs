@@ -65,6 +65,9 @@ static class Icons
     public const char SwitchBranch = '\uE8AB';
     // The default branch brought down into the branch checked out: an arrow down.
     public const char UpdateFromDefault = '';
+    // The branch checked out taken up into another: an arrow up, as Update from default branch
+    // brings one down.
+    public const char MergeInto = '';
     // Arrows pointing in on each other: a branch's commits squashed into one.
     public const char Squash = '';
     // Two arrows round, as Repeat all has: a branch's commits played again on top of another.

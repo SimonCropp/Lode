@@ -1,6 +1,6 @@
 /// <summary>
 /// The right-click entries for folders under the code folder: git fetch, pull, sync fork, switch
-/// branch, switch to the default branch, update from it, merge, squash and merge, rebase, push, tag, discard and purge across their repositories, and Update NuGets (optionally
+/// branch, switch to the default branch, update from it, merge, merge current branch into another, squash and merge, rebase, push, tag, discard and purge across their repositories, and Update NuGets (optionally
 /// then building). With several folders selected, each command takes in all of them at once,
 /// as one entry in the actions panel. Each runs in the background and shows in the actions panel under the tree, without
 /// holding up the rest of Lode. Push, discard and purge ask first.
@@ -17,7 +17,8 @@ static class CodeMenu
     /// read. Sync fork only where there may be a fork: a repository with an upstream remote, or a
     /// folder holding repositories. Tag only for repositories, not a folder holding them. Update
     /// from default branch goes with Switch to default branch, and Merge, Squash and merge and
-    /// Rebase are for one repository only, as they pick another of its branches.
+    /// Rebase are for one repository only, as they pick another of its branches. Merge current
+    /// branch into picks one every repository has.
     /// Deleting a tag is History's, on the commit picked.
     /// </summary>
     public static List<QuickMenu.Command?> Commands(Control owner, Settings settings, IReadOnlyList<string> folders, Func<string, GitState?>? stateOf = null)
@@ -73,14 +74,21 @@ static class CodeMenu
             commands.Add(WithSuffix(LodeActions.Command("gitUpdateFromDefault", () => UpdateFromDefault(folders, settings.CodeDirectory)), defaultName));
         }
 
-        // Another branch is picked of one repository's, so these are for one repository only.
-        if (allInRepos &&
-            repos.Count == 1)
+        // Another branch is picked of one repository's, so these are for one repository only,
+        // but for Merge current branch into, which picks one every repository has.
+        var single = allInRepos &&
+                     repos.Count == 1;
+        if (single)
+        {
+            commands.Add(LodeActions.Command("gitMerge", () => MergeBranch(owner, repos[0]!, GitMerging.Kind.Merge), text: "Git merge into current branch…"));
+        }
+
+        commands.Add(LodeActions.Command("gitMergeInto", () => MergeIntoAll(owner, folders, settings.CodeDirectory), text: "Git merge current branch into…"));
+        if (single)
         {
             var repo = repos[0]!;
             commands.AddRange(
             [
-                LodeActions.Command("gitMerge", () => MergeBranch(owner, repo, GitMerging.Kind.Merge), text: "Git merge into current branch…"),
                 LodeActions.Command("gitSquashMerge", () => MergeBranch(owner, repo, GitMerging.Kind.Squash), text: "Git squash and merge into current branch…"),
                 LodeActions.Command("gitRebase", () => MergeBranch(owner, repo, GitMerging.Kind.Rebase), text: "Git rebase current branch…")
             ]);
@@ -287,6 +295,253 @@ static class CodeMenu
         {
             window.GitPanes.Show(GitPane.Changes, focus: true);
         }
+    }
+
+    /// <summary>
+    /// Merge current branch into: asks which branch, <paramref name="branch"/> picked first
+    /// where given, one right-clicked in the status bar's branches say, saying what it would do
+    /// with it, and whether to push it afterwards, then merges the branch checked out into it in
+    /// the Actions panel, without checking it out: the branch checked out stays so. Detached,
+    /// there is no branch to merge.
+    /// </summary>
+    internal static async void MergeInto(Control owner, string repo, string? branch = null)
+    {
+        var listing = await Task.Run(() => GitBranches.Read(repo, Cancel.None));
+        if (owner.IsDisposed ||
+            OnBranch(owner, listing, "Merge current branch into") is not { } current)
+        {
+            return;
+        }
+
+        var branches = BranchActionForm.BranchesOf(listing);
+        using var form = new BranchActionForm(
+            $"Merge {current} into another branch",
+            "Merge",
+            listing,
+            (name, cancel) => GitMerging.IntoOf(repo, current, name, cancel),
+            branch,
+            name => PushOffer(branches, name));
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
+            form.Branch is not { } picked)
+        {
+            return;
+        }
+
+        var push = form.Push;
+        _ = RunOnBranch($"Git merge {current} into {picked}", repo, cancel => GitMerging.Into(repo, current, picked, push, cancel));
+    }
+
+    // Merge current branch into, for the repositories the folders are or hold: for one, its own
+    // branches; for several, those every one has, the one with the most recent commit first, as
+    // Switch branch lists them, saying what each repository would come to. Each merges the
+    // branch it has checked out into the one picked, staying on it. One on the branch picked,
+    // or on none, is left out.
+    static async void MergeIntoAll(Control owner, IReadOnlyList<string> folders, string? codeFolder)
+    {
+        var reads = await Task.Run(
+            () => CodeCommands.InParallel(
+                CodeCommands.FindRepos(folders, codeFolder),
+                ReadForSwitch));
+        if (reads.Count == 0)
+        {
+            NoRepos("Git merge current branch into", folders);
+            return;
+        }
+
+        if (owner.IsDisposed)
+        {
+            return;
+        }
+
+        if (reads.Count == 1)
+        {
+            MergeInto(owner, reads[0].Repo);
+            return;
+        }
+
+        var choices = SwitchChoices(reads);
+        if (choices.Count == 0)
+        {
+            MessageBox.Show(owner, $"No other branch is in every one of the {Repositories(reads.Count)}.", "Merge current branch into", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var form = new BranchActionForm(
+            $"Merge current branch into, in {Repositories(reads.Count)}",
+            "Merge",
+            new(null, null, [], choices),
+            (name, cancel) => MergeIntoPreview(reads, name, cancel),
+            pushOffer: name => $"Push {name} afterwards, in each");
+        if (await form.ShowDialogAsync(owner) != DialogResult.OK ||
+            form.Branch is not { } picked)
+        {
+            return;
+        }
+
+        var push = form.Push;
+        var targets = MergeIntoTargets(reads, picked);
+        var byRepo = targets.ToDictionary(_ => _.Read.Repo);
+        var repos = targets
+            .Select(_ => _.Read.Repo)
+            .ToList();
+        _ = ActionLog.Run(
+            $"Git merge into {picked}",
+            folders,
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.ForEach(
+                    repos,
+                    progress,
+                    cancel,
+                    repo =>
+                    {
+                        var target = byRepo[repo];
+                        return GitMerging.Into(repo, target.Read.Listing.Current!, target.Branch.Name, push, cancel);
+                    });
+                GitCache.MarkStale(repos);
+                return CodeCommands.GitOutcome(results);
+            });
+    }
+
+    /// <summary>
+    /// The repositories Merge current branch into merges in, each with its branch of the name
+    /// picked: those with a branch checked out other than it.
+    /// </summary>
+    internal static List<SwitchTarget> MergeIntoTargets(IReadOnlyList<SwitchRead> reads, string picked) =>
+        SwitchTargets(reads, picked)
+            .Where(_ => _.Read.Listing.Current != null)
+            .ToList();
+
+    // What Merge current branch into would come to in a repository.
+    sealed record IntoRead(string Repo, GitMerging.IntoCheck Check);
+
+    /// <summary>
+    /// What Merge current branch into would do in each of several repositories with
+    /// <paramref name="picked"/>, read as it would merge them, grouped by what each comes to:
+    /// fast-forwarded, merged with a merge commit, up to date already, conflicting, so left as
+    /// it is, or not to be changed from here, each with why, then those on it, or on no branch,
+    /// left out. It can go where any would be merged.
+    /// </summary>
+    internal static GitMerging.Preview MergeIntoPreview(IReadOnlyList<SwitchRead> reads, string picked, Cancel cancel)
+    {
+        var targets = MergeIntoTargets(reads, picked);
+        var byRepo = targets.ToDictionary(_ => _.Read.Repo);
+        var checks = CodeCommands.InParallel(
+            targets
+                .Select(_ => _.Read.Repo)
+                .ToList(),
+            repo =>
+            {
+                var target = byRepo[repo];
+                return new IntoRead(repo, GitMerging.CheckInto(repo, target.Read.Listing.Current!, target.Branch.Name, cancel));
+            },
+            cancel: cancel);
+        cancel.ThrowIfCancellationRequested();
+
+        List<string> Named(GitMerging.IntoKind kind) =>
+            checks
+                .Where(_ => _.Check.Kind == kind)
+                .Select(_ => Path.GetFileName(_.Repo))
+                .ToList();
+
+        var fastForward = Named(GitMerging.IntoKind.FastForward);
+        var merge = Named(GitMerging.IntoKind.Merge);
+        var going = fastForward.Count + merge.Count;
+
+        // The branch they merge from, where every one has the same checked out: develop, say.
+        var from = "each one's branch checked out";
+        if (targets
+                .Select(_ => _.Read.Listing.Current)
+                .Distinct()
+                .ToList() is [{ } only])
+        {
+            from = only;
+        }
+
+        var lines = new List<string>();
+        if (going == 0)
+        {
+            lines.Add($"Nothing would be merged into {picked}.");
+        }
+        else
+        {
+            lines.Add($"This will merge {from} into {picked} in {Repositories(going)}, leaving each on the branch it has checked out.");
+        }
+
+        if (fastForward.Count > 0)
+        {
+            lines.Add($"Fast-forwarded: {NameList(fastForward)}.");
+        }
+
+        if (merge.Count > 0)
+        {
+            lines.Add($"With a merge commit: {NameList(merge)}.");
+        }
+
+        var upToDate = Named(GitMerging.IntoKind.UpToDate);
+        if (upToDate.Count > 0)
+        {
+            lines.Add($"Up to date already: {NameList(upToDate)}.");
+        }
+
+        var conflict = Named(GitMerging.IntoKind.Conflict);
+        if (conflict.Count > 0)
+        {
+            lines.Add($"Would conflict, so left as they are: {NameList(conflict)}.");
+        }
+
+        foreach (var read in checks.Where(_ => _.Check.Kind == GitMerging.IntoKind.Cannot))
+        {
+            lines.Add($"{Path.GetFileName(read.Repo)}: {read.Check.Preview.Text}");
+        }
+
+        var onIt = reads
+            .Where(_ => _.Listing.Current == picked)
+            .Select(_ => Path.GetFileName(_.Repo))
+            .ToList();
+        if (onIt.Count > 0)
+        {
+            lines.Add($"On {picked}, so left out: {NameList(onIt)}.");
+        }
+
+        var detached = reads
+            .Where(_ => _.Listing.Current == null)
+            .Select(_ => Path.GetFileName(_.Repo))
+            .ToList();
+        if (detached.Count > 0)
+        {
+            lines.Add($"On no branch, so left out: {NameList(detached)}.");
+        }
+
+        // A line for each group under what it does, so a conflict shows without scrolling.
+        return new($"{lines[0]}\n\n{string.Join('\n', lines.Skip(1))}".Trim(), going > 0);
+    }
+
+    /// <summary>
+    /// What Merge current branch into's box for pushing says of a branch: where it would go, the
+    /// remote it tracks, or for one only on a remote, that one, otherwise origin.
+    /// </summary>
+    internal static string PushOffer(IReadOnlyList<GitBranches.Branch> branches, string name)
+    {
+        var branch = branches.FirstOrDefault(_ => _.Name == name);
+        var remote = "origin";
+        if (branch is { Remote: true })
+        {
+            remote = branch.Name[..branch.Name.IndexOf('/')];
+        }
+        else if (branch?.Upstream is { } upstream &&
+                 upstream.IndexOf('/') is > 0 and var slash)
+        {
+            remote = upstream[..slash];
+        }
+
+        var local = name;
+        if (branch != null)
+        {
+            local = GitBranches.LocalName(branch);
+        }
+
+        return $"Push {local} to {remote} afterwards";
     }
 
     /// <summary>
@@ -841,6 +1096,10 @@ static class CodeMenu
                 new($"Merge into {checkedOut}…", () => MergeBranch(owner, repo, GitMerging.Kind.Merge, branch.Name))
                 {
                     Glyph = Icons.Branch
+                },
+                new($"Merge {checkedOut} into this…", () => MergeInto(owner, repo, branch.Name))
+                {
+                    Glyph = Icons.MergeInto
                 },
                 new($"Squash and merge into {checkedOut}…", () => MergeBranch(owner, repo, GitMerging.Kind.Squash, branch.Name))
                 {

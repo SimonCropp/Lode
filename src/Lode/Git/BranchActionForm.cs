@@ -15,6 +15,7 @@ class BranchActionForm : Form
     List<GitBranches.Branch> branches;
     List<GitBranches.Branch> shown = [];
     Func<string, Cancel, GitMerging.Preview> previewOf;
+    Func<string, string>? pushOffer;
     int previewVersion;
 
     // Whether force push is asked: its box is hidden once the dialog closes, so its own
@@ -31,6 +32,11 @@ class BranchActionForm : Form
     /// Whether to force push once rebased, asked only where origin has commits it rewrites.
     /// </summary>
     public bool ForcePush => forceOffered && forcePush.Checked;
+
+    /// <summary>
+    /// Whether to push the branch picked afterwards, where that is offered for every branch.
+    /// </summary>
+    public bool Push => pushOffer != null && forcePush.Checked;
 
     /// <summary>
     /// Whether force push is asked, for the branch picked. For tests.
@@ -58,9 +64,12 @@ class BranchActionForm : Form
     /// <param name="previewOf">What it would do with a branch, by its name: read off the UI
     /// thread.</param>
     /// <param name="picked">The branch to pick first, one right-clicked say.</param>
-    public BranchActionForm(string title, string acceptText, GitBranches.Listing listing, Func<string, Cancel, GitMerging.Preview> previewOf, string? picked = null)
+    /// <param name="pushOffer">Where pushing afterwards is asked for every branch, rather than a
+    /// force push for a rebase: what the box says for a branch, by its name.</param>
+    public BranchActionForm(string title, string acceptText, GitBranches.Listing listing, Func<string, Cancel, GitMerging.Preview> previewOf, string? picked = null, Func<string, string>? pushOffer = null)
     {
         this.previewOf = previewOf;
+        this.pushOffer = pushOffer;
         branches = BranchesOf(listing);
 
         AutoScaleDimensions = new(96F, 96F);
@@ -271,7 +280,7 @@ class BranchActionForm : Form
             previewVersion++;
             accept.Enabled = false;
             forceOffered = false;
-            forcePush.Visible = false;
+            forcePush.Visible = pushOffer != null;
             preview.Text = "";
             return;
         }
@@ -285,6 +294,12 @@ class BranchActionForm : Form
         }
 
         Branch = name;
+        if (pushOffer != null)
+        {
+            forcePush.Text = pushOffer(name);
+            forcePush.Visible = true;
+        }
+
         Previewing = ShowPreview(name);
     }
 
@@ -319,6 +334,11 @@ class BranchActionForm : Form
 
         preview.Text = read.Text;
         accept.Enabled = read.CanGo;
+        if (pushOffer != null)
+        {
+            return;
+        }
+
         forceOffered = read.OnOrigin > 0;
         forcePush.Visible = forceOffered;
     }

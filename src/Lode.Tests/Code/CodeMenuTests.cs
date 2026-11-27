@@ -183,8 +183,8 @@ public class CodeMenuTests
                     }));
 
         await Assert.That(Describe(listing.Recent[0])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree… (disabled), ----, Delete…");
-        await Assert.That(Describe(listing.Recent[1])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree…, ----, Merge into feature…, Squash and merge into feature…, Rebase feature onto this…, Compare feature to this, ----, Delete…");
-        await Assert.That(Describe(listing.Other[0])).IsEqualTo("Rename… (disabled), Copy branch name, Checkout in new worktree…, ----, Merge into feature…, Squash and merge into feature…, Rebase feature onto this…, Compare feature to this, ----, Delete…");
+        await Assert.That(Describe(listing.Recent[1])).IsEqualTo("Rename…, Copy branch name, Checkout in new worktree…, ----, Merge into feature…, Merge feature into this…, Squash and merge into feature…, Rebase feature onto this…, Compare feature to this, ----, Delete…");
+        await Assert.That(Describe(listing.Other[0])).IsEqualTo("Rename… (disabled), Copy branch name, Checkout in new worktree…, ----, Merge into feature…, Merge feature into this…, Squash and merge into feature…, Rebase feature onto this…, Compare feature to this, ----, Delete…");
 
         // Detached, there is no branch to bring another into.
         var detached = listing with
