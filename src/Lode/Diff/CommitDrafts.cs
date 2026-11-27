@@ -19,6 +19,12 @@ static class CommitDrafts
         public string Description { get; set; } = "";
 
         /// <summary>
+        /// The commit being amended, the last on the branch, which the commit goes in place of;
+        /// null for a new commit.
+        /// </summary>
+        public string? Amending { get; set; }
+
+        /// <summary>
         /// True for a file to go in whole, false for one left out, null for one only some of
         /// whose lines go in.
         /// </summary>

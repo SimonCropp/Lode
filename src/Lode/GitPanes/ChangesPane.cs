@@ -1,7 +1,8 @@
 /// <summary>
 /// The Changes pane, laid out as GitHub Desktop's Changes tab: what is uncommitted in the
 /// repository, file by file, each ticked to go in the next commit, and the commit's summary and
-/// description beneath, with Commit to the branch. Ticks and what is typed are kept for each
+/// description beneath, with Commit to the branch, or, once History's Amend commit asks, Amend
+/// last commit, putting them in place of the last commit. Ticks and what is typed are kept for each
 /// repository while Lode runs, so going to another and back loses neither. Double-click a file to
 /// see its changes; right-click to discard them, open it, show it in its folder, copy its path, or
 /// have git ignore it.
@@ -38,6 +39,22 @@ sealed class ChangesPane : UserControl
 
     Panel descriptionSpacer = Spacer();
     bool describing;
+
+    // Amending, as GitHub Desktop's notice has it above the button: the commit goes in place of
+    // the last, with a link back to a new one.
+    LinkLabel amendNotice = new()
+    {
+        Name = "amendNotice",
+        Dock = DockStyle.Top,
+        AutoSize = false,
+        UseMnemonic = false,
+        Visible = false,
+        LinkBehavior = LinkBehavior.HoverUnderline,
+        Text = "Your changes will modify your most recent commit. Stop amending to make these changes as a new commit."
+    };
+
+    Panel amendSpacer = Spacer();
+    bool amendShown;
     AccentButton commitButton = new();
     ToolTip tip = new();
 
@@ -241,8 +258,16 @@ sealed class ChangesPane : UserControl
             args.Graphics.DrawLine(pen, 0, 0, commitArea.Width, 0);
         };
 
+        amendNotice.ForeColor = DesktopStyle.Text;
+        const string stop = "Stop amending";
+        amendNotice.LinkArea = new(amendNotice.Text.IndexOf(stop, StringComparison.Ordinal), stop.Length);
+        amendNotice.LinkClicked += (_, _) => StopAmending();
+        amendSpacer.Visible = false;
+
         // Docked from the last added: so the summary is at the top, the button at the bottom.
         commitArea.Controls.Add(commitButton);
+        commitArea.Controls.Add(amendSpacer);
+        commitArea.Controls.Add(amendNotice);
         commitArea.Controls.Add(Spacer());
         commitArea.Controls.Add(descriptionFrame);
         commitArea.Controls.Add(descriptionSpacer);
@@ -429,11 +454,23 @@ sealed class ChangesPane : UserControl
     {
         // As tall as what is in it, which the summary's font decides, the description giving up
         // room for at least three files when the pane is short: sharing the column with History.
+        if (amendShown)
+        {
+            // As many lines as the notice wraps to across the pane.
+            var width = Math.Max(1, DisplayRectangle.Width - commitArea.Padding.Horizontal);
+            var noticeHeight = amendNotice.GetPreferredSize(new(width, 0)).Height;
+            if (amendNotice.Height != noticeHeight)
+            {
+                amendNotice.Height = noticeHeight;
+            }
+        }
+
         var height = commitArea.Padding.Vertical;
         foreach (Control control in commitArea.Controls)
         {
             if (control != descriptionFrame &&
-                (control != descriptionSpacer || describing))
+                (control != descriptionSpacer || describing) &&
+                (amendShown || (control != amendNotice && control != amendSpacer)))
             {
                 height += control.Height;
             }
@@ -487,6 +524,7 @@ sealed class ChangesPane : UserControl
         descriptionFrame.Box.Text = draft.Description;
         loadingDraft = false;
         ShowDescription(draft.Description.Length > 0, focus: false);
+        ShowAmending();
         filterFrame.Box.Text = "";
         ShowRows();
         PickedChanged();
@@ -618,6 +656,15 @@ sealed class ChangesPane : UserControl
             changes = read ?? GitChanges.Empty;
             readYet = true;
 
+            // The commit being amended isn't the last any more, committed on or undone since, so
+            // there is nothing to amend.
+            if (draft.Amending is { } amending &&
+                changes.Head != null &&
+                changes.Head != amending)
+            {
+                draft.Amending = null;
+            }
+
             // Part way through a merge, the summary starts as git's message for it, as GitHub
             // Desktop's does, unless something is typed already.
             if (changes is { Merging: true, MergeSummary: { } summary } &&
@@ -628,6 +675,7 @@ sealed class ChangesPane : UserControl
 
             // Unticked files no longer changed are forgotten: changed again, they start ticked.
             draft.Keep(changes.Files.Select(_ => _.Path));
+            ShowAmending();
             ShowRows();
             ChangesRead?.Invoke(reading);
         }
@@ -848,7 +896,14 @@ sealed class ChangesPane : UserControl
     void ShowCommitButton()
     {
         var branch = changes.Branch;
-        if (changes.Merging)
+        var tipText = "Commit the ticked files (Ctrl+Enter)";
+        if (Amending)
+        {
+            commitButton.Text = "Amend last commit";
+            commitButton.Bold = "";
+            tipText = "Put the ticked files, and the summary and description, in the last commit (Ctrl+Enter)";
+        }
+        else if (changes.Merging)
         {
             commitButton.Text = "Commit merge";
             commitButton.Bold = "";
@@ -871,16 +926,90 @@ sealed class ChangesPane : UserControl
             commitButton.Bold = branch;
         }
 
+        if (tip.GetToolTip(commitButton) != tipText)
+        {
+            tip.SetToolTip(commitButton, tipText);
+        }
+
         commitButton.Enabled = CanCommit;
         commitButton.Invalidate();
     }
 
+    // Amending, the summary alone can be changed, with no file ticked.
     bool CanCommit =>
         repo != null &&
         !committing &&
         summaryFrame.Box.Text.Trim().Length > 0 &&
         !changes.Conflicted &&
-        changes.Files.Any(IsTicked);
+        (Amending || changes.Files.Any(IsTicked));
+
+    /// <summary>
+    /// Whether the commit goes in place of the last, as Amend commit asked: never part way
+    /// through a merge, which only a new commit can finish.
+    /// </summary>
+    internal bool Amending =>
+        draft.Amending != null &&
+        !changes.Merging;
+
+    internal LinkLabel AmendNotice => amendNotice;
+
+    /// <summary>
+    /// A commit's message put in the summary and description of <paramref name="messageRepo"/>,
+    /// in place of what was typed: a commit undone, to commit again, or, with
+    /// <paramref name="amending"/>, the last commit, to amend, which Commit then does.
+    /// </summary>
+    public void TakeMessage(string messageRepo, string message, string? amending)
+    {
+        var (summary, description) = GitChanges.SplitMessage(message);
+        var taking = DraftOf(messageRepo);
+        taking.Summary = summary;
+        taking.Description = description;
+        taking.Amending = amending;
+        if (!SameRepo(repo, messageRepo))
+        {
+            return;
+        }
+
+        loadingDraft = true;
+        summaryFrame.Box.Text = summary;
+        descriptionFrame.Box.Text = description;
+        loadingDraft = false;
+        ShowDescription(description.Length > 0, focus: false);
+        ShowAmending();
+        ShowCommitButton();
+    }
+
+    /// <summary>
+    /// Puts the focus in the summary, its text selected, to be typed over or changed.
+    /// </summary>
+    public void FocusSummary()
+    {
+        summaryFrame.Box.Focus();
+        summaryFrame.Box.SelectAll();
+    }
+
+    // Stop amending clicked: the commit is a new one again, with what is typed kept, as Desktop
+    // keeps it.
+    internal void StopAmending()
+    {
+        draft.Amending = null;
+        ShowAmending();
+        ShowCommitButton();
+    }
+
+    void ShowAmending()
+    {
+        var amending = Amending;
+        if (amendShown == amending)
+        {
+            return;
+        }
+
+        amendShown = amending;
+        amendNotice.Visible = amending;
+        amendSpacer.Visible = amending;
+        PerformLayout();
+    }
 
     /// <summary>
     /// Commits the ticked files with the summary and description, in the Actions panel. What is
@@ -896,6 +1025,14 @@ sealed class ChangesPane : UserControl
         var committingIn = repo!;
         var ticked = Ticked();
         var merging = changes.Merging;
+        string? amending = null;
+        var title = "Git commit";
+        if (Amending)
+        {
+            amending = draft.Amending;
+            title = "Git amend commit";
+        }
+
         var hasCommits = changes.HasCommits;
         var message = GitChanges.Message(summaryFrame.Box.Text, descriptionFrame.Box.Text);
 
@@ -922,11 +1059,11 @@ sealed class ChangesPane : UserControl
         try
         {
             var entry = await ActionLog.Run(
-                "Git commit",
+                title,
                 [committingIn],
                 async (_, cancel) =>
                 {
-                    var (result, changed) = await Task.Run(() => CommitPicked(committingIn, whole, picked, hasCommits, merging, message, cancel), cancel);
+                    var (result, changed) = await Task.Run(() => CommitPicked(committingIn, whole, picked, hasCommits, merging, message, amending, cancel), cancel);
                     changedSincePicked = changed;
                     GitCache.MarkStale([committingIn]);
                     return CodeCommands.GitOutcome([result]);
@@ -941,6 +1078,7 @@ sealed class ChangesPane : UserControl
                 var committed = DraftOf(committingIn);
                 committed.Summary = "";
                 committed.Description = "";
+                committed.Amending = null;
                 foreach (var (file, _) in picked)
                 {
                     CommitDrafts.ForgetPicks(committingIn, file.Path);
@@ -953,6 +1091,7 @@ sealed class ChangesPane : UserControl
                     descriptionFrame.Box.Text = "";
                     loadingDraft = false;
                     ShowDescription(false);
+                    ShowAmending();
                 }
             }
         }
@@ -972,6 +1111,8 @@ sealed class ChangesPane : UserControl
     /// Commits the files ticked whole and the lines picked of the others, each of those read
     /// again first: one whose diff is not what its lines were picked from any more stops the
     /// commit, as the lines picked can't be told, and is given back to be ticked whole again.
+    /// Amending, in place of <paramref name="amending"/>, only while that is still the last
+    /// commit and not pushed.
     /// </summary>
     static (CodeCommands.RepoResult Result, Change? Stale) CommitPicked(
         string repo,
@@ -980,8 +1121,15 @@ sealed class ChangesPane : UserControl
         bool hasCommits,
         bool merging,
         string message,
+        string? amending,
         Cancel cancel)
     {
+        if (amending != null &&
+            GitHistory.WhyNotRewrite(repo, amending, cancel) is { } why)
+        {
+            return (new(repo, false, $"Nothing was committed: {why}. Stop amending to make a new commit."), null);
+        }
+
         var partial = new List<PartialChange>();
         foreach (var (file, picks) in picked)
         {
@@ -999,7 +1147,7 @@ sealed class ChangesPane : UserControl
             }
         }
 
-        return (GitChanges.Commit(repo, whole, merging, message, cancel, partial), null);
+        return (GitChanges.Commit(repo, whole, merging, message, cancel, partial, amending != null), null);
     }
 
     /// <summary>

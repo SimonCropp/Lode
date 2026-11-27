@@ -140,6 +140,8 @@ sealed class GitPanes : IDisposable
         history.ShowInFolderRequested += _ => ShowInFolderRequested?.Invoke(_);
         history.OpenSiteRequested += _ => OpenSiteRequested?.Invoke(_);
         history.PushRequested += () => Act(GitState.PartKind.Ahead);
+        history.AmendRequested += (amendRepo, commit, message) => TakeMessage(amendRepo, message, commit.Sha);
+        history.CommitUndone += (undoRepo, message) => TakeMessage(undoRepo, message, null);
         changes.ActRequested += Act;
 
         // A commit is in History straight away, not once the watch hears of it.
@@ -315,6 +317,23 @@ sealed class GitPanes : IDisposable
         }
 
         GitStatusActions.Act(window, part, asked, read, settings.CodeDirectory);
+    }
+
+    // Amend commit, or a commit undone, carries on in Changes, the commit's message in the summary
+    // and description: to amend the commit, the focus in the summary, or to commit it again.
+    void TakeMessage(string messageRepo, string message, string? amending)
+    {
+        changes.TakeMessage(messageRepo, message, amending);
+        if (!ChangesPane.SameRepo(repo, messageRepo))
+        {
+            return;
+        }
+
+        Show(GitPane.Changes, focus: true);
+        if (amending != null)
+        {
+            changes.FocusSummary();
+        }
     }
 
     /// <summary>

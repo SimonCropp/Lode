@@ -73,7 +73,8 @@ sealed record PartialChange(Change File, string Patch);
 /// as git's message for the merge names it; null where it can't be told.</param>
 /// <param name="MergeSummary">Part way through a merge, the first line of git's message for it,
 /// to start the summary with.</param>
-sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null)
+/// <param name="Head">The commit checked out, null before the first, or where it wasn't read.</param>
+sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null)
 {
     public static GitChanges Empty { get; } = new(null, true, false, []);
 
@@ -293,6 +294,7 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     internal static GitChanges Parse(string output, bool merging)
     {
         string? branch = null;
+        string? head = null;
         var hasCommits = true;
         var files = new List<Change>();
         var text = output.AsSpan();
@@ -302,16 +304,22 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             var entry = text[entries.Current];
             if (entry.StartsWith("# branch.oid ", StringComparison.Ordinal))
             {
-                hasCommits = entry["# branch.oid ".Length..] is not "(initial)";
+                var oid = entry["# branch.oid ".Length..];
+                hasCommits = oid is not "(initial)";
+                if (hasCommits)
+                {
+                    head = oid.ToString();
+                }
+
                 continue;
             }
 
             if (entry.StartsWith("# branch.head ", StringComparison.Ordinal))
             {
-                var head = entry["# branch.head ".Length..];
-                if (head is not "(detached)")
+                var name = entry["# branch.head ".Length..];
+                if (name is not "(detached)")
                 {
-                    branch = head.ToString();
+                    branch = name.ToString();
                 }
 
                 continue;
@@ -365,7 +373,7 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
         }
 
         files.Sort((first, second) => string.CompareOrdinal(first.Path, second.Path));
-        return new(branch, hasCommits, merging, files);
+        return new(branch, hasCommits, merging, files, Head: head);
     }
 
     // The path, after as many fields before it as there are, each followed by a space. The path
@@ -396,6 +404,26 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     }
 
     /// <summary>
+    /// A commit's message as a summary and description, to commit again: its first paragraph, on
+    /// one line however many it was written over, as git's subject is, then the rest.
+    /// </summary>
+    internal static (string Summary, string Description) SplitMessage(string message)
+    {
+        message = message.ReplaceLineEndings("\n").Trim();
+        var subject = message;
+        var description = "";
+        var end = message.IndexOf("\n\n", StringComparison.Ordinal);
+        if (end >= 0)
+        {
+            subject = message[..end];
+            description = message[(end + 2)..].Trim();
+        }
+
+        var summary = string.Join(' ', subject.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+        return (summary, description);
+    }
+
+    /// <summary>
     /// Commits <paramref name="ticked"/>, and only them, with <paramref name="message"/>, leaving
     /// whatever else is staged staged. Part way through a merge git commits everything or
     /// nothing, so then it is everything. Each step is let finish once started, as one stopped
@@ -403,7 +431,10 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// </summary>
     /// <param name="partial">Files only some of whose lines go in, each with the patch of those
     /// lines against the last commit.</param>
-    public static CodeCommands.RepoResult Commit(string repo, IReadOnlyList<Change> ticked, bool merging, string message, Cancel cancel, IReadOnlyList<PartialChange>? partial = null)
+    /// <param name="amend">Whether the commit goes in place of the last, as git commit --amend
+    /// makes one: the last commit's files with the ticked ones as they are now, and its author.
+    /// With none ticked, only its message changes.</param>
+    public static CodeCommands.RepoResult Commit(string repo, IReadOnlyList<Change> ticked, bool merging, string message, Cancel cancel, IReadOnlyList<PartialChange>? partial = null, bool amend = false)
     {
         var folder = Path.Combine(Path.GetTempPath(), "Lode", "Commits", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
@@ -425,7 +456,7 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
 
             if (partial is { Count: > 0 })
             {
-                return CommitSomeLines(repo, folder, messageFile, ticked, partial, cancel);
+                return CommitSomeLines(repo, folder, messageFile, ticked, partial, amend, cancel);
             }
 
             // Git has to know of a file before a commit of only some paths can take it in. A
@@ -453,18 +484,21 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
 
             // --only commits these paths as they are on disk, and none of the others staged,
             // which stay staged. Literal, so a name like [x].txt isn't taken as a pattern, and in
-            // a file, as a command line holds only so many.
-            var pathsFile = PathsFile(folder, "paths", ticked.SelectMany(_ => _.Paths()).ToList());
-            return CodeCommands.GitToItsEnd(
-                repo,
-                cancel,
-                "--literal-pathspecs",
-                "commit",
-                "--only",
-                "-F",
-                messageFile,
-                $"--pathspec-from-file={pathsFile}",
-                "--pathspec-file-nul");
+            // a file, as a command line holds only so many. Amending, --only with no paths at all
+            // changes only the message, leaving what is staged staged.
+            List<string> arguments = ["--literal-pathspecs", "commit", "--only", "-F", messageFile];
+            if (amend)
+            {
+                arguments.Add("--amend");
+            }
+
+            if (ticked.Count > 0)
+            {
+                var pathsFile = PathsFile(folder, "paths", ticked.SelectMany(_ => _.Paths()).ToList());
+                arguments.AddRange([$"--pathspec-from-file={pathsFile}", "--pathspec-file-nul"]);
+            }
+
+            return CodeCommands.GitToItsEnd(repo, cancel, arguments.ToArray());
         }
         finally
         {
@@ -486,7 +520,7 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// whatever else was staged stays staged. Git's hooks run on the commit as on any. Should the
     /// commit fail, the real index is as it was.
     /// </summary>
-    static CodeCommands.RepoResult CommitSomeLines(string repo, string folder, string messageFile, IReadOnlyList<Change> whole, IReadOnlyList<PartialChange> partial, Cancel cancel)
+    static CodeCommands.RepoResult CommitSomeLines(string repo, string folder, string messageFile, IReadOnlyList<Change> whole, IReadOnlyList<PartialChange> partial, bool amend, Cancel cancel)
     {
         var environment = new Dictionary<string, string>
         {
@@ -532,7 +566,14 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             return applied;
         }
 
-        var committed = CodeCommands.GitToItsEnd(repo, cancel, environment, "commit", "-F", messageFile);
+        // Amending, the index read from the last commit is what goes in its place.
+        string[] commit = ["commit", "-F", messageFile];
+        if (amend)
+        {
+            commit = ["commit", "--amend", "-F", messageFile];
+        }
+
+        var committed = CodeCommands.GitToItsEnd(repo, cancel, environment, commit);
         if (!committed.Succeeded)
         {
             return committed;

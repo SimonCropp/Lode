@@ -26,6 +26,7 @@ public class GitChangesTests
         var changes = GitChanges.Parse(output, merging: false);
 
         await Assert.That(changes.Branch).IsEqualTo("main");
+        await Assert.That(changes.Head).IsEqualTo("0123456789abcdef0123456789abcdef01234567");
         await Assert.That(changes.HasCommits).IsTrue();
         await Assert.That(changes.Conflicted).IsTrue();
         await Assert.That(changes.Files.Select(_ => $"{_.Kind} {_.Path} {_.OldPath}".Trim()))
@@ -47,6 +48,7 @@ public class GitChangesTests
         var changes = GitChanges.Parse("# branch.oid (initial)\0# branch.head main\0? a.txt\0", merging: false);
 
         await Assert.That(changes.HasCommits).IsFalse();
+        await Assert.That(changes.Head).IsNull();
         await Assert.That(changes.Files.Count).IsEqualTo(1);
     }
 
@@ -63,6 +65,66 @@ public class GitChangesTests
     {
         await Assert.That(GitChanges.Message("  Summary ", "")).IsEqualTo("Summary");
         await Assert.That(GitChanges.Message("Summary", "\nThe why.\n")).IsEqualTo("Summary\n\nThe why.");
+    }
+
+    // A commit's message back as a summary and description: its first paragraph on one line, as
+    // git's subject is, then the rest.
+    [Test]
+    public async Task SplitMessage()
+    {
+        await Assert.That(GitChanges.SplitMessage("Summary\n")).IsEqualTo(("Summary", ""));
+        await Assert.That(GitChanges.SplitMessage("Summary\n\nThe why.\n\nMore.\n")).IsEqualTo(("Summary", "The why.\n\nMore."));
+        await Assert.That(GitChanges.SplitMessage("A summary\r\nover two lines\r\n\r\nThe why.")).IsEqualTo(("A summary over two lines", "The why."));
+    }
+
+    // Amending, the ticked files go in the last commit, in its place, with the message given and
+    // its author; what else is changed or staged stays so.
+    [Test]
+    public async Task AmendsTheLastCommit()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var parent = Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "first.txt"), "first");
+        Git(repo, "add", ".");
+        Git(repo, "commit", "--author=Ada <ada@example.com>", "-m", "First");
+        await File.WriteAllTextAsync(Path.Combine(repo, "second.txt"), "second");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "left");
+        await File.WriteAllTextAsync(Path.Combine(repo, "staged.txt"), "staged");
+        Git(repo, "add", "staged.txt");
+
+        var changes = GitChanges.Read(repo, Cancel.None)!;
+        var result = GitChanges.Commit(repo, changes.Files.Where(_ => _.Path == "second.txt").ToList(), false, "First and second", Cancel.None, amend: true);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "rev-parse", "HEAD^")).IsEqualTo(parent);
+        await Assert.That(Git(repo, "log", "-1", "--format=%an: %s")).IsEqualTo("Ada: First and second");
+        await Assert.That(Git(repo, "show", "--name-only", "--format=", "HEAD").Split('\n')).IsEquivalentTo(["first.txt", "second.txt"]);
+        await Assert.That(Git(repo, "diff", "--name-only")).IsEqualTo("tracked.txt");
+        await Assert.That(Git(repo, "diff", "--cached", "--name-only")).IsEqualTo("staged.txt");
+    }
+
+    // Amending with nothing ticked changes only the message; what is staged stays staged, out
+    // of it.
+    [Test]
+    public async Task AmendsOnlyTheMessage()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var parent = Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "first.txt"), "first");
+        Git(repo, "add", ".");
+        Git(repo, "commit", "-m", "Frist");
+        await File.WriteAllTextAsync(Path.Combine(repo, "staged.txt"), "staged");
+        Git(repo, "add", "staged.txt");
+
+        var result = GitChanges.Commit(repo, [], false, "First\n\nThe why.", Cancel.None, amend: true);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "rev-parse", "HEAD^")).IsEqualTo(parent);
+        await Assert.That(Git(repo, "log", "-1", "--format=%B")).IsEqualTo("First\n\nThe why.");
+        await Assert.That(Git(repo, "show", "--name-only", "--format=", "HEAD")).IsEqualTo("first.txt");
+        await Assert.That(Git(repo, "diff", "--cached", "--name-only")).IsEqualTo("staged.txt");
     }
 
     // A line matching the file alone, from the top, what a pattern takes as more escaped.

@@ -134,6 +134,67 @@ static class GitHistory
     }
 
     /// <summary>
+    /// Whether the commit checked out has never been pushed, as GitHub Desktop takes a commit it
+    /// lets be amended or undone on a branch tracking none: the branch tracks none, or its remote
+    /// branch is gone, and none of the remotes' branches has the commit; with no remote, none
+    /// has. A branch tracked has its own commits not pushed, which <see cref="Unpushed"/> finds.
+    /// </summary>
+    public static bool NeverPushed(string repo, Cancel cancel)
+    {
+        if (!CodeCommands.GitOutput(repo, cancel, ["symbolic-ref", "-q", "HEAD"]).Succeeded ||
+            CodeCommands.GitOutput(repo, cancel, ["rev-parse", "--verify", "--quiet", "@{upstream}"]).Succeeded)
+        {
+            return false;
+        }
+
+        return OnNoRemote(repo, cancel);
+    }
+
+    // What of HEAD's history no remote's branch has, which has HEAD in it when there is any, as a
+    // remote's branch with HEAD has all before it too.
+    static bool OnNoRemote(string repo, Cancel cancel)
+    {
+        var result = CodeCommands.GitOutput(repo, cancel, ["--no-optional-locks", "rev-list", "-n", "1", "HEAD", "--not", "--remotes", "--"]);
+        return result.Succeeded &&
+               result.Output.Trim().Length > 0;
+    }
+
+    /// <summary>
+    /// Why the commit <paramref name="sha"/> can't be amended or undone, null where it can: it
+    /// isn't the last commit on the branch any more, or it has been pushed: to the branch
+    /// tracked, when changing it would mean pushing with force, or, tracking none, to any
+    /// remote's branch. Read again as it is done, as History's may be older.
+    /// </summary>
+    public static string? WhyNotRewrite(string repo, string sha, Cancel cancel)
+    {
+        var shortSha = sha[..Math.Min(7, sha.Length)];
+        var head = CodeCommands.GitOutput(repo, cancel, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+        if (!head.Succeeded ||
+            head.Output.Trim() != sha)
+        {
+            return $"{shortSha} isn't the last commit on the branch any more";
+        }
+
+        if (!CodeCommands.GitOutput(repo, cancel, ["rev-parse", "--verify", "--quiet", "@{upstream}"]).Succeeded)
+        {
+            if (!OnNoRemote(repo, cancel))
+            {
+                return $"{shortSha} is on a remote's branch already";
+            }
+
+            return null;
+        }
+
+        // Exits 0 only where the branch tracked has the commit.
+        if (CodeCommands.GitOutput(repo, cancel, ["merge-base", "--is-ancestor", "HEAD", "@{upstream}"]).Succeeded)
+        {
+            return $"{shortSha} has been pushed, and changing it would mean pushing with force";
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// How far HEAD and <paramref name="branch"/> are apart: the commits HEAD has that the branch
     /// hasn't, and those the branch has that HEAD hasn't. Null when git can't say, the branch
     /// since deleted say.

@@ -472,7 +472,15 @@ sealed class Commits
     /// and behind. Painted down from both by date until all that is left to look at both have,
     /// as git does.
     /// </summary>
-    public (List<int> LeftOnly, List<int> RightOnly) Divergence(int left, int right)
+    public (List<int> LeftOnly, List<int> RightOnly) Divergence(int left, int right) =>
+        Divergence(left, [right]);
+
+    /// <summary>
+    /// As <see cref="Divergence(int, int)"/>, with the commits any of <paramref name="rights"/>
+    /// has on the right: what of <paramref name="left"/>'s history none of them has, as git
+    /// rev-list left --not rights lists it, and what of theirs it hasn't.
+    /// </summary>
+    public (List<int> LeftOnly, List<int> RightOnly) Divergence(int left, IReadOnlyList<int> rights)
     {
         const uint leftFlag = 1;
         const uint rightFlag = 2;
@@ -481,10 +489,14 @@ sealed class Commits
         var queue = new DateQueue(this);
         var interesting = 0;
         Flags(left) |= leftFlag;
-        Flags(right) |= rightFlag;
         queue.Push(left, 1);
-        queue.Push(right, 1);
-        interesting += 2;
+        interesting++;
+        foreach (var right in rights)
+        {
+            Flags(right) |= rightFlag;
+            queue.Push(right, 1);
+            interesting++;
+        }
         while (interesting > 0 &&
                queue.TryPop(out var node, out var counted))
         {

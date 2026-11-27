@@ -821,6 +821,126 @@ public class CodeCommandsTests
         await Assert.That(File.Exists(Path.Combine(repo, ".git", "REVERT_HEAD"))).IsFalse();
     }
 
+    // History's Undo commit: the last commit off the branch, its changes left uncommitted and
+    // unstaged, a file it added untracked again, and what was uncommitted already as it was.
+    [Test]
+    public async Task UndoCommitLeavesItsChangesUncommitted()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var initial = Scratch.Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "added.txt"), "added");
+        Scratch.Git(repo, "add", ".");
+        Scratch.Git(repo, "commit", "-m", "Second");
+        var second = Scratch.Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "other.txt"), "other");
+
+        var undone = (await CodeCommands.UndoCommit(repo, Commit(repo, second))).Single();
+
+        await Assert.That(undone.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(initial);
+        await Assert.That(Scratch.Git(repo, "diff", "--name-only")).IsEqualTo("tracked.txt");
+        await Assert.That(Scratch.Git(repo, "diff", "--cached", "--name-only")).IsEmpty();
+        await Assert.That(Scratch.Git(repo, "ls-files", "--others", "--exclude-standard").Split('\n')).IsEquivalentTo(["added.txt", "other.txt"]);
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("changed");
+    }
+
+    // The first commit undone leaves the branch with none, still checked out, its files staged.
+    [Test]
+    public async Task UndoCommitOfTheFirstCommit()
+    {
+        using var code = new Scratch();
+        var repo = code.At("Fresh");
+        Directory.CreateDirectory(repo);
+        Scratch.Git(repo, "init", "--initial-branch=main");
+        Scratch.Identify(repo);
+        await File.WriteAllTextAsync(Path.Combine(repo, "first.txt"), "first");
+        Scratch.Git(repo, "add", ".");
+        Scratch.Git(repo, "commit", "-m", "First");
+        var first = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var undone = (await CodeCommands.UndoCommit(repo, Commit(repo, first))).Single();
+
+        await Assert.That(undone.Succeeded).IsTrue();
+        await Assert.That(CodeCommands.Git(repo, "rev-parse", "--verify", "--quiet", "HEAD").Succeeded).IsFalse();
+        await Assert.That(Scratch.Git(repo, "symbolic-ref", "--short", "HEAD")).IsEqualTo("main");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("A  first.txt");
+    }
+
+    // Nothing is undone where the commit has been pushed, or isn't the last any more, as
+    // History's arrows may be older than the branch.
+    [Test]
+    public async Task UndoCommitLeavesAPushedOrOlderCommit()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var pushed = Scratch.Git(repo, "rev-parse", "HEAD");
+        var pushedUndone = (await CodeCommands.UndoCommit(repo, Commit(repo, pushed))).Single();
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "second");
+        Scratch.Git(repo, "commit", "-am", "Second");
+        var second = Scratch.Git(repo, "rev-parse", "HEAD");
+        Scratch.Git(repo, "commit", "--allow-empty", "-m", "Third");
+        var third = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var olderUndone = (await CodeCommands.UndoCommit(repo, Commit(repo, second))).Single();
+
+        await Assert.That(pushedUndone.Succeeded).IsFalse();
+        await Assert.That(pushedUndone.Output).IsEqualTo($"Nothing was undone: {pushed[..7]} has been pushed, and changing it would mean pushing with force.");
+        await Assert.That(olderUndone.Succeeded).IsFalse();
+        await Assert.That(olderUndone.Output).IsEqualTo($"Nothing was undone: {second[..7]} isn't the last commit on the branch any more.");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(third);
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEmpty();
+    }
+
+    // On a branch tracking none, as GitHub Desktop has it: a commit no remote's branch has is
+    // undone, and one a remote's branch has isn't.
+    [Test]
+    public async Task UndoCommitOnABranchTrackingNone()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var initial = Scratch.Git(repo, "rev-parse", "HEAD");
+        Scratch.Git(repo, "switch", "-q", "--no-track", "-c", "feature", "origin/main");
+        var atOrigin = (await CodeCommands.UndoCommit(repo, Commit(repo, initial))).Single();
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "feature");
+        Scratch.Git(repo, "commit", "-am", "Feature");
+        var feature = Scratch.Git(repo, "rev-parse", "HEAD");
+
+        var undone = (await CodeCommands.UndoCommit(repo, Commit(repo, feature))).Single();
+
+        await Assert.That(atOrigin.Succeeded).IsFalse();
+        await Assert.That(atOrigin.Output).IsEqualTo($"Nothing was undone: {initial[..7]} is on a remote's branch already.");
+        await Assert.That(undone.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(initial);
+        await Assert.That(Scratch.Git(repo, "diff", "--name-only")).IsEqualTo("tracked.txt");
+    }
+
+    // What Undo commit asks: what becomes of the commit, of what is typed and uncommitted
+    // already, and of a merge's commits or the branch of a first commit.
+    [Test]
+    public async Task UndoCommitQuestion()
+    {
+        var commit = new GitCommit("e5f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9", ["a1b2c3d4"], "Ada", DateTimeOffset.Now, [], "Rename several items");
+        var merge = commit with
+        {
+            Parents = ["a1b2c3d4", "b2c3d4e5"]
+        };
+        var first = commit with
+        {
+            Parents = []
+        };
+
+        await Assert.That(CodeMenu.UndoCommitQuestion(@"C:\Code\Lode", commit, false, false))
+            .IsEqualTo("Undo e5f1a2b \"Rename several items\" in Lode?\n\nIt comes off the branch, its changes left uncommitted, and its summary and description go in Changes, to commit again.");
+        await Assert.That(CodeMenu.UndoCommitQuestion(@"C:\Code\Lode", commit, true, true))
+            .IsEqualTo("Undo e5f1a2b \"Rename several items\" in Lode?\n\nIt comes off the branch, its changes left uncommitted, and its summary and description go in Changes, to commit again. They replace what is typed there.\n\nWhat is uncommitted already stays as it is, among its changes.");
+        await Assert.That(CodeMenu.UndoCommitQuestion(@"C:\Code\Lode", merge, false, false))
+            .EndsWith("\n\nIt is a merge: what it brought in is left uncommitted, and the commits it merged are no longer on the branch.");
+        await Assert.That(CodeMenu.UndoCommitQuestion(@"C:\Code\Lode", first, false, false))
+            .EndsWith("\n\nIt is the first commit: the branch is left with none, its files staged.");
+    }
+
     // Given a commit, as History tags the one picked, the tag goes on that, not the one checked
     // out, and to origin.
     [Test]

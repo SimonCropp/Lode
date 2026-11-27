@@ -458,6 +458,46 @@ sealed class GitRepository : IDisposable
     }
 
     /// <summary>
+    /// What the remotes' branches are at, refs/remotes/origin/main say, packed or loose, each
+    /// commit once, origin/HEAD followed to the branch it names.
+    /// </summary>
+    public List<ObjectId> RemoteBranches()
+    {
+        const string prefix = "refs/remotes/";
+        var refs = new Dictionary<string, ObjectId>(StringComparer.Ordinal);
+        foreach (var (name, (id, _)) in Packed())
+        {
+            if (name.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                refs[name] = id;
+            }
+        }
+
+        var folder = Path.Combine(CommonDir, "refs", "remotes");
+        if (Directory.Exists(folder))
+        {
+            foreach (var file in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+            {
+                var name = prefix + Path.GetRelativePath(folder, file).Replace('\\', '/');
+                if (name.EndsWith(".lock", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                // One naming a branch since deleted names nothing.
+                if (Resolve(name) is { } id)
+                {
+                    refs[name] = id;
+                }
+            }
+        }
+
+        return refs.Values
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>
     /// What an object is in the end once each tag it is is followed: a commit, usually. With its
     /// type, and the first tag's date, for git describe to choose between annotated tags.
     /// </summary>

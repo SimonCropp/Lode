@@ -62,6 +62,43 @@ public class InProcessHistoryTests
         await Assert.That(InProcessHistory.Unpushed(repo, Cancel.None)).IsEmpty();
     }
 
+    // Never pushed, as git finds it too: on a branch tracking none, the commit checked out on no
+    // remote's branch; with no remote, on none. Not so on a branch tracked, one at a remote's
+    // branch, detached, or before the first commit.
+    [Test]
+    public async Task NeverPushed()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var fresh = scratch.At("Fresh");
+        Directory.CreateDirectory(fresh);
+        Git(fresh, "init", "--initial-branch=main");
+        Identify(fresh);
+        async Task<bool> Both(string folder)
+        {
+            var inProcess = InProcessHistory.NeverPushed(folder, Cancel.None);
+            await Assert.That(inProcess).IsEqualTo(GitHistory.NeverPushed(folder, Cancel.None));
+            return inProcess!.Value;
+        }
+
+        await Assert.That(await Both(fresh)).IsFalse();
+        Git(fresh, "commit", "--allow-empty", "-m", "Only");
+        await Assert.That(await Both(fresh)).IsTrue();
+
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        Git(repo, "commit", "-am", "Local");
+        await Assert.That(await Both(repo)).IsFalse();
+
+        Git(repo, "switch", "-q", "--no-track", "-c", "atOrigin", "origin/main");
+        await Assert.That(await Both(repo)).IsFalse();
+
+        Git(repo, "commit", "--allow-empty", "-m", "New");
+        await Assert.That(await Both(repo)).IsTrue();
+
+        Git(repo, "switch", "-q", "--detach");
+        await Assert.That(await Both(repo)).IsFalse();
+    }
+
     // Before the first commit there is no history; a folder that isn't a repository can't be read.
     [Test]
     public async Task NoCommitsYet()
@@ -76,6 +113,7 @@ public class InProcessHistoryTests
         await Assert.That(InProcessHistory.Read(repo, 0, GitHistory.Page, Cancel.None)).IsEmpty();
         await Assert.That(InProcessHistory.Read(plain, 0, GitHistory.Page, Cancel.None)).IsNull();
         await Assert.That(InProcessHistory.Unpushed(plain, Cancel.None)).IsNull();
+        await Assert.That(InProcessHistory.NeverPushed(plain, Cancel.None)).IsNull();
     }
 
     // With a .mailmap, authors are named as it says, as git log's %aN names them: by email, or by

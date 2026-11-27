@@ -809,6 +809,50 @@ static class CodeCommands
             });
 
     /// <summary>
+    /// History's Undo commit, as GitHub Desktop's: <paramref name="commit"/>, the last on the
+    /// branch, taken off it, its changes left uncommitted and unstaged, as git reset --mixed
+    /// leaves them, and the files as they were, so what was uncommitted already stays. The first
+    /// commit leaves the branch with none, its files staged. Nothing is done where the commit
+    /// isn't the last any more, or has been pushed, or part way through a merge, which a reset
+    /// would give up.
+    /// </summary>
+    public static Task<List<RepoResult>> UndoCommit(string repo, GitCommit commit, Cancel cancel = default) =>
+        ForEach(
+            [repo],
+            null,
+            cancel,
+            _ =>
+            {
+                if (GitChanges.IsMerging(_))
+                {
+                    return new(_, false, "Nothing was undone: a merge, cherry pick or revert is part way. Commit it or give it up first.");
+                }
+
+                if (GitHistory.WhyNotRewrite(_, commit.Sha, cancel) is { } why)
+                {
+                    return new(_, false, $"Nothing was undone: {why}.");
+                }
+
+                // The branch moved, only if it is still at the commit, so a commit made since
+                // isn't taken off with it.
+                if (commit.Parents.Count == 0)
+                {
+                    return GitToItsEnd(_, cancel, "update-ref", "-m", "undo commit", "-d", "HEAD", commit.Sha);
+                }
+
+                var parent = commit.Parents[0];
+                var moved = GitToItsEnd(_, cancel, "update-ref", "-m", $"reset: moving to {parent}", "HEAD", parent, commit.Sha);
+                if (!moved.Succeeded)
+                {
+                    return moved;
+                }
+
+                // Not cancellable: with the branch moved, the index has to follow it, or the
+                // commit's changes would show staged.
+                return GitToItsEnd(_, Cancel.None, "reset", "-q");
+            });
+
+    /// <summary>
     /// Deletes the tag <paramref name="name"/> from each repository and from origin. Gone from
     /// one of them already, or never pushed, it goes from the other; in neither, it fails.
     /// </summary>

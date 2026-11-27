@@ -404,7 +404,7 @@ public class GitPanesTests
     }
 
     // A commit's menu offers to revert it and to tag it, and, for one with tags, to delete one of
-    // them.
+    // them. The last, not pushed yet, can be amended or undone too.
     [Test]
     public async Task CommitMenuTags()
     {
@@ -421,8 +421,95 @@ public class GitPanesTests
         string Entries(int index) =>
             string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[index]).Select(_ => _?.Text ?? "----"));
 
-        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…");
+        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Amend commit…, Undo commit…, Revert commit…, Tag…");
         await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…, Delete tag…");
+    }
+
+    // The last commit pushed is neither amended nor undone, as changing it would mean pushing with
+    // force; one never pushed, on a branch tracking none, is, though it has no arrow; the top
+    // commit while comparing isn't, as it may be the other branch's.
+    [Test]
+    public async Task CommitMenuAmendsOnlyWhatIsNotPushed()
+    {
+        using var stubs = new PaneStubs();
+        HistoryPane.ReadUnpushed = (_, _) => [];
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        string Entries() =>
+            string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[0]).Select(_ => _?.Text ?? "----"));
+
+        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…");
+
+        HistoryPane.ReadNeverPushed = (_, _) => true;
+        pane.Reload();
+        await Pump.Until(() => pane.Reading.IsCompleted);
+
+        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Amend commit…, Undo commit…, Revert commit…, Tag…");
+
+        HistoryPane.ReadUnpushed = (_, _) => [PaneStubs.History[0].Sha];
+        HistoryPane.ReadRange = (_, _, skip, count, _) => PaneStubs.History.Skip(skip).Take(count).ToList();
+        pane.Compare("feature");
+        await Pump.Until(() => pane.Reading.IsCompleted && pane.Commits.Count > 0);
+
+        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…");
+    }
+
+    // Amend commit carries on in Changes, as GitHub Desktop's does: the commit's message in the
+    // summary, the focus in it, a notice saying the commit goes in place of the last, and Amend
+    // last commit, which needs no file ticked. Stop amending makes it a new commit again, the
+    // message kept; and amending ends by itself once the commit isn't the last any more.
+    [Test]
+    public async Task AmendCommitInChanges()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        var repo = fixture.At("Docs");
+        settings.SetPaneTab(repo, GitPane.History);
+        using var form = await Show(repo, settings);
+        await PaneStubs.Settled(form);
+        var history = form.GitPanes.HistoryPane;
+        var changes = form.GitPanes.ChangesPane;
+
+        history.CommitCommands(repo, PaneStubs.History[0]).Single(_ => _?.Text == "Amend commit…")!.Action();
+
+        // Changes read once it shows, which it does for the amend.
+        await Pump.Until(() => changes.Amending && changes.Reading.IsCompleted && changes.Changes.Files.Count > 0);
+
+        await Assert.That(form.GitPanes.IsBeside(GitPane.Changes)).IsTrue();
+        await Assert.That(changes.SummaryBox.Text).IsEqualTo(PaneStubs.History[0].Subject);
+        await Assert.That(changes.SummaryBox.Focused).IsTrue();
+        await Assert.That(changes.AmendNotice.Visible).IsTrue();
+        await Assert.That(changes.AmendNotice.Height).IsGreaterThan(0);
+        await Assert.That((changes.CommitButton.Text, changes.CommitButton.Enabled)).IsEqualTo(("Amend last commit", true));
+
+        changes.StopAmending();
+
+        await Assert.That(changes.Amending).IsFalse();
+        await Assert.That(changes.AmendNotice.Visible).IsFalse();
+        await Assert.That(changes.CommitButton.Text).IsEqualTo("Commit 6 files to ");
+        await Assert.That(changes.SummaryBox.Text).IsEqualTo(PaneStubs.History[0].Subject);
+
+        changes.TakeMessage(repo, "Amended\n\nThe why.", PaneStubs.History[0].Sha);
+        await Assert.That((changes.Amending, changes.Describing, changes.DescriptionBox.Text)).IsEqualTo((true, true, "The why."));
+
+        ChangesPane.Read = (_, _) => new("main", true, false, PaneStubs.Files, Head: PaneStubs.History[1].Sha);
+        changes.Reload();
+        await Pump.Until(() => changes.Reading.IsCompleted && !changes.Amending);
+
+        await Assert.That(changes.CommitButton.Text).IsEqualTo("Commit 6 files to ");
+        changes.SummaryBox.Text = "";
+        changes.DescriptionBox.Text = "";
     }
 
     // With nothing uncommitted, what to do next: pull, then push after where both have moved on,

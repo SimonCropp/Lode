@@ -30,6 +30,10 @@ sealed class HistoryPane : UserControl
     RemoteSite? site;
     List<GitCommit> loaded = [];
     HashSet<string> unpushed = [];
+
+    // On a branch tracking none, whether the commit checked out is on no remote's branch: not
+    // pushed, though it has no arrow, which pushes to the branch tracked.
+    bool neverPushed;
     bool more;
     bool showing;
     bool stale = true;
@@ -95,6 +99,12 @@ sealed class HistoryPane : UserControl
     internal static Func<string, Cancel, HashSet<string>> ReadUnpushed { get; set; } = InProcessHistory.UnpushedFaster;
 
     /// <summary>
+    /// Reads whether the commit checked out has never been pushed, on a branch tracking none, in
+    /// process where it can. Tests answer for git.
+    /// </summary>
+    internal static Func<string, Cancel, bool> ReadNeverPushed { get; set; } = InProcessHistory.NeverPushedFaster;
+
+    /// <summary>
     /// How long ago is measured from. Tests put in a clock of their own.
     /// </summary>
     internal static TimeProvider Time { get; set; } = TimeProvider.System;
@@ -107,6 +117,18 @@ sealed class HistoryPane : UserControl
     /// The arrow of a commit not pushed clicked: for the commits ahead to be pushed, once asked.
     /// </summary>
     public event Action? PushRequested;
+
+    /// <summary>
+    /// Amend commit picked, with the repository, the commit and its whole message: for Changes to
+    /// amend it.
+    /// </summary>
+    public event Action<string, GitCommit, string>? AmendRequested;
+
+    /// <summary>
+    /// The last commit undone, with the repository and its whole message: for Changes to commit
+    /// it again.
+    /// </summary>
+    public event Action<string, string>? CommitUndone;
 
     /// <summary>
     /// A file of the picked commit picked, or several, or none, or one asked to be shown: for the
@@ -329,6 +351,7 @@ sealed class HistoryPane : UserControl
         version++;
         loaded = [];
         unpushed = [];
+        neverPushed = false;
         more = false;
         selected = null;
         unpicked = false;
@@ -410,9 +433,10 @@ sealed class HistoryPane : UserControl
         stale = false;
         try
         {
-            var (read, notPushed, readSite, readApart) = await Task.Run(() => (
+            var (read, notPushed, readNeverPushed, readSite, readApart) = await Task.Run(() => (
                 Read(reading, comparing, ahead, 0, count),
                 ReadUnpushed(reading, Cancel.None),
+                comparing == null && ReadNeverPushed(reading, Cancel.None),
                 RemoteSite.OfRepo(reading),
                 comparing == null ? null : ReadApart(reading, comparing, Cancel.None)));
             if (asked != version ||
@@ -429,6 +453,7 @@ sealed class HistoryPane : UserControl
 
             site = readSite;
             unpushed = notPushed;
+            neverPushed = readNeverPushed;
             loaded = read ?? [];
             more = loaded.Count >= count;
             ShowCommits();
@@ -725,8 +750,9 @@ sealed class HistoryPane : UserControl
     }
 
     /// <summary>
-    /// A commit's right-click menu: copy its SHA or message; revert it; tag it, or delete one of its tags,
-    /// those it has offered; and view it on the repository's site.
+    /// A commit's right-click menu: copy its SHA or message; amend or undo it, the last commit
+    /// where it isn't pushed yet; revert it; tag it, or delete one of its tags, those it has
+    /// offered; and view it on the repository's site.
     /// </summary>
     internal List<QuickMenu.Command?> CommitCommands(string menuRepo, GitCommit commit)
     {
@@ -737,16 +763,32 @@ sealed class HistoryPane : UserControl
                 Glyph = Icons.Copy
             },
             new("Copy message", () => CopyMessage(menuRepo, commit)),
-            null,
+            null
+        };
+        if (CanRewrite(commit))
+        {
+            menu.Add(
+                new("Amend commit…", () => Amend(menuRepo, commit))
+                {
+                    Glyph = Icons.Edit
+                });
+            menu.Add(
+                new("Undo commit…", () => Undo(menuRepo, commit))
+                {
+                    Glyph = Icons.Undo
+                });
+        }
+
+        menu.Add(
             new("Revert commit…", () => CodeMenu.RevertCommit(this, menuRepo, commit))
             {
                 Glyph = Icons.Undo
-            },
+            });
+        menu.Add(
             new("Tag…", () => CodeMenu.TagCommit(this, menuRepo, commit))
             {
                 Glyph = Icons.Tag
-            }
-        };
+            });
         if (commit.Tags.Count > 0)
         {
             menu.Add(
@@ -767,6 +809,41 @@ sealed class HistoryPane : UserControl
         }
 
         return menu;
+    }
+
+    // As GitHub Desktop has them: the last commit, the one checked out, can be amended or undone
+    // while it isn't pushed, as changing one pushed would mean pushing with force: ahead of the
+    // branch tracked, or, tracking none, on no remote's branch. Not while comparing, where the
+    // top commit may be the other branch's.
+    bool CanRewrite(GitCommit commit) =>
+        compareTo == null &&
+        loaded.Count > 0 &&
+        loaded[0].Sha == commit.Sha &&
+        (unpushed.Contains(commit.Sha) || neverPushed);
+
+    // Amend commit: its whole message, for Changes to put in the summary and description.
+    async void Amend(string amendRepo, GitCommit commit)
+    {
+        var message = await Task.Run(() => GitHistory.Message(amendRepo, commit.Sha));
+        if (!IsDisposed)
+        {
+            AmendRequested?.Invoke(amendRepo, commit, message ?? commit.Subject);
+        }
+    }
+
+    // Undo commit: asked, done, then its whole message, for Changes to commit it again.
+    async void Undo(string undoRepo, GitCommit commit)
+    {
+        if (!await CodeMenu.UndoCommit(this, undoRepo, commit, header.ChangesCount > 0))
+        {
+            return;
+        }
+
+        var message = await Task.Run(() => GitHistory.Message(undoRepo, commit.Sha));
+        if (!IsDisposed)
+        {
+            CommitUndone?.Invoke(undoRepo, message ?? commit.Subject);
+        }
     }
 
     static async void CopyMessage(string repo, GitCommit commit)

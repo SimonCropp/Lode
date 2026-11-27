@@ -1642,6 +1642,69 @@ static class CodeMenu
     }
 
     /// <summary>
+    /// History's Undo commit: asks, then takes the last commit off the branch, its changes left
+    /// uncommitted, and reads the repository again. True once it is undone, for its message to go
+    /// in Changes, to commit again.
+    /// </summary>
+    internal static async Task<bool> UndoCommit(Control owner, string repo, GitCommit commit, bool uncommitted)
+    {
+        var draft = CommitDrafts.Of(repo);
+        var typed = draft.Summary.Trim().Length > 0 ||
+                    draft.Description.Trim().Length > 0;
+        var answer = MessageBox.Show(
+            owner,
+            UndoCommitQuestion(repo, commit, uncommitted, typed),
+            "Git undo commit",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.OK)
+        {
+            return false;
+        }
+
+        var entry = await ActionLog.Run(
+            "Git undo commit",
+            [repo],
+            async (_, cancel) =>
+            {
+                var results = await CodeCommands.UndoCommit(repo, commit, cancel);
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome(results);
+            });
+        return entry.State == ActionLog.State.Succeeded;
+    }
+
+    /// <summary>
+    /// What History's Undo commit asks: the commit, what becomes of its changes and its message,
+    /// of what is typed in Changes already, and of what is uncommitted already; for a merge, of
+    /// the commits it merged; and for the first commit, of the branch.
+    /// </summary>
+    internal static string UndoCommitQuestion(string repo, GitCommit commit, bool uncommitted, bool typed)
+    {
+        var question = $"Undo {commit.ShortSha} \"{commit.Subject}\" in {Path.GetFileName(repo)}?\n\nIt comes off the branch, its changes left uncommitted, and its summary and description go in Changes, to commit again.";
+        if (typed)
+        {
+            question += " They replace what is typed there.";
+        }
+
+        if (uncommitted)
+        {
+            question += "\n\nWhat is uncommitted already stays as it is, among its changes.";
+        }
+
+        if (commit.Parents.Count > 1)
+        {
+            question += "\n\nIt is a merge: what it brought in is left uncommitted, and the commits it merged are no longer on the branch.";
+        }
+        else if (commit.Parents.Count == 0)
+        {
+            question += "\n\nIt is the first commit: the branch is left with none, its files staged.";
+        }
+
+        return question;
+    }
+
+    /// <summary>
     /// History's Delete tag: asks which of the commit's tags, then deletes it from the repository
     /// and from origin, and reads the repository again.
     /// </summary>

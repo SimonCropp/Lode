@@ -69,6 +69,29 @@ public class PartialCommitTests
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "file.txt"))).IsEqualTo(Twenty(true));
     }
 
+    // Amending, the lines picked go in the last commit, in its place; the rest stay changed, and
+    // what else was staged stays staged.
+    [Test]
+    public async Task AmendsWithThePickedLines()
+    {
+        using var scratch = new Scratch();
+        var repo = Repo(scratch);
+        var parent = Git(repo, "rev-parse", "HEAD^");
+
+        var result = GitChanges.Commit(repo, [], false, "Twenty, one changed", Cancel.None, [Partial(repo)], amend: true);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "rev-parse", "HEAD^")).IsEqualTo(parent);
+        await Assert.That(Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Twenty, one changed");
+        await Assert.That(Git(repo, "show", "--name-only", "--format=", "HEAD").Split('\n')).IsEquivalentTo(["file.txt", "staged.txt"]);
+        var committed = Git(repo, "show", "HEAD:file.txt");
+        await Assert.That(committed).Contains("line fifteen");
+        await Assert.That(committed).Contains("line 3\n");
+        await Assert.That(Git(repo, "show", "HEAD:staged.txt")).IsEqualTo("staged");
+        await Assert.That(Git(repo, "diff", "--name-only")).IsEqualTo("file.txt");
+        await Assert.That(Git(repo, "diff", "--cached", "--name-only")).IsEqualTo("staged.txt");
+    }
+
     // A hook turning the commit down leaves the real index as it was.
     [Test]
     public async Task HookRefuses()

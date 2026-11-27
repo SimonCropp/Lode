@@ -25,6 +25,13 @@ static class InProcessHistory
         Unpushed(repo, cancel) ?? GitHistory.Unpushed(repo, cancel);
 
     /// <summary>
+    /// Whether the commit checked out has never been pushed, as
+    /// <see cref="GitHistory.NeverPushed"/> finds it, in process.
+    /// </summary>
+    public static bool NeverPushedFaster(string repo, Cancel cancel) =>
+        NeverPushed(repo, cancel) ?? GitHistory.NeverPushed(repo, cancel);
+
+    /// <summary>
     /// The files a commit changed, as <see cref="GitHistory.FilesOf"/> lists them, in process.
     /// </summary>
     public static List<Change>? FilesOfFaster(string repo, GitCommit commit, Cancel cancel) =>
@@ -47,6 +54,13 @@ static class InProcessHistory
     /// </summary>
     public static HashSet<string>? Unpushed(string repo, Cancel cancel) =>
         Open(repo, cancel, Unpushed);
+
+    /// <summary>
+    /// Whether the commit checked out has never been pushed, as
+    /// <see cref="GitHistory.NeverPushed"/> finds it. Null when the repository can't be read.
+    /// </summary>
+    public static bool? NeverPushed(string repo, Cancel cancel) =>
+        Open(repo, cancel, _ => Tuple.Create(NeverPushed(_)))?.Item1;
 
     /// <summary>
     /// The files <paramref name="commit"/> changed, against its first parent, as
@@ -172,6 +186,30 @@ static class InProcessHistory
         return ahead
             .Select(_ => commits.IdOf(_).ToString())
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    // On a branch tracking none, or one whose remote branch is gone, the commit checked out in
+    // none of the remotes' branches' history: with no remote, in none at all.
+    static bool NeverPushed(GitRepository repository)
+    {
+        if (repository.Head is not { } head ||
+            repository.Branch is not { } branch ||
+            (repository.Upstream(branch) is { } upstreamRef &&
+             repository.Resolve(upstreamRef) != null))
+        {
+            return false;
+        }
+
+        var remotes = repository.RemoteBranches();
+        if (remotes.Count == 0)
+        {
+            return true;
+        }
+
+        var commits = new Commits(repository);
+        var start = commits.Node(head);
+        var (headOnly, _) = commits.Divergence(start, remotes.Select(commits.Node).ToList());
+        return headOnly.Contains(start);
     }
 
     static List<Change>? FilesOf(GitRepository repository, GitCommit commit)
