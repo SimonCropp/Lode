@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// Commits read in process as git log reads them, however they are written, git the oracle; and
 /// the tag git describe chooses, and how far branches are apart, over histories of every shape.
@@ -215,7 +213,8 @@ public class CommitsTests
         using var scratch = new CodeCommandsTests.Scratch();
         var repo = scratch.CreateRepo("Repo");
         var other = scratch.Clone("Repo", "Other");
-        void Work(string where, string name, int time)
+
+        static void Work(string where, string name, int time)
         {
             foreach (var branch in new[] { $"{name}-a", $"{name}-b" })
             {

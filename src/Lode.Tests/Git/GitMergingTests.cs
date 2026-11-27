@@ -37,11 +37,11 @@ public class GitMergingTests
         var preview = Preview(repo, "main", "feature", GitMerging.Kind.Merge);
         var result = GitMerging.Merge(repo, "feature", squash: false, Cancel.None);
 
-        await Assert.That(preview).IsEqualTo(new GitMerging.Preview("This will merge 1 commit from feature into main.", true));
+        await Assert.That(preview).IsEqualTo(new("This will merge 1 commit from feature into main.", true));
         await Assert.That(result.Succeeded).IsTrue();
         await Assert.That(Git(repo, "log", "-1", "--format=%P").Split(' ').Length).IsEqualTo(2);
         await Assert.That(File.Exists(Path.Combine(repo, "feature.txt"))).IsTrue();
-        await Assert.That(Preview(repo, "main", "feature", GitMerging.Kind.Merge)).IsEqualTo(new GitMerging.Preview("main is already up to date with feature.", false));
+        await Assert.That(Preview(repo, "main", "feature", GitMerging.Kind.Merge)).IsEqualTo(new("main is already up to date with feature.", false));
     }
 
     // Found before merging, as git would merge them, without touching the folder. A merge is
@@ -59,8 +59,8 @@ public class GitMergingTests
         var merge = Preview(repo, "main", "feature", GitMerging.Kind.Merge);
         var squash = Preview(repo, "main", "feature", GitMerging.Kind.Squash);
 
-        await Assert.That(merge).IsEqualTo(new GitMerging.Preview("There will be 1 conflicted file when merging feature into main, to settle in Changes before committing the merge.\ntracked.txt", true));
-        await Assert.That(squash).IsEqualTo(new GitMerging.Preview("There will be 1 conflicted file when squashing feature into main, so it can't be squashed here: merge it instead, settling them in Changes.\ntracked.txt", false));
+        await Assert.That(merge).IsEqualTo(new("There will be 1 conflicted file when merging feature into main, to settle in Changes before committing the merge.\ntracked.txt", true));
+        await Assert.That(squash).IsEqualTo(new("There will be 1 conflicted file when squashing feature into main, so it can't be squashed here: merge it instead, settling them in Changes.\ntracked.txt", false));
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
 
         var squashed = GitMerging.Merge(repo, "feature", squash: true, Cancel.None);
@@ -114,7 +114,7 @@ public class GitMergingTests
         var preview = Preview(repo, "main", "feature", GitMerging.Kind.Squash);
         var result = GitMerging.Merge(repo, "feature", squash: true, Cancel.None);
 
-        await Assert.That(preview).IsEqualTo(new GitMerging.Preview("This will squash 2 commits from feature into one commit on main.", true));
+        await Assert.That(preview).IsEqualTo(new("This will squash 2 commits from feature into one commit on main.", true));
         await Assert.That(result.Succeeded).IsTrue();
         await Assert.That(Git(repo, "log", "-1", "--format=%P").Split(' ').Length).IsEqualTo(1);
         await Assert.That(Git(repo, "rev-list", "--count", "HEAD")).IsEqualTo("2");
@@ -162,14 +162,14 @@ public class GitMergingTests
         var preview = Preview(repo, "feature", "main", GitMerging.Kind.Rebase);
         var result = GitMerging.Rebase(repo, "main", forcePush: false, Cancel.None);
 
-        await Assert.That(preview).IsEqualTo(new GitMerging.Preview("This will update feature by applying its 1 commit on top of main. Should one conflict, the rebase is undone.", true));
+        await Assert.That(preview).IsEqualTo(new("This will update feature by applying its 1 commit on top of main. Should one conflict, the rebase is undone.", true));
         await Assert.That(result.Succeeded).IsTrue();
         await Assert.That(Git(repo, "rev-list", "--count", "main..HEAD")).IsEqualTo("1");
         await Assert.That(Git(repo, "rev-list", "--count", "HEAD..main")).IsEqualTo("0");
-        await Assert.That(Preview(repo, "feature", "main", GitMerging.Kind.Rebase)).IsEqualTo(new GitMerging.Preview("feature is already up to date with main.", false));
+        await Assert.That(Preview(repo, "feature", "main", GitMerging.Kind.Rebase)).IsEqualTo(new("feature is already up to date with main.", false));
 
         Git(repo, "switch", "behind");
-        await Assert.That(Preview(repo, "behind", "main", GitMerging.Kind.Rebase)).IsEqualTo(new GitMerging.Preview("This will fast-forward behind by 1 commit to match main.", true));
+        await Assert.That(Preview(repo, "behind", "main", GitMerging.Kind.Rebase)).IsEqualTo(new("This will fast-forward behind by 1 commit to match main.", true));
     }
 
     // Rewriting commits origin has needs a force push, which it says, and does once asked,

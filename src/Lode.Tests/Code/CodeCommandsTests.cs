@@ -949,7 +949,7 @@ public class CodeCommandsTests
     public async Task TheTagOffered()
     {
         static CodeMenu.TagRead Read(string? tag) =>
-            new("Repo", new GitState("main", "abc1234", 0, 0, []) { Tag = tag }, []);
+            new("Repo", new("main", "abc1234", 0, 0, []) { Tag = tag }, []);
 
         await Assert.That(CodeMenu.NextTag("2.0.0")).IsEqualTo("2.0.1");
         await Assert.That(CodeMenu.NextTag("v1.9")).IsEqualTo("v1.10");

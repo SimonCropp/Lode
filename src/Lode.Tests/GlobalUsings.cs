@@ -1,8 +1,10 @@
+global using System.Buffers.Binary;
 global using System.Drawing.Imaging;
 global using System.Globalization;
 global using System.IO.Compression;
 global using System.Net;
 global using System.Runtime.InteropServices;
+global using System.Security.Cryptography;
 global using System.Text.Json;
 global using Microsoft.Win32;
 global using NuGet.Versioning;

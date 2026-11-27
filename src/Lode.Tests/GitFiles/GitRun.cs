@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Text;
-
 /// <summary>
 /// Git run as the oracle for what is read in process: with an environment of the test's own, and
 /// input, and what it said and how it ended given back whatever it was, as a refusal is what is

@@ -70,7 +70,7 @@ public class GitStatusActionsTests
                 // Part way through a merge: it can be aborted, and Push refuses with files in
                 // conflict.
                 merging = AskMerging(
-                    new GitState("main", commit, 0, 0, [new("src/0.cs", GitChange.Conflicted), new("src/1.cs", GitChange.Modified)])
+                    new("main", commit, 0, 0, [new("src/0.cs", GitChange.Conflicted), new("src/1.cs", GitChange.Modified)])
                     {
                         Upstream = true
                     }),

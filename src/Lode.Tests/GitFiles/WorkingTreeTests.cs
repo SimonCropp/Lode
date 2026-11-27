@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// A working tree's state read in process as git status reads it, git the oracle, for what the
 /// Git tests' common cases don't reach: many folders, conflicts and staging of odd kinds, files
@@ -153,7 +151,7 @@ public class WorkingTreeTests
     // As mklink makes one: a junction with /J, which needs no privilege, a link without.
     static bool Link(string path, string target, string? kind)
     {
-        var startInfo = new System.Diagnostics.ProcessStartInfo("cmd")
+        var startInfo = new ProcessStartInfo("cmd")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -168,7 +166,7 @@ public class WorkingTreeTests
 
         startInfo.ArgumentList.Add(path);
         startInfo.ArgumentList.Add(target);
-        using var process = System.Diagnostics.Process.Start(startInfo)!;
+        using var process = Process.Start(startInfo)!;
         process.StandardOutput.ReadToEnd();
         process.WaitForExit();
         return process.ExitCode == 0;

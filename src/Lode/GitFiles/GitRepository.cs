@@ -44,7 +44,6 @@ sealed class GitRepository : IDisposable
     bool graphRead;
     Dictionary<string, (ObjectId Id, ObjectId? Peeled)>? packed;
     bool packedPeeled;
-    HashSet<ObjectId>? shallow;
     bool shallowRead;
 
     GitRepository(string workTree, string gitDir, string commonDir, string headText)
@@ -261,7 +260,7 @@ sealed class GitRepository : IDisposable
         {
             if (shallowRead)
             {
-                return shallow;
+                return field;
             }
 
             shallowRead = true;
@@ -270,16 +269,16 @@ sealed class GitRepository : IDisposable
                 return null;
             }
 
-            shallow = [];
+            field = [];
             foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (ObjectId.TryParse(line, out var id))
                 {
-                    shallow.Add(id);
+                    field.Add(id);
                 }
             }
 
-            return shallow;
+            return field;
         }
     }
 

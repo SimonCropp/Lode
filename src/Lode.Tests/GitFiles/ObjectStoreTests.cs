@@ -1,7 +1,3 @@
-using System.Buffers.Binary;
-using System.Security.Cryptography;
-using System.Text;
-
 /// <summary>
 /// Objects read in process as git reads them, loose and packed every way git packs them, git
 /// cat-file the oracle; deltas, loose objects and packs that aren't as git writes them, refused;
@@ -21,7 +17,9 @@ public class ObjectStoreTests
         await Assert.That(fromChars.ToString()).IsEqualTo(hex);
         await Assert.That(fromChars.FirstByte).IsEqualTo(1);
         await Assert.That(fromChars.Equals((object)fromBytes)).IsTrue();
-        await Assert.That(fromChars.Equals((object)hex)).IsFalse();
+        // Another type is never equal: held as object, as Equals(object) is given it.
+        object text = hex;
+        await Assert.That(fromChars.Equals(text)).IsFalse();
         await Assert.That(fromChars.GetHashCode()).IsEqualTo(fromBytes.GetHashCode());
         await Assert.That(fromChars != fromBytes).IsFalse();
         await Assert.That(ObjectId.TryParse("0123", out _)).IsFalse();
@@ -362,7 +360,7 @@ public class ObjectStoreTests
         var blob = verified
             .Split('\n')
             .Select(_ => _.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .First(_ => _.Length == 5 && _[1] == "blob");
+            .First(_ => _ is [_, "blob", _, _, _]);
         ObjectId.TryParse(blob[0], out var id);
         var offset = long.Parse(blob[4], CultureInfo.InvariantCulture);
         File.SetAttributes(pack, FileAttributes.Normal);

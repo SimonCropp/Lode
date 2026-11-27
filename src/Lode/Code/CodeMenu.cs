@@ -1541,14 +1541,16 @@ static class CodeMenu
     internal sealed class GitTextForm : Form
     {
         Control input;
-        string? namedAs;
+
+        // Whether what is typed is made a name git takes: a new branch's or tag's.
+        bool makesName;
 
         public string Value
         {
             get
             {
                 var typed = input.Text.Trim();
-                if (namedAs == null)
+                if (!makesName)
                 {
                     return typed;
                 }
@@ -1559,7 +1561,7 @@ static class CodeMenu
 
         public GitTextForm(string title, string description, string prompt, string text, string accept, IReadOnlyList<string> choices, bool isTagName = false, string? namedAs = null)
         {
-            this.namedAs = namedAs;
+            makesName = namedAs != null;
             if (choices.Count > 0)
             {
                 var combo = new ComboBox

@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// Config read in process as git reads it, git config itself the oracle: what each file says,
 /// what it includes, and what the environment adds.
@@ -28,7 +26,7 @@ public class GitConfigTests
     static GitConfig Read(string repo, Dictionary<string, string> environment, string? branch = "main")
     {
         var gitDir = Path.Combine(repo, ".git");
-        return GitConfig.Read(gitDir, gitDir, branch, _ => environment.GetValueOrDefault(_));
+        return GitConfig.Read(gitDir, gitDir, branch, environment.GetValueOrDefault);
     }
 
     // git config --list -z: each key, then a line break and its value where it has one, then a

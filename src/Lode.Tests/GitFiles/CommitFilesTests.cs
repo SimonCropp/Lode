@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// The files a commit changed, read in process as git diff-tree -M lists them, git the oracle:
 /// in folders and out, of every mode, and renames found as git's diffcore-rename finds them.

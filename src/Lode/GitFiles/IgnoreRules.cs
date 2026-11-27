@@ -111,7 +111,7 @@ sealed class IgnoreRules
             return [];
         }
 
-        var file = System.IO.Path.Combine(workTree, path, ".gitignore");
+        var file = Path.Combine(workTree, path, ".gitignore");
         return ReadPatterns(file, path);
     }
 

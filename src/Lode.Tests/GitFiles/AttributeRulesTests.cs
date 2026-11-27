@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// Attributes as read in process, git check-attr the oracle; and a file whose times have changed
 /// hashed as git would stage it, by the attributes and core.autocrlf, git status the oracle.

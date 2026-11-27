@@ -474,7 +474,7 @@ public class GitPanesTests
         var pane = form.GitPanes.ChangesPane;
         await Assert.That(pane.NoneShown).IsTrue();
         await Assert.That(pane.List.Visible).IsFalse();
-        await Assert.That(pane.NoChanges.Suggested).IsEqualTo(new NoChanges.Suggestion("1 commit not pushed yet.", "Push…", GitState.PartKind.Ahead));
+        await Assert.That(pane.NoChanges.Suggested).IsEqualTo(new("1 commit not pushed yet.", "Push…", GitState.PartKind.Ahead));
 
         var ask = GitStatusActions.Ask;
         GitStatusActions.Question? asked = null;

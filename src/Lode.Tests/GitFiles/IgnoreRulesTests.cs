@@ -1,5 +1,3 @@
-using System.Text;
-
 /// <summary>
 /// What git ignores, as read in process, git check-ignore the oracle: patterns of every kind,
 /// wildmatch's included, tried on files and folders, in folders and out, with .gitignore files

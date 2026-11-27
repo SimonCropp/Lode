@@ -350,15 +350,18 @@ static class CleanFilter
     /// then git leaves the file's as they are.</param>
     public static ByteSpan ToGit(byte[] content, Dictionary<string, string> attributes, GitConfig config, Func<bool> stagedHasCrlf)
     {
-        if (attributes.GetValueOrDefault("filter") is { } filter &&
-            filter is not (AttributeRules.Set or AttributeRules.Unset or AttributeRules.Unspecified) &&
-            (config.IsSet($"filter.{filter}.clean") || config.IsSet($"filter.{filter}.process")))
+        if (attributes.GetValueOrDefault("filter") is { } filter and not
+                (
+                AttributeRules.Set or
+                AttributeRules.Unset or
+                AttributeRules.Unspecified) &&
+            (config.IsSet($"filter.{filter}.clean") ||
+             config.IsSet($"filter.{filter}.process")))
         {
             throw new GitFilesException($"The {filter} filter needs git");
         }
 
-        if (attributes.GetValueOrDefault("working-tree-encoding") is { } encoding &&
-            encoding is not (AttributeRules.Unset or AttributeRules.Unspecified) &&
+        if (attributes.GetValueOrDefault("working-tree-encoding") is { } encoding and not (AttributeRules.Unset or AttributeRules.Unspecified) &&
             !IsUtf8(encoding))
         {
             throw new GitFilesException($"The {encoding} working tree encoding needs git");
@@ -552,7 +555,7 @@ static class CleanFilter
     public static bool IsBinary(Stats stats) =>
         stats.LoneCr > 0 ||
         stats.Nul > 0 ||
-        (stats.Printable >> 7) < stats.NonPrintable;
+        stats.Printable >> 7 < stats.NonPrintable;
 
     /// <summary>
     /// Whether staged content is text with CRLFs in it, for git to leave a file's line endings as

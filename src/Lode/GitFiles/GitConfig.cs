@@ -329,7 +329,7 @@ sealed class GitConfig
         for (var index = 0; index < count; index++)
         {
             if (environment($"GIT_CONFIG_KEY_{index}") is not { } key ||
-                key.IndexOf('.') is <= 0)
+                key.IndexOf('.') <= 0)
             {
                 throw new GitFilesException($"GIT_CONFIG_KEY_{index} isn't a key git would take");
             }

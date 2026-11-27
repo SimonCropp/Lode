@@ -410,7 +410,7 @@ sealed class WorkingTree
         {
             var enumerable = new FileSystemEnumerable<DiskEntry>(
                 folder,
-                static (ref FileSystemEntry entry) =>
+                static (ref entry) =>
                 {
                     var link = (entry.Attributes & FileAttributes.ReparsePoint) != 0 &&
                                IsSymbolicLink(entry.ToFullPath());
@@ -502,7 +502,7 @@ sealed class WorkingTree
         Parallel.For(
             0,
             folders.Count,
-            new ParallelOptions
+            new()
             {
                 CancellationToken = cancel,
                 MaxDegreeOfParallelism = listingThreads
