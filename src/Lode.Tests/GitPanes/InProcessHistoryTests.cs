@@ -74,7 +74,8 @@ public class InProcessHistoryTests
         Directory.CreateDirectory(fresh);
         Git(fresh, "init", "--initial-branch=main");
         Identify(fresh);
-        async Task<bool> Both(string folder)
+
+        static async Task<bool> Both(string folder)
         {
             var inProcess = InProcessHistory.NeverPushed(folder, Cancel.None);
             await Assert.That(inProcess).IsEqualTo(GitHistory.NeverPushed(folder, Cancel.None));

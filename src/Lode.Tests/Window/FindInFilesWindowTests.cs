@@ -353,12 +353,12 @@ public class FindInFilesWindowTests
         return Pump.Loaded(view);
     }
 
-    static async Task Find(MainForm form)
+    static Task Find(MainForm form)
     {
         form.FindHost.Open();
         form.FindHost.Panel.FindBox.Text = "alpha";
         form.FindHost.Find();
-        await form.FindHost.ResultsView!.Searching;
+        return form.FindHost.ResultsView!.Searching;
     }
 
     // Pinned's one folder, the fixture's, clicked.
