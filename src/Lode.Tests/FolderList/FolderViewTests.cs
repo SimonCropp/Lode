@@ -480,10 +480,10 @@ public class FolderViewTests
                   status: 4 items found,
                   filter: *.aleph,
                   rows: [
+                    file    notes.aleph  12 bytes,
                     file    guide.aleph  900 bytes  in Docs,
-                    file    leaf.aleph  40 bytes  in Source\Deep,
                     file    main.aleph  5,000 bytes  in Source,
-                    file    notes.aleph  12 bytes
+                    file    leaf.aleph  40 bytes  in Source\Deep
                   ],
                   selected: []
                 }
@@ -508,12 +508,12 @@ public class FolderViewTests
                   status: 6 items found,
                   filter: *.aleph,
                   rows: [
+                    file    hidden.aleph  64 bytes  (hidden),
+                    file    notes.aleph  12 bytes,
                     file    cached.aleph  0 bytes  in Cache,
                     file    guide.aleph  900 bytes  in Docs,
-                    file    hidden.aleph  64 bytes  (hidden),
-                    file    leaf.aleph  40 bytes  in Source\Deep,
                     file    main.aleph  5,000 bytes  in Source,
-                    file    notes.aleph  12 bytes
+                    file    leaf.aleph  40 bytes  in Source\Deep
                   ],
                   selected: []
                 }
@@ -559,8 +559,8 @@ public class FolderViewTests
         await Assert.That(everything).IsEquivalentTo(["Plain/bin/notes.dll", "Repo/bin/notes.dll", "Repo/notes.log", "Repo/notes.md", "Repo/src/notes.cs"], CollectionOrdering.Matching);
     }
 
-    // A search shows where each item is, beside its name, and can be sorted by it. Clearing it
-    // takes the column away.
+    // A search shows where each item is, beside its name, and starts sorted by it: by how many
+    // levels down, then by name. Clearing it takes the column away.
     [Test]
     public async Task SearchShowsTheFolderOfEachItem()
     {
@@ -570,7 +570,7 @@ public class FolderViewTests
         view.Filter = "*.aleph";
         await Pump.Loaded(view);
         var searched = view.ColumnTitles.ToList();
-        view.SortBy(folderColumn);
+        var startsSorted = view.Sort;
         var sorted = view.Entries.Select(_ => Row(_, view.CurrentPath)).ToList();
         view.SortBy(folderColumn);
         var descending = view.Entries.Select(_ => Row(_, view.CurrentPath)).ToList();
@@ -582,6 +582,7 @@ public class FolderViewTests
             new
             {
                 searched,
+                startsSorted,
                 firstRow = cells,
                 sorted,
                 descending,
@@ -597,6 +598,10 @@ public class FolderViewTests
                     Type,
                     Size
                   ],
+                  startsSorted: {
+                    Item1: 3,
+                    Item2: true
+                  },
                   firstRow: [
                     leaf.aleph,
                     Source\Deep,
@@ -658,10 +663,10 @@ public class FolderViewTests
                 {
                   linked: true,
                   rows: [
+                    file    notes.aleph  12 bytes,
                     file    guide.aleph  900 bytes  in Docs,
-                    file    leaf.aleph  40 bytes  in Source\Deep,
                     file    main.aleph  5,000 bytes  in Source,
-                    file    notes.aleph  12 bytes
+                    file    leaf.aleph  40 bytes  in Source\Deep
                   ]
                 }
                 """);
@@ -739,9 +744,9 @@ public class FolderViewTests
                   status: 3 items found, only the first 2 in subfolders,
                   filter: *.aleph,
                   rows: [
+                    file    notes.aleph  12 bytes,
                     file    guide.aleph  900 bytes  in Docs,
-                    file    main.aleph  5,000 bytes  in Source,
-                    file    notes.aleph  12 bytes
+                    file    main.aleph  5,000 bytes  in Source
                   ],
                   selected: []
                 }
@@ -2025,8 +2030,8 @@ public class FolderViewTests
         await Assert.That(settings.FolderSorts).IsEmpty();
     }
 
-    // Sorted by Folder, a search goes back, once it ends, to how its folder is sorted, which it
-    // leaves as it was: Folder is the search's alone.
+    // A search starts sorted by Folder, and goes back, once it ends, to how its folder is sorted,
+    // which it leaves as it was: Folder is the search's alone.
     [Test]
     public async Task EndingASearchSortedByFolderGoesBackToTheFoldersSort()
     {
@@ -2037,7 +2042,6 @@ public class FolderViewTests
 
         view.Filter = "*.aleph";
         await Pump.Loaded(view);
-        view.SortBy(folderColumn);
         var searching = view.Sort;
         view.Filter = "";
         await Pump.Loaded(view);
@@ -3905,7 +3909,7 @@ public class FolderViewTests
         await Assert.That(view.ColumnTitles.Take(2))
             .IsEquivalentTo(["Name", "Folder"], CollectionOrdering.Matching);
         await Assert.That(Marks(view))
-            .IsEquivalentTo(["changed.cs: M", "deeper.cs: M", "same.cs: "], CollectionOrdering.Matching);
+            .IsEquivalentTo(["changed.cs: M", "same.cs: ", "deeper.cs: M"], CollectionOrdering.Matching);
     }
 
     // Sorted by Git in a repository, what has changed comes together, by what has become of it.

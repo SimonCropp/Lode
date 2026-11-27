@@ -566,7 +566,17 @@ sealed class FolderView : UserControl
                 return;
             }
 
+            var wasSearch = IsSearch;
             filter = trimmed;
+
+            // A search starts sorted by Folder, nearest first, then by name, for the user to sort
+            // otherwise. That isn't kept for the folder, which goes back to its own sort as the
+            // search ends and Folder goes.
+            if (!wasSearch &&
+                IsSearch)
+            {
+                (sortColumn, sortAscending) = (folderColumn, true);
+            }
 
             // What the folder itself has that matches shows at once; what is beneath its
             // subfolders, once they are searched.
@@ -2988,7 +2998,8 @@ sealed class FolderView : UserControl
     {
         // Before sorting: hiding the column the list is sorted by sorts it by name.
         var columnsChanged = UpdateColumns();
-        if (entriesSort == (sortColumn, !sortAscending))
+        if (entriesSort == (sortColumn, !sortAscending) &&
+            sortColumn != folderColumn)
         {
             TurnRound(entries);
             entriesSort = (sortColumn, sortAscending);
@@ -3001,7 +3012,9 @@ sealed class FolderView : UserControl
             entriesSort = (column, ascending);
         }
 
-        if (foundSort == (sortColumn, !sortAscending))
+        // By Folder, the levels stay in order the other way round, so it is sorted again.
+        if (foundSort == (sortColumn, !sortAscending) &&
+            sortColumn != folderColumn)
         {
             // A new list, not the one a merge may be reading.
             found = [.. found];
@@ -3904,6 +3917,19 @@ sealed class FolderView : UserControl
     // thread as it is read. By Git or Tag, by what the column says, which is handed in too.
     static int Compare(FileEntry first, FileEntry second, int column, bool ascending, GitCells? cells = null)
     {
+        // By Folder, by how many levels down each is, what the folder holds itself first, then
+        // the folders, files and names of each level.
+        if (column == folderColumn &&
+            Depth(first.Folder).CompareTo(Depth(second.Folder)) is not 0 and var deeper)
+        {
+            if (ascending)
+            {
+                return deeper;
+            }
+
+            return -deeper;
+        }
+
         // Folders stay grouped above files whichever way the column is sorted.
         if (first.IsDirectory != second.IsDirectory)
         {
@@ -3917,9 +3943,9 @@ sealed class FolderView : UserControl
 
         var result = column switch
         {
-            // Every item is beneath the folder open, so ordering by where they are from there is
-            // ordering by their whole paths.
-            folderColumn => StrCmpLogicalW(first.Folder, second.Folder),
+            // The level each is on is the same by now: by name, then, and by folder for the same
+            // name in two folders.
+            folderColumn => 0,
             dateColumn => first.IsDrive
                 ? first.FreeSpace.CompareTo(second.FreeSpace)
                 : first.Modified.CompareTo(second.Modified),
@@ -3941,6 +3967,12 @@ sealed class FolderView : UserControl
             result = StrCmpLogicalW(first.Name, second.Name);
         }
 
+        if (result == 0 &&
+            column == folderColumn)
+        {
+            result = StrCmpLogicalW(first.Folder, second.Folder);
+        }
+
         if (ascending)
         {
             return result;
@@ -3948,6 +3980,11 @@ sealed class FolderView : UserControl
 
         return -result;
     }
+
+    // How many folders down a folder is, by its separators: every item compared is beneath the
+    // same folder, so this orders them by how far beneath it.
+    static int Depth(string folder) =>
+        folder.AsSpan().Count('\\') + folder.AsSpan().Count('/');
 
     // By index into what is displayed: the list holds which rows are selected, not the rows.
     public List<FileEntry> SelectedEntries()
