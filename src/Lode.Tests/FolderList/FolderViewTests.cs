@@ -267,6 +267,60 @@ public class FolderViewTests
                 """);
     }
 
+    // As Explorer's results have: an item a search found has Open file location, or Open folder
+    // location for a folder, which opens the folder it is in with it selected, the search
+    // cleared. Not an item listed in the folder, nor several found at once.
+    [Test]
+    public async Task OpenFileLocationGoesToWhereAFoundItemIs()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        QuickMenu.Command? Location(params string[] names) =>
+            view.ItemCommands(view.Entries.Where(_ => names.Contains(_.Name)).ToList())
+                .SingleOrDefault(_ => _?.Id == "openFileLocation");
+
+        var listed = Location("notes.aleph");
+        view.Filter = "e";
+        await Pump.Loaded(view);
+        var several = Location("guide.aleph", "main.aleph");
+        var folder = Location("Deep");
+        var file = Location("guide.aleph");
+
+        await Assert.That(listed).IsNull();
+        await Assert.That(several).IsNull();
+        await Assert.That(folder!.Text).IsEqualTo("Open folder location");
+        await Assert.That(file!.Text).IsEqualTo("Open file location");
+
+        file.Action();
+        await Pump.Loaded(view);
+        await Verify(Describe(view, fixture))
+            .Snapshot(
+                """
+                {
+                  path: Projects/Docs,
+                  status: 1 item    1 item selected  900 bytes,
+                  filter: ,
+                  rows: [
+                    file    guide.aleph  900 bytes
+                  ],
+                  selected: [
+                    guide.aleph
+                  ]
+                }
+                """);
+
+        view.Navigate(fixture.Root);
+        await Pump.Loaded(view);
+        view.Filter = "e";
+        await Pump.Loaded(view);
+        Location("Deep")!.Action();
+        await Pump.Loaded(view);
+
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source"));
+        await Assert.That(view.Filter).IsEqualTo("");
+        await Assert.That(view.SelectedEntries().Select(_ => _.Name)).IsEquivalentTo(["Deep"]);
+    }
+
     // It is a shortcut to the file: deleting or renaming it from the root does nothing, nor
     // does renaming another item selected with it.
     [Test]

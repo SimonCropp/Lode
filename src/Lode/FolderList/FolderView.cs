@@ -5636,6 +5636,17 @@ sealed class FolderView : UserControl
             LodeActions.Command("open", () => OpenEntries(selection))
         };
 
+        // What a search found, as Explorer's results do: its folder, opened with it selected,
+        // the search cleared.
+        if (IsSearch &&
+            selection is [{IsPlace: false} found])
+        {
+            commands.Add(LodeActions.Command(
+                "openFileLocation",
+                () => Reveal(found.FullPath),
+                text: found.IsDirectory ? "Open folder location" : null));
+        }
+
         // What applies to a folder applies to each of several: a terminal tab for each, git
         // across the repositories of them all.
         List<string> folders = [];
