@@ -470,7 +470,8 @@ sealed class Commits
     /// The commits <paramref name="left"/> has that <paramref name="right"/> hasn't, and those
     /// <paramref name="right"/> has that <paramref name="left"/> hasn't: what git counts as ahead
     /// and behind. Painted down from both by date until all that is left to look at both have,
-    /// as git does.
+    /// as git does, then what both have marked down through the commits read, so a commit dated
+    /// before its parent doesn't leave one counted on a side it isn't.
     /// </summary>
     public (List<int> LeftOnly, List<int> RightOnly) Divergence(int left, int right) =>
         Divergence(left, [right]);
@@ -535,6 +536,13 @@ sealed class Commits
             }
         }
 
+        // Taken by date, a commit dated before its parent can be found to be both sides' only
+        // once nothing of interest is left to take, so its parents are left waiting, and what
+        // they lead to, taken already as one side's alone, would count as that side's. So both
+        // sides' marks are pushed down from each commit both have, as far as the commits read,
+        // as git marks an uninteresting commit's parents down through those it has parsed.
+        MarkDown(leftFlag | rightFlag, stale);
+
         var leftOnly = new List<int>();
         var rightOnly = new List<int>();
         for (var node = 0; node < count; node++)
@@ -551,6 +559,82 @@ sealed class Commits
         }
 
         return (leftOnly, rightOnly);
+    }
+
+    // Each commit read in the history of one marked with all of both is given both, and stale
+    // too, reading no commit for it: what is in the history of a commit both sides have is in
+    // both sides' history. Through the parents of those still waiting to be taken as well as of
+    // those taken, as far as their parents have been read.
+    void MarkDown(uint both, uint stale)
+    {
+        var pending = new Stack<int>();
+        for (var node = 0; node < count; node++)
+        {
+            if ((nodes[node].Flags & both) == both)
+            {
+                pending.Push(node);
+            }
+        }
+
+        var parents = new List<int>();
+        while (pending.TryPop(out var node))
+        {
+            parents.Clear();
+            ParentsRead(node, parents);
+            foreach (var parent in parents)
+            {
+                ref var parentFlags = ref nodes[parent].Flags;
+                if ((parentFlags & both) == both)
+                {
+                    continue;
+                }
+
+                parentFlags |= both | stale;
+                pending.Push(parent);
+            }
+        }
+    }
+
+    // The commit's parents that have been read, as Parents gives them, without reading any:
+    // a commit not yet taken has had its parents named, by the commit graph or its own object,
+    // though they may not have been read.
+    void ParentsRead(int node, List<int> into)
+    {
+        if (nodes[node].Parents is { } known)
+        {
+            into.AddRange(known);
+            return;
+        }
+
+        if (nodes[node].Position >= 0)
+        {
+            graphParents.Clear();
+            graph!.Parents(nodes[node].Position, graphParents);
+            foreach (var position in graphParents)
+            {
+                var mapped = byPosition![position];
+                if (mapped > 0)
+                {
+                    into.Add(mapped - 1);
+                }
+            }
+
+            return;
+        }
+
+        if (shallow != null &&
+            shallow.Contains(nodes[node].Id))
+        {
+            return;
+        }
+
+        foreach (var id in nodes[node].Info!.Parents)
+        {
+            if (byId.TryGetValue(id, out var parent))
+            {
+                into.Add(parent);
+            }
+        }
     }
 
     /// <summary>

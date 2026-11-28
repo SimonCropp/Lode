@@ -244,4 +244,72 @@ public class CommitsTests
         await Assert.That((state.Ahead, state.Behind)).IsEqualTo((4, 4));
         await Assert.That(InProcessHistory.Unpushed(repo, Cancel.None)!.Order()).IsEquivalentTo(GitHistory.Unpushed(repo, Cancel.None).Order(), CollectionOrdering.Matching);
     }
+
+    // Ahead and behind where commits are dated before their parents, as a rebase or a clock out
+    // of step leaves them: Z on base and dated after it, Y on Z and dated before both, the merge
+    // of Y and Z, and upstream's commit on Y, dated before Y. Taken by date, Z and base are
+    // taken as the merge's alone, and Y is found to be upstream's too only once nothing else of
+    // interest is left to take, so Z waits to be taken again, and base, upstream's too for git,
+    // counted as ahead. Where the merge is of Y and W instead, W on base and dated after it, and
+    // Z is dated before base, Z waits without ever having been taken. With a commit graph and
+    // without.
+    [Test]
+    [Arguments(false, false)]
+    [Arguments(false, true)]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    public async Task CountsHowFarApartWithCommitsDatedBeforeTheirParents(bool zNeverTaken, bool graph)
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var tree = GitRun.Output(repo, "rev-parse", "HEAD^{tree}");
+        string Commit(string subject, int time, params string[] parents)
+        {
+            var body = new StringBuilder($"tree {tree}\n");
+            foreach (var parent in parents)
+            {
+                body.Append($"parent {parent}\n");
+            }
+
+            var when = 1_600_000_000 + time;
+            body.Append($"author A <a@example.com> {when} +0000\ncommitter C <c@example.com> {when} +0000\n\n{subject}\n");
+            return GitRun.WriteObject(repo, "commit", body.ToString());
+        }
+
+        var baseCommit = Commit("base", 10);
+        string head;
+        string upstream;
+        int ahead;
+        if (zNeverTaken)
+        {
+            var commitZ = Commit("Z", 1, baseCommit);
+            var commitY = Commit("Y", 5, commitZ);
+            var commitW = Commit("W", 30, baseCommit);
+            head = Commit("Merge", 40, commitY, commitW);
+            upstream = Commit("Upstream", 50, commitY);
+            ahead = 2;
+        }
+        else
+        {
+            var commitZ = Commit("Z", 30, baseCommit);
+            var commitY = Commit("Y", 5, commitZ);
+            head = Commit("Merge", 40, commitY, commitZ);
+            upstream = Commit("Upstream", 3, commitY);
+            ahead = 1;
+        }
+
+        GitRun.Output(repo, "update-ref", "refs/heads/main", head);
+        GitRun.Output(repo, "update-ref", "refs/remotes/origin/main", upstream);
+        if (graph)
+        {
+            GitRun.Output(repo, "commit-graph", "write", "--reachable");
+            await Assert.That(File.Exists(Path.Combine(repo, ".git", "objects", "info", "commit-graph"))).IsTrue();
+        }
+
+        var state = await GitRun.Agree(repo);
+
+        await Assert.That(GitRun.Output(repo, "rev-list", "--left-right", "--count", "HEAD...@{u}")).IsEqualTo($"{ahead}\t1");
+        await Assert.That((state.Ahead, state.Behind)).IsEqualTo((ahead, 1));
+        await Assert.That(InProcessHistory.Unpushed(repo, Cancel.None)!.Order()).IsEquivalentTo(GitHistory.Unpushed(repo, Cancel.None).Order(), CollectionOrdering.Matching);
+    }
 }
