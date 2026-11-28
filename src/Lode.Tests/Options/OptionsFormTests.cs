@@ -1044,6 +1044,7 @@ public class OptionsFormTests
         finally
         {
             File.Delete(path);
+            File.Delete(Settings.BackupPath(path));
         }
     }
 

@@ -588,8 +588,10 @@ sealed class Settings
     /// <summary>
     /// A settings file that cannot be read never stops Lode starting, nor is it lost: the first
     /// save would otherwise write the defaults over every tab and option in it. A corrupt one is
-    /// moved aside and the settings saved afresh. One that could not be opened, locked or not
-    /// permitted, is left as it is and not saved over while Lode runs.
+    /// moved aside, Lode starts with the settings saved before it, which the save that replaced
+    /// them kept, or with the defaults where there are none, and the settings are saved afresh.
+    /// One that could not be opened, locked or not permitted, is left as it is and not saved over
+    /// while Lode runs.
     /// </summary>
     /// <param name="administrator">For the copy run as administrator, which keeps its window's
     /// place and tabs apart, in <see cref="WindowPath"/>, starting from the other copy's until it
@@ -631,7 +633,14 @@ sealed class Settings
                 bug = exception;
             }
 
-            (problem, savable) = KeepAside(path, exception);
+            settings = Backup(path);
+            var startedWith = "the defaults";
+            if (settings != null)
+            {
+                startedWith = $"those it saved before them, kept in {BackupPath(path)}";
+            }
+
+            (problem, savable) = KeepAside(path, exception, startedWith);
         }
 
         settings ??= new();
@@ -662,8 +671,8 @@ sealed class Settings
         JsonSerializer.SerializeToNode(this, serializerOptions)!.AsObject();
 
     // The copy run as administrator's own window's place and tabs, where it has saved any, in
-    // place of the other copy's. Should that file be unreadable, the other's are a start, and
-    // the next save writes them afresh.
+    // place of the other copy's. Should that file be unreadable, those it saved before, and
+    // without them the other's, are a start, and the next save writes them afresh.
     Settings WithOwnWindow(string path)
     {
         Settings? own;
@@ -684,7 +693,7 @@ sealed class Settings
                     SecurityException or
                     JsonException)
         {
-            return this;
+            own = Backup(path);
         }
 
         if (own == null)
@@ -705,7 +714,44 @@ sealed class Settings
     internal static string UnreadablePath(string path) =>
         Path.Combine(Path.GetDirectoryName(path)!, $"{Path.GetFileNameWithoutExtension(path)}.unreadable{Path.GetExtension(path)}");
 
-    static (string Problem, bool Savable) KeepAside(string path, Exception exception)
+    /// <summary>
+    /// The settings as they were before the last save, which each save keeps beside the file it
+    /// replaces: settings.backup.json for settings.json.
+    /// </summary>
+    internal static string BackupPath(string path) =>
+        Path.Combine(Path.GetDirectoryName(path)!, $"{Path.GetFileNameWithoutExtension(path)}.backup{Path.GetExtension(path)}");
+
+    /// <summary>
+    /// Puts what a save wrote on the disk itself, rather than leaving it in Windows' cache to be
+    /// written some time later. A field so a test can see it done, and when.
+    /// </summary>
+    internal static Action<FileStream> FlushToDisk = static _ => _.Flush(flushToDisk: true);
+
+    // The settings as they were before the last save of the file, or null where none were kept,
+    // or they can't be read either, which leaves the defaults, as before any were kept.
+    static Settings? Backup(string path)
+    {
+        try
+        {
+            var backup = BackupPath(path);
+            if (!File.Exists(backup))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize<Settings>(File.ReadAllText(backup));
+        }
+        catch (Exception)
+        {
+            // Read only once the file itself couldn't be, so whatever stops this, the disk or
+            // Lode's own doing, is said of that already.
+            return null;
+        }
+    }
+
+    /// <param name="startedWith">What Lode started with in its place: the defaults, or the
+    /// settings saved before it.</param>
+    static (string Problem, bool Savable) KeepAside(string path, Exception exception, string startedWith)
     {
         var kept = UnreadablePath(path);
         try
@@ -715,7 +761,7 @@ sealed class Settings
         catch (Exception moveException) when (moveException is IOException or UnauthorizedAccessException or SecurityException)
         {
             return ($"""
-                     Lode couldn't read its settings in {path}, so it started with the defaults.
+                     Lode couldn't read its settings in {path}, so it started with {startedWith}.
 
                      {exception.Message}
 
@@ -724,7 +770,7 @@ sealed class Settings
         }
 
         return ($"""
-                 Lode couldn't read its settings in {path}, so it started with the defaults.
+                 Lode couldn't read its settings in {path}, so it started with {startedWith}.
 
                  {exception.Message}
 
@@ -861,11 +907,25 @@ sealed class Settings
     // Written beside the file, then put in its place. Written over the file where it is, a save
     // cut short, by the power going or Lode being ended, left it empty or half written, and the
     // next start with no settings at all. Beside it under a name of this process's own, so a
-    // save of another copy's could never write into this one's.
+    // save of another copy's could never write into this one's. On the disk before it is put in
+    // place: NTFS logs the rename at once, but writes the data when it gets round to it, so a
+    // power cut between could leave the file as long as it should be and all zeros. The file it
+    // replaces is kept, as the last good copy, for a start that can't read this one.
     static void Write(string path, string text)
     {
         var writing = $"{path}.{Environment.ProcessId}.writing";
-        File.WriteAllText(writing, text);
+        using (var stream = new FileStream(writing, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            stream.Write(Encoding.UTF8.GetBytes(text));
+            FlushToDisk(stream);
+        }
+
+        if (File.Exists(path))
+        {
+            File.Replace(writing, path, BackupPath(path), ignoreMetadataErrors: true);
+            return;
+        }
+
         File.Move(writing, path, overwrite: true);
     }
 

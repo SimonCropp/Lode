@@ -706,6 +706,68 @@ public class SettingsTests
                 """);
     }
 
+    // NTFS logs a rename at once but writes a file's data when it gets round to it, so the
+    // settings moved into place unflushed could be all zeros after the power went. Each save is
+    // on the disk, whole, before it is put in place. Others' saves go through the flush too,
+    // so only this test's file is noted.
+    [Test]
+    public async Task ASaveIsOnTheDiskBeforeItIsInPlace()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        var settings = Settings.Load(path);
+        settings.Tabs = [@"C:\Work"];
+        var flushed = new List<(string File, long Length, bool InPlace)>();
+        var flushToDisk = Settings.FlushToDisk;
+        Settings.FlushToDisk = stream =>
+        {
+            flushToDisk(stream);
+            if (stream.Name.StartsWith(fixture.Root, StringComparison.OrdinalIgnoreCase))
+            {
+                lock (flushed)
+                {
+                    flushed.Add((Path.GetFileName(stream.Name), stream.Length, File.Exists(path)));
+                }
+            }
+        };
+        try
+        {
+            settings.Save();
+        }
+        finally
+        {
+            Settings.FlushToDisk = flushToDisk;
+        }
+
+        await Assert.That(flushed).IsEquivalentTo([($"settings.json.{Environment.ProcessId}.writing", new FileInfo(path).Length, false)]);
+    }
+
+    // A file left as long as it was and all zeros, the power gone before its data was written,
+    // can't be read, so the settings saved before it are, which each save keeps: the tabs a
+    // few seconds older, rather than none at all and every option back to its default. The
+    // file of zeros is kept aside, and the user told.
+    [Test]
+    public async Task AFileOfZerosLoadsTheSettingsSavedBeforeIt()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        var settings = Settings.Load(path);
+        settings.CodeDirectory = @"D:\Code";
+        settings.Tabs = [@"C:\Work"];
+        settings.Save();
+        settings.Tabs = [@"C:\Work", @"D:\Code"];
+        settings.Save();
+        await File.WriteAllBytesAsync(path, new byte[new FileInfo(path).Length]);
+
+        var loaded = Settings.Load(path);
+
+        await Assert.That(loaded.Tabs).IsEquivalentTo([@"C:\Work"]);
+        await Assert.That(loaded.CodeDirectory).IsEqualTo(@"D:\Code");
+        await Assert.That(loaded.LoadProblem).Contains(Settings.BackupPath(path));
+        await Assert.That(loaded.LoadBug).IsNull();
+        await Assert.That(new FileInfo(Settings.UnreadablePath(path)).Length).IsGreaterThan(0);
+    }
+
     /// <summary>
     /// Locked by another program, say, and quite possibly fine: not saved over with the defaults.
     /// </summary>
