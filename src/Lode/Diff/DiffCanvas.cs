@@ -56,6 +56,9 @@ sealed class DiffCanvas : Control
     string? pickHint;
     int widest;
 
+    // How many digits the gutter has room for, at least three.
+    int numberDigits = 3;
+
     // What the pointer is over.
     int hoverRow = -1;
     Part hoverPart;
@@ -207,6 +210,12 @@ sealed class DiffCanvas : Control
     internal long CharactersMeasured { get; private set; }
 
     /// <summary>
+    /// How wide a line's number can be drawn in the gutter, the room either side of it taken
+    /// off, for tests to see that the largest shown fits.
+    /// </summary>
+    internal int NumberRoom => Current.NumberWidth - LogicalToDeviceUnits(numberPadding) * 2;
+
+    /// <summary>
     /// How far the text is scrolled sideways, in pixels.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -311,6 +320,13 @@ sealed class DiffCanvas : Control
         pickHint = hint;
         unexpanded = layout.Hunks;
         hunks = layout.Hunks;
+
+        // Sized for the largest number that can show, rather than the largest the diff's hunks
+        // show: given the file's lines, the hunks as laid out have one below the last to show
+        // the rest of the file, which ends at its last line. Sized from the diff's hunks, a
+        // change at line 10 of a file of 12,000 left room for 3 digits, and expanded, the
+        // numbers of 5 were cut off at the left.
+        numberDigits = Math.Max(3, TextDiff.MaxLineNumberOf(layout.Hunks).ToString(CultureInfo.InvariantCulture).Length);
         if (keepPlace &&
             expandedBefore &&
             lines != null)
@@ -676,13 +692,7 @@ sealed class DiffCanvas : Control
 
     Columns ColumnsFor(int width)
     {
-        var digits = 3;
-        if (diff != null)
-        {
-            digits = Math.Max(3, diff.MaxLineNumber.ToString(CultureInfo.InvariantCulture).Length);
-        }
-
-        var numberWidth = digits * charWidth + LogicalToDeviceUnits(numberPadding) * 2;
+        var numberWidth = numberDigits * charWidth + LogicalToDeviceUnits(numberPadding) * 2;
         var handle = 0;
         if (picks != null)
         {

@@ -258,6 +258,30 @@ public class DiffViewTests
         await Assert.That(canvas.SelectedText()).IsEqualTo(selected);
     }
 
+    // A change near the top of a long file, expanded whole, one above the other and side by
+    // side: the gutter fits the largest number shown, the file's last line, rather than only the
+    // hunk's, its numbers cut off at the left.
+    [Test]
+    public async Task ExpandedNumbersFitTheGutter()
+    {
+        var lines = Enumerable.Range(1, 12_000).Select(_ => $"line {_}").ToList();
+        lines[9] = "line ten";
+        var diff = (TextDiff) DiffParser.Parse("--- a/long.txt\n+++ b/long.txt\n@@ -8,5 +8,5 @@\n line 8\n line 9\n-line 10\n+line ten\n line 11\n line 12\n");
+        using var stub = DiffSample.Stub(diff, lines);
+        using var view = await Shown(new(Unique(), new("long.txt", null, GitChange.Modified)));
+        var canvas = view.Canvas;
+        using var font = ExplorerStyle.CodeFont(canvas.Font);
+
+        canvas.ExpandWhole();
+        var largest = canvas.Rows.Max(_ => Math.Max(_.Before?.OldNumber ?? 0, _.After?.NewNumber ?? 0));
+        var needed = TextRenderer.MeasureText(largest.ToString(CultureInfo.InvariantCulture), font, Size.Empty, TextFormatFlags.NoPadding).Width;
+
+        await Assert.That(largest).IsEqualTo(12_000);
+        await Assert.That(canvas.NumberRoom).IsGreaterThanOrEqualTo(needed);
+        view.SetSplit(true);
+        await Assert.That(canvas.NumberRoom).IsGreaterThanOrEqualTo(needed);
+    }
+
     // Read again once the file changed, a line more added above: the whole file still shows,
     // and the same line is at the top, though it is a row further down.
     [Test]

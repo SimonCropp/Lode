@@ -147,19 +147,22 @@ sealed record TextDiff(IReadOnlyList<DiffHunk> Hunks, string Patch) : FileDiff
     /// <summary>
     /// The highest line number on either side, for how wide the numbers are.
     /// </summary>
-    public int MaxLineNumber
-    {
-        get
-        {
-            var max = 0;
-            foreach (var hunk in Hunks)
-            {
-                max = Math.Max(max, hunk.Header.OldStart + hunk.Header.OldCount);
-                max = Math.Max(max, hunk.Header.NewStart + hunk.Header.NewCount);
-            }
+    public int MaxLineNumber => MaxLineNumberOf(Hunks);
 
-            return max;
+    /// <summary>
+    /// The highest line number on either side of <paramref name="hunks"/>: given the hunk below
+    /// the last, which shows the rest of the file, that of the file's last line.
+    /// </summary>
+    public static int MaxLineNumberOf(IReadOnlyList<DiffHunk> hunks)
+    {
+        var max = 0;
+        foreach (var hunk in hunks)
+        {
+            max = Math.Max(max, hunk.Header.OldStart + hunk.Header.OldCount);
+            max = Math.Max(max, hunk.Header.NewStart + hunk.Header.NewCount);
         }
+
+        return max;
     }
 
     /// <summary>
