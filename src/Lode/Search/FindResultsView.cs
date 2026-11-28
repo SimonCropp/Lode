@@ -110,11 +110,41 @@ sealed class FindResultsView : UserControl
         ShowRows();
     }
 
+    // The one column across the list, less a scrollbar's room when the rows run past the
+    // bottom, as RowList fits its own: as wide as the list, a scrollbar coming down the side
+    // would bring one along the bottom too. From the list's own height, not its client area's,
+    // which a scrollbar along the bottom takes from.
     void FitColumn()
     {
-        if (list.Columns.Count > 0)
+        if (list.Columns.Count == 0)
         {
-            list.Columns[0].Width = Math.Max(list.ClientSize.Width, 50);
+            return;
+        }
+
+        var width = list.Width;
+        if (list.VirtualListSize * list.RowHeight() > list.Height)
+        {
+            // As wide as on the screen the list is on, not the one Windows started on.
+            width -= SystemInformation.GetVerticalScrollBarWidthForDpi(list.DeviceDpi);
+        }
+
+        width = Math.Max(width, 50);
+        var column = list.Columns[0];
+
+        // The column is never wider than the list, so no scrollbar along the bottom is wanted.
+        // But one the list put there, for a column wider than it for a moment, stays once the
+        // column is as wide as the list again, and goes only for a column narrower than that:
+        // so the column is made a pixel narrower first. The moment comes as the tab strip,
+        // fitting its tabs, makes itself a pixel wider and back, and as rows running past the
+        // bottom bring a scrollbar down the side before the column is narrowed for it.
+        if (list.ScrollsAlongTheBottom)
+        {
+            column.Width = width - 1;
+        }
+
+        if (column.Width != width)
+        {
+            column.Width = width;
         }
     }
 
@@ -248,11 +278,14 @@ sealed class FindResultsView : UserControl
         }
     }
 
+    // The column fitted again, as rows running past the bottom bring a scrollbar down the side,
+    // which leaves the list's own size as it was.
     void ShowRows()
     {
         if (list.VirtualListSize != results.RowCount)
         {
             list.VirtualListSize = results.RowCount;
+            FitColumn();
         }
 
         list.Invalidate();
@@ -764,7 +797,41 @@ sealed class FindResultsView : UserControl
     // Drawn through a buffer, so rows being added as the search goes don't flicker.
     sealed class ResultsList : ListView
     {
+        const int listViewGetItemRect = 0x100E;
+        const int horizontalScrollbar = 0x00100000;
+
         public ResultsList() =>
             DoubleBuffered = true;
+
+        /// <summary>
+        /// How tall a row is as the list lays them out, or, with none laid out yet, as tall as
+        /// asked. Asked of the list itself, as RowList asks it, rather than through GetItemRect,
+        /// which throws for a list with no first row yet.
+        /// </summary>
+        public int RowHeight()
+        {
+            var height = SmallImageList?.ImageSize.Height ?? 1;
+            if (!IsHandleCreated ||
+                VirtualListSize == 0)
+            {
+                return height;
+            }
+
+            // LVIR_BOUNDS, the whole row, in Left.
+            var bounds = new NativeRect();
+            if (SendMessage(Handle, listViewGetItemRect, IntPtr.Zero, ref bounds) == IntPtr.Zero)
+            {
+                return height;
+            }
+
+            return Math.Max(height, bounds.Bottom - bounds.Top);
+        }
+
+        /// <summary>
+        /// Whether the list shows a scrollbar along the bottom.
+        /// </summary>
+        public bool ScrollsAlongTheBottom =>
+            IsHandleCreated &&
+            (GetWindowLong(Handle, WindowStyle) & horizontalScrollbar) != 0;
     }
 }

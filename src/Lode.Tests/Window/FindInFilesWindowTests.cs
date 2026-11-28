@@ -433,6 +433,62 @@ public class FindInFilesWindowTests
                 """);
     }
 
+    // What was found is as wide as the room it has, with no scrollbar along the bottom, as the
+    // tab strip fits its tabs to the Find Results tab, and whenever the list is made a pixel
+    // wider and back, as the strip does to itself as it fits them: its one column was set to
+    // the width the list had then, which left it a pixel too wide, and the scrollbar along the
+    // bottom.
+    [Test]
+    public async Task NoScrollbarAlongTheBottomOfWhatWasFound()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("Docs", "guide.aleph"), "The alpha release\nSee alpha notes.\n");
+        using var form = await Show(fixture, new(), fixture.Root);
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
+        Application.DoEvents();
+        var list = form.FindHost.ResultsView.List;
+        var onceFound = ScrollsAlongTheBottom(list);
+
+        var size = list.Size;
+        list.Size = size with { Width = size.Width + 1 };
+        list.Size = size;
+        Application.DoEvents();
+
+        await Assert.That(onceFound).IsFalse();
+        await Assert.That(ScrollsAlongTheBottom(list)).IsFalse();
+        await Assert.That(list.Columns[0].Width).IsEqualTo(list.ClientSize.Width);
+    }
+
+    // More found than fits, the list scrolls down, and its column leaves room for that
+    // scrollbar, so none comes along the bottom with it.
+    [Test]
+    public async Task MoreFoundThanFitsScrollsOnlyDown()
+    {
+        const int verticalScrollbar = 0x00200000;
+        using var fixture = Fixture.Create();
+        await File.WriteAllLinesAsync(fixture.At("Docs", "guide.aleph"), Enumerable.Range(1, 100).Select(_ => $"alpha {_}"));
+        using var form = await Show(fixture, new(), fixture.Root);
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
+        Application.DoEvents();
+        var list = form.FindHost.ResultsView.List;
+
+        await Assert.That(NativeMethods.GetWindowLong(list.Handle, NativeMethods.WindowStyle) & verticalScrollbar).IsNotEqualTo(0);
+        await Assert.That(ScrollsAlongTheBottom(list)).IsFalse();
+        await Assert.That(list.Columns[0].Width).IsEqualTo(list.ClientSize.Width);
+    }
+
+    static bool ScrollsAlongTheBottom(Control control)
+    {
+        const int horizontalScrollbar = 0x00100000;
+        return (NativeMethods.GetWindowLong(control.Handle, NativeMethods.WindowStyle) & horizontalScrollbar) != 0;
+    }
+
     // Closing Find Results lets go of it; the next search makes it again.
     [Test]
     public async Task ClosingFindResults()
