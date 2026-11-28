@@ -1,8 +1,39 @@
 /// <summary>
-/// Writes .lnk shortcuts through the shell's ShellLink object.
+/// Writes and reads .lnk shortcuts through the shell's ShellLink object, which works on any
+/// thread, not only the UI thread's apartment.
 /// </summary>
 static class ShellLink
 {
+    // The longest path Windows has.
+    const int pathLength = 32_767;
+
+    /// <summary>
+    /// Where a shortcut leads, as it says, any environment variables in it expanded. Only the
+    /// shortcut is read: where it leads isn't looked for, as resolving it would, which on the
+    /// network waits as long as the network does. Empty for one that leads nowhere on disk,
+    /// Control Panel say.
+    /// </summary>
+    public static string Target(string shortcutPath)
+    {
+        var link = (IShellLinkW)new ShellLinkObject();
+        var buffer = Marshal.AllocCoTaskMem(pathLength * sizeof(char));
+        try
+        {
+            ((IPersistFile)link).Load(shortcutPath, readOnly);
+            Marshal.WriteInt16(buffer, 0);
+            link.GetPath(buffer, pathLength, IntPtr.Zero, 0);
+            return Marshal.PtrToStringUni(buffer) ?? "";
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(buffer);
+            Marshal.FinalReleaseComObject(link);
+        }
+    }
+
+    // STGM_READ.
+    const uint readOnly = 0;
+
     public static void Save(string shortcutPath, string target)
     {
         var link = (IShellLinkW)new ShellLinkObject();

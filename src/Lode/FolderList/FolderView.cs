@@ -4515,6 +4515,23 @@ sealed class FolderView : UserControl
     internal static Func<Control, string, DialogResult> AskOpenMany { get; set; } = (owner, text) =>
         MessageBoxes.Show(owner, text, "Open", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
 
+    /// <summary>
+    /// The folder a .lnk shortcut leads to, or null for one that leads anywhere else: read from
+    /// the shortcut, and asked after, off the UI thread. Replaced in tests, which see where it is
+    /// asked.
+    /// </summary>
+    internal Func<string, string?> ResolveShortcut = FileOperations.ResolveFolderShortcut;
+
+    /// <summary>
+    /// Opens a file with its app, a shortcut by starting what it leads to. Replaced in tests,
+    /// which must not start anything.
+    /// </summary>
+    internal Action<IWin32Window, string> OpenFile = FileOperations.Open;
+
+    // Counts what is opened: a selection with shortcuts in it is opened once they are resolved,
+    // unless something else has been opened since.
+    int opening;
+
     void OpenEntries(IReadOnlyList<FileEntry> selection)
     {
         if (selection.Count > openWithoutAsking &&
@@ -4523,6 +4540,52 @@ sealed class FolderView : UserControl
             return;
         }
 
+        var asked = ++opening;
+        var shortcuts = selection
+            .Where(IsShortcut)
+            .Select(_ => _.FullPath)
+            .ToList();
+        if (shortcuts.Count == 0)
+        {
+            OpenEntries(selection, null);
+            return;
+        }
+
+        _ = ResolveThenOpen(selection, shortcuts, asked);
+    }
+
+    // Where each shortcut leads is read, and whether that is a folder asked, off the UI thread:
+    // asking a share on a machine that is off waits as long as the network does, and the window
+    // would wait with it. The selection is opened once they are resolved, unless the view has
+    // gone somewhere else meanwhile, or something else been opened.
+    async Task ResolveThenOpen(IReadOnlyList<FileEntry> selection, List<string> shortcuts, int asked)
+    {
+        var folder = CurrentPath;
+        var resolve = ResolveShortcut;
+        var folders = await Task.Run(() =>
+        {
+            var resolved = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var shortcut in shortcuts)
+            {
+                resolved[shortcut] = resolve(shortcut);
+            }
+
+            return resolved;
+        });
+        if (IsDisposed ||
+            asked != opening ||
+            !Locations.Same(folder, CurrentPath))
+        {
+            return;
+        }
+
+        OpenEntries(selection, folders);
+    }
+
+    // Opens each item: the first folder here, any more in tabs of their own, and each file with
+    // its app. Where each shortcut to a folder leads is in shortcutFolders, resolved already.
+    void OpenEntries(IReadOnlyList<FileEntry> selection, Dictionary<string, string?>? shortcutFolders)
+    {
         var navigated = false;
         foreach (var entry in selection)
         {
@@ -4535,10 +4598,10 @@ sealed class FolderView : UserControl
                 continue;
             }
 
-            var folder = FolderToOpen(entry);
+            var folder = FolderToOpen(entry, shortcutFolders);
             if (folder == null)
             {
-                FileOperations.Open(this, entry.FullPath);
+                OpenFile(this, entry.FullPath);
             }
             else if (navigated)
             {
@@ -4552,9 +4615,15 @@ sealed class FolderView : UserControl
         }
     }
 
+    // A .lnk shortcut, which is resolved before it is opened. Not one in a zip, which is opened
+    // from a copy extracted.
+    static bool IsShortcut(FileEntry entry) =>
+        entry is {IsDirectory: false, InArchive: false} &&
+        entry.FullPath.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase);
+
     // Where opening an item goes: a folder, a zip, as Explorer goes into one, or where a shortcut
     // to a folder leads. Null for a file to open.
-    static string? FolderToOpen(FileEntry entry)
+    static string? FolderToOpen(FileEntry entry, Dictionary<string, string?>? shortcutFolders)
     {
         if (entry.IsDirectory ||
             Zip.IsZip(entry.FullPath))
@@ -4562,7 +4631,7 @@ sealed class FolderView : UserControl
             return entry.FullPath;
         }
 
-        return FileOperations.ResolveFolderShortcut(entry.FullPath);
+        return shortcutFolders?.GetValueOrDefault(entry.FullPath);
     }
 
     /// <summary>

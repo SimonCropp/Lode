@@ -63,6 +63,55 @@ public class FolderViewTests
             .IsEqualTo(ShellListView.PaddedIcon(ShellIcons.GetIcon(target, false)));
     }
 
+    // Opening a shortcut reads where it leads, and asks whether that is a folder, off the UI
+    // thread: for a shortcut to a share on a machine that is off, that waits as long as the
+    // network does, and the window would wait with it. One to a folder still goes there, one to
+    // a file still starts, and one resolved after the view has gone somewhere else does neither.
+    [Test]
+    public async Task AShortcutIsResolvedOffTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        ShellLink.Save(fixture.At("Docs link.lnk"), fixture.At("Docs"));
+        ShellLink.Save(fixture.At("notes link.lnk"), fixture.At("notes.aleph"));
+        using var view = await Open(fixture.Root);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var resolvedOn = new ConcurrentQueue<int>();
+        using var held = new ManualResetEventSlim(true);
+        var resolve = view.ResolveShortcut;
+        view.ResolveShortcut = _ =>
+        {
+            resolvedOn.Enqueue(Environment.CurrentManagedThreadId);
+            held.Wait(TimeSpan.FromSeconds(10));
+            return resolve(_);
+        };
+        var started = new List<string>();
+        view.OpenFile = (_, path) => started.Add(path);
+        void OpenItem(string name) =>
+            view.ItemCommands([view.Entries.First(_ => _.Name == name)]).First(_ => _?.Id == "open")!.Action();
+
+        OpenItem("Docs link.lnk");
+        await Pump.Until(() => view.CurrentPath == fixture.At("Docs"));
+        await Pump.Loaded(view);
+        view.GoBack();
+        await Pump.Loaded(view);
+
+        OpenItem("notes link.lnk");
+        await Pump.Until(() => started.Count > 0);
+
+        // Held until the view has gone somewhere else.
+        held.Reset();
+        OpenItem("Docs link.lnk");
+        view.Navigate(fixture.At("Source"));
+        await Pump.Loaded(view);
+        held.Set();
+        await Pump.For(TimeSpan.FromMilliseconds(500));
+
+        await Assert.That(resolvedOn.Count).IsEqualTo(3);
+        await Assert.That(resolvedOn).DoesNotContain(uiThread);
+        await Assert.That(started).IsEquivalentTo([fixture.At("notes link.lnk")]);
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Source"));
+    }
+
     // At a repository's root, the files a folder down that Options names are listed too, as
     // shortcuts to them: not those further down, nor any in a hidden folder while hidden items
     // aren't shown.

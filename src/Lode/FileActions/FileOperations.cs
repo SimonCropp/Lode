@@ -509,6 +509,8 @@ static class FileOperations
 
     /// <summary>
     /// Returns the folder a .lnk shortcut points at, or null when it is not a folder shortcut.
+    /// Not for the UI thread: whether it leads to a folder is asked of where it leads, which on
+    /// the network, a share on a machine that is off say, waits as long as the network does.
     /// </summary>
     public static string? ResolveFolderShortcut(string path)
     {
@@ -519,14 +521,7 @@ static class FileOperations
 
         try
         {
-            var type = Type.GetTypeFromProgID("WScript.Shell");
-            if (type == null)
-            {
-                return null;
-            }
-
-            dynamic shell = Activator.CreateInstance(type)!;
-            string target = shell.CreateShortcut(path).TargetPath;
+            var target = ShellLink.Target(path);
             if (Directory.Exists(target))
             {
                 return target;
