@@ -62,13 +62,33 @@ public class FormattingTests
                 """);
 
     // Midnight and noon, a morning and an afternoon, each hour in two digits, am and pm in
-    // lower case right after it.
+    // lower case right after it, whatever the culture.
     [Test]
     public async Task Modified()
     {
-        await Assert.That(Formatting.Modified(new(2026, 11, 1, 13, 11, 0))).IsEqualTo("01/11/2026 01:11pm");
-        await Assert.That(Formatting.Modified(new(2026, 3, 27, 7, 26, 0))).IsEqualTo("27/03/2026 07:26am");
-        await Assert.That(Formatting.Modified(new(2026, 12, 31, 0, 5, 0))).IsEqualTo("31/12/2026 12:05am");
-        await Assert.That(Formatting.Modified(new(2026, 6, 15, 12, 0, 0))).IsEqualTo("15/06/2026 12:00pm");
+        var britain = CultureInfo.GetCultureInfo("en-GB");
+        await Assert.That(Formatting.Modified(new(2026, 11, 1, 13, 11, 0), britain)).IsEqualTo("01/11/2026 01:11pm");
+        await Assert.That(Formatting.Modified(new(2026, 3, 27, 7, 26, 0), britain)).IsEqualTo("27/03/2026 07:26am");
+        await Assert.That(Formatting.Modified(new(2026, 12, 31, 0, 5, 0), britain)).IsEqualTo("31/12/2026 12:05am");
+        await Assert.That(Formatting.Modified(new(2026, 6, 15, 12, 0, 0), britain)).IsEqualTo("15/06/2026 12:00pm");
+    }
+
+    // The date in the order, and with the separators, the region writes it, as Explorer's
+    // column has it, so the 3rd of April doesn't read as the 4th of March in the United States;
+    // the year in full where the region has it in two digits.
+    [Test]
+    public async Task ModifiedFollowsTheRegion()
+    {
+        var shortYear = (CultureInfo) CultureInfo.GetCultureInfo("en-US").Clone();
+        shortYear.DateTimeFormat.ShortDatePattern = "M/d/yy";
+        var quoted = (CultureInfo) CultureInfo.GetCultureInfo("en-GB").Clone();
+        quoted.DateTimeFormat.ShortDatePattern = "dd MMM 'yy' yy";
+        var when = new DateTime(2026, 4, 3, 14, 5, 0);
+
+        await Assert.That(Formatting.Modified(when, CultureInfo.GetCultureInfo("en-US"))).IsEqualTo("4/3/2026 02:05pm");
+        await Assert.That(Formatting.Modified(when, CultureInfo.GetCultureInfo("en-GB"))).IsEqualTo("03/04/2026 02:05pm");
+        await Assert.That(Formatting.Modified(when, CultureInfo.GetCultureInfo("de-DE"))).IsEqualTo("03.04.2026 02:05pm");
+        await Assert.That(Formatting.Modified(when, shortYear)).IsEqualTo("4/3/2026 02:05pm");
+        await Assert.That(Formatting.Modified(when, quoted)).IsEqualTo("03 Apr yy 2026 02:05pm");
     }
 }

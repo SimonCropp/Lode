@@ -152,7 +152,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![This PC's right-click menu](src/Lode.Tests/Menus/MenuTests.ThisPCMenu.verified.png)
 
- * **The list**: details with shell icons and types, natural sort, each folder keeping its own sort. Date modified sorts newest first, as Explorer's does, and the other way when clicked again. What is cut shows dimmed. Drag from the margin left of the list to select. Opening more than 15 items at once, with Ctrl+A and Enter say, asks first, as Explorer does. Right-click a column header to size columns to fit, or show or hide them, in every tab. **Sort by**, first on the right-click menu where nothing is clicked, under See more, and in the command palette, sorts by any column, a hidden one too: that one then shows for as long as the list is sorted by it, so Date modified can stay hidden until it is sorted by.
+ * **The list**: details with shell icons and types, natural sort, each folder keeping its own sort. Date modified sorts newest first, as Explorer's does, and the other way when clicked again, and shows the date in the order your region's settings write it, the year in full. What is cut shows dimmed. Drag from the margin left of the list to select. Opening more than 15 items at once, with Ctrl+A and Enter say, asks first, as Explorer does. Right-click a column header to size columns to fit, or show or hide them, in every tab. **Sort by**, first on the right-click menu where nothing is clicked, under See more, and in the command palette, sorts by any column, a hidden one too: that one then shows for as long as the list is sorted by it, so Date modified can stay hidden until it is sorted by.
 
    ![Column header menu](src/Lode.Tests/Menus/MenuTests.ColumnMenu.verified.png)
 
@@ -350,7 +350,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+mouse wheel                  | Large icons or details        |
 | Ctrl+N                            | New window                    |
 
-Click a tab's cross or middle-click the tab to close it. Middle-click or Ctrl+click a folder in the tree or the address bar to open it in a new tab, behind the one showing. The mouse back and forward buttons work too.
+Click a tab's cross or middle-click the tab to close it. Middle-click or Ctrl+click a folder in the tree or the address bar, or middle-click one in the list, to open it in a new tab, behind the one showing. The mouse back and forward buttons work too.
 
 
 ## Icon

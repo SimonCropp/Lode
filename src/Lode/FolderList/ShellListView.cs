@@ -366,6 +366,20 @@ sealed class ShellListView : ListView
     const int mouseWheel = 0x020A;
     const int wheelControl = 0x0008;
 
+    // WM_MBUTTONDOWN, WM_MBUTTONUP and WM_MBUTTONDBLCLK.
+    const int middleButtonDown = 0x0207;
+    const int middleButtonUp = 0x0208;
+    const int middleButtonDoubleClick = 0x0209;
+
+    // The row the middle button went down on, -1 for none.
+    int middlePressed = -1;
+
+    /// <summary>
+    /// A row was clicked with the middle button, by its index: the button went down and came up
+    /// over it. Each click, a second soon after the first too, which comes as a double click.
+    /// </summary>
+    public event Action<int>? MiddleClicked;
+
     /// <summary>
     /// The mouse wheel was turned over the list with Ctrl held, by this much, in 120ths of a
     /// notch: away from the user for bigger icons, as in Explorer, toward for smaller. The list
@@ -823,6 +837,22 @@ sealed class ShellListView : ListView
             return;
         }
 
+        if (message.Msg is middleButtonDown or middleButtonDoubleClick)
+        {
+            middlePressed = RowAt(message.LParam);
+        }
+
+        if (message.Msg == middleButtonUp)
+        {
+            var pressed = middlePressed;
+            middlePressed = -1;
+            if (pressed >= 0 &&
+                RowAt(message.LParam) == pressed)
+            {
+                MiddleClicked?.Invoke(pressed);
+            }
+        }
+
         // Ctrl held, as the message says, the wheel changes the view rather than scrolling.
         if (message.Msg == mouseWheel &&
             ZoomRequested != null &&
@@ -953,6 +983,14 @@ sealed class ShellListView : ListView
                 HorizontalScrollChanged();
             }
         }
+    }
+
+    // The row at the point a mouse message gives, -1 for none.
+    int RowAt(IntPtr point)
+    {
+        var x = (short) ((long) point & 0xFFFF);
+        var y = (short) (((long) point >> 16) & 0xFFFF);
+        return GetItemAt(x, y)?.Index ?? -1;
     }
 
     public void SelectAll()

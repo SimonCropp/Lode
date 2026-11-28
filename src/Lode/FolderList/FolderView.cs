@@ -481,6 +481,7 @@ sealed class FolderView : UserControl
         UpdateColumns();
 
         list.ItemActivate += (_, _) => OpenEntries(SelectedEntries());
+        list.MiddleClicked += OnMiddleClicked;
         list.ColumnClick += OnColumnClick;
         list.KeyDown += OnListKeyDown;
         list.SelectedIndexChanged += (_, _) => QueueStatusChanged();
@@ -5927,6 +5928,17 @@ sealed class FolderView : UserControl
         }
 
         return typeName;
+    }
+
+    // A folder clicked with the middle button opens in a new tab behind the one showing, as one in
+    // the tree does, and in Explorer's list. A file is left alone.
+    void OnMiddleClicked(int index)
+    {
+        if (index < displayed.Count &&
+            displayed[index] is {IsDirectory: true} folder)
+        {
+            NewTabRequested?.Invoke(folder.FullPath);
+        }
     }
 
     void OpenInNewTabs(List<FileEntry> selection)

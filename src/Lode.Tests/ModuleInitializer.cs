@@ -82,5 +82,11 @@ public static class ModuleInitializer
         CultureInfo.DefaultThreadCurrentUICulture = culture;
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = culture;
+
+        // The list's dates follow the region's order, but day first in the tests, as the captures,
+        // and the readme's pictures made of them, have always shown them. FormattingTests tries
+        // other cultures.
+        var dayFirst = CultureInfo.GetCultureInfo("en-GB");
+        Formatting.DateCulture = () => dayFirst;
     }
 }

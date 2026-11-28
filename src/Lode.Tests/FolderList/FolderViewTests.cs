@@ -1612,6 +1612,47 @@ public class FolderViewTests
     }
 
     // A folder of 500 files, item000.txt to item499.txt, each as many bytes as its number.
+    // A folder clicked with the middle button, sent to the list's window as Windows sends the
+    // click, opens in a new tab, as one in the tree does and in Explorer's list, and the list
+    // stays where it is. A file doesn't, nor does the button let go over another row.
+    [Test]
+    public async Task MiddleClickOpensAFolderInANewTab()
+    {
+        const int middleButtonDown = 0x0207;
+        const int middleButtonUp = 0x0208;
+        const int middleButton = 0x0010;
+        using var fixture = Fixture.Create();
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root);
+        var tabs = new List<string>();
+        view.NewTabRequested += tabs.Add;
+
+        Point Centre(string name)
+        {
+            var bounds = view.List.GetItemRect(view.FindRow(name, 0));
+            return new(bounds.Left + 60, bounds.Top + bounds.Height / 2);
+        }
+
+        void MiddleClick(string down, string up)
+        {
+            NativeMethods.SendMessage(view.List.Handle, middleButtonDown, middleButton, Packed(Centre(down)));
+            NativeMethods.SendMessage(view.List.Handle, middleButtonUp, 0, Packed(Centre(up)));
+            Application.DoEvents();
+        }
+
+        MiddleClick("Docs", "Docs");
+        MiddleClick("notes", "notes");
+        MiddleClick("Source", "Archive");
+        MiddleClick("Source", "Source");
+        await Pump.Loaded(view);
+
+        await Assert.That(string.Join(" | ", tabs)).IsEqualTo(string.Join(" | ", fixture.At("Docs"), fixture.At("Source")));
+        await Assert.That(view.CurrentPath).IsEqualTo(fixture.Root);
+    }
+
+    static IntPtr Packed(Point point) =>
+        (point.Y << 16) | (point.X & 0xFFFF);
+
     // Held near the bottom of the rows, a drag scrolls the list down a row every so often, as the
     // tree does and Explorer's list does, so a folder out of sight can be dropped into; near the
     // top, under the headers, up. Not at once, nor in the middle.
