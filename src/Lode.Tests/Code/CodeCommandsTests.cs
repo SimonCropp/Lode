@@ -329,7 +329,7 @@ public class CodeCommandsTests
         await File.WriteAllTextAsync(Path.Combine(repo, "Source", "new.txt"), "new");
         await File.WriteAllTextAsync(Path.Combine(repo, "build.log"), "ignored");
 
-        await Assert.That(CodeCommands.NewFiles([repo])).IsEqualTo(1);
+        await Assert.That(CodeCommands.FindUntracked([repo]).NewFiles).IsEqualTo(1);
         var results = await CodeCommands.Push([repo], "Add new");
 
         await Assert.That(results.Single().Succeeded).IsTrue();
@@ -338,16 +338,56 @@ public class CodeCommandsTests
         var files = Scratch.Git(origin, "ls-tree", "-r", "--name-only", "HEAD").Split('\n');
         await Assert.That(files).Contains("Source/new.txt");
         await Assert.That(files).DoesNotContain("build.log");
-        await Assert.That(CodeCommands.NewFiles([repo])).IsEqualTo(0);
+        await Assert.That(CodeCommands.FindUntracked([repo]).NewFiles).IsEqualTo(0);
     }
 
-    // What Push asks says how many new files go in, there being any.
+    // A repository of its own inside, git doesn't track, a clone or a worktree say: added, it
+    // would go in as a link to its commit, which origin hasn't got, and Push send that. It is
+    // left out, and said to be, its name taken as it is, not as a pattern, whose brackets would
+    // leave out the file beside it too. New files go in as any others, and only they count.
+    [Test]
+    public async Task PushLeavesOutARepositoryInside()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var inner = Path.Combine(repo, "tools", "Inner [v1]");
+        Directory.CreateDirectory(inner);
+        Scratch.Git(inner, "init", "--initial-branch=main");
+        Scratch.Identify(inner);
+        await File.WriteAllTextAsync(Path.Combine(inner, "inner.txt"), "inner");
+        Scratch.Git(inner, "add", ".");
+        Scratch.Git(inner, "commit", "-m", "Inner");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tools", "new.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tools", "Inner v"), "new");
+
+        var untracked = CodeCommands.FindUntracked([repo]);
+        var results = await CodeCommands.Push([repo], "Add new");
+
+        await Assert.That(untracked.NewFiles).IsEqualTo(2);
+        await Assert.That(untracked.Repos).IsEquivalentTo([inner]);
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(results.Single().Output).StartsWith("Left out tools/Inner [v1]/, a repository of its own\n");
+        var origin = code.Origin("Repo");
+        await Assert.That(Scratch.Git(origin, "log", "-1", "--format=%s")).IsEqualTo("Add new");
+        var pushed = Scratch.Git(origin, "ls-tree", "-r", "--name-only", "HEAD").Split('\n');
+        await Assert.That(pushed).IsEquivalentTo(["tools/Inner v", "tools/new.txt", "tracked.txt"]);
+        await Assert.That(Scratch.Git(repo, "ls-tree", "-r", "HEAD")).DoesNotContain("160000");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("?? \"tools/Inner [v1]/\"");
+    }
+
+    // What Push asks says how many new files go in, there being any, and which repositories of
+    // their own inside it leaves out, each where it is in its repository, or, of several, from
+    // the folder holding them.
     [Test]
     public async Task PushQuestionSaysHowManyNewFiles()
     {
         await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 0)).IsEqualTo("Commit all changes in Lode and push to origin.");
         await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 1)).IsEqualTo("Commit all changes in Lode, including 1 new file, and push to origin.");
         await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 3)).IsEqualTo("Commit all changes in Lode, including 3 new files, and push to origin.");
+        await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode"], 1, [@"C:\Code\Lode\.claude\worktrees\fix"]))
+            .IsEqualTo("Commit all changes in Lode, including 1 new file, and push to origin.\n\nLeaves out .claude\\worktrees\\fix, a repository of its own inside, which git would commit only as a link to its commit.");
+        await Assert.That(CodeMenu.PushQuestion([@"C:\Code\Lode", @"C:\Code\Group\Two"], 0, [@"C:\Code\Lode\tools\Clone", @"C:\Code\Group\Two\.claude\worktrees\fix"]))
+            .IsEqualTo("Commit all changes in 2 repositories (Lode, Two) and push to origin.\n\nLeaves out 2 repositories of their own inside, which git would commit only as links to their commits: Lode\\tools\\Clone, Group\\Two\\.claude\\worktrees\\fix.");
     }
 
     // A merge that left a file in conflict: the commit would take it as it is, the markers in

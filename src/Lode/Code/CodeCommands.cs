@@ -925,7 +925,9 @@ static class CodeCommands
 
     // Commits every change, new files included, as Push and Tag commit them: what went wrong,
     // ending with what was not done, or what the commit said. Nothing to commit is fine: there
-    // may still be commits to push.
+    // may still be commits to push. A repository of its own inside, git doesn't track, a clone or
+    // a worktree say, is left out, and said to be: git would add it as a link to its commit, a
+    // warning all it says of it, and Push send a link to a commit origin hasn't got.
     static RepoResult CommitAll(string repo, string message, string notDone, Cancel cancel)
     {
         if (WhyNotChange(repo, notDone) is { } why)
@@ -933,7 +935,8 @@ static class CodeCommands
             return new(repo, false, why);
         }
 
-        var add = GitToItsEnd(repo, cancel, "add", "--all");
+        var inside = UntrackedIn(repo).Repos;
+        var add = GitToItsEnd(repo, cancel, AddAll(inside));
         if (!add.Succeeded)
         {
             return add;
@@ -946,10 +949,29 @@ static class CodeCommands
             return commit;
         }
 
+        var leftOut = inside.Select(_ => $"Left out {_}/, a repository of its own");
         return commit with
         {
-            Succeeded = true
+            Succeeded = true,
+            Output = string.Join('\n', [.. leftOut, commit.Output]).Trim()
         };
+    }
+
+    /// <summary>
+    /// Git's add of every change, new files included, but for <paramref name="leaving"/>, the
+    /// repositories inside as git names them, each left out by a pathspec of its own. Each is
+    /// taken as it is named, not as a pattern, whose brackets would leave out more than it, and
+    /// as a pathspec even where GIT_LITERAL_PATHSPECS is set, which would otherwise have git
+    /// look for a file named ":(exclude,literal)tools".
+    /// </summary>
+    internal static string[] AddAll(IReadOnlyList<string> leaving)
+    {
+        if (leaving.Count == 0)
+        {
+            return ["add", "--all"];
+        }
+
+        return ["--no-literal-pathspecs", "add", "--all", "--", ".", .. leaving.Select(_ => $":(exclude,literal){_}")];
     }
 
     // Why Push is not to commit in a repository, nor Sync fork to merge, or null where they can,
@@ -1066,9 +1088,8 @@ static class CodeCommands
 
     // Whether the commit had nothing to commit: everything added, nothing staged. Asked of git,
     // rather than read from what the commit said, which it words one way for a clean folder and
-    // another for one with files it doesn't track, which add leaves where it can't add them, a
-    // repository of its own inside say. Nor do changes inside a submodule count, which add
-    // leaves too.
+    // another for one with files it doesn't track, as a repository of its own inside is, add
+    // being told to leave it out. Nor do changes inside a submodule count, which add leaves too.
     static bool NothingToCommit(string repo)
     {
         var status = Git(repo, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty");
@@ -1080,20 +1101,59 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// How many files the repositories have that git doesn't track yet, nor ignores: the new
-    /// files Push adds, for its question to say. A folder of them counts each file in it.
+    /// What the repositories have that git doesn't track yet, nor ignores, for Push's question to
+    /// say: how many new files it adds, a folder of them counting each file in it, and the
+    /// repositories of their own inside, by their full paths, which it leaves out.
     /// </summary>
-    public static int NewFiles(IReadOnlyList<string> repos) =>
-        repos.Sum(_ =>
+    public sealed record Untracked(int NewFiles, IReadOnlyList<string> Repos);
+
+    /// <summary>
+    /// What the repositories have that git doesn't track yet, nor ignores, as
+    /// <see cref="Untracked"/> has it.
+    /// </summary>
+    public static Untracked FindUntracked(IReadOnlyList<string> repos)
+    {
+        var newFiles = 0;
+        var inside = new List<string>();
+        foreach (var repo in repos)
         {
-            var result = Git(_, "ls-files", "--others", "--exclude-standard", "-z");
-            if (!result.Succeeded)
+            var (files, repositories) = UntrackedIn(repo);
+            newFiles += files;
+            inside.AddRange(repositories.Select(_ => Path.Combine(repo, _.Replace('/', '\\'))));
+        }
+
+        return new(newFiles, inside);
+    }
+
+    // What git doesn't track in the repository, nor ignores: how many files, and the
+    // repositories of their own inside, as git names them, relative to it. Git lists one as a
+    // folder, a slash after it, without looking in it, as it lists no other folder; it is one
+    // where the folder holds a .git, a repository's folder or a worktree's file.
+    static (int Files, List<string> Repos) UntrackedIn(string repo)
+    {
+        var result = GitOutput(repo, Cancel.None, ["ls-files", "--others", "--exclude-standard", "-z"]);
+        if (!result.Succeeded)
+        {
+            return (0, []);
+        }
+
+        var files = 0;
+        var repos = new List<string>();
+        foreach (var entry in result.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var name = entry.TrimEnd('/');
+            if (name.Length < entry.Length &&
+                IsRepo(Path.Combine(repo, name.Replace('/', '\\'))))
             {
-                return 0;
+                repos.Add(name);
+                continue;
             }
 
-            return result.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries).Length;
-        });
+            files++;
+        }
+
+        return (files, repos);
+    }
 
     /// <summary>
     /// Throws away every uncommitted change, staged or not, and deletes what git doesn't track,

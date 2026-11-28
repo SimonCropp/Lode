@@ -1268,11 +1268,11 @@ static class CodeMenu
     // commit, or only whether to push, where there isn't.
     internal static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var (repos, newFiles, changed) = await Task.Run(
+        var (repos, untracked, changed) = await Task.Run(
             () =>
             {
                 var found = CodeCommands.FindRepos(folders, codeFolder);
-                return (found, CodeCommands.NewFiles(found), CodeCommands.AnyChanges(found));
+                return (found, CodeCommands.FindUntracked(found), CodeCommands.AnyChanges(found));
             });
         if (repos.Count == 0)
         {
@@ -1288,7 +1288,7 @@ static class CodeMenu
         string? message = null;
         if (changed)
         {
-            message = AskCommitMessage(owner, repos, newFiles);
+            message = AskCommitMessage(owner, repos, untracked);
             if (message == null)
             {
                 return;
@@ -1874,11 +1874,11 @@ static class CodeMenu
     }
 
     // Asks for the commit message, which doubles as the confirmation. Null when cancelled.
-    static string? AskCommitMessage(Control owner, IReadOnlyList<string> repos, int newFiles)
+    static string? AskCommitMessage(Control owner, IReadOnlyList<string> repos, CodeCommands.Untracked untracked)
     {
         using var form = new GitTextForm(
             "Git push",
-            PushQuestion(repos, newFiles),
+            PushQuestion(repos, untracked.NewFiles, untracked.Repos),
             "Commit message:",
             defaultCommitMessage,
             "Push",
@@ -1893,16 +1893,46 @@ static class CodeMenu
 
     /// <summary>
     /// What Push asks: what it commits, and how many new files go in with it, as git doesn't
-    /// track them yet and a stray one, not ignored, would go in too.
+    /// track them yet and a stray one, not ignored, would go in too; then the repositories of
+    /// their own inside, <paramref name="leftOut"/>, a clone or a worktree say, which it leaves
+    /// out, as git would commit each only as a link to its commit.
     /// </summary>
-    internal static string PushQuestion(IReadOnlyList<string> repos, int newFiles)
+    internal static string PushQuestion(IReadOnlyList<string> repos, int newFiles, IReadOnlyList<string>? leftOut = null)
     {
-        if (newFiles == 0)
+        var question = $"Commit all changes in {Describe(repos)} and push to origin.";
+        if (newFiles > 0)
         {
-            return $"Commit all changes in {Describe(repos)} and push to origin.";
+            question = $"Commit all changes in {Describe(repos)}, including {GitState.CountOf(newFiles, "new file")}, and push to origin.";
         }
 
-        return $"Commit all changes in {Describe(repos)}, including {GitState.CountOf(newFiles, "new file")}, and push to origin.";
+        if (leftOut is not { Count: > 0 })
+        {
+            return question;
+        }
+
+        // Each where it is in its repository, or, of several repositories, from the folder
+        // holding them, so it says which repository it is in.
+        var from = repos[0];
+        if (repos.Count > 1)
+        {
+            from = CodeCommands.CommonFolder(repos);
+        }
+
+        var names = leftOut
+            .Take(8)
+            .Select(_ => Path.GetRelativePath(from, _))
+            .ToList();
+        if (leftOut.Count > 8)
+        {
+            names.Add($"and {leftOut.Count - 8} more");
+        }
+
+        if (leftOut.Count == 1)
+        {
+            return $"{question}\n\nLeaves out {names[0]}, a repository of its own inside, which git would commit only as a link to its commit.";
+        }
+
+        return $"{question}\n\nLeaves out {leftOut.Count} repositories of their own inside, which git would commit only as links to their commits: {string.Join(", ", names)}.";
     }
 
     /// <summary>
