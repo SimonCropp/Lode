@@ -3476,24 +3476,25 @@ public class FolderViewTests
         }
     }
 
-    // Which folders git ignores, as read in process: one ignored, and the one it is in, which
-    // isn't. Nothing below the first ignored is asked of, as all of it is ignored too. One
-    // ignored that holds a file git tracks all the same isn't given as ignored: a change to
-    // that file is a change.
+    // Which folders git ignores, as read in process: each asked of, and the folders it is in
+    // down to the first ignored, as everything in that is ignored too. One ignored that holds a
+    // file git tracks all the same isn't given as ignored, as a change to that file is a change,
+    // nor is a folder in it that holds one, but one in it that holds none is.
     [Test]
     public async Task WhichFoldersGitIgnores()
     {
         using var code = new CodeCommandsTests.Scratch();
         var repo = IgnoringOutput(code);
-        var kept = Path.Combine(repo, "bin", "kept.txt");
-        Directory.CreateDirectory(Path.Combine(repo, "bin"));
-        await File.WriteAllTextAsync(kept, "kept");
-        CodeCommandsTests.Scratch.Git(repo, "add", "-f", "bin/kept.txt");
+        var bin = Path.Combine(repo, "bin");
+        Directory.CreateDirectory(Path.Combine(bin, "Release"));
+        await File.WriteAllTextAsync(Path.Combine(bin, "kept.txt"), "kept");
+        await File.WriteAllTextAsync(Path.Combine(bin, "Release", "kept.txt"), "kept");
+        CodeCommandsTests.Scratch.Git(repo, "add", "-f", "bin/kept.txt", "bin/Release/kept.txt");
         CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Kept");
         var debug = Path.Combine(repo, "src", "Project", "obj", "Debug");
         Directory.CreateDirectory(debug);
 
-        var found = InProcessState.Ignored(repo, [debug, Path.Combine(repo, "bin")]);
+        var found = InProcessState.Ignored(repo, [debug, bin, Path.Combine(bin, "Debug"), Path.Combine(bin, "Release")]);
 
         var said = found
             .OrderBy(_ => _.Key, StringComparer.Ordinal)
@@ -3503,11 +3504,88 @@ public class FolderViewTests
             .IsEquivalentTo(
                 [
                     "Ignoring/bin: False",
+                    "Ignoring/bin/Debug: True",
+                    "Ignoring/bin/Release: False",
                     "Ignoring/src: False",
                     "Ignoring/src/Project: False",
-                    "Ignoring/src/Project/obj: True"
+                    "Ignoring/src/Project/obj: True",
+                    "Ignoring/src/Project/obj/Debug: True"
                 ],
                 CollectionOrdering.Matching);
+    }
+
+    // In an ignored folder that holds a file git tracks all the same, bin holding bin/kept.txt,
+    // which isn't ignored, a folder holding none, a build's bin\Debug, is: learned once, a change
+    // in it, or further in, is no change to the repository from then on, and it isn't asked of
+    // again. Given only the ignored folder, bin, as not, it was asked of again, the repository's
+    // config, refs, ignore files and index read again, and the repository made stale, for each
+    // change in it through a build. A change in bin itself, or in a folder in it that holds a
+    // tracked file, is a change, learned of or not.
+    [Test]
+    public async Task AFolderInAnIgnoredOneHoldingATrackedFileIsLearnedOnce()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = IgnoringOutput(code);
+        var bin = Path.Combine(repo, "bin");
+        var debug = Path.Combine(bin, "Debug");
+        var release = Path.Combine(bin, "Release");
+        var src = Path.Combine(repo, "src");
+        Directory.CreateDirectory(release);
+        await File.WriteAllTextAsync(Path.Combine(bin, "kept.txt"), "kept");
+        await File.WriteAllTextAsync(Path.Combine(release, "kept.txt"), "kept");
+        CodeCommandsTests.Scratch.Git(repo, "add", "-f", "bin/kept.txt", "bin/Release/kept.txt");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Kept");
+        GitCache.Watch(code.Root);
+        var asked = new List<string>();
+        var askIgnored = GitCache.AskIgnored;
+        GitCache.AskIgnored = (at, folders) =>
+        {
+            lock (asked)
+            {
+                asked.AddRange(folders);
+            }
+
+            return askIgnored(at, folders);
+        };
+        async Task<bool> ChangeIn(string path) =>
+            (await ChangeAt(path, repo, repo)).Item1;
+
+        try
+        {
+            ReadNow(repo);
+            var first = await ChangeIn(Path.Combine(debug, "first.dll"));
+            await Pump.Until(() => GitCache.Ignored(bin) != null);
+            var debugLearned = GitCache.Ignored(debug);
+            var later = await ChangeIn(Path.Combine(debug, "second.dll"));
+            var further = await ChangeIn(Path.Combine(debug, "net11.0", "third.dll"));
+            var inBin = await ChangeIn(Path.Combine(bin, "output.dll"));
+            var inRelease = await ChangeIn(Path.Combine(release, "output.dll"));
+
+            // Folders are looked at in turn, so once src has been, all asked of before it have.
+            GitCache.ChangedAt(Path.Combine(src, "Thing.cs"));
+            await Pump.Until(() => GitCache.Ignored(src) != null);
+            var releaseLearned = GitCache.Ignored(release);
+            var inReleaseLearned = await ChangeIn(Path.Combine(release, "again.dll"));
+            int debugAsked;
+            lock (asked)
+            {
+                debugAsked = asked.Count(_ => _.StartsWith(debug, StringComparison.OrdinalIgnoreCase));
+            }
+
+            await Assert.That(first).IsTrue();
+            await Assert.That(debugLearned).IsTrue();
+            await Assert.That(later).IsFalse();
+            await Assert.That(further).IsFalse();
+            await Assert.That(debugAsked).IsEqualTo(1);
+            await Assert.That(inBin).IsTrue();
+            await Assert.That(inRelease).IsTrue();
+            await Assert.That(releaseLearned).IsFalse();
+            await Assert.That(inReleaseLearned).IsTrue();
+        }
+        finally
+        {
+            GitCache.AskIgnored = askIgnored;
+        }
     }
 
     // A repository nested in a folder the one it is in ignores, a clone in external say, is its

@@ -180,7 +180,7 @@ A build writes thousands of files to `bin` and `obj`, none of which change the s
 2. On a background task, `InProcessState.Ignored` asks the repository whether git ignores the folder, or a folder it is in.
 3. If it does, later changes in it are dropped without the repository going stale.
 
-A folder that is ignored but holds a file git tracks all the same, one added by force say, is not treated as ignored, as a change to that file is a real change.
+A folder that is ignored but holds a file git tracks all the same, one added by force say, is not treated as ignored, as a change to that file is a real change. A folder in it that holds no such file is: with `bin/` ignored and `bin/keep.txt` tracked, the first change in `bin\Debug` learns that `bin` isn't ignored and `bin\Debug` is, so later changes in `bin\Debug` are dropped, while those in `bin` itself, or in a folder in it holding a tracked file, still count.
 
 What was learned of a repository is forgotten, and asked again, when what git ignores may have changed: a `.gitignore` in it changes, or its `index`, `config` or `info/exclude`; on Refresh; and when the watch loses track.
 

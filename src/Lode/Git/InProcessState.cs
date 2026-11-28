@@ -285,9 +285,10 @@ static class InProcessState
     /// <summary>
     /// Which of <paramref name="folders"/>, in the repository, git ignores, and of the folders
     /// each is in, down from the repository, as far as the first that it does: everything in
-    /// that one is ignored with it. A folder ignored that holds a file git tracks all the same,
-    /// one added by force say, is not given as ignored, as a change to that file is a change.
-    /// Each by its path. All as not ignored where the repository can't be read here.
+    /// that one is ignored with it, the folder asked of too. A folder ignored that holds a file
+    /// git tracks all the same, one added by force say, is not given as ignored, as a change to
+    /// that file is a change, but one in it holding none is. Each by its path. All as not
+    /// ignored where the repository can't be read here.
     /// </summary>
     public static Dictionary<string, bool> Ignored(string repo, IReadOnlyCollection<string> folders)
     {
@@ -321,6 +322,11 @@ static class InProcessState
                     found[current] = child.Ignored;
                     if (child.Ignored)
                     {
+                        // The folder asked of is given too, unless git tracks a file in it, as
+                        // the index says below. Given only the first ignored, one that holds a
+                        // tracked file and so isn't, a folder in it, bin\Debug in bin, was asked
+                        // of again with each change in it.
+                        found[folder] = true;
                         break;
                     }
 
@@ -328,11 +334,13 @@ static class InProcessState
                 }
             }
 
-            var roots = found
+            // Each given as ignored, the first ignored on the way down and the folder asked of in
+            // it, isn't where the index has a file in it.
+            var ignored = found
                 .Where(_ => _.Value)
                 .Select(_ => (Folder: _.Key, Prefix: Relative(repo, _.Key)))
                 .ToList();
-            if (roots.Count == 0)
+            if (ignored.Count == 0)
             {
                 return found;
             }
@@ -341,7 +349,7 @@ static class InProcessState
             for (var entry = 0; entry < index.Entries.Length; entry++)
             {
                 var path = index.PathText(entry);
-                foreach (var (folder, prefix) in roots)
+                foreach (var (folder, prefix) in ignored)
                 {
                     if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                     {
