@@ -29,6 +29,12 @@ public class BreadcrumbCaptureTests
                 NativeMethods.SendMessage(breadcrumb.Handle, leftButtonUp, 0, point);
             });
 
+    // A last folder's name longer than the bar has room for: cut short at the bar's edge, ending
+    // in an ellipsis, the folders before it behind the one at the start.
+    [Test]
+    public Task LongName() =>
+        Capture($@"D:\Projects\{BreadcrumbClickTests.LongName}");
+
     // A tab with no folder, Find Results here: the bar says what the tab is, in place of the
     // folder it showed last, grey, as clicking it does nothing.
     [Test]

@@ -6,6 +6,7 @@
 [NotInParallel("windows")]
 public class BreadcrumbClickTests
 {
+    const int mouseMove = 0x0200;
     const int leftButtonDown = 0x0201;
     const int leftButtonUp = 0x0202;
     const int rightButtonDown = 0x0204;
@@ -161,6 +162,33 @@ public class BreadcrumbClickTests
         await Assert.That(host.Breadcrumb.FolderBounds(@"D:\Alpha folder\Bravo folder\Charlie folder\Delta folder").IsEmpty).IsTrue();
     }
 
+    // A last folder whose name is longer than the bar has room for is cut short at the bar's
+    // edge, the folders before it behind the ellipsis, rather than running out of the bar,
+    // still there to click, and the mouse over it shows its whole name.
+    [Test]
+    public async Task ALongLastFolderNameIsCutShortInsideTheBar()
+    {
+        var name = LongName;
+        var location = $@"D:\Projects\{name}";
+        using var host = new Host(location, new(), width: 400);
+        var bounds = host.Breadcrumb.FolderBounds(location);
+
+        MouseMove(host.Breadcrumb, Centre(bounds));
+        Click(host.Breadcrumb, bounds);
+
+        await Assert.That(name.Length).IsEqualTo(200);
+        await Assert.That(bounds.Width).IsGreaterThan(0);
+        await Assert.That(bounds.Right).IsLessThanOrEqualTo(host.Breadcrumb.ClientSize.Width);
+        await Assert.That(host.Breadcrumb.EllipsisBounds.IsEmpty).IsFalse();
+        await Assert.That(host.Breadcrumb.ToolTipText).IsEqualTo(name);
+        await Assert.That(host.Clicked).IsEquivalentTo([location], CollectionOrdering.Matching);
+    }
+
+    /// <summary>
+    /// A folder name of 200 characters, far longer than a bar has room for.
+    /// </summary>
+    internal static string LongName { get; } = string.Concat(Enumerable.Repeat("Quarterly figures ", 12))[..200];
+
     // A folder clicked with the middle button, or with Ctrl held, opens in a new tab, as one in
     // the tree does, and the bar goes nowhere. The middle button let go over another folder
     // than it went down on is no click, Ctrl+Shift is a plain click, and a plain click still
@@ -299,6 +327,12 @@ public class BreadcrumbClickTests
         var point = Packed(Centre(bounds));
         PostMessage(control.Handle, rightButtonDown, rightButton, point);
         PostMessage(control.Handle, rightButtonUp, 0, point);
+        Application.DoEvents();
+    }
+
+    static void MouseMove(Control control, Point point)
+    {
+        PostMessage(control.Handle, mouseMove, 0, Packed(point));
         Application.DoEvents();
     }
 

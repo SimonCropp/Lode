@@ -31,6 +31,10 @@ sealed class Breadcrumb : Control
     List<(int Index, Rectangle Bounds)> layout = [];
     List<(int Index, Rectangle Bounds)> chevrons = [];
     Rectangle ellipsisBounds;
+
+    // The folder, the current one, drawn narrower than its name, which the bar has no room for:
+    // its name ends in an ellipsis, and shows whole as its tooltip. -1 when every name shows.
+    int cutShort = -1;
     Part hovered = Part.None;
     Part pressed = Part.None;
     Part middlePressed = Part.None;
@@ -387,6 +391,7 @@ sealed class Breadcrumb : Control
         layout = [];
         chevrons = [];
         ellipsisBounds = Rectangle.Empty;
+        cutShort = -1;
         if (caption != null)
         {
             Invalidate();
@@ -413,7 +418,19 @@ sealed class Breadcrumb : Control
 
         for (var index = first; index < segments.Count; index++)
         {
-            var bounds = new Rectangle(x, inner.Top, widths[index], inner.Height);
+            var width = widths[index];
+
+            // The current folder, with only the ellipsis before it and still too long for the
+            // bar, is cut short at the bar's edge, its name drawn with an ellipsis of its own,
+            // rather than running out of the bar, cut off mid-letter.
+            if (index == segments.Count - 1 &&
+                x + width > inner.Right)
+            {
+                width = Math.Max(0, inner.Right - x);
+                cutShort = index;
+            }
+
+            var bounds = new Rectangle(x, inner.Top, width, inner.Height);
             layout.Add((index, bounds));
             if (index < segments.Count - 1)
             {
@@ -478,6 +495,12 @@ sealed class Breadcrumb : Control
     /// Where the ellipsis is drawn, or empty when every folder fits. For tests, to click it.
     /// </summary>
     internal Rectangle EllipsisBounds => ellipsisBounds;
+
+    /// <summary>
+    /// What the bar's tooltip says, where the mouse last moved over it, empty for none. For
+    /// tests.
+    /// </summary>
+    internal string ToolTipText => toolTip.GetToolTip(this) ?? "";
 
     /// <summary>
     /// What the bar reads as, for tests: its caption, or the names of the folders it shows,
@@ -568,6 +591,18 @@ sealed class Breadcrumb : Control
                 var image = Icons.Bitmap(Icons.Network, IconSize, ink);
                 graphics.DrawImage(image, left, bounds.Top + (bounds.Height - IconSize) / 2, IconSize, IconSize);
                 var text = Rectangle.FromLTRB(left + IconSize + IconGap, bounds.Top, bounds.Right - ItemPadding, bounds.Bottom);
+                TextRenderer.DrawText(
+                    graphics,
+                    segments[index].Name,
+                    Font,
+                    text,
+                    ink,
+                    (flags & ~TextFormatFlags.HorizontalCenter) | TextFormatFlags.NoPadding);
+            }
+            else if (index == cutShort)
+            {
+                // From where it would start whole, as far as the bar's edge.
+                var text = Rectangle.Inflate(bounds, -ItemPadding, 0);
                 TextRenderer.DrawText(
                     graphics,
                     segments[index].Name,
@@ -697,15 +732,30 @@ sealed class Breadcrumb : Control
         if (part != hovered)
         {
             hovered = part;
-            // The icon-only This PC gets its name as a tooltip.
-            toolTip.SetToolTip(
-                this,
-                part.Kind == PartKind.Folder &&
-                Locations.IsThisPC(segments[part.Index].Path)
-                    ? Locations.ThisPC
-                    : null);
+            toolTip.SetToolTip(this, ToolTipFor(part));
             Invalidate();
         }
+    }
+
+    // The icon-only This PC gets its name as a tooltip, and a folder cut short its whole name.
+    string? ToolTipFor(Part part)
+    {
+        if (part.Kind != PartKind.Folder)
+        {
+            return null;
+        }
+
+        if (Locations.IsThisPC(segments[part.Index].Path))
+        {
+            return Locations.ThisPC;
+        }
+
+        if (part.Index == cutShort)
+        {
+            return segments[part.Index].Name;
+        }
+
+        return null;
     }
 
     protected override void OnMouseLeave(EventArgs args)
