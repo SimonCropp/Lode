@@ -1383,23 +1383,85 @@ static class CodeCommands
         string.Join('\n', lines.Where(_ => _.Length > 0));
 
     // Several repositories at once, each its own working tree, so a code folder's worth of
-    // pulls is not one wait on the network after another. With more than one, reports how many
-    // are done. With one, the entry's folder already says. Cancelled, it starts no more of them,
-    // and gives those it went through, in the order they were given.
+    // pulls is not one wait on the network after another. A repository and its worktrees, though,
+    // take turns, as git in two of them at once would race to write the refs they share, a
+    // fetch's origin/main say, one failing to lock it: see SharingRepository. With more than
+    // one, reports how many are done. With one, the entry's folder already says. Cancelled, it
+    // starts no more of them, and gives those it went through, in the order they were given.
     internal static Task<List<RepoResult>> ForEach(IReadOnlyList<string> repos, IProgress<string>? progress, Cancel cancel, Func<string, RepoResult> action) =>
         Task.Run(
-            () => InParallel(
-                repos,
-                action,
-                done =>
-                {
-                    if (repos.Count > 1)
-                    {
-                        progress?.Report($"{done} of {repos.Count} done");
-                    }
-                },
-                cancel),
+            () =>
+            {
+                var finished = 0;
+                return InParallel(
+                        SharingRepository(repos),
+                        group =>
+                        {
+                            var results = new List<(int Index, RepoResult Result)>();
+                            foreach (var index in group)
+                            {
+                                if (cancel.IsCancellationRequested)
+                                {
+                                    break;
+                                }
+
+                                results.Add((index, action(repos[index])));
+                                var done = Interlocked.Increment(ref finished);
+                                if (repos.Count > 1)
+                                {
+                                    progress?.Report($"{done} of {repos.Count} done");
+                                }
+                            }
+
+                            return results;
+                        },
+                        cancel: cancel)
+                    .SelectMany(_ => _)
+                    .OrderBy(_ => _.Index)
+                    .Select(_ => _.Result)
+                    .ToList();
+            },
             cancel);
+
+    /// <summary>
+    /// The positions of <paramref name="repos"/>, in groups that share one repository on disk,
+    /// its objects, refs and config: a repository and its worktrees, as Checkout in new worktree
+    /// puts Repo-feature beside Repo. The groups are in the order the first of each is, and each
+    /// in the order given. One whose git directory can't be read is a group of its own.
+    /// </summary>
+    internal static List<List<int>> SharingRepository(IReadOnlyList<string> repos) =>
+        Enumerable.Range(0, repos.Count)
+            .GroupBy(_ => SharedDirectory(repos[_]) ?? repos[_], StringComparer.OrdinalIgnoreCase)
+            .Select(_ => _.ToList())
+            .ToList();
+
+    /// <summary>
+    /// The git directory a repository shares with its worktrees, where its objects and refs are:
+    /// its own .git folder, or, for a worktree, the one its .git file leads to, as its commondir
+    /// says. As a full path, which spells out an 8.3 name, RUNNER~1 say, as git does in what it
+    /// writes in a worktree's .git file. Null where it can't be read.
+    /// </summary>
+    internal static string? SharedDirectory(string repo)
+    {
+        try
+        {
+            if (GitDirectory(repo) is not { } git)
+            {
+                return null;
+            }
+
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(CommonDirectory(git)));
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// How many repositories git is run in at once.
@@ -1411,7 +1473,7 @@ static class CodeCommands
     /// gave in the order the items are, and <paramref name="done"/> how many are done as each
     /// is. Cancelled, it starts no more, and gives only those it started.
     /// </summary>
-    internal static List<T> InParallel<T>(IReadOnlyList<string> items, Func<string, T> action, Action<int>? done = null, Cancel cancel = default)
+    internal static List<T> InParallel<TItem, T>(IReadOnlyList<TItem> items, Func<TItem, T> action, Action<int>? done = null, Cancel cancel = default)
         where T : class
     {
         var results = new T?[items.Count];

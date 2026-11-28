@@ -1641,6 +1641,90 @@ public class CodeCommandsTests
         }
     }
 
+    // A repository and its worktree share one repository on disk, its refs among them: git run
+    // in both at once would race to write the same ref, origin/main for a fetch say, one failing
+    // to lock it. They take turns, while a repository of its own still runs beside them, and
+    // what each gave is in the order they were given.
+    [Test]
+    public async Task ARepositoryAndItsWorktreeTakeTurns()
+    {
+        using var code = new Scratch();
+        var other = code.CreateRepo("Other");
+        var repo = code.CreateRepo("Repo");
+        var worktree = code.At("Repo-feature");
+        Scratch.Git(repo, "worktree", "add", "-b", "feature", worktree);
+        string[] repos = [other, repo, worktree];
+        var running = 0;
+        var most = 0;
+        var sharing = 0;
+        var mostSharing = 0;
+
+        var results = await CodeCommands.ForEach(
+            repos,
+            null,
+            Cancel.None,
+            _ =>
+            {
+                InterlockedMax(ref most, Interlocked.Increment(ref running));
+                if (_ == other)
+                {
+                    SpinWait.SpinUntil(() => Volatile.Read(ref running) > 1, TimeSpan.FromSeconds(10));
+                }
+                else
+                {
+                    InterlockedMax(ref mostSharing, Interlocked.Increment(ref sharing));
+                    // Long enough for the other of the two to start, were it to run alongside.
+                    SpinWait.SpinUntil(() => Volatile.Read(ref sharing) > 1, TimeSpan.FromMilliseconds(500));
+                    Interlocked.Decrement(ref sharing);
+                }
+
+                Interlocked.Decrement(ref running);
+                return new(_, true, "");
+            });
+
+        // Other alone, then Repo and its worktree, by where each is in those given. Git writes
+        // the worktree's way to its repository with any 8.3 name spelled out, as a build
+        // machine's temp folder has one, and a full path spells them out too.
+        await Assert.That(CodeCommands.SharingRepository(repos).Select(_ => string.Join(',', _))).IsEquivalentTo(["0", "1,2"], CollectionOrdering.Matching);
+        await Assert.That(CodeCommands.SharedDirectory(worktree)).IsEqualTo(CodeCommands.SharedDirectory(repo));
+        await Assert.That(mostSharing).IsEqualTo(1);
+        await Assert.That(most).IsEqualTo(2);
+        await Assert.That(results.Select(_ => _.Repo)).IsEquivalentTo(repos, CollectionOrdering.Matching);
+    }
+
+    // The code folder's Fetch and Pull, a worktree beside its repository, as Checkout in new
+    // worktree puts Repo-feature beside Repo: each succeeds, none failing to lock a ref the other
+    // was writing, and each brings in its own branch's commit.
+    [Test]
+    public async Task FetchAndPullARepositoryWithItsWorktree()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var worktree = code.At("Repo-feature");
+        Scratch.Git(repo, "branch", "feature");
+        Scratch.Git(repo, "push", "-u", "origin", "feature");
+        Scratch.Git(repo, "worktree", "add", worktree, "feature");
+        var elsewhere = code.Clone("Repo", "Elsewhere");
+        await File.WriteAllTextAsync(Path.Combine(elsewhere, "main.txt"), "main");
+        Scratch.Git(elsewhere, "add", "main.txt");
+        Scratch.Git(elsewhere, "commit", "-m", "Main");
+        Scratch.Git(elsewhere, "switch", "feature");
+        await File.WriteAllTextAsync(Path.Combine(elsewhere, "feature.txt"), "feature");
+        Scratch.Git(elsewhere, "add", "feature.txt");
+        Scratch.Git(elsewhere, "commit", "-m", "Feature");
+        Scratch.Git(elsewhere, "push", "origin", "main", "feature");
+
+        var repos = CodeCommands.FindRepos(code.Root);
+        var fetched = await CodeCommands.Fetch(repos);
+        var pulled = await CodeCommands.Pull(repos);
+
+        await Assert.That(repos.Select(code.Relative)).IsEquivalentTo(["Elsewhere", "Repo", "Repo-feature"], CollectionOrdering.Matching);
+        await Assert.That(fetched.Where(_ => !_.Succeeded)).IsEmpty();
+        await Assert.That(pulled.Where(_ => !_.Succeeded)).IsEmpty();
+        await Assert.That(File.Exists(Path.Combine(repo, "main.txt"))).IsTrue();
+        await Assert.That(File.Exists(Path.Combine(worktree, "feature.txt"))).IsTrue();
+    }
+
     [Test]
     public Task NugetProgress() =>
         Verify(
