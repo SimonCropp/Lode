@@ -31,6 +31,12 @@ sealed class DiffCanvas : Control
     // How many columns of a long line are measured either side of what shows, give or take.
     const int measuredBlock = 256;
 
+    // How many characters a step sideways is, by an arrow key or a notch of the wheel.
+    const int sidewaysStep = 4;
+
+    // How far a notch of the wheel turns it, as Windows counts: WHEEL_DELTA.
+    const int wheelNotch = 120;
+
     const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping;
 
     VScrollBar vertical = new();
@@ -75,6 +81,11 @@ sealed class DiffCanvas : Control
     // the line.
     long doubleClickedAt = long.MinValue / 2;
     Point doubleClickPoint;
+
+    // What the wheel has turned short of a whole row down or up, and of a whole character
+    // sideways, in rows and characters times a notch.
+    int wheelRows;
+    int wheelCharacters;
 
     // Numbers dragged down to pick lines: from where, which side, picking or not, and what was
     // picked before.
@@ -626,7 +637,7 @@ sealed class DiffCanvas : Control
         horizontal.Minimum = 0;
         horizontal.Maximum = Math.Max(0, content);
         horizontal.LargeChange = Math.Max(1, room);
-        horizontal.SmallChange = Math.Max(1, charWidth * 4);
+        horizontal.SmallChange = Math.Max(1, charWidth * sidewaysStep);
         var maxLeft = Math.Max(0, content - room + 1);
         if (!needsHorizontal)
         {
@@ -2256,12 +2267,45 @@ sealed class DiffCanvas : Control
         base.OnMouseWheel(args);
         if ((ModifierKeys & Keys.Shift) != 0)
         {
-            ScrollSideways(-args.Delta / 120 * horizontal.SmallChange);
+            WheelSideways(-args.Delta);
             return;
         }
 
         var lines = Math.Max(1, SystemInformation.MouseWheelScrollLines);
-        TopRow -= args.Delta * lines / 120;
+        var turned = Turned(ref wheelRows, args.Delta, lines);
+        if (turned != 0)
+        {
+            TopRow -= turned;
+        }
+    }
+
+    // A step sideways, the characters an arrow key goes, for each notch.
+    void WheelSideways(int delta)
+    {
+        var turned = Turned(ref wheelCharacters, delta, sidewaysStep);
+        if (turned != 0)
+        {
+            ScrollSideways(turned * charWidth);
+        }
+    }
+
+    // What the wheel turned by delta adds up to with what was left over before, in whole rows
+    // or characters, perNotch of them a notch, the rest kept for next time: a precision
+    // touchpad sends a little of a notch at a time, which Windows asks be added up rather than
+    // each scroll less than a row thrown away. Turned the other way, what was left over is
+    // dropped.
+    static int Turned(ref int built, int delta, int perNotch)
+    {
+        var turned = delta * perNotch;
+        if (Math.Sign(turned) == -Math.Sign(built))
+        {
+            built = 0;
+        }
+
+        built += turned;
+        var whole = built / wheelNotch;
+        built -= whole * wheelNotch;
+        return whole;
     }
 
     const int mouseHorizontalWheel = 0x020E;
@@ -2270,8 +2314,7 @@ sealed class DiffCanvas : Control
     {
         if (message.Msg == mouseHorizontalWheel)
         {
-            var delta = (short) ((message.WParam.ToInt64() >> 16) & 0xFFFF);
-            ScrollSideways(delta / 120 * horizontal.SmallChange);
+            WheelSideways((short) ((message.WParam.ToInt64() >> 16) & 0xFFFF));
             message.Result = 1;
             return;
         }

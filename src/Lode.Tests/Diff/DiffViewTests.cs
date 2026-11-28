@@ -605,6 +605,42 @@ public class DiffViewTests
         await Assert.That(canvas.CharactersMeasured - measured).IsLessThan(100_000);
     }
 
+    // A precision touchpad's two-finger scroll sends a little of a notch at a time: ten twelfths
+    // of a notch scroll as far as a notch does, down, up and sideways, rather than not at all,
+    // and a notch of a wheel still scrolls as many rows as Windows says. What was left over
+    // turning one way is dropped on turning the other.
+    [Test]
+    public async Task TouchpadScrolls()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        view.Width = 300;
+        var canvas = view.Canvas;
+        canvas.ExpandWhole();
+        await Pump.NoModifiersHeld();
+        var lines = Math.Max(1, SystemInformation.MouseWheelScrollLines);
+        canvas.TopRow = 50;
+
+        Wheel(canvas, mouseWheel, -120);
+        await Assert.That(canvas.TopRow).IsEqualTo(50 + lines);
+        Wheel(canvas, mouseWheel, -12, times: 10);
+        await Assert.That(canvas.TopRow).IsEqualTo(50 + lines * 2);
+        Wheel(canvas, mouseWheel, -12);
+        var top = canvas.TopRow;
+        Wheel(canvas, mouseWheel, 12, times: 10);
+        await Assert.That(canvas.TopRow).IsEqualTo(top - lines);
+
+        Wheel(canvas, mouseHorizontalWheel, 120);
+        var notch = canvas.ScrolledAcross;
+        await Assert.That(notch).IsGreaterThan(0);
+        Wheel(canvas, mouseHorizontalWheel, 12, times: 10);
+        await Assert.That(canvas.ScrolledAcross).IsEqualTo(notch * 2);
+        Wheel(canvas, mouseHorizontalWheel, 12);
+        var across = canvas.ScrolledAcross;
+        Wheel(canvas, mouseHorizontalWheel, -12, times: 10);
+        await Assert.That(canvas.ScrolledAcross).IsEqualTo(across - notch);
+    }
+
     static IEnumerable<Control> Descendants(Control control) =>
         control.Controls
             .Cast<Control>()
@@ -614,6 +650,18 @@ public class DiffViewTests
     const int leftButtonDown = 0x0201;
     const int leftButtonUp = 0x0202;
     const int leftButtonDoubleClick = 0x0203;
+    const int mouseWheel = 0x020A;
+    const int mouseHorizontalWheel = 0x020E;
+
+    // The wheel turned, or the touchpad swept, by delta, as many times, over the middle.
+    static void Wheel(DiffCanvas canvas, int message, int delta, int times = 1)
+    {
+        var point = canvas.PointToScreen(new(canvas.Width / 2, canvas.Height / 2));
+        for (var i = 0; i < times; i++)
+        {
+            NativeMethods.SendMessage(canvas.Handle, message, delta << 16, (point.Y << 16) | (point.X & 0xFFFF));
+        }
+    }
 
     // The row a line is drawn on, one above the other.
     static int Row(DiffCanvas canvas, string content) =>
