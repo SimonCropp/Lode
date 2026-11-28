@@ -135,9 +135,68 @@ public class ZipTests
 
         var extraction = Zip.Extract(zip, fixture.At("Target"), null, Cancel.None);
 
-        await Assert.That(extraction.LeftOut.Select(_ => _.Name)).IsEquivalentTo(["makefile"]);
+        await Assert.That(extraction.LeftOut).IsEquivalentTo([new Zip.LeftOutEntry("makefile", Zip.LeftOutReason.Duplicate)]);
         await Assert.That(await File.ReadAllTextAsync(fixture.At("Target", "Makefile"))).IsEqualTo("first");
         await Assert.That(File.Exists(fixture.At("Target", "other.txt"))).IsTrue();
+    }
+
+    // A zip made where case tells names apart can hold a file and a folder that are one name
+    // here, README and readme/notes.txt say, the file before the folder or after it. The folder
+    // is extracted, as it is the one shown when the zip is gone into, and the file said to be
+    // left out for its name, as the second of two files of one name is, rather than writing one
+    // failing on the other, and all that was written being taken away.
+    [Test]
+    public async Task ExtractKeepsTheFolderOfAFileAndFolderThatAreOneHere()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(
+            fixture,
+            "Case.zip",
+            ("README", "file"),
+            ("readme/notes.txt", "notes"),
+            ("Makefile", "first"),
+            ("makefile", "second"),
+            ("docs/guide.txt", "guide"),
+            ("DOCS", "file after"),
+            ("Empty/", ""),
+            ("EMPTY", "file of the folder's own entry"),
+            ("other.txt", "other"));
+
+        var (outcome, _) = Zip.ExtractTo(zip, fixture.Root, false, null, Cancel.None);
+
+        await Verify(
+            new
+            {
+                outcome.Succeeded,
+                outcome.Summary,
+                leftOut = outcome.Details.Split(Environment.NewLine).Skip(1),
+                tree = fixture.Tree().Where(_ => _.StartsWith("Projects/Case/", StringComparison.Ordinal))
+            })
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  Summary: Extracted Case.zip, leaving out 4 items,
+                  leftOut: [
+                    ,
+                    Left out, being named as another item in the zip is, but for case, which Windows takes for the same name:,
+                    README,
+                    makefile,
+                    DOCS,
+                    EMPTY
+                  ],
+                  tree: [
+                    Projects/Case/,
+                    Projects/Case/Empty/,
+                    Projects/Case/Makefile (5 bytes),
+                    Projects/Case/docs/,
+                    Projects/Case/docs/guide.txt (5 bytes),
+                    Projects/Case/other.txt (5 bytes),
+                    Projects/Case/readme/,
+                    Projects/Case/readme/notes.txt (5 bytes)
+                  ]
+                }
+                """);
     }
 
     // Entries that don't say how their names are written. A zip made on a Mac, or by Linux's

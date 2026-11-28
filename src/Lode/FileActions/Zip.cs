@@ -251,7 +251,13 @@ static class Zip
         /// Named, before its first dot, as a device Windows keeps the name of, aux.c say, which
         /// would open the device rather than a file.
         /// </summary>
-        Device
+        Device,
+
+        /// <summary>
+        /// Named as another entry is but for case, which Windows takes for the same name: the
+        /// second of two files, or a file where the zip has a folder.
+        /// </summary>
+        Duplicate
     }
 
     /// <summary>
@@ -361,24 +367,30 @@ static class Zip
         reason switch
         {
             LeftOutReason.Device => "with names Windows keeps for devices, as CON, AUX and NUL",
+            LeftOutReason.Duplicate => "being named as another item in the zip is, but for case, which Windows takes for the same name",
             _ => "being named to go outside the folder or with names Windows can't have"
         };
 
     /// <summary>
     /// Writes what <paramref name="zip"/> holds into <paramref name="destination"/>, which is
     /// there, each item with the time it was last changed, and each file with the zip's mark of
-    /// the web, should it have one. Leaves out an entry named to go outside it, or with a name
-    /// Windows can't have. When anything it would write is there already, writes nothing and
-    /// returns that. When it fails, or <paramref name="cancel"/> stops it, deletes what it made,
-    /// and only that.
+    /// the web, should it have one. Leaves out an entry named to go outside it, with a name
+    /// Windows can't have, or keeps for a device, or named as another is but for case, which
+    /// Windows takes for the same name. When anything it would write is there already, writes
+    /// nothing and returns that. When it fails, or <paramref name="cancel"/> stops it, deletes
+    /// what it made, and only that.
     /// </summary>
     public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel)
     {
         var mark = MarkOfTheWeb(zip);
         using var archive = OpenRead(zip);
-        var targets = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>();
+        var named = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>();
         var leftOut = new List<LeftOutEntry>();
-        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // The folders it would make there, or find: those the zip has entries of their own for,
+        // and those only there in the names of what is in them. A folder's being in it says
+        // those it is in are too.
+        var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in archive.Entries)
         {
             if (Segments(entry.FullName, out var reason) is not { } segments)
@@ -400,18 +412,35 @@ static class Zip
                 continue;
             }
 
-            // Two entries for the one file here, as a zip made where case tells names apart
-            // can hold, Makefile and makefile say. The first is the one extracted, as it is
-            // the one shown when the zip is gone into, rather than the second failing it all.
             var isFolder = IsFolderEntry(entry.FullName);
-            if (!isFolder &&
-                !files.Add(path))
+            named.Add((entry, path, isFolder));
+            var folder = isFolder ? path : Path.GetDirectoryName(path);
+            while (folder != null &&
+                   !Locations.Same(folder, destination) &&
+                   folders.Add(folder))
             {
-                leftOut.Add(new(entry.FullName, LeftOutReason.Unsafe));
+                folder = Path.GetDirectoryName(folder);
+            }
+        }
+
+        // Entries that are one item here, as a zip made where case tells names apart can hold:
+        // two files, Makefile and makefile say, of which the first is extracted, or a file and a
+        // folder, README and readme/notes.txt, of which the folder is, the file before it or
+        // after. Each is the one shown when the zip is gone into, and the other is left out,
+        // rather than writing it failing on the first, and all that was written being taken away.
+        var targets = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>(named.Count);
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var target in named)
+        {
+            if (!target.IsFolder &&
+                (folders.Contains(target.Path) ||
+                 !files.Add(target.Path)))
+            {
+                leftOut.Add(new(target.Entry.FullName, LeftOutReason.Duplicate));
                 continue;
             }
 
-            targets.Add((entry, path, isFolder));
+            targets.Add(target);
         }
 
         var conflicts = targets
