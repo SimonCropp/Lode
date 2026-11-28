@@ -223,8 +223,8 @@ static class Zip
 
     /// <summary>
     /// What extracting a zip did: what it made at the top of where it went, what it made there or
-    /// beneath, for undo (the highest of each that was not there before), what it left out as
-    /// unsafe, and what was already there, which stops it before anything is written.
+    /// beneath, for undo (the highest of each, made by it rather than found there), what it left
+    /// out as unsafe, and what was already there, which stops it before anything is written.
     /// </summary>
     public sealed record Extraction(
         IReadOnlyList<string> TopLevel,
@@ -233,14 +233,18 @@ static class Zip
         IReadOnlyList<string> Conflicts);
 
     /// <summary>
-    /// Extracts each zip, in the Actions panel: to a new folder beside it named for it, or, with
-    /// <paramref name="here"/>, into the folder it is in. Returns what each put at the top of
-    /// where it went, for selecting, those that failed or were cancelled having left nothing.
+    /// Extracts each zip, one after another, in the Actions panel: to a new folder beside it
+    /// named for it, or, with <paramref name="here"/>, into the folder it is in. Returns what each
+    /// put at the top of where it went, for selecting, those that failed or were cancelled having
+    /// left nothing.
     /// </summary>
     public static async Task<IReadOnlyList<string>> ExtractInBackground(IReadOnlyList<string> zips, bool here)
     {
+        // In turn rather than all at once. Zips extracted together often share a folder, as the
+        // parts of a Google Takeout all hold Takeout, and each looks for what is in its way
+        // before it writes anything, which another writing meanwhile would make wrong.
         var placed = new List<string>();
-        var running = zips.Select(async zip =>
+        foreach (var zip in zips)
         {
             var folder = Path.GetDirectoryName(zip)!;
             IReadOnlyList<string> topLevel = [];
@@ -255,10 +259,6 @@ static class Zip
                         return outcome;
                     },
                     cancel));
-            return topLevel;
-        });
-        foreach (var topLevel in await Task.WhenAll(running))
-        {
             placed.AddRange(topLevel);
         }
 
@@ -286,8 +286,16 @@ static class Zip
             return (ExtractedOutcome(name, folder, extraction), extraction.TopLevel);
         }
 
-        var destination = FreePath(folder, Path.GetFileNameWithoutExtension(zip), "");
-        Directory.CreateDirectory(destination);
+        // Named as FreePath names one, but each name made only where nothing is, and the next
+        // tried where something is, so a folder another extract made a moment before, of a zip
+        // named as this one's would be numbered, is not taken for this one's too.
+        var stem = Path.GetFileNameWithoutExtension(zip);
+        var destination = Path.Combine(folder, stem);
+        for (var counter = 2; !CreateNewFolder(destination); counter++)
+        {
+            destination = Path.Combine(folder, $"{stem} ({counter})");
+        }
+
         try
         {
             var extraction = Extract(zip, destination, progress, cancel);
@@ -296,7 +304,9 @@ static class Zip
         }
         catch
         {
-            TryDelete(destination);
+            // What the extract made in it, it has taken away, so the folder is empty, unless
+            // something else has been put there meanwhile, which stays.
+            TakeAway([destination]);
             throw;
         }
     }
@@ -329,7 +339,8 @@ static class Zip
     /// there, each item with the time it was last changed, and each file with the zip's mark of
     /// the web, should it have one. Leaves out an entry named to go outside it, or with a name
     /// Windows can't have. When anything it would write is there already, writes nothing and
-    /// returns that. When it fails, or <paramref name="cancel"/> stops it, deletes what it made.
+    /// returns that. When it fails, or <paramref name="cancel"/> stops it, deletes what it made,
+    /// and only that.
     /// </summary>
     public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel)
     {
@@ -385,7 +396,6 @@ static class Zip
 
         // The top of each, beneath the destination: what was there and what is new.
         var topLevel = new List<string>();
-        var created = new List<string>();
         foreach (var (_, path, _) in targets)
         {
             var top = TopOf(path, destination);
@@ -393,16 +403,17 @@ static class Zip
             {
                 topLevel.Add(top);
             }
-
-            var highestNew = HighestNew(path, destination);
-            if (highestNew != null &&
-                !created.Any(_ => Locations.IsWithin(highestNew, _)))
-            {
-                created.RemoveAll(_ => Locations.IsWithin(_, highestNew));
-                created.Add(highestNew);
-            }
         }
 
+        // What it made, each folder and file as it was made, and only those, rather than what
+        // was not there before it started: another extract may make the same folder meanwhile,
+        // and what it puts in it is not this one's to delete when this one fails, nor to undo.
+        var made = new List<string>();
+        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            destination,
+            Path.TrimEndingDirectorySeparator(destination)
+        };
         var written = 0;
         try
         {
@@ -411,27 +422,133 @@ static class Zip
                 cancel.ThrowIfCancellationRequested();
                 if (isFolder)
                 {
-                    Directory.CreateDirectory(path);
+                    MakeFolder(path, known, made);
                     continue;
                 }
 
                 written++;
                 progress?.Report($"Extracting {written} of {files.Count}");
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                ExtractFile(entry, path, mark);
+                MakeFolder(Path.GetDirectoryName(path)!, known, made);
+                ExtractFile(entry, path, mark, made);
             }
         }
         catch
         {
-            foreach (var path in created)
-            {
-                TryDelete(path);
-            }
-
+            TakeAway(made);
             throw;
         }
 
+        // For undo, the highest of what it made: a folder it made, with all it made in it, or
+        // what it made in a folder that was there.
+        var madeSet = new HashSet<string>(made, StringComparer.OrdinalIgnoreCase);
+        var created = made
+            .Where(_ => !madeSet.Contains(Path.GetDirectoryName(_)!))
+            .ToList();
         return new(topLevel, created, leftOut, []);
+    }
+
+    // Makes folder, and those it is in that are not there, adding each it made to made. The
+    // folders known to be there, found or made, are in known, which the destination starts.
+    static void MakeFolder(string folder, HashSet<string> known, List<string> made)
+    {
+        if (known.Contains(folder))
+        {
+            return;
+        }
+
+        if (Path.GetDirectoryName(folder) is { } parent &&
+            !known.Contains(parent))
+        {
+            if (Directory.Exists(parent))
+            {
+                known.Add(parent);
+            }
+            else
+            {
+                MakeFolder(parent, known, made);
+            }
+        }
+
+        if (CreateNewFolder(folder))
+        {
+            made.Add(folder);
+        }
+        else if (!Directory.Exists(folder))
+        {
+            throw new IOException($"Cannot create '{folder}' because a file with the same name already exists.");
+        }
+
+        known.Add(folder);
+    }
+
+    /// <summary>
+    /// Makes <paramref name="folder"/>, in a folder that is there, only where nothing is: true
+    /// when it did, false when something is there already, which Directory.CreateDirectory
+    /// would take as done. Past 260 characters whatever the machine allows, as .NET's own calls
+    /// are.
+    /// </summary>
+    static bool CreateNewFolder(string folder)
+    {
+        if (CreateDirectory(Extended(folder), IntPtr.Zero))
+        {
+            return true;
+        }
+
+        var error = Marshal.GetLastPInvokeError();
+        if (error == ErrorAlreadyExists)
+        {
+            return false;
+        }
+
+        var reason = new Win32Exception(error);
+        throw new IOException($"Cannot create '{folder}': {reason.Message}", reason);
+    }
+
+    // The path as Windows takes one of any length: \\?\C:\..., or \\?\UNC\server\share\... for
+    // a share.
+    static string Extended(string path)
+    {
+        var full = Path.GetFullPath(path);
+        if (full.StartsWith(@"\\?\", StringComparison.Ordinal) ||
+            full.StartsWith(@"\\.\", StringComparison.Ordinal))
+        {
+            return full;
+        }
+
+        if (full.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return $@"\\?\UNC\{full[2..]}";
+        }
+
+        return $@"\\?\{full}";
+    }
+
+    // Takes away what an extract made, the last made first, so what is in a folder goes before
+    // it: a file, and a folder once it is empty. What else has come to be in one meanwhile, and
+    // the folder with it, stays.
+    static void TakeAway(List<string> made)
+    {
+        for (var index = made.Count - 1; index >= 0; index--)
+        {
+            var path = made[index];
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path);
+                    continue;
+                }
+
+                File.Delete(path);
+            }
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     // The stream Windows writes beside a file a browser downloads, saying where it came from:
@@ -480,50 +597,48 @@ static class Zip
         return null;
     }
 
-    // Writes an entry's file, with the time it was last changed, and the zip's mark, should it
-    // have one. Writing the mark changes the file's time, so the time is given again after it.
-    // A drive that can't hold the mark, FAT or exFAT say, has the file without it, as Explorer
-    // leaves it there, rather than the extract failing.
-    static void ExtractFile(ZipArchiveEntry entry, string path, byte[]? mark)
+    // Writes an entry's file, as ExtractToFile does, only where nothing is, adding it to made, as
+    // soon as it is there, so one that fails part written is taken away with the rest. Then the
+    // zip's mark, should it have one, and the time the entry was last changed, which writing the
+    // mark would change. A drive that can't hold the mark, FAT or exFAT say, has the file without
+    // it, as Explorer leaves it there, rather than the extract failing.
+    static void ExtractFile(ZipArchiveEntry entry, string path, byte[]? mark, List<string>? made)
     {
-        entry.ExtractToFile(path, overwrite: false);
-        if (mark == null)
+        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
-            return;
+            made?.Add(path);
+            using var content = entry.Open();
+            content.CopyTo(file);
         }
 
+        if (mark != null)
+        {
+            try
+            {
+                File.WriteAllBytes(path + zoneIdentifier, mark);
+            }
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
+            {
+            }
+        }
+
+        // As ExtractToFile, which goes on without it where the time can't be given.
         try
         {
-            File.WriteAllBytes(path + zoneIdentifier, mark);
             File.SetLastWriteTime(path, entry.LastWriteTime.DateTime);
         }
         catch (Exception exception)
             when (
                 exception is
                     IOException or
-                    UnauthorizedAccessException)
+                    UnauthorizedAccessException or
+                    ArgumentOutOfRangeException)
         {
         }
-    }
-
-    // The highest folder or file on the way from the destination down to path that is not there.
-    static string? HighestNew(string path, string destination)
-    {
-        string? highest = null;
-        for (var current = path;
-             current != null &&
-             !Locations.Same(current, destination);
-             current = Path.GetDirectoryName(current))
-        {
-            if (Path.Exists(current))
-            {
-                break;
-            }
-
-            highest = current;
-        }
-
-        return highest;
     }
 
     static string TopOf(string path, string destination)
@@ -922,7 +1037,7 @@ static class Zip
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            ExtractFile(entry, path, mark);
+            ExtractFile(entry, path, mark, null);
             any = true;
         }
 

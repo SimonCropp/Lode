@@ -368,6 +368,14 @@ static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, out FileAttributeTag info, uint size);
 
+    // What CreateDirectory fails with where something is there already. .NET's
+    // Directory.CreateDirectory takes that as done, so can't say whether it made the folder.
+    public const int ErrorAlreadyExists = 183;
+
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateDirectoryW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool CreateDirectory(string path, IntPtr security);
+
     // Asking a service how it is needs no administrator permission, only these rights.
     public const uint ServiceManagerConnect = 0x0001;
     public const uint ServiceQueryStatus = 0x0004;

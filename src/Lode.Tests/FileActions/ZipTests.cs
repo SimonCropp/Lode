@@ -433,6 +433,151 @@ public class ZipTests
         }
     }
 
+    // Zips extracted here together can share a folder, as the parts of a Google Takeout all hold
+    // Takeout. Each is extracted in its turn, so the second finds what the first wrote in its
+    // way and writes nothing, and the first keeps all it wrote: the two at once, both found
+    // nothing in the way, and the one that then failed on what the other wrote took the other's
+    // files away with its own.
+    [Test]
+    public async Task ZipsExtractedTogetherTakeTurns()
+    {
+        using var fixture = Fixture.Create();
+        var first = MakeZip(fixture, "takeout-001.zip", [.. Enumerable.Range(0, 200).Select(_ => ($"Takeout/one-{_}.txt", "one")), ("Takeout/same.txt", "first")]);
+        var second = MakeZip(fixture, "takeout-002.zip", [.. Enumerable.Range(0, 200).Select(_ => ($"Takeout/two-{_}.txt", "two")), ("Takeout/same.txt", "second")]);
+
+        var placed = await Zip.ExtractInBackground([first, second], true);
+
+        await Assert.That(Directory.GetFiles(fixture.At("Takeout"), "one-*.txt").Length).IsEqualTo(200);
+        await Assert.That(await File.ReadAllTextAsync(fixture.At("Takeout", "same.txt"))).IsEqualTo("first");
+        await Assert.That(Directory.GetFiles(fixture.At("Takeout")).Length).IsEqualTo(201);
+        await Assert.That(ActionLog.Entries.Where(_ => _.Title == "Extract").Select(_ => $"{_.FolderName}: {_.Summary}"))
+            .IsEquivalentTo(["takeout-001.zip: Extracted takeout-001.zip", "takeout-002.zip: 1 item there already"], CollectionOrdering.Matching);
+        await Assert.That(placed.Select(fixture.Relative)).IsEquivalentTo(["Projects/Takeout"]);
+    }
+
+    // Undo's work done on paper: what it sends to the Recycle Bin.
+    sealed class Recycling : UndoHistory.IFileActions
+    {
+        public List<IReadOnlyList<string>> Recycled { get; } = [];
+
+        public string? Rename(IntPtr owner, string path, string newName) =>
+            null;
+
+        public IReadOnlyList<(string From, string To)> Move(IntPtr owner, IReadOnlyList<(string From, string Folder, string Name)> items) =>
+            [];
+
+        public IReadOnlyList<(string Original, string? InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths)
+        {
+            Recycled.Add(paths);
+            return paths
+                .Select(_ => (_, (string?) null))
+                .ToList();
+        }
+
+        public IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin) =>
+            inBin;
+
+        public bool Exists(string path) =>
+            Path.Exists(path);
+
+        public void CreateFolder(string path)
+        {
+        }
+
+        public void DeleteIfEmpty(string path)
+        {
+        }
+    }
+
+    // Each zip's undo holds what it made, and only that: undoing the second of zips extracted
+    // here together sends its own files to the Recycle Bin, not the folder they share with the
+    // first's files in it, which undoing the first then does. Each has files of its own at its
+    // top before those in the folder, so neither has made the folder when the other starts.
+    [Test]
+    public async Task UndoOfOneOfZipsExtractedTogetherLeavesTheOthers()
+    {
+        using var fixture = Fixture.Create();
+        var first = MakeZip(fixture, "takeout-001.zip", [.. Enumerable.Range(0, 100).Select(_ => ($"one-{_}.txt", "one")), ("Takeout/one.txt", "one")]);
+        var second = MakeZip(fixture, "takeout-002.zip", [.. Enumerable.Range(0, 100).Select(_ => ($"two-{_}.txt", "two")), ("Takeout/two.txt", "two")]);
+        var recycling = new Recycling();
+        var history = UndoHistory.Instance;
+        UndoHistory.Instance = new(recycling);
+        try
+        {
+            await Zip.ExtractInBackground([first, second], true);
+
+            // Tests elsewhere may record in it meanwhile, and are undone on paper too.
+            while (UndoHistory.Instance.CanUndo)
+            {
+                await UndoHistory.Instance.Undo(IntPtr.Zero);
+            }
+        }
+        finally
+        {
+            UndoHistory.Instance = history;
+        }
+
+        var undone = recycling.Recycled
+            .Where(_ => _.All(path => Locations.IsWithin(path, fixture.Root)))
+            .ToList();
+        await Assert.That(undone.Count).IsEqualTo(2);
+        await Assert.That(undone[0].Count).IsEqualTo(101);
+        await Assert.That(undone[0]).Contains(fixture.At("Takeout", "two.txt"));
+        await Assert.That(undone[0]).DoesNotContain(fixture.At("Takeout"));
+        await Assert.That(undone[1].Count).IsEqualTo(101);
+        await Assert.That(undone[1]).Contains(fixture.At("Takeout"));
+    }
+
+    // Cancels on the report given, on the thread reporting it.
+    sealed class CancelOnReport(CancelSource cancel, string report) : IProgress<string>
+    {
+        public void Report(string value)
+        {
+            if (value == report)
+            {
+                cancel.Cancel();
+            }
+        }
+    }
+
+    // Stopped part way, an extract takes away what it made, and only that: a folder that was
+    // there stays, with what it held, though the extract had put a file in it. Extracted all,
+    // the folder made for it goes too.
+    [Test]
+    public async Task CancelledExtractTakesAwayWhatItMade()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", ("Docs/more.txt", "more"), ("New/Inner/one.txt", "one"), ("New/two.txt", "two"), ("last.txt", "last"));
+        using var here = new CancelSource();
+        using var all = new CancelSource();
+
+        await Assert.That(() => Zip.Extract(zip, fixture.Root, new CancelOnReport(here, "Extracting 3 of 4"), here.Token)).Throws<OperationCanceledException>();
+        await Assert.That(() => Zip.ExtractTo(zip, fixture.Root, false, new CancelOnReport(all, "Extracting 3 of 4"), all.Token)).Throws<OperationCanceledException>();
+
+        await Assert.That(Directory.GetFileSystemEntries(fixture.At("Docs")).Select(_ => Path.GetFileName(_))).IsEquivalentTo(["guide.aleph"]);
+        await Assert.That(Path.Exists(fixture.At("New"))).IsFalse();
+        await Assert.That(Path.Exists(fixture.At("last.txt"))).IsFalse();
+        await Assert.That(Path.Exists(fixture.At("Bundle"))).IsFalse();
+    }
+
+    // Extracted all together, each zip has a folder of its own, though the name one is given is
+    // the name another would have: Bundle.zip goes to Bundle (2), Bundle being there, and
+    // Bundle (2).zip then to Bundle (2) (2).
+    [Test]
+    public async Task ZipsExtractedAllTogetherHaveAFolderEach()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Bundle"));
+        var first = MakeZip(fixture, "Bundle.zip", ("one.txt", "one"));
+        var second = MakeZip(fixture, "Bundle (2).zip", ("two.txt", "two"));
+
+        var placed = await Zip.ExtractInBackground([first, second], false);
+
+        await Assert.That(placed.Select(fixture.Relative)).IsEquivalentTo(["Projects/Bundle (2)", "Projects/Bundle (2) (2)"], CollectionOrdering.Matching);
+        await Assert.That(Directory.GetFileSystemEntries(fixture.At("Bundle (2)")).Select(_ => Path.GetFileName(_))).IsEquivalentTo(["one.txt"]);
+        await Assert.That(Directory.GetFileSystemEntries(fixture.At("Bundle (2) (2)")).Select(_ => Path.GetFileName(_))).IsEquivalentTo(["two.txt"]);
+    }
+
     // What Windows writes beside a file a browser downloads, saying where it came from.
     static string? MarkOf(string path)
     {
