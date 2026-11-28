@@ -498,7 +498,7 @@ sealed class CloneDialog : Form
     // go in, unless that has been typed.
     void OnPicked()
     {
-        if (Picked() is (_, var name) &&
+        if (Picked() is var (_, name) &&
             !pathEdited)
         {
             settingPath = true;
@@ -637,7 +637,7 @@ sealed class CloneDialog : Form
     void Accept()
     {
         if (!cloneButton.Enabled ||
-            Picked() is not (var remote, var name))
+            Picked() is not var (remote, name))
         {
             return;
         }
@@ -665,7 +665,7 @@ sealed class CloneDialog : Form
 
         var folder = Path.GetFileName(pathFrame.Box.Text.Trim().TrimEnd('\\'));
         if (folder.Length == 0 &&
-            Picked() is (_, var name))
+            Picked() is var (_, name))
         {
             folder = name[(name.LastIndexOf('/') + 1)..];
         }
