@@ -196,6 +196,74 @@ public class ReplaceInFilesTests
         }
     }
 
+    // A write that fails part way, on a disk that fills as what replaces is longer, say, would
+    // leave the file emptied for it: it is put back as it was, and said so, with nothing for
+    // Undo. Here another handle holds a byte past the file's end, which only the longer text
+    // reaches, so the write fails once the file is emptied, as a full disk's would.
+    [Test]
+    public async Task AWriteThatFailsLeavesTheFileAsItWas()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var file = scratch.At("full.txt");
+        await File.WriteAllTextAsync(file, "alpha");
+
+        ReplaceInFiles.Outcome outcome;
+        using (var holder = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            holder.Lock(10, 1);
+            outcome = Replace([file], new("alpha", ""), "omega omega omega");
+        }
+
+        await Assert.That(outcome.Failed.Select(_ => _.Path)).IsEquivalentTo([file]);
+        await Assert.That(outcome.Changed).IsEmpty();
+        await Assert.That(outcome.Undo).IsNull();
+        await Assert.That(await File.ReadAllTextAsync(file)).IsEqualTo("alpha");
+    }
+
+    // Should putting it back fail too, the share it is on gone, say, what it was is kept, and
+    // the failure ends saying where: not where the next file's is kept, which would write over
+    // it. The next file is still undone from its own.
+    [Test]
+    public async Task AFileThatCantBePutBackSaysWhereWhatItWasIsKept()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var first = scratch.At("first.txt");
+        var second = scratch.At("second.txt");
+        await File.WriteAllTextAsync(first, "alpha");
+        await File.WriteAllTextAsync(second, "beta alpha");
+        var write = ReplaceInFiles.Write;
+        ReplaceInFiles.Write = (stream, bytes) =>
+        {
+            if (!string.Equals(stream.Name, first, StringComparison.OrdinalIgnoreCase))
+            {
+                write(stream, bytes);
+                return;
+            }
+
+            stream.Write(bytes.AsSpan(0, 2));
+            throw new IOException("The specified network name is no longer available.");
+        };
+        ReplaceInFiles.Outcome outcome;
+        try
+        {
+            outcome = Replace([first, second], new("alpha", ""), "omega");
+        }
+        finally
+        {
+            ReplaceInFiles.Write = write;
+        }
+
+        var failure = outcome.Failed.Single();
+        await Assert.That(failure.Path).IsEqualTo(first);
+        await Assert.That(failure.Error).Contains(ReplaceInFiles.TempRoot);
+        var kept = failure.Error[failure.Error.IndexOf(ReplaceInFiles.TempRoot, StringComparison.Ordinal)..];
+        await Assert.That(await File.ReadAllTextAsync(kept)).IsEqualTo("alpha");
+
+        outcome.Undo!.Undo(null!, IntPtr.Zero);
+
+        await Assert.That(await File.ReadAllTextAsync(second)).IsEqualTo("beta alpha");
+    }
+
     [Test]
     public Task Replacing()
     {

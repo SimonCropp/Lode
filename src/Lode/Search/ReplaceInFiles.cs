@@ -6,7 +6,8 @@
 /// read in, byte order mark and all, and where it is, so it keeps its links and attributes. One
 /// whose text wouldn't come back to the same bytes, a UTF-16 file with a broken pair say, is
 /// left alone. What each was is kept in %Temp%\Lode\Replace for Undo, which puts back each file
-/// still as Replace left it, and Redo, each still as it was before.
+/// still as Replace left it, and Redo, each still as it was before. One whose write fails part
+/// way is put back as it was.
 /// </summary>
 static class ReplaceInFiles
 {
@@ -51,7 +52,10 @@ static class ReplaceInFiles
             progress?.Report($"{index + 1:N0} of {files.Count:N0} files");
             try
             {
-                if (ReplaceIn(path, matcher, replacement, preserveCase, context, kept, written.Count) is not { } done)
+                // Numbered by the file, not by how many are written: one that fails keeps what it
+                // was where the next would otherwise keep its own over it, and that copy may be
+                // all there is of it.
+                if (ReplaceIn(path, matcher, replacement, preserveCase, context, kept, index) is not { } done)
                 {
                     continue;
                 }
@@ -149,7 +153,7 @@ static class ReplaceInFiles
         var afterCopy = Path.Combine(kept, $"{number}.after");
         File.WriteAllBytes(before, bytes);
         File.WriteAllBytes(afterCopy, after);
-        WriteInPlace(path, after);
+        WriteInPlace(path, after, bytes, before);
         return (
             FileResult.From(path, newText, ranges, context),
             new(path, before, afterCopy, SHA256.HashData(bytes), SHA256.HashData(after)));
@@ -238,12 +242,40 @@ static class ReplaceInFiles
     }
 
     // Truncated and written, rather than replaced by a new file, so it keeps its identity: hard
-    // links, its attributes, and a program watching it.
-    static void WriteInPlace(string path, byte[] bytes)
+    // links, its attributes, and a program watching it. A write that fails once it is truncated,
+    // on a disk that fills as what replaces is longer, or a share that drops, would leave it
+    // short or empty, so what it was is written back. Should that fail too, the copy at wasKept
+    // is all there is of it, and the failure ends saying where that is. Unbuffered, so a write
+    // that fails throws here, not later as the file is closed.
+    static void WriteInPlace(string path, byte[] bytes, byte[] was, string wasKept)
     {
-        using var stream = new FileStream(path, FileMode.Truncate, FileAccess.Write, FileShare.Read);
-        stream.Write(bytes);
+        using var stream = new FileStream(path, FileMode.Truncate, FileAccess.Write, FileShare.Read, bufferSize: 0);
+        try
+        {
+            Write(stream, bytes);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                stream.Position = 0;
+                stream.SetLength(0);
+                Write(stream, was);
+            }
+            catch (Exception putBack)
+            {
+                throw new IOException($"{Describe(exception)} It couldn't be put back as it was either: what it was is kept in {wasKept}", putBack);
+            }
+
+            throw;
+        }
     }
+
+    /// <summary>
+    /// Writes bytes to a file truncated for them: what it is to be, or, should that fail, what it
+    /// was. Tests fail it, as a disk that fills or a share that drops would.
+    /// </summary>
+    internal static Action<FileStream, byte[]> Write = (stream, bytes) => stream.Write(bytes);
 
     /// <summary>
     /// Takes away what Replace kept more than a day ago: the undo history doesn't outlast Lode.
@@ -303,12 +335,14 @@ static class ReplaceInFiles
         }
 
         public override UndoHistory.Outcome Undo(UndoHistory.IFileActions actions, IntPtr owner) =>
-            Put(write: _ => _.Before, whenIs: _ => _.AfterHash);
+            Put(write: _ => _.Before, isNow: _ => _.After, whenIs: _ => _.AfterHash);
 
         public override UndoHistory.Outcome Redo(UndoHistory.IFileActions actions, IntPtr owner) =>
-            Put(write: _ => _.After, whenIs: _ => _.BeforeHash);
+            Put(write: _ => _.After, isNow: _ => _.Before, whenIs: _ => _.BeforeHash);
 
-        UndoHistory.Outcome Put(Func<Written, string> write, Func<Written, byte[]> whenIs)
+        // isNow is the copy of what the file is, when it is still that: where it is kept, should
+        // the write fail and putting it back fail too.
+        UndoHistory.Outcome Put(Func<Written, string> write, Func<Written, string> isNow, Func<Written, byte[]> whenIs)
         {
             var left = new List<string>();
             var done = 0;
@@ -316,14 +350,15 @@ static class ReplaceInFiles
             {
                 try
                 {
-                    if (!File.Exists(file.Path) ||
-                        !SHA256.HashData(File.ReadAllBytes(file.Path)).AsSpan().SequenceEqual(whenIs(file)))
+                    var now = File.Exists(file.Path) ? File.ReadAllBytes(file.Path) : null;
+                    if (now == null ||
+                        !SHA256.HashData(now).AsSpan().SequenceEqual(whenIs(file)))
                     {
                         left.Add($"{file.Path} has changed since");
                         continue;
                     }
 
-                    WriteInPlace(file.Path, File.ReadAllBytes(write(file)));
+                    WriteInPlace(file.Path, File.ReadAllBytes(write(file)), now, isNow(file));
                     done++;
                 }
                 catch (Exception exception)
