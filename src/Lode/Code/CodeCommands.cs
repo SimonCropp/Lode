@@ -1665,9 +1665,10 @@ static class CodeCommands
     /// Runs git reading its output alone, as <see cref="GitRead"/> has it. <paramref name="input"/>,
     /// when given, is written to git, as git credential fill reads what it is asked for.
     /// <paramref name="encoding"/>, when given, is what the output is read as, in place of UTF-8:
-    /// Latin-1, say, for each byte as the character of the same number.
+    /// Latin-1, say, for each byte as the character of the same number. <paramref name="environment"/>,
+    /// when given, is set for git beside what every git Lode runs has.
     /// </summary>
-    internal static GitRead GitOutput(string repo, Cancel cancel, string[] arguments, string? input = null, Encoding? encoding = null)
+    internal static GitRead GitOutput(string repo, Cancel cancel, string[] arguments, string? input = null, Encoding? encoding = null, IReadOnlyDictionary<string, string>? environment = null)
     {
         if (cancel.IsCancellationRequested)
         {
@@ -1676,7 +1677,7 @@ static class CodeCommands
 
         try
         {
-            var startInfo = StartInfo(repo, network: false, arguments);
+            var startInfo = StartInfo(repo, network: false, arguments, environment);
             if (input != null)
             {
                 startInfo.RedirectStandardInput = true;

@@ -30,7 +30,11 @@ static class HostedRepos
     public const string AzureDevOps = "Azure DevOps";
     public const string YourRepositories = "Your repositories";
 
-    static HttpClient client = new(
+    /// <summary>
+    /// What asks the sites. Tests answer for them with a stand-in of their own, so nothing
+    /// leaves the machine.
+    /// </summary>
+    internal static HttpClient Client { get; set; } = new(
         new SocketsHttpHandler
         {
             PooledConnectionLifetime = TimeSpan.FromMinutes(15),
@@ -51,7 +55,7 @@ static class HostedRepos
     /// </summary>
     internal static Func<IReadOnlyList<string>, Cancel, Task<HostedListing>> ListAzureDevOps { get; set; } = ReadAzureDevOps;
 
-    static async Task<HostedListing> ReadGitHub(Cancel cancel)
+    internal static async Task<HostedListing> ReadGitHub(Cancel cancel)
     {
         var credential = await Task.Run(() => GitCredentials.Fill("github.com", null, cancel), cancel);
         if (credential == null)
@@ -62,6 +66,7 @@ static class HostedRepos
         try
         {
             using var user = await Get("https://api.github.com/user", credential, cancel);
+            await Tell("github.com", null, credential, user, cancel);
             if (!user.IsSuccessStatusCode)
             {
                 return HostedListing.Failed($"Couldn't sign in to GitHub: {Describe(user)}.");
@@ -104,7 +109,9 @@ static class HostedRepos
     internal static Func<string, Cancel, ForkParent?> ParentOf { get; set; } = (remote, cancel) => ReadParent(remote, cancel).GetAwaiter().GetResult();
 
     // Signed in where git has a credential kept, as a private fork needs, but never asking for
-    // one: anonymously otherwise, which a public one needs no more than.
+    // one: anonymously otherwise, which a public one needs no more than. Git isn't told how it
+    // went, as the listings tell it: one kept already needs no keeping, and this is asked unasked,
+    // once a clone ends, where dropping one would be a sign in nobody looked for.
     static async Task<ForkParent?> ReadParent(string remote, Cancel cancel)
     {
         const string prefix = "https://github.com/";
@@ -176,7 +183,7 @@ static class HostedRepos
         request.Headers.Accept.ParseAdd("application/json");
         if (credential == null)
         {
-            return client.SendAsync(request, cancel);
+            return Client.SendAsync(request, cancel);
         }
 
         if (bearer)
@@ -188,7 +195,26 @@ static class HostedRepos
             request.Headers.Authorization = new("Basic", credential.Basic);
         }
 
-        return client.SendAsync(request, cancel);
+        return Client.SendAsync(request, cancel);
+    }
+
+    // Git told how the credential it gave for the host and path went, once the site answered a
+    // request signed in with it, as git does after a fetch: approved where the site took it,
+    // rejected where it refused it, and neither for any other answer, a page not found or a rate
+    // limit, which says nothing of the credential. Off the UI thread, as each is a git run.
+    static Task Tell(string host, string? path, GitCredential credential, HttpResponseMessage response, Cancel cancel)
+    {
+        if (Succeeded(response))
+        {
+            return Task.Run(() => GitCredentials.Approve(host, path, credential, cancel), cancel);
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return Task.Run(() => GitCredentials.Reject(host, path, credential, cancel), cancel);
+        }
+
+        return Task.CompletedTask;
     }
 
     static string Describe(HttpResponseMessage response) =>
@@ -266,7 +292,7 @@ static class HostedRepos
         return null;
     }
 
-    static async Task<HostedListing> ReadAzureDevOps(IReadOnlyList<string> known, Cancel cancel)
+    internal static async Task<HostedListing> ReadAzureDevOps(IReadOnlyList<string> known, Cancel cancel)
     {
         if (known.Count == 0)
         {
@@ -277,6 +303,10 @@ static class HostedRepos
         var repos = new List<HostedRepo>();
         var organizations = new List<string>(known);
         var credentials = new Dictionary<string, GitCredential>(StringComparer.OrdinalIgnoreCase);
+
+        // Those git gave a credential for, which it is told how went. Not the others the account
+        // belongs to, listed with one of those: git gave nothing for them.
+        var givenFor = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             // The organizations known, each signed in to as git would, with one's credential
@@ -286,6 +316,7 @@ static class HostedRepos
                 if (await Task.Run(() => GitCredentials.Fill("dev.azure.com", organization, cancel), cancel) is { } credential)
                 {
                     credentials[organization] = credential;
+                    givenFor.Add(organization);
                 }
             }
 
@@ -311,6 +342,11 @@ static class HostedRepos
 
                 var url = $"https://dev.azure.com/{Uri.EscapeDataString(organization)}/_apis/git/repositories?api-version=7.1";
                 using var response = await GetAzure(url, credential, cancel);
+                if (givenFor.Contains(organization))
+                {
+                    await Tell("dev.azure.com", organization, credential, response, cancel);
+                }
+
                 if (!Succeeded(response))
                 {
                     problems.Add($"Couldn't list {organization}'s repositories: {Describe(response)}.");
