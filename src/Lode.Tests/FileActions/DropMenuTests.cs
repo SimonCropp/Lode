@@ -95,6 +95,33 @@ public class DropMenuTests
         await Assert.That(Drop(Drag(sources, every), inside)).IsNull();
     }
 
+    // Files dragged that are not on disk, attachments from Outlook say, can only be copied, so
+    // the menu offers only that, in bold, which copies them, or Cancel, which leaves nothing.
+    [Test]
+    [WindowThread]
+    public async Task FilesNotOnDiskCanOnlyBeCopied()
+    {
+        using var fixture = Fixture.Create();
+        VirtualSource Source() =>
+            new(new VirtualSource.Entry("attachment.txt", "attached"u8.ToArray()));
+        static DragEventArgs VirtualDrag(VirtualSource source) =>
+            new(new DataObject(source), 0, 0, 0, every, DragDropEffects.None);
+
+        var cancelled = VirtualDrag(Source());
+        var cancelledItems = Drop(cancelled, fixture.At("Archive"), "Cancel");
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+        var afterCancel = Directory.EnumerateFileSystemEntries(fixture.At("Archive")).ToList();
+        var copied = VirtualDrag(Source());
+        var copiedItems = Drop(copied, fixture.At("Archive"), "Copy here");
+        await Pump.Until(() => File.Exists(fixture.At("Archive", "attachment.txt")));
+
+        await Assert.That(cancelledItems).IsEquivalentTo(["Copy here*", "-", "Cancel"], CollectionOrdering.Matching);
+        await Assert.That(copiedItems).IsEquivalentTo(["Copy here*", "-", "Cancel"], CollectionOrdering.Matching);
+        await Assert.That((cancelled.Effect, copied.Effect)).IsEqualTo((DragDropEffects.None, DragDropEffects.None));
+        await Assert.That(afterCancel).IsEmpty();
+        await Assert.That(await File.ReadAllTextAsync(fixture.At("Archive", "attachment.txt"))).IsEqualTo("attached");
+    }
+
     // What is picked from the menu is done: copied, or shortcuts made, there.
     [Test]
     [WindowThread]

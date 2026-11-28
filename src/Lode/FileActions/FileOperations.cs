@@ -804,9 +804,22 @@ static class FileOperations
     // What a drop with the left button does.
     static DragDropEffects DefaultDropEffect(DragEventArgs args, string? destination)
     {
-        if (destination == null ||
-            args.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources)
+        if (destination == null)
         {
+            return DragDropEffects.None;
+        }
+
+        if (args.Data?.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } sources)
+        {
+            // Files that are not on disk, an attachment from Outlook say, are written here,
+            // which is a copy whatever the keys held: a move would tell the source to delete
+            // what it gave.
+            if (args.AllowedEffect.HasFlag(DragDropEffects.Copy) &&
+                VirtualFiles.Offered(args.Data))
+            {
+                return DragDropEffects.Copy;
+            }
+
             return DragDropEffects.None;
         }
 
@@ -846,6 +859,13 @@ static class FileOperations
     /// it was dragged over: if so the drop asks what to do, as Explorer does.</param>
     public static void Drop(IntPtr owner, DragEventArgs args, string? destination, bool rightButton = false)
     {
+        if (args.Data?.GetDataPresent(DataFormats.FileDrop) != true &&
+            DefaultDropEffect(args, destination) == DragDropEffects.Copy)
+        {
+            DropVirtual(owner, args, destination!, rightButton);
+            return;
+        }
+
         if (rightButton)
         {
             // Done, if at all, once a choice is made, so the source is told nothing was moved
@@ -931,6 +951,192 @@ static class FileOperations
         menu.Items.Add("Cancel");
         menu.Closed += (_, _) => menu.BeginInvoke(menu.Dispose);
         return menu;
+    }
+
+    // Files dragged that are not on disk: written into a folder of Lode's own as they are dropped,
+    // or once the source has let the drop go, when it says it can be read then, and put where
+    // they were dropped from there. With the right button, once Copy here is picked.
+    static void DropVirtual(IntPtr owner, DragEventArgs args, string destination, bool rightButton)
+    {
+        Task<VirtualFiles.Staged>? staging;
+        try
+        {
+            staging = VirtualFiles.Stage(args.Data!);
+        }
+        catch (Exception exception)
+        {
+            Warn(owner, exception.Message);
+            args.Effect = DragDropEffects.None;
+            return;
+        }
+
+        if (staging == null)
+        {
+            args.Effect = DragDropEffects.None;
+            return;
+        }
+
+        if (rightButton)
+        {
+            args.Effect = DragDropEffects.None;
+            ShowDropMenu(VirtualDropMenu(owner, staging, destination));
+            return;
+        }
+
+        args.Effect = DragDropEffects.Copy;
+        _ = CopyVirtualSaying(owner, staging, destination);
+    }
+
+    /// <summary>
+    /// What a drop with the right button of files not on disk asks: Copy here, all that can be
+    /// done with them, in bold, then Cancel, which lets go of what was written for them, as
+    /// closing the menu does.
+    /// </summary>
+    internal static ExplorerMenu VirtualDropMenu(IntPtr owner, Task<VirtualFiles.Staged> staging, string destination)
+    {
+        var decided = false;
+        var menu = new ExplorerMenu();
+        var copy = new ToolStripMenuItem("Copy here", null, (_, _) => Decide(true));
+        copy.Font = new(copy.Font, FontStyle.Bold);
+        menu.Items.Add(copy);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Cancel", null, (_, _) => Decide(false));
+
+        // After the click, which may come once it has closed.
+        menu.Closed += (_, _) => menu.BeginInvoke(
+            () =>
+            {
+                Decide(false);
+                menu.Dispose();
+            });
+        return menu;
+
+        void Decide(bool copying)
+        {
+            if (decided)
+            {
+                return;
+            }
+
+            decided = true;
+            if (copying)
+            {
+                _ = CopyVirtualSaying(owner, staging, destination);
+                return;
+            }
+
+            _ = DiscardVirtual(staging);
+        }
+    }
+
+    static async Task DiscardVirtual(Task<VirtualFiles.Staged> staging)
+    {
+        try
+        {
+            VirtualFiles.TryDelete((await staging).Folder);
+        }
+        catch (Exception)
+        {
+            // Nothing was written, or it was taken away when it failed.
+        }
+    }
+
+    static async Task CopyVirtualSaying(IntPtr owner, Task<VirtualFiles.Staged> staging, string destination)
+    {
+        try
+        {
+            var (_, notCopied) = await CopyVirtual(owner, staging, destination);
+            if (notCopied != null)
+            {
+                Warn(owner, notCopied);
+            }
+        }
+        catch (Exception exception)
+        {
+            Warn(owner, exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Puts what was written for files dragged that are not on disk where they were dropped,
+    /// through Windows' copy engine, as Lode's other drops are: with its prompt for anything of
+    /// the same name there, and a folder merged into one of its name there. Moved from Lode's
+    /// own folder, each takes the security of where it goes, as one written there would. One
+    /// change, a copy, for undo, which sends what it made to the Recycle Bin. Gives what is in
+    /// <paramref name="destination"/> for it, and what to say of what was not copied: left out
+    /// for its name, or its bytes not had. Lode's folder goes once it is done.
+    /// </summary>
+    internal static async Task<(IReadOnlyList<string> Placed, string? NotCopied)> CopyVirtual(IntPtr owner, Task<VirtualFiles.Staged> staging, string destination)
+    {
+        var staged = await staging;
+        return await OnStaThread<(IReadOnlyList<string>, string?)>(
+            () =>
+            {
+                try
+                {
+                    List<(string From, string To)> placed = [];
+                    var topLevel = staged.TopLevel();
+                    if (topLevel.Count > 0)
+                    {
+                        Report(
+                            owner,
+                            ShellFileOperation.Kind.Move,
+                            () => ShellFileOperation.Run(owner, ShellFileOperation.Kind.Move, topLevel, destination, ShellFileOperation.AllowUndo),
+                            outcome => placed = Pairs(outcome));
+                        UndoHistory.Instance.RecordCreated("copy", placed.Select(_ => _.To).ToList());
+                        staged.Retime(placed);
+                    }
+
+                    var inDestination = Placed(placed.Select(_ => _.To), destination)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    return (inDestination, NotCopiedMessage(staged));
+                }
+                finally
+                {
+                    VirtualFiles.TryDelete(staged.Folder);
+                }
+            });
+    }
+
+    /// <summary>
+    /// What to say of files dragged that were not copied: left out for their names, or their
+    /// bytes not had. Null when all were.
+    /// </summary>
+    internal static string? NotCopiedMessage(VirtualFiles.Staged staged)
+    {
+        var parts = new List<string>();
+        if (staged.LeftOut.Count > 0)
+        {
+            parts.Add($"Lode left out {Counted(staged.LeftOut.Count)} named to go outside the folder, or with names Windows can't have or keeps for devices:\n\n{Listed(staged.LeftOut)}");
+        }
+
+        if (staged.Failed.Count > 0)
+        {
+            parts.Add($"Lode couldn't copy {Counted(staged.Failed.Count)}:\n\n{Listed(staged.Failed)}");
+        }
+
+        if (parts.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join("\n\n", parts);
+
+        static string Counted(int count) =>
+            count == 1 ? "1 item" : $"{count} items";
+
+        static string Listed(IReadOnlyList<string> names)
+        {
+            const int listed = 10;
+            var lines = string.Join("\n", names.Take(listed).Select(_ => $"  {_}"));
+            if (names.Count > listed)
+            {
+                lines += $"\n  and {names.Count - listed} more";
+            }
+
+            return lines;
+        }
     }
 
     static void CreateShortcutsIn(IntPtr owner, string[] targets, string folder)
