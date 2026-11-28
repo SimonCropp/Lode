@@ -445,6 +445,170 @@ public class ObjectStoreTests
         await Assert.That(() => unknown.TryRead(id)).Throws<GitFilesException>();
     }
 
+    // An entry of a pack: its type and size, four bits of the size, then seven at a time.
+    static byte[] PackEntry(int type, long size)
+    {
+        var bytes = new List<byte>
+        {
+            (byte)((type << 4) | (int)(size & 15))
+        };
+        size >>= 4;
+        while (size > 0)
+        {
+            bytes[^1] |= 0x80;
+            bytes.Add((byte)(size & 0x7f));
+            size >>= 7;
+        }
+
+        return bytes.ToArray();
+    }
+
+    static byte[] Deflated(byte[] data)
+    {
+        using var memory = new MemoryStream();
+        using (var zlib = new ZLibStream(memory, CompressionLevel.Fastest))
+        {
+            zlib.Write(data);
+        }
+
+        return memory.ToArray();
+    }
+
+    static byte[] BigEndian(uint value)
+    {
+        var bytes = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(bytes, value);
+        return bytes;
+    }
+
+    // A pack laid out by hand, as git index-pack would leave it: its header, each entry after the
+    // one before, then its checksum, beside an index of version 2 naming where each is.
+    static void WritePack(string objects, string name, params (ObjectId Id, byte[] Entry)[] entries)
+    {
+        var folder = Path.Combine(objects, "pack");
+        var pack = new List<byte>();
+        pack.AddRange("PACK"u8.ToArray());
+        pack.AddRange(BigEndian(2));
+        pack.AddRange(BigEndian((uint)entries.Length));
+        var offsets = new List<(ObjectId Id, uint Offset)>();
+        foreach (var (id, entry) in entries)
+        {
+            offsets.Add((id, (uint)pack.Count));
+            pack.AddRange(entry);
+        }
+
+        var checksum = SHA1.HashData(pack.ToArray());
+        pack.AddRange(checksum);
+        File.WriteAllBytes(Path.Combine(folder, $"pack-{name}.pack"), pack.ToArray());
+
+        var sorted = offsets.OrderBy(_ => _.Id.ToString(), StringComparer.Ordinal).ToList();
+        var index = new List<byte>
+        {
+            0xff,
+            (byte)'t',
+            (byte)'O',
+            (byte)'c'
+        };
+        index.AddRange(BigEndian(2));
+        for (var first = 0; first < 256; first++)
+        {
+            index.AddRange(BigEndian((uint)sorted.Count(_ => _.Id.FirstByte <= first)));
+        }
+
+        var idBytes = new byte[ObjectId.Length];
+        foreach (var entry in sorted)
+        {
+            entry.Id.CopyTo(idBytes);
+            index.AddRange(idBytes);
+        }
+
+        // The CRCs, which git checks only when asked to.
+        index.AddRange(new byte[sorted.Count * 4]);
+        foreach (var entry in sorted)
+        {
+            index.AddRange(BigEndian(entry.Offset));
+        }
+
+        index.AddRange(checksum);
+        index.AddRange(SHA1.HashData(index.ToArray()));
+        File.WriteAllBytes(Path.Combine(folder, $"pack-{name}.idx"), index.ToArray());
+    }
+
+    // Read on another thread, from a database of its own, so that a read that goes round fails
+    // the test, rather than holding the run, and isn't let go of under the read; and refused
+    // there at once.
+    static async Task RefusedAtOnce(string objects, Func<ObjectDatabase, object?> read) =>
+        await Assert.That(
+                async () => await Task.Run(() =>
+                    {
+                        using var database = new ObjectDatabase(objects);
+                        return read(database);
+                    })
+                    .WaitAsync(TimeSpan.FromSeconds(10)))
+            .Throws<GitFilesException>();
+
+    // A pack whose deltas go round, as only a corrupt one's can, is refused, its object's type as
+    // much as the object: a delta on what is none back, so on itself, which git refuses, and was
+    // read for ever, the deltas to apply growing till memory ran out; one whose base is by its
+    // own id, which git follows for ever too; one whose base is by an id in another pack, which
+    // git refuses, as a base must be in the same pack, and was read there, from where its own
+    // base, by an id back in the first, was read in turn, each inside the last till the stack ran
+    // out; and one of no type known, whose base was taken as at the pack's start, of no type
+    // known too, which went round for ever. Each is the commit checked out, in a pack listed
+    // before the one git repack made, so the repository is left to git, which, but for the one it
+    // too goes round on, refuses the corrupt pack's and finds the commit in the other.
+    [Test]
+    [Arguments("itself")]
+    [Arguments("its own id")]
+    [Arguments("another pack")]
+    [Arguments("no type")]
+    public async Task RefusesDeltasThatGoRound(string round)
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+
+        // Packed without a commit graph, which would give the commit's tree without reading it.
+        CodeCommandsTests.Scratch.Git(repo, "repack", "-adq");
+        var objects = Path.Combine(repo, ".git", "objects");
+        await Assert.That(File.Exists(Path.Combine(objects, "info", "commit-graph"))).IsFalse();
+        ObjectId.TryParse(GitRun.Output(repo, "rev-parse", "HEAD"), out var head);
+        ObjectId.TryParse("ffffffffffffffffffffffffffffffffffffffff", out var other);
+        var delta = Delta(1, 1, [1, (byte)'x']);
+        byte[] ByIdOn(ObjectId baseId)
+        {
+            var baseBytes = new byte[ObjectId.Length];
+            baseId.CopyTo(baseBytes);
+            return [.. PackEntry(7, delta.Length), .. baseBytes, .. Deflated(delta)];
+        }
+
+        switch (round)
+        {
+            case "itself":
+                WritePack(objects, "00000000a", (head, [.. PackEntry(6, delta.Length), 0, .. Deflated(delta)]));
+                break;
+            case "its own id":
+                WritePack(objects, "00000000a", (head, ByIdOn(head)));
+                break;
+            case "another pack":
+                WritePack(objects, "00000000a", (head, ByIdOn(other)));
+                WritePack(objects, "00000000b", (other, ByIdOn(head)));
+                break;
+            case "no type":
+                WritePack(objects, "00000000a", (head, [.. PackEntry(5, delta.Length), .. Deflated(delta)]));
+                break;
+        }
+
+        await RefusedAtOnce(objects, _ => _.TryReadHeader(head));
+        await RefusedAtOnce(objects, _ => _.TryRead(head));
+        await Assert.That(await Task.Run(() => InProcessState.FromFiles(repo, Cancel.None)).WaitAsync(TimeSpan.FromSeconds(10))).IsNull();
+        if (round != "its own id")
+        {
+            var git = GitState.FromGit(repo, Cancel.None);
+            await Assert.That(git).IsNotNull();
+            await Assert.That(InProcessState.FromFaster(repo, Cancel.None)).IsEqualTo(git);
+        }
+    }
+
     static void Import(string repo, string stream)
     {
         var result = GitRun.Run(repo, null, Encoding.UTF8.GetBytes(stream), "fast-import", "--quiet");

@@ -94,6 +94,7 @@ It leaves to git a repository with:
 - a config include on a condition other than `gitdir:`, `onbranch:` and `hasconfig:remote.*.url:`, or a remote's url in a file an `includeIf` includes where the config has a `hasconfig:remote.*.url:` include, which git refuses
 - `HOME` set to nothing, which has git read the user's config from the top of whichever drive it is run in
 - a folder it can't list, in use or denied by its ACL, where git, unless its `core.fscache` lists the folder too, opens each file by its path and finds it there, or a file deleted between being listed and being hashed
+- a pack or index that is corrupt: a delta whose base isn't before it, or isn't in its pack, a chain of deltas that goes round, or an index counting more entries than it has room for. Each is refused as soon as it is met, rather than followed round till the reader ran out of memory or stack
 
 `git status` runs with `--no-optional-locks`, so it never takes the index lock, and a commit made at the same time doesn't fail on it. `--ignore-submodules=dirty` leaves out what is uncommitted inside a submodule; in process, a submodule's commit is all that is compared too.
 

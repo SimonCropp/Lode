@@ -2,8 +2,8 @@
 /// A pack and its index, as git gc and fetch leave them: the index's ids sorted, fanned out by
 /// their first byte, each with where in the pack its object is. Version 2 of the index, git's
 /// since 1.5.2, has the ids, then their CRCs, then where each is; version 1, before it, has each
-/// where then id together. An object in the pack is whole, or a delta on another, by where it is
-/// in the pack or by its id. The bases deltas are put back together on are kept, as trees of one
+/// where then id together. An object in the pack is whole, or a delta on another in the pack, by
+/// where it is or by its id. The bases deltas are put back together on are kept, as trees of one
 /// commit after another are deltas on the same ones.
 /// </summary>
 sealed class PackFile : IDisposable
@@ -16,6 +16,11 @@ sealed class PackFile : IDisposable
     /// it small, to see them let go.
     /// </summary>
     internal static long CacheLimit { get; set; } = 64 * 1024 * 1024;
+
+    // The most deltas an object's chain is followed through before the pack is taken to be
+    // corrupt. Git writes none longer than 4,095, so one far longer can only go round, as a
+    // delta by id that is its own base does, which git itself follows for ever.
+    const int longestChain = 10_000;
 
     readonly MappedFile index;
     readonly string packPath;
@@ -187,11 +192,23 @@ sealed class PackFile : IDisposable
             while ((c & 0x80) != 0)
             {
                 back++;
+                if (back > long.MaxValue >> 7)
+                {
+                    throw new GitFilesException($"Pack {packPath} has a delta whose base is further back than any pack goes");
+                }
+
                 c = bytes[position++];
                 back = (back << 7) + (c & 0x7f);
             }
 
+            // As git's get_delta_base, a base must be before the delta, and after the pack's
+            // start. One none back is the delta itself, which, followed, went round for ever.
             baseOffset = offset - back;
+            if (baseOffset <= 0 ||
+                baseOffset >= offset)
+            {
+                throw new GitFilesException($"Pack {packPath} has a delta whose base isn't before it");
+            }
         }
         else if (type == referenceDelta)
         {
@@ -222,8 +239,7 @@ sealed class PackFile : IDisposable
         var current = offset;
         (GitObjectType Type, byte[] Data) whole;
 
-        // Where the whole object at the bottom is in this pack, to be kept as a base: not when
-        // kept already, nor when it is another pack's, found by its id.
+        // Where the whole object at the bottom is, to be kept as a base: not when kept already.
         long? wholeAt = null;
         while (true)
         {
@@ -241,21 +257,19 @@ sealed class PackFile : IDisposable
                 break;
             }
 
+            if (entry.Type is not (offsetDelta or referenceDelta))
+            {
+                throw new GitFilesException($"Pack {packPath} has an entry of no type known");
+            }
+
             deltas ??= [];
+            if (deltas.Count >= longestChain)
+            {
+                throw new GitFilesException($"Pack {packPath} has a chain of deltas that goes round");
+            }
+
             deltas.Add((current, entry.DataStart, entry.Size));
-            if (entry.Type == offsetDelta)
-            {
-                current = entry.BaseOffset;
-                continue;
-            }
-
-            if (entry.Type == referenceDelta)
-            {
-                whole = database.Read(entry.BaseId);
-                break;
-            }
-
-            throw new GitFilesException($"Pack {packPath} has an entry of no type known");
+            current = BaseOf(entry);
         }
 
         if (deltas == null)
@@ -316,20 +330,46 @@ sealed class PackFile : IDisposable
 
     GitObjectType BaseType((int Type, long Size, long DataStart, long BaseOffset, ObjectId BaseId) entry)
     {
-        while (true)
+        for (var followed = 0; ; followed++)
         {
             if (entry.Type is >= 1 and <= 4)
             {
                 return (GitObjectType)entry.Type;
             }
 
-            if (entry.Type == referenceDelta)
+            // Of no type known, its base was taken as at the pack's start, whose PACK is one
+            // of no type known too, so it went round for ever.
+            if (entry.Type is not (offsetDelta or referenceDelta))
             {
-                return database.TryReadHeader(entry.BaseId)?.Type ?? throw new GitFilesException($"Object {entry.BaseId} is missing");
+                throw new GitFilesException($"Pack {packPath} has an entry of no type known");
             }
 
-            entry = Entry(entry.BaseOffset);
+            if (followed >= longestChain)
+            {
+                throw new GitFilesException($"Pack {packPath} has a chain of deltas that goes round");
+            }
+
+            entry = Entry(BaseOf(entry));
         }
+    }
+
+    // Where a delta's base is: so far back, or by its id, which, as git's get_delta_base says,
+    // must be in the same pack, as git never leaves a pack whose bases are elsewhere. Read from
+    // wherever it was found, a delta whose base was in another pack, itself a delta on one back
+    // in the first, was read each inside the last till the stack ran out.
+    long BaseOf((int Type, long Size, long DataStart, long BaseOffset, ObjectId BaseId) entry)
+    {
+        if (entry.Type == offsetDelta)
+        {
+            return entry.BaseOffset;
+        }
+
+        if (!TryFind(entry.BaseId, out var offset))
+        {
+            throw new GitFilesException($"Pack {packPath} has a delta whose base, {entry.BaseId}, isn't in it");
+        }
+
+        return offset;
     }
 
     public void Dispose()

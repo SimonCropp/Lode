@@ -133,7 +133,17 @@ sealed class IndexFile
             throw new GitFilesException($"Index version {version} isn't read here");
         }
 
-        var count = (int)BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+        // Each entry is 62 bytes before its path at least, so a count the file hasn't room for
+        // is corrupt. Taken as it was, it sized the entries before any was read, and one past
+        // what an array can hold ran out of memory, which isn't taken as a reason to leave the
+        // repository to git, so the read failed.
+        var given = BinaryPrimitives.ReadUInt32BigEndian(span[8..]);
+        if (given > (uint)(span.Length - 12 - ObjectId.Length) / 62)
+        {
+            throw new GitFilesException("The index is corrupt");
+        }
+
+        var count = (int)given;
         var entries = new Entry[count];
         var end = span.Length - ObjectId.Length;
         var position = 12;

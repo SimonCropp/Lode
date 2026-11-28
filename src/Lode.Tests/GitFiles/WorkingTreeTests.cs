@@ -594,13 +594,17 @@ public class WorkingTreeTests
             WorkingTree.Hashing -= Counted;
     }
 
-    // An index cut short, of a version not known, flagged extended in version 2, a path without
-    // its end, or a version 4 path dropping more than the one before had, is refused.
+    // An index cut short, of a version not known, with more entries than it holds, or more than
+    // it has room for, as many as an int goes to, flagged extended in version 2, a path without
+    // its end, or a version 4 path dropping more than the one before had, is refused. The
+    // count was taken as it was, and that many entries made ready before any was read, which
+    // ran out of memory.
     [Test]
     [Arguments("short")]
     [Arguments("signature")]
     [Arguments("version")]
     [Arguments("count")]
+    [Arguments("huge")]
     [Arguments("extended")]
     [Arguments("unended")]
     [Arguments("drop")]
@@ -629,6 +633,9 @@ public class WorkingTreeTests
                 break;
             case "count":
                 bytes[11] = 200;
+                break;
+            case "huge":
+                BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(8), int.MaxValue);
                 break;
             case "extended":
                 bytes[12 + 60] |= 0x40;
