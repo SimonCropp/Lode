@@ -78,6 +78,25 @@ public class DiffRowsTests
         await Assert.That(DiffRows.Changed("aaa", "aaaa")).IsEqualTo((null, new ChangedRange(3, 1)));
     }
 
+    // What draws as one character is changed whole, rather than split where the two lines
+    // differ: an emoji, two characters, changed for one sharing the first of them, or the second;
+    // a letter with a mark on it; and an emoji of several, joined.
+    [Test]
+    public async Task ChangedWholeCharacters()
+    {
+        // 😀 to 😃, and 😀 to 𐘀, which shares the second.
+        await Assert.That(DiffRows.Changed("'\U0001F600'", "'\U0001F603'")).IsEqualTo((new ChangedRange(1, 2), new ChangedRange(1, 2)));
+        await Assert.That(DiffRows.Changed("a\U0001F600", "a\U00010600")).IsEqualTo((new ChangedRange(1, 2), new ChangedRange(1, 2)));
+
+        // An e with an acute accent on it, to an e, and to an a with one.
+        await Assert.That(DiffRows.Changed("cafe\u0301", "cafe")).IsEqualTo((new ChangedRange(3, 2), new ChangedRange(3, 1)));
+        await Assert.That(DiffRows.Changed("e\u0301x", "a\u0301x")).IsEqualTo((new ChangedRange(0, 2), new ChangedRange(0, 2)));
+
+        // A family of a man, a woman and a girl, to one with a boy.
+        await Assert.That(DiffRows.Changed("\U0001F468\u200D\U0001F469\u200D\U0001F467!", "\U0001F468\u200D\U0001F469\u200D\U0001F466!"))
+            .IsEqualTo((new ChangedRange(0, 8), new ChangedRange(0, 8)));
+    }
+
     // Lines too long have nothing shown changed.
     [Test]
     public async Task LongLines()

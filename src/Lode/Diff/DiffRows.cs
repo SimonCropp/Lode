@@ -145,7 +145,8 @@ static class DiffRows
     /// <summary>
     /// The part of each line that differs from the other: what is left once the start they share
     /// and the end they share are taken off, as GitHub Desktop's relativeChanges in
-    /// changed-range.ts. Lines that are the same have nothing changed.
+    /// changed-range.ts, each changed whole what draws as one character. Lines that are the same
+    /// have nothing changed.
     /// </summary>
     public static (ChangedRange? Before, ChangedRange? After) Changed(CharSpan before, CharSpan after)
     {
@@ -157,11 +158,34 @@ static class DiffRows
             prefix++;
         }
 
+        // Compared a character at a time, the start shared can end part way through what draws
+        // as one: in the middle of an emoji, two characters, when one changed to another sharing
+        // the first of them, or between a letter and the accent on it, each half then drawn on
+        // its own, as a box. Taken back to before it. What comes before is the same in both, so
+        // where it can be split is too, but for where they differ.
+        prefix = Math.Min(SplitAtOrBefore(before, prefix), SplitAtOrBefore(after, prefix));
+
         var suffix = 0;
         while (suffix < max - prefix &&
                before[before.Length - 1 - suffix] == after[after.Length - 1 - suffix])
         {
             suffix++;
+        }
+
+        // And the end shared taken on to after it. Whether the end shared can be split from what
+        // is before it can hang on what is before that, as in a run of flags, so the shorter is
+        // tried again in the other until both can be.
+        while (suffix > 0)
+        {
+            var shared = Math.Min(
+                before.Length - SplitAtOrAfter(before, before.Length - suffix),
+                after.Length - SplitAtOrAfter(after, after.Length - suffix));
+            if (shared == suffix)
+            {
+                break;
+            }
+
+            suffix = shared;
         }
 
         var beforeLength = before.Length - prefix - suffix;
@@ -180,6 +204,56 @@ static class DiffRows
 
         return (beforeRange, afterRange);
     }
+
+    // The last place at or before index a line can be split without splitting what draws as one
+    // character: a surrogate pair, a letter and the marks on it, an emoji of several joined.
+    static int SplitAtOrBefore(CharSpan line, int index)
+    {
+        if (SplitsPlainly(line, index))
+        {
+            return index;
+        }
+
+        var at = 0;
+        while (true)
+        {
+            var next = at + StringInfo.GetNextTextElementLength(line[at..]);
+            if (next > index)
+            {
+                return at;
+            }
+
+            at = next;
+        }
+    }
+
+    // The first place at or after index a line can be split, likewise.
+    static int SplitAtOrAfter(CharSpan line, int index)
+    {
+        if (SplitsPlainly(line, index))
+        {
+            return index;
+        }
+
+        var at = 0;
+        while (at < index)
+        {
+            at += StringInfo.GetNextTextElementLength(line[at..]);
+        }
+
+        return at;
+    }
+
+    // Whether a line can be split at index without going through it from its start, as where
+    // one character draws starts and ends can hang on those before it: at either end, and
+    // between two characters of ASCII, as most lines are, but a carriage return and the line
+    // feed after it.
+    static bool SplitsPlainly(CharSpan line, int index) =>
+        index <= 0 ||
+        index >= line.Length ||
+        (char.IsAscii(line[index - 1]) &&
+         char.IsAscii(line[index]) &&
+         !(line[index - 1] == '\r' && line[index] == '\n'));
 
     /// <summary>
     /// How many columns the widest line of <paramref name="hunks"/> takes, for how far the diff
