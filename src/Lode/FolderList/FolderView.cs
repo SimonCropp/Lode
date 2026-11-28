@@ -57,7 +57,7 @@ sealed class FolderView : UserControl
     List<string> history = [];
     int historyIndex = -1;
 
-    FolderWatcher? watcher;
+    IFolderWatch? watcher;
 
     // Watches the folder's parent for the folder itself: deleted, sent to the Recycle Bin,
     // renamed or moved. The folder's own watch only sees what is in it, and goes on watching one
@@ -2105,6 +2105,7 @@ sealed class FolderView : UserControl
         var freeSpace = places.FreeSpace;
         var watching = watcher;
         var watchingParent = parentWatcher;
+        var watchingSoon = watchStarting;
         // A zip holds no repositories to show the state of.
         string? codeFolder = null;
         if (settings.IsCode(path) &&
@@ -2131,11 +2132,18 @@ sealed class FolderView : UserControl
         // Sorted there too, which leaves the UI thread only the rows to make. The drive's free
         // space is read there as well, as asking a drive mapped to a share waits on the network.
         // So are which folders are repositories, and the files promoted to a repository's root.
-        var (loaded, late, free, failure, nearest, foundRepos, containing, promotes) = await Task.Run(() =>
+        var (loaded, late, free, failure, nearest, foundRepos, containing, promotes) = await Task.Run(async () =>
         {
             var space = FreeSpaceOf(path, freeSpace);
-            // A watch that failed, the folder deleted and made again say, watches again
-            // before the read, so nothing after the read is missed. F5 mends one too.
+
+            // A watch still starting on the network has started before the read, and a watch
+            // that failed, the folder deleted and made again say, watches again, so nothing
+            // after the read is missed. F5 mends one too.
+            if (watchingSoon != null)
+            {
+                await watchingSoon;
+            }
+
             watching?.Revive();
             watchingParent?.Revive();
             try
@@ -5947,6 +5955,30 @@ sealed class FolderView : UserControl
         FileOperations.Drop(Owner, args, DropDestination(args), rightDrag);
     }
 
+    /// <summary>
+    /// Starts the watch on the folder open, given what to call for a change. Replaced in tests,
+    /// to watch somewhere taken to be on the network without a share.
+    /// </summary>
+    internal Func<string, Action, IFolderWatch> StartWatch = (path, changed) =>
+        new FolderWatcher(
+            path,
+            NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            changed);
+
+    /// <summary>
+    /// The watch on the folder open, once it has started. For tests.
+    /// </summary>
+    internal IFolderWatch? Watcher => watcher;
+
+    // The watch on a folder on the network being started off the UI thread, which a read of the
+    // folder waits for, so nothing after the read is missed, and which start that is: one
+    // overtaken, the view gone somewhere else meanwhile, is let go of once it has started.
+    Task<IFolderWatch?>? watchStarting;
+    int watchGeneration;
+
+    // The watch is on the network, where letting go of it waits on the network too.
+    bool watchingRemotely;
+
     void Watch()
     {
         Unwatch();
@@ -5964,25 +5996,30 @@ sealed class FolderView : UserControl
             return;
         }
 
+        // Starting a watch on the network waits on it, there and back to ask whether the folder
+        // is there, to open it and to ask to hear of changes, with every window waiting, and for
+        // as long as the network takes to give up on a server that has stopped answering. So it
+        // is started off the UI thread. Nor is the folder above watched there: reading the
+        // folder still finds that it has gone.
+        if (IsRemote(CurrentPath))
+        {
+            WatchRemotely(CurrentPath);
+            return;
+        }
+
         try
         {
-            watcher = new(
-                CurrentPath,
-                NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                changes.Raise);
+            watcher = StartWatch(CurrentPath, changes.Raise);
         }
         catch (Exception)
         {
-            // Some locations (certain network shares) can't be watched; F5 still works.
+            // Some locations can't be watched; F5 still works.
             watcher = null;
         }
 
-        // A drive or a share has no folder above it to watch. Nor is one on the network watched:
-        // starting a watch there waits on the network, on the UI thread, and reading the folder
-        // still finds that it has gone.
+        // A drive or a share has no folder above it to watch.
         var parent = Path.GetDirectoryName(CurrentPath);
-        if (parent == null ||
-            IsRemote(CurrentPath))
+        if (parent == null)
         {
             return;
         }
@@ -6032,13 +6069,84 @@ sealed class FolderView : UserControl
         }
     }
 
+    // Starts the folder's watch off the UI thread, and keeps it once it has started, unless the
+    // view has gone somewhere else meanwhile, or closed. What it hears before then, it doesn't
+    // pass on once overtaken.
+    void WatchRemotely(string path)
+    {
+        var generation = watchGeneration;
+        var start = StartWatch;
+        Action changed = () =>
+        {
+            if (Volatile.Read(ref watchGeneration) == generation)
+            {
+                changes.Raise();
+            }
+        };
+        var starting = Task.Run(() =>
+        {
+            try
+            {
+                return start(path, changed);
+            }
+            catch (Exception)
+            {
+                // Some locations can't be watched; F5 still works.
+                return null;
+            }
+        });
+        watchStarting = starting;
+        _ = KeepWatch(starting, generation);
+    }
+
+    async Task KeepWatch(Task<IFolderWatch?> starting, int generation)
+    {
+        var started = await starting;
+        if (started == null)
+        {
+            return;
+        }
+
+        if (generation != watchGeneration ||
+            IsDisposed)
+        {
+            LetGoRemotely(started);
+            return;
+        }
+
+        watcher = started;
+        watchingRemotely = true;
+    }
+
+    static void LetGoRemotely(IFolderWatch watch) =>
+        _ = Task.Run(watch.Dispose);
+
     void Unwatch()
     {
-        watcher?.Dispose();
-        watcher = null;
+        StopWatchingFolder();
         parentWatcher?.Dispose();
         parentWatcher = null;
         StopWatchingPromoted();
+    }
+
+    // Lets go of the folder's own watch, and of one still starting once it has: one on the
+    // network off the UI thread.
+    void StopWatchingFolder()
+    {
+        Interlocked.Increment(ref watchGeneration);
+        watchStarting = null;
+        if (watcher != null &&
+            watchingRemotely)
+        {
+            LetGoRemotely(watcher);
+        }
+        else
+        {
+            watcher?.Dispose();
+        }
+
+        watcher = null;
+        watchingRemotely = false;
     }
 
     // A promoted file's date and size, or one made or deleted, is a change the folder's own watch
@@ -6358,7 +6466,7 @@ sealed class FolderView : UserControl
             gitCancel?.Cancel();
             changes.Dispose();
             parentChanges.Dispose();
-            watcher?.Dispose();
+            StopWatchingFolder();
             parentWatcher?.Dispose();
             promotedWatcher?.Dispose();
             marquee.Dispose();

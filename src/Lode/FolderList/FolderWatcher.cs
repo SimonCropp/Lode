@@ -1,11 +1,20 @@
 /// <summary>
+/// A watch on a folder: a <see cref="FolderWatcher"/>, or what stands in for one in tests.
+/// </summary>
+interface IFolderWatch : IDisposable
+{
+    /// <inheritdoc cref="FolderWatcher.Revive"/>
+    void Revive();
+}
+
+/// <summary>
 /// Watches a folder for changes, and lets go of it while its drive is being removed, locked or
 /// dismounted, so Lode never stops "Safely remove" with "this device is currently in use". When
 /// that is called off it watches again and reports a change, since some may have been missed.
 /// It lets go the same way while Lode moves, renames or deletes the folder, or one above it:
 /// see <see cref="LetGo"/>. Throws, as FileSystemWatcher does, where the folder can't be watched.
 /// </summary>
-sealed class FolderWatcher : IDisposable
+sealed class FolderWatcher : IFolderWatch
 {
     // Every folder watcher there is, for LetGo to find those beneath what is being moved.
     static Lock everyGate = new();

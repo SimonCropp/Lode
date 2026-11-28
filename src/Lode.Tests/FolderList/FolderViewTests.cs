@@ -1887,6 +1887,225 @@ public class FolderViewTests
         await Assert.That(Names(view)).IsEmpty();
     }
 
+    // Starting a watch on the network waits on it, there and back several times, and for as long
+    // as the network takes to give up on a server that has stopped answering. A folder there has
+    // its watch started off the UI thread, and kept once it has.
+    [Test]
+    public async Task AFolderOnTheNetworkIsWatchedFromOffTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var source = fixture.At("Source");
+        view.IsRemote = _ => Locations.Same(_, source);
+        using var release = new ManualResetEventSlim();
+        var startedOn = -1;
+        var remote = new RecordedWatch();
+        var start = view.StartWatch;
+        view.StartWatch = (path, changed) =>
+        {
+            if (!Locations.Same(path, source))
+            {
+                return start(path, changed);
+            }
+
+            Volatile.Write(ref startedOn, Environment.CurrentManagedThreadId);
+            release.Wait(TimeSpan.FromSeconds(5));
+            return remote;
+        };
+        try
+        {
+            view.Navigate(source);
+            await Pump.Until(() => Volatile.Read(ref startedOn) != -1);
+            var whileStarting = view.Watcher;
+            release.Set();
+            await Pump.Loaded(view);
+            await Pump.Until(() => view.Watcher == remote);
+
+            await Assert.That(startedOn).IsNotEqualTo(uiThread);
+            await Assert.That(whileStarting).IsNull();
+            await Assert.That(view.CurrentPath).IsEqualTo(source);
+            await Assert.That(Names(view)).Contains("main.aleph");
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    // Gone somewhere else before the watch on the network has started, the view lets go of it
+    // once it has, off the UI thread, rather than keeping a watch on where it no longer is.
+    [Test]
+    public async Task AWatchOnTheNetworkStartedAfterGoingElsewhereIsLetGo()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var source = fixture.At("Source");
+        view.IsRemote = _ => Locations.Same(_, source);
+        using var release = new ManualResetEventSlim();
+        var starting = false;
+        var remote = new RecordedWatch();
+        var start = view.StartWatch;
+        view.StartWatch = (path, changed) =>
+        {
+            if (!Locations.Same(path, source))
+            {
+                return start(path, changed);
+            }
+
+            Volatile.Write(ref starting, true);
+            release.Wait(TimeSpan.FromSeconds(5));
+            return remote;
+        };
+        try
+        {
+            view.Navigate(source);
+            await Pump.Until(() => Volatile.Read(ref starting));
+            view.Navigate(fixture.At("Docs"));
+            await Pump.Loaded(view);
+            release.Set();
+            await Pump.Until(() => remote.DisposedOn != null);
+            await Pump.For(TimeSpan.FromMilliseconds(100));
+
+            await Assert.That(remote.DisposedOn).IsNotEqualTo(uiThread);
+            await Assert.That(view.Watcher).IsNotNull();
+            await Assert.That(view.Watcher).IsNotEqualTo(remote);
+            await Assert.That(view.CurrentPath).IsEqualTo(fixture.At("Docs"));
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    // Letting go of a watch on the network waits on it too, so it is done off the UI thread:
+    // going somewhere else, and closing the view.
+    [Test]
+    public async Task AWatchOnTheNetworkIsLetGoOfOffTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        var view = await Open(fixture.Root);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var source = fixture.At("Source");
+        view.IsRemote = _ => Locations.Same(_, source);
+        var made = new List<RecordedWatch>();
+        var start = view.StartWatch;
+        view.StartWatch = (path, changed) =>
+        {
+            if (!Locations.Same(path, source))
+            {
+                return start(path, changed);
+            }
+
+            var watch = new RecordedWatch();
+            lock (made)
+            {
+                made.Add(watch);
+            }
+
+            return watch;
+        };
+        RecordedWatch Made(int index)
+        {
+            lock (made)
+            {
+                return made[index];
+            }
+        }
+
+        int MadeCount()
+        {
+            lock (made)
+            {
+                return made.Count;
+            }
+        }
+
+        try
+        {
+            view.Navigate(source);
+            await Pump.Loaded(view);
+            await Pump.Until(() => MadeCount() == 1 && view.Watcher == Made(0));
+            view.Navigate(fixture.At("Docs"));
+            await Pump.Until(() => Made(0).DisposedOn != null);
+            view.Navigate(source);
+            await Pump.Loaded(view);
+            await Pump.Until(() => MadeCount() == 2 && view.Watcher == Made(1));
+            view.Dispose();
+            await Pump.Until(() => Made(1).DisposedOn != null);
+
+            await Assert.That(Made(0).DisposedOn).IsNotEqualTo(uiThread);
+            await Assert.That(Made(1).DisposedOn).IsNotEqualTo(uiThread);
+        }
+        finally
+        {
+            view.Dispose();
+        }
+    }
+
+    // A folder on this machine is watched as it always was, at once, and let go of at once.
+    [Test]
+    public async Task AFolderHereIsWatchedAtOnce()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var startedOn = -1;
+        RecordedWatch? docs = null;
+        var start = view.StartWatch;
+        view.StartWatch = (path, changed) =>
+        {
+            startedOn = Environment.CurrentManagedThreadId;
+            var watch = new RecordedWatch(start(path, changed));
+            if (Locations.Same(path, fixture.At("Docs")))
+            {
+                docs = watch;
+            }
+
+            return watch;
+        };
+
+        view.Navigate(fixture.At("Docs"));
+        var atOnce = view.Watcher;
+        var startedOnAtOnce = startedOn;
+        await Pump.Loaded(view);
+        await File.WriteAllBytesAsync(fixture.At("Docs", "arrived.aleph"), new byte[10]);
+        await Pump.Until(() => Names(view).Contains("arrived.aleph"));
+        view.Navigate(fixture.At("Source"));
+        var disposedOnAtOnce = docs?.DisposedOn;
+
+        await Assert.That(atOnce).IsNotNull();
+        await Assert.That(atOnce).IsEqualTo(docs);
+        await Assert.That(startedOnAtOnce).IsEqualTo(uiThread);
+        await Assert.That(disposedOnAtOnce).IsEqualTo(uiThread);
+    }
+
+    // A watch that notes which thread let go of it, standing in for one on the network, or
+    // around a real one, which it passes everything on to.
+    sealed class RecordedWatch(IFolderWatch? inner = null) : IFolderWatch
+    {
+        int disposedOn = -1;
+
+        public int? DisposedOn
+        {
+            get
+            {
+                var thread = Volatile.Read(ref disposedOn);
+                return thread < 0 ? null : thread;
+            }
+        }
+
+        public void Revive() =>
+            inner?.Revive();
+
+        public void Dispose()
+        {
+            Volatile.Write(ref disposedOn, Environment.CurrentManagedThreadId);
+            inner?.Dispose();
+        }
+    }
+
     // A folder slow to read is left a while after each read before a change has it read
     // again, rather than being read over and over while something in it keeps changing.
     [Test]
