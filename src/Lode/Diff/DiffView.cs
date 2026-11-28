@@ -27,6 +27,18 @@ sealed class DiffView : UserControl
         Dock = DockStyle.Fill
     };
 
+    DiffFindBar findBar = new()
+    {
+        Visible = false
+    };
+
+    // Whether the find bar is open, which it shows only over lines, not over a picture or what
+    // is said instead.
+    bool finding;
+
+    // What shows beneath the header: the lines, the pictures, or what is said instead.
+    Control? showing;
+
     DiffSource? source;
     FileDiff? shown;
     int version;
@@ -99,10 +111,17 @@ sealed class DiffView : UserControl
         message.ButtonClicked += OnMessageButton;
         canvas.PicksChanged += OnCanvasPicked;
         canvas.DiscardRequested += OnDiscardRequested;
+        canvas.MatchesChanged += () => findBar.ShowCount(canvas.CurrentMatch, canvas.Matches.Count);
+        findBar.Changed += () => canvas.Find(findBar.FindText, findBar.MatchCase);
+        findBar.StepRequested += canvas.FindNext;
+        findBar.CloseRequested += CloseFind;
         CommitDrafts.PicksChanged += OnDraftPicked;
         Controls.Add(canvas);
         Controls.Add(images);
         Controls.Add(message);
+
+        // Docked under the header, which is docked first.
+        Controls.Add(findBar);
         Controls.Add(header);
         header.Visible = false;
         message.Show("", null);
@@ -389,9 +408,67 @@ sealed class DiffView : UserControl
 
     void ShowOnly(Control control)
     {
+        showing = control;
         canvas.Visible = control == canvas;
         images.Visible = control == images;
         message.Visible = control == message;
+        findBar.Visible = finding && control == canvas;
+    }
+
+    bool LinesShown => showing == canvas;
+
+    internal DiffFindBar FindBar => findBar;
+
+    /// <summary>
+    /// Opens the find bar over the lines, the focus in it, what to find selected to type over,
+    /// or, with a part of a line selected, that, and finds it.
+    /// </summary>
+    internal void OpenFind()
+    {
+        if (!LinesShown)
+        {
+            return;
+        }
+
+        var selected = canvas.SelectedText();
+        if (selected.Length is > 0 and <= 200 &&
+            !selected.Contains('\n'))
+        {
+            findBar.Box.Text = selected;
+        }
+
+        finding = true;
+        findBar.Visible = true;
+        findBar.FocusBox();
+        canvas.Find(findBar.FindText, findBar.MatchCase);
+    }
+
+    /// <summary>
+    /// Closes the find bar, nothing marked any more, the focus back on the lines.
+    /// </summary>
+    internal void CloseFind()
+    {
+        finding = false;
+        findBar.Visible = false;
+        canvas.StopFinding();
+        if (LinesShown)
+        {
+            canvas.Focus();
+        }
+    }
+
+    // F3, or Shift+F3: the next match, or the one before; the bar opened first should it be
+    // closed, or have nothing to find.
+    void FindNext(bool forward)
+    {
+        if (!finding ||
+            findBar.FindText.Length == 0)
+        {
+            OpenFind();
+            return;
+        }
+
+        canvas.FindNext(forward);
     }
 
     void OnMessageButton()
@@ -555,13 +632,26 @@ sealed class DiffView : UserControl
         canvas.Split = split;
     }
 
+    // The diff's own keys, wherever in it the focus is, before the window's: Ctrl+F and F3 find
+    // in the lines rather than going to the folder's search box, and Escape closes the find bar
+    // before it puts the diff away.
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        if (keyData == Keys.Escape &&
-            ShowsClose)
+        switch (keyData)
         {
-            CloseRequested?.Invoke();
-            return true;
+            case Keys.Control | Keys.F when LinesShown:
+                OpenFind();
+                return true;
+            case Keys.F3 when LinesShown:
+            case Keys.Shift | Keys.F3 when LinesShown:
+                FindNext(keyData == Keys.F3);
+                return true;
+            case Keys.Escape when finding && LinesShown:
+                CloseFind();
+                return true;
+            case Keys.Escape when ShowsClose:
+                CloseRequested?.Invoke();
+                return true;
         }
 
         return base.ProcessCmdKey(ref msg, keyData);

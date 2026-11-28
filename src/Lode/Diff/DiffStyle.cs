@@ -78,6 +78,18 @@ static class DiffStyle
     public static Color Selected => Pick(Rgb(0x0366D6), Rgb(0x2188FF), SystemColors.Highlight);
 
     /// <summary>
+    /// A match of what the find bar finds, Primer's yellows, as github.com marks what a search
+    /// found; with high contrast on, the highlight, which outlines it rather than filling it, so
+    /// the text keeps the colour it has there.
+    /// </summary>
+    public static Color FindMatch => Pick(Rgb(0xFFF5B1), Rgb(0x5C4813), SystemColors.Highlight);
+
+    /// <summary>
+    /// The match the find bar went to, a stronger yellow.
+    /// </summary>
+    public static Color FindCurrent => Pick(Rgb(0xFFD33D), Rgb(0x9E6A03), SystemColors.Highlight);
+
+    /// <summary>
     /// Code's colours, as github.com draws it, Primer's pl- colours light and dark, as GitHub
     /// Desktop's diff has them: keywords red, strings navy, comments grey, constants blue, tags
     /// green, attributes purple, variables orange. Plain, and with high contrast on, the

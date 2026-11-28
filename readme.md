@@ -267,6 +267,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
      * <a id="pick-lines"></a>**Pick lines to commit**: in an uncommitted change, click a line's numbers, or drag down them, to leave it out of the commit or put it back; the strip beside the numbers does a run of changes at once. The file's tick shows a dash while only some of its lines go in, and Commit takes only those: the rest stay changed, and whatever else was staged stays staged. Lines aren't picked with whitespace hidden, part way through a merge, or in a renamed file, which goes in whole. Should the file change after its lines were picked, nothing is committed, and it is ticked whole again.
      * <a id="discard-lines"></a>**Discard lines**: in an uncommitted change, right-click a line added or deleted for **Discard line**, or one of the lines selected to discard them all, or anywhere in a hunk for **Discard hunk**, as GitHub Desktop has them: a line added goes, and a line deleted comes back, in the file on disk alone, whatever is staged staying staged. It asks first, and the file as it is goes to the Recycle Bin before, so it can be got back. Lines left out of the commit stay left out. Not offered with whitespace hidden, part way through a merge, or in a file new, deleted, renamed or in conflict, which **Discard changes** in Changes puts back whole. Should the file have changed since its diff showed, nothing is discarded.
      * Rows clicked copy with Ctrl+C.
+     * <a id="find-in-diff"></a>**Find**: Ctrl+F with the focus in the diff opens a find bar under its header, rather than going to the folder's search box: what is typed is marked wherever it is in the lines shown, as they are expanded, though not in the lines of the file between hunks until they are shown, and the first match from where it was is gone to. Enter or F3 goes to the next, Shift+Enter or Shift+F3 to the one before, round from the last to the first, each scrolled into view, sideways too along a long line; **Aa**, or Alt+C, matches case. Escape closes it, the focus back on the lines; with a part of a line selected, Ctrl+F finds that.
 
      The Diff tab, Changes beside it:
 
@@ -338,6 +339,8 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+1 to Ctrl+8, Ctrl+9          | That tab, the last tab        |
 | Ctrl+L, Alt+D, F4                 | Address bar                   |
 | Ctrl+F, F3                        | Search box                    |
+| Ctrl+F (diff)                     | Find in the diff              |
+| F3, Shift+F3 (diff)               | Next match, previous match    |
 | Ctrl+Shift+F                      | Find in Files                 |
 | Ctrl+Enter (search box)           | Search inside the files       |
 | F4, Shift+F4 (Find Results)       | Next match, previous match    |

@@ -252,6 +252,118 @@ public class DiffPlacementTests
         }
     }
 
+    // Ctrl+F with the focus in the diff over the folder list opens the diff's find bar, the
+    // focus in it, rather than going to the folder's search box as the window's Ctrl+F does, and
+    // F3 there goes to the next match rather than to the search box too. Escape closes the bar,
+    // the focus back in the diff, which stays till Escape is pressed again. Outside the diff,
+    // Ctrl+F is still the search box's.
+    [Test]
+    public async Task CtrlFInTheDiffFindsInIt()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Folder;
+        using var form = await Show(fixture.Root, settings);
+        await Pick(form, 0);
+        var host = form.DiffHost;
+        await Pump.Until(() => host.Overlay?.Source != null);
+        var view = host.Overlay!;
+        await Pump.Until(() => view.Reading.IsCompleted);
+        var search = Descendants(form).OfType<TextBox>().Single(_ => _.Name == "filter");
+
+        view.Canvas.Focus();
+        await Assert.That(Keystroke.Press(view.Canvas, Keys.Control | Keys.F)).IsTrue();
+        await Assert.That(view.FindBar.Visible).IsTrue();
+        await Assert.That(view.FindBar.Box.Focused).IsTrue();
+        await Assert.That(search.Focused).IsFalse();
+
+        view.FindBar.Box.Text = "previous";
+        view.Canvas.Focus();
+        Keystroke.Press(view.Canvas, Keys.F3);
+        await Assert.That(view.Canvas.CurrentMatch).IsEqualTo(1);
+        await Assert.That(view.Canvas.Focused).IsTrue();
+
+        view.FindBar.FocusBox();
+        Keystroke.Press(view.FindBar.Box, Keys.Escape);
+        await Assert.That(view.FindBar.Visible).IsFalse();
+        await Assert.That(view.Canvas.Focused).IsTrue();
+        await Assert.That(host.Overlaid).IsTrue();
+
+        var list = form.GitPanes.ChangesPane.List;
+        list.Focus();
+        Keystroke.Press(list, Keys.Control | Keys.F);
+        await Assert.That(search.Focused).IsTrue();
+        await Assert.That(view.FindBar.Visible).IsFalse();
+    }
+
+    // And in the Diff tab, where the folder's search box is greyed, having no folder.
+    [Test]
+    public async Task CtrlFInTheDiffTabFindsInIt()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Tab;
+        using var form = await Show(fixture.Root, settings);
+        await Pick(form, 0);
+        var host = form.DiffHost;
+        await Pump.Until(() => host.TabView?.Source != null);
+        var view = host.TabView!;
+        await Pump.Until(() => view.Reading.IsCompleted);
+
+        view.Canvas.Focus();
+        await Assert.That(Keystroke.Press(view.Canvas, Keys.Control | Keys.F)).IsTrue();
+        await Assert.That(view.FindBar.Visible).IsTrue();
+        await Assert.That(view.FindBar.Box.Focused).IsTrue();
+
+        Keystroke.Press(view.FindBar.Box, Keys.Escape);
+        await Assert.That(view.FindBar.Visible).IsFalse();
+        await Assert.That(view.Canvas.Focused).IsTrue();
+        await Assert.That(host.TabShowing).IsTrue();
+    }
+
+    // And in the diff window, which Escape closes only once the find bar is closed.
+    [Test]
+    public async Task CtrlFInTheDiffWindowFindsInIt()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Window;
+        using var form = await Show(fixture.Root, settings);
+        var host = form.DiffHost;
+        host.Request(new(fixture.Root, new(fixture.Root, PaneStubs.Files[3]), PaneStubs.Files, null, 1, Open: true));
+        var window = host.Window!;
+        try
+        {
+            var view = window.View;
+            await Pump.Until(() => view.Source != null && view.Reading.IsCompleted);
+
+            view.Canvas.Focus();
+            await Assert.That(Keystroke.Press(view.Canvas, Keys.Control | Keys.F)).IsTrue();
+            await Assert.That(view.FindBar.Visible).IsTrue();
+            await Assert.That(view.FindBar.Box.Focused).IsTrue();
+
+            Keystroke.Press(view.FindBar.Box, Keys.Escape);
+            await Assert.That(view.FindBar.Visible).IsFalse();
+            await Assert.That(view.Canvas.Focused).IsTrue();
+            await Assert.That(window.Visible).IsTrue();
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    static IEnumerable<Control> Descendants(Control control) =>
+        control.Controls
+            .Cast<Control>()
+            .SelectMany(_ => Descendants(_).Prepend(_));
+
     // In the text editor: nothing of Lode's own shows when a file is picked.
     [Test]
     public async Task Editor()

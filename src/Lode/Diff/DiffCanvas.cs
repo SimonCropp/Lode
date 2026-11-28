@@ -9,7 +9,7 @@
 /// height, and long lines scroll sideways, so only the rows showing are drawn, however long the
 /// diff, and of a long line only what shows of it. The text is selected as an editor's is, from a
 /// character to another, by dragging, a word by a double-click, a line by a third click, and
-/// copied with Ctrl+C.
+/// copied with Ctrl+C. What the find bar over it finds is marked, and gone to match by match.
 /// </summary>
 sealed class DiffCanvas : Control
 {
@@ -102,6 +102,13 @@ sealed class DiffCanvas : Control
     int wheelRows;
     int wheelCharacters;
 
+    // What the find bar finds, and how, every match of it in the rows shown, in order, and the
+    // one it went to, -1 for none yet.
+    string finding = "";
+    bool findMatchCase;
+    List<DiffMatch> matches = [];
+    int currentMatch = -1;
+
     // Numbers dragged down to pick lines: from where, which side, picking or not, and what was
     // picked before.
     bool dragging;
@@ -139,6 +146,18 @@ sealed class DiffCanvas : Control
 
     // The characters of a row's line selected, and whether the newline after them is.
     readonly record struct Selected(int Start, int End, bool Newline);
+
+    /// <summary>
+    /// A match of what the find bar finds: the row it is on, the side, side by side, and where in
+    /// its line it starts and ends. A line both sides have is matched once, on the left, and
+    /// shows on both.
+    /// </summary>
+    internal readonly record struct DiffMatch(int Row, bool Right, int Start, int End);
+
+    /// <summary>
+    /// The matches found changed, or the one gone to did, for the find bar to say.
+    /// </summary>
+    public event Action? MatchesChanged;
 
     /// <summary>
     /// The lines picked to commit changed, by a click or drag here.
@@ -493,15 +512,284 @@ sealed class DiffCanvas : Control
     void BuildRows() =>
         UseRows(DiffRows.Build(hunks, split), DiffRows.Widest(hunks));
 
-    // The rows shown, which the selection was a place in.
+    // The rows shown, which the selection was a place in, and the matches found. The match gone
+    // to is still, where it still shows, the same line's.
     void UseRows(List<DiffRow> shownRows, int widestLine)
     {
         anchor = null;
         StopSelecting();
+        DiffLine? currentLine = null;
+        var currentStart = 0;
+        if (currentMatch >= 0)
+        {
+            var current = matches[currentMatch];
+            currentLine = LineOf(current);
+            currentStart = current.Start;
+        }
+
         rows = shownRows;
         widest = widestLine;
+        if (finding.Length > 0)
+        {
+            FindMatches();
+            currentMatch = matches.FindIndex(_ => _.Start == currentStart && ReferenceEquals(LineOf(_), currentLine));
+            MatchesChanged?.Invoke();
+        }
+
         Arrange();
         Invalidate();
+    }
+
+    /// <summary>
+    /// The matches of what the find bar finds in the rows shown, in order. For tests and the bar.
+    /// </summary>
+    internal IReadOnlyList<DiffMatch> Matches => matches;
+
+    /// <summary>
+    /// Which of <see cref="Matches"/> the find bar went to, -1 for none.
+    /// </summary>
+    internal int CurrentMatch => currentMatch;
+
+    /// <summary>
+    /// Finds <paramref name="text"/> in the rows shown, as they are expanded, not in the lines
+    /// of the file between hunks, matching case or not, marking every match, and goes to the
+    /// first at or after the one gone to before, or else the top row, as a browser's find does
+    /// while what to find is typed. Nothing, for no text.
+    /// </summary>
+    internal void Find(string text, bool matchCase)
+    {
+        var from = new DiffMatch(TopRow, false, 0, 0);
+        if (currentMatch >= 0)
+        {
+            from = matches[currentMatch];
+        }
+
+        finding = text;
+        findMatchCase = matchCase;
+        FindMatches();
+        currentMatch = -1;
+        if (matches.Count > 0)
+        {
+            currentMatch = FirstMatchFrom(from);
+            ScrollToMatch(matches[currentMatch]);
+        }
+
+        Invalidate();
+        MatchesChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// The find bar closed: nothing is marked.
+    /// </summary>
+    internal void StopFinding()
+    {
+        finding = "";
+        matches = [];
+        currentMatch = -1;
+        Invalidate();
+        MatchesChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Goes to the next match, or, not <paramref name="forward"/>, the one before, round from the
+    /// last to the first, and scrolls it into view, down and sideways. With none gone to yet,
+    /// the first at or after the top row, or the last before it.
+    /// </summary>
+    internal void FindNext(bool forward)
+    {
+        if (matches.Count == 0)
+        {
+            return;
+        }
+
+        if (currentMatch >= 0)
+        {
+            currentMatch = (currentMatch + (forward ? 1 : -1) + matches.Count) % matches.Count;
+        }
+        else
+        {
+            currentMatch = FirstMatchFrom(new(TopRow, false, 0, 0));
+            if (!forward)
+            {
+                currentMatch = (currentMatch - 1 + matches.Count) % matches.Count;
+            }
+        }
+
+        ScrollToMatch(matches[currentMatch]);
+        Invalidate();
+        MatchesChanged?.Invoke();
+    }
+
+    // Every match in the rows shown, in order, those of a row's left side before its right's;
+    // none overlapping. Of a line both sides have, side by side, the left's alone.
+    void FindMatches()
+    {
+        matches = [];
+        if (finding.Length == 0)
+        {
+            return;
+        }
+
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var row = rows[index];
+            if (row.Kind == DiffRowKind.Hunk)
+            {
+                continue;
+            }
+
+            if (!split)
+            {
+                AddMatches(index, false, row.After ?? row.Before!);
+                continue;
+            }
+
+            if (row.Before != null)
+            {
+                AddMatches(index, false, row.Before);
+            }
+
+            if (row.After != null &&
+                !ReferenceEquals(row.After, row.Before))
+            {
+                AddMatches(index, true, row.After);
+            }
+        }
+    }
+
+    void AddMatches(int index, bool right, DiffLine line)
+    {
+        var comparison = StringComparison.OrdinalIgnoreCase;
+        if (findMatchCase)
+        {
+            comparison = StringComparison.Ordinal;
+        }
+
+        var content = line.ContentSpan;
+        var at = 0;
+        while (at < content.Length)
+        {
+            var found = content[at..].IndexOf(finding, comparison);
+            if (found < 0)
+            {
+                return;
+            }
+
+            var start = at + found;
+            matches.Add(new(index, right, start, start + finding.Length));
+            at = start + finding.Length;
+        }
+    }
+
+    // The line a match is in, however the rows are shown, as they were made: one above the other
+    // a row has one line, or the same on both sides; side by side, the left's unless the match
+    // is on the right.
+    DiffLine? LineOf(DiffMatch match)
+    {
+        var row = rows[match.Row];
+        if (match.Right)
+        {
+            return row.After;
+        }
+
+        return row.Before ?? row.After;
+    }
+
+    // The first match at or after a place, round to the first of all past the last.
+    int FirstMatchFrom(DiffMatch from)
+    {
+        var index = matches.FindIndex(_ => Order(_, from) >= 0);
+        return Math.Max(0, index);
+    }
+
+    static int Order(DiffMatch match, DiffMatch other)
+    {
+        if (match.Row != other.Row)
+        {
+            return match.Row.CompareTo(other.Row);
+        }
+
+        if (match.Right != other.Right)
+        {
+            return match.Right.CompareTo(other.Right);
+        }
+
+        return match.Start.CompareTo(other.Start);
+    }
+
+    // The matches on a side of a row, by halves to the row's first, as there can be many: those
+    // of its line, a line both sides have showing the left's on the right too.
+    IEnumerable<DiffMatch> MatchesOn(int index, bool right, DiffLine line)
+    {
+        var low = 0;
+        var high = matches.Count;
+        while (low < high)
+        {
+            var middle = (low + high) / 2;
+            if (matches[middle].Row < index)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+
+        for (var at = low; at < matches.Count && matches[at].Row == index; at++)
+        {
+            var match = matches[at];
+            if (match.Right == right ||
+                ReferenceEquals(LineAt(index, match.Right), line))
+            {
+                yield return match;
+            }
+        }
+    }
+
+    // A match scrolled into view: its row, a third of the way down unless it shows already, and
+    // its characters, sideways, a third of the way across the side unless they show already, or
+    // back to the start where they show from there. A long line has only the part of it around
+    // what shows measured, which moves as it scrolls, so where the match is is found again once
+    // scrolled, and scrolled again should it not show yet.
+    void ScrollToMatch(DiffMatch match)
+    {
+        if (match.Row < TopRow ||
+            match.Row >= TopRow + VisibleRows)
+        {
+            TopRow = match.Row - VisibleRows / 3;
+        }
+
+        if (!horizontal.Visible ||
+            LineOf(match) is not { } line)
+        {
+            return;
+        }
+
+        var content = line.Content;
+        var (sideLeft, sideRight) = SideText(match.Right);
+        sideRight = Math.Min(sideRight, TextWidth);
+        var margin = charWidth * 2;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var part = PartOn(content, match.Right);
+            var origin = CharactersLeft(match.Right);
+            var left = origin + Across(content, part, match.Start, null);
+            var right = origin + Across(content, part, match.End, null);
+            if (left >= sideLeft + margin &&
+                right <= sideRight - margin)
+            {
+                return;
+            }
+
+            if (right + horizontal.Value <= sideRight - margin)
+            {
+                ScrollSideways(-horizontal.Value);
+                continue;
+            }
+
+            ScrollSideways(left - (sideLeft + (sideRight - sideLeft) / 3));
+        }
     }
 
     /// <summary>
@@ -976,6 +1264,11 @@ sealed class DiffCanvas : Control
             graphics.FillRectangle(highlight, changedAt.Value.Left, bounds.Top, Math.Max(1, changedAt.Value.Right - changedAt.Value.Left), bounds.Height);
         }
 
+        if (matches.Count > 0)
+        {
+            DrawMatches(graphics, index, line, rightSide, content, part, textLeft, bounds);
+        }
+
         if (selected is { } chosen)
         {
             var left = textLeft + Across(content, part, chosen.Start, graphics);
@@ -996,6 +1289,41 @@ sealed class DiffCanvas : Control
         }
 
         graphics.Restore(state);
+    }
+
+    // The matches of what the find bar finds on a side of a row, under the selection, the one
+    // gone to stronger; those of a long line only where they show. With high contrast on, each
+    // is outlined in the highlight, the one gone to more thickly, so the text keeps its colour.
+    void DrawMatches(Graphics graphics, int index, DiffLine line, bool right, string content, LinePart part, int textLeft, Rectangle bounds)
+    {
+        var current = default(DiffMatch?);
+        if (currentMatch >= 0)
+        {
+            current = matches[currentMatch];
+        }
+
+        var outlined = ExplorerStyle.HighContrast();
+        foreach (var match in MatchesOn(index, right, line))
+        {
+            if (match.End < part.First ||
+                match.Start > part.Last)
+            {
+                continue;
+            }
+
+            var left = textLeft + Across(content, part, match.Start, graphics);
+            var width = Math.Max(1, textLeft + Across(content, part, match.End, graphics) - left);
+            var isCurrent = match == current;
+            if (outlined)
+            {
+                using var pen = new Pen(DiffStyle.FindMatch, isCurrent ? LogicalToDeviceUnits(2) : 1);
+                graphics.DrawRectangle(pen, left, bounds.Top, width - 1, bounds.Height - 1);
+                continue;
+            }
+
+            using var brush = new SolidBrush(isCurrent ? DiffStyle.FindCurrent : DiffStyle.FindMatch);
+            graphics.FillRectangle(brush, left, bounds.Top, width, bounds.Height);
+        }
     }
 
     // The runs of a line's code, as drawn on a side: a deleted line as the old file has it, and,

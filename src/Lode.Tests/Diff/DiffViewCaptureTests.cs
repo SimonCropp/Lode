@@ -143,6 +143,22 @@ public class DiffViewCaptureTests
             height: 760);
     }
 
+    // The find bar under the header, every match of what it finds marked, the one gone to, the
+    // second, stronger; a selection over a match beside it.
+    [Test]
+    public Task Find() =>
+        Capture(
+            new(DiffSample.Repo, DiffSample.File, Commit()),
+            arrange: _ =>
+            {
+                _.OpenFind();
+                _.FindBar.Box.Text = "document";
+                _.Canvas.FindNext(forward: true);
+                var row = _.Canvas.Rows.ToList().FindIndex(_ => _.After?.Content == "        var previous = document.Current;");
+                _.Canvas.Select(new(row, 8), new(row, 28), right: false);
+                _.ActiveControl = null;
+            });
+
     static GitCommit Commit() =>
         new("abc", ["def"], "Ada Lovelace", DateTimeOffset.UnixEpoch, [], "Improve the scripts");
 
