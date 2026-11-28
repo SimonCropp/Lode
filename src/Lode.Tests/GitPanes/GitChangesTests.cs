@@ -457,6 +457,64 @@ public class GitChangesTests
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
     }
 
+    // Taken out of tracking, by git rm --cached, and ignored, a file is Deleted, still on disk:
+    // committed, it goes from the commit, and stays untracked, where commit --only took it back
+    // in from disk, the commit holding the .gitignore alone.
+    [Test]
+    public async Task AFileTakenOutOfTrackingIsCommittedDeleted()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "rm", "--quiet", "--cached", "tracked.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "tracked.txt\n");
+        var files = GitChanges.Read(repo, Cancel.None)!.Files;
+
+        var result = GitChanges.Commit(repo, files, merging: false, "Untrack", Cancel.None);
+
+        await Assert.That(files.Select(_ => (_.Path, _.Kind))).IsEquivalentTo([(".gitignore", GitChange.Untracked), ("tracked.txt", GitChange.Deleted)]);
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "ls-tree", "-r", "--name-only", "HEAD")).IsEqualTo(".gitignore");
+        await Assert.That(Git(repo, "ls-files")).IsEqualTo(".gitignore");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
+    // A new file where a renamed one was, not ticked, isn't taken into the rename's commit.
+    [Test]
+    public async Task ANewFileWhereARenameWasFromStaysOutOfItsCommit()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "mv", "tracked.txt", "renamed.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "new");
+        var renamed = GitChanges.Read(repo, Cancel.None)!.Files.Single(_ => _.Kind == GitChange.Renamed);
+
+        var result = GitChanges.Commit(repo, [renamed], merging: false, "Rename", Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "ls-tree", "-r", "--name-only", "HEAD")).IsEqualTo("renamed.txt");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("new");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("?? tracked.txt");
+    }
+
+    // Not ignored, it is listed again as not tracked, the two rows sharing a tick: ticked, both
+    // go, so it is committed as it is on disk, as a new file ticked is.
+    [Test]
+    public async Task AFileTakenOutOfTrackingAndTickedAsNewIsCommittedAsOnDisk()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "rm", "--quiet", "--cached", "tracked.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "edited");
+        var files = GitChanges.Read(repo, Cancel.None)!.Files;
+
+        var result = GitChanges.Commit(repo, files, merging: false, "Edit", Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "show", "HEAD:tracked.txt")).IsEqualTo("edited");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
     [Test]
     public async Task Ignore()
     {

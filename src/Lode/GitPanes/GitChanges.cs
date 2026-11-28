@@ -455,9 +455,14 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
                 return CodeCommands.GitToItsEnd(repo, cancel, "commit", "-F", messageFile);
             }
 
-            if (partial is { Count: > 0 })
+            // commit --only takes each path as it is on disk, so one whose removal is staged, with
+            // a file there all the same, would go back in, tracked again: those are committed
+            // from an index of their own, as some lines are.
+            var removed = RemovedButOnDisk(repo, ticked);
+            if (partial is { Count: > 0 } ||
+                removed.Count > 0)
             {
-                return CommitSomeLines(repo, folder, messageFile, ticked, partial, amend, cancel);
+                return CommitSomeLines(repo, folder, messageFile, ticked, partial ?? [], removed, amend, cancel);
             }
 
             // Git has to know of a file before a commit of only some paths can take it in. A
@@ -521,7 +526,9 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// whatever else was staged stays staged. Git's hooks run on the commit as on any. Should the
     /// commit fail, the real index is as it was.
     /// </summary>
-    static CodeCommands.RepoResult CommitSomeLines(string repo, string folder, string messageFile, IReadOnlyList<Change> whole, IReadOnlyList<PartialChange> partial, bool amend, Cancel cancel)
+    /// <param name="removed">Paths whose removal is staged, with a file on disk all the same,
+    /// which go from the commit, the file left on disk, untracked.</param>
+    static CodeCommands.RepoResult CommitSomeLines(string repo, string folder, string messageFile, IReadOnlyList<Change> whole, IReadOnlyList<PartialChange> partial, IReadOnlyList<string> removed, bool amend, Cancel cancel)
     {
         var environment = new Dictionary<string, string>
         {
@@ -540,10 +547,15 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             return read;
         }
 
-        if (whole.Count > 0)
+        // Untracked, deleted and renamed alike: add -A takes each as it is on disk, gone or not,
+        // but for those removed, which it would take back in.
+        var wholePaths = whole
+            .SelectMany(_ => _.Paths())
+            .Except(removed, StringComparer.Ordinal)
+            .ToList();
+        if (wholePaths.Count > 0)
         {
-            // Untracked, deleted and renamed alike: add -A takes each as it is on disk, gone or not.
-            var wholeFile = PathsFile(folder, "whole", [.. whole.SelectMany(_ => _.Paths())]);
+            var wholeFile = PathsFile(folder, "whole", wholePaths);
             var added = CodeCommands.GitToItsEnd(
                 repo,
                 cancel,
@@ -559,12 +571,37 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             }
         }
 
-        var patchFile = Path.Combine(folder, "lines.patch");
-        File.WriteAllText(patchFile, string.Concat(partial.Select(_ => _.Patch)), new UTF8Encoding(false));
-        var applied = CodeCommands.GitToItsEnd(repo, cancel, environment, "apply", "--cached", "--unidiff-zero", "--whitespace=nowarn", patchFile);
-        if (!applied.Succeeded)
+        // From the index alone: the files stay on disk, untracked.
+        if (removed.Count > 0)
         {
-            return applied;
+            var removedFile = PathsFile(folder, "removed", removed);
+            var taken = CodeCommands.GitToItsEnd(
+                repo,
+                cancel,
+                environment,
+                "--literal-pathspecs",
+                "rm",
+                "--cached",
+                "--quiet",
+                "--ignore-unmatch",
+                $"--pathspec-from-file={removedFile}",
+                "--pathspec-file-nul");
+            if (!taken.Succeeded)
+            {
+                return taken;
+            }
+        }
+
+        // Git refuses a patch with nothing in it.
+        if (partial.Count > 0)
+        {
+            var patchFile = Path.Combine(folder, "lines.patch");
+            File.WriteAllText(patchFile, string.Concat(partial.Select(_ => _.Patch)), new UTF8Encoding(false));
+            var applied = CodeCommands.GitToItsEnd(repo, cancel, environment, "apply", "--cached", "--unidiff-zero", "--whitespace=nowarn", patchFile);
+            if (!applied.Succeeded)
+            {
+                return applied;
+            }
         }
 
         // Amending, the index read from the last commit is what goes in its place.
@@ -603,6 +640,39 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
         }
 
         return committed;
+    }
+
+    // The paths of ticked changes whose removal is staged, with a file on disk all the same,
+    // which a commit isn't to take in: one taken out of the index alone, by git rm --cached,
+    // ignored, say, and where a renamed file was, a new file there since. But not one ticked as
+    // a new file too, as a row of the same path shares the tick: that goes in as it is on disk.
+    static List<string> RemovedButOnDisk(string repo, IReadOnlyList<Change> ticked)
+    {
+        var untracked = ticked
+            .Where(_ => _.Kind == GitChange.Untracked)
+            .Select(_ => _.Path)
+            .ToHashSet(StringComparer.Ordinal);
+        var removed = new List<string>();
+        foreach (var change in ticked)
+        {
+            // Deleted with the file on disk can only be its removal staged: deleted on disk
+            // alone, it isn't there.
+            if (change.Kind == GitChange.Deleted)
+            {
+                removed.Add(change.Path);
+            }
+
+            if (change.OldPath is { } old)
+            {
+                removed.Add(old);
+            }
+        }
+
+        return removed
+            .Where(_ => !untracked.Contains(_) &&
+                        File.Exists(Path.Combine(repo, _.Replace('/', '\\'))))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     // A file of paths, each ended by a NUL, for git's --pathspec-from-file.
