@@ -1309,8 +1309,10 @@ static class CodeCommands
     /// <summary>
     /// Runs git reading its output alone, as <see cref="GitRead"/> has it. <paramref name="input"/>,
     /// when given, is written to git, as git credential fill reads what it is asked for.
+    /// <paramref name="encoding"/>, when given, is what the output is read as, in place of UTF-8:
+    /// Latin-1, say, for each byte as the character of the same number.
     /// </summary>
-    internal static GitRead GitOutput(string repo, Cancel cancel, string[] arguments, string? input = null)
+    internal static GitRead GitOutput(string repo, Cancel cancel, string[] arguments, string? input = null, Encoding? encoding = null)
     {
         if (cancel.IsCancellationRequested)
         {
@@ -1335,7 +1337,20 @@ static class CodeCommands
                 process.StandardInput.Close();
             }
 
-            var output = process.StandardOutput.ReadToEnd();
+            string output;
+            if (encoding == null)
+            {
+                output = process.StandardOutput.ReadToEnd();
+            }
+            else
+            {
+                // Decoded from the bytes rather than by the reader, which would take bytes at the
+                // start that look like a byte order mark to say what the rest are, and drop them.
+                using var bytes = new MemoryStream();
+                process.StandardOutput.BaseStream.CopyTo(bytes);
+                output = encoding.GetString(bytes.GetBuffer(), 0, (int) bytes.Length);
+            }
+
             process.WaitForExit();
             if (cancel.IsCancellationRequested)
             {

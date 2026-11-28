@@ -94,10 +94,31 @@ static class GitFileDiff
     }
 
     /// <summary>
-    /// What git writes for the diff of <paramref name="source"/>, or null, with what it said,
-    /// when it couldn't.
+    /// The diff of an uncommitted change, to commit lines picked of it from, as git wrote it, byte
+    /// for byte: each byte the character of the same number, as Latin-1 reads them, so the patch
+    /// of the lines picked, written as Latin-1, has the bytes the file has, whatever its encoding.
+    /// Read as UTF-8, as it is to show, a byte that isn't UTF-8 is U+FFFD, which would go in as
+    /// EF BF BD, or keep a line from matching the file as committed. Null where git couldn't
+    /// write it, or where it isn't the diff whose <see cref="TextDiff.PatchHash"/>, as shown, is
+    /// <paramref name="patchHash"/> any more: the one the lines were picked from.
     /// </summary>
-    static string? ReadPatch(DiffSource source, bool hideWhitespace, Cancel cancel, out string error)
+    public static TextDiff? ReadToCommit(DiffSource source, string patchHash, Cancel cancel)
+    {
+        var patch = ReadPatch(source, hideWhitespace: false, cancel, out _, Encoding.Latin1);
+        if (patch == null ||
+            TextDiff.HashOf(Encoding.UTF8.GetString(Encoding.Latin1.GetBytes(patch))) != patchHash)
+        {
+            return null;
+        }
+
+        return DiffParser.Parse(patch, evenIfLarge: true) as TextDiff;
+    }
+
+    /// <summary>
+    /// What git writes for the diff of <paramref name="source"/>, or null, with what it said,
+    /// when it couldn't. Read as UTF-8, unless <paramref name="encoding"/> says otherwise.
+    /// </summary>
+    static string? ReadPatch(DiffSource source, bool hideWhitespace, Cancel cancel, out string error, Encoding? encoding = null)
     {
         var file = source.File;
         var paths = new List<string>
@@ -166,7 +187,7 @@ static class GitFileDiff
             ];
         }
 
-        var read = CodeCommands.GitOutput(source.Repo, cancel, arguments);
+        var read = CodeCommands.GitOutput(source.Repo, cancel, arguments, encoding: encoding);
         error = read.Error;
         if (read.Succeeded ||
             (noIndex && read.ExitCode == 1 && !cancel.IsCancellationRequested))

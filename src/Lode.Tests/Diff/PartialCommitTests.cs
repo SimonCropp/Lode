@@ -132,4 +132,92 @@ public class PartialCommitTests
         await Assert.That(Git(repo, "show", "HEAD:first.txt")).IsEqualTo("one\nthree");
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("M first.txt");
     }
+
+    // The file changed after its lines were picked: nothing goes in, and it is given back to be
+    // ticked whole again.
+    [Test]
+    public async Task ChangedAfterPicking()
+    {
+        using var scratch = new Scratch();
+        var repo = Repo(scratch);
+        var head = Git(repo, "rev-parse", "HEAD");
+        var change = new Change("file.txt", null, GitChange.Modified);
+        var diff = (TextDiff) GitFileDiff.Read(new(repo, change), false, true, Cancel.None);
+        var unpicked = diff.Hunks
+            .SelectMany(_ => _.Lines)
+            .Where(_ => _.Text is "-line 3" or "+line three")
+            .Select(_ => _.Index!.Value);
+        var picks = LinePicks.All(diff).With(unpicked, false);
+        await File.AppendAllTextAsync(Path.Combine(repo, "file.txt"), "more\n");
+
+        var (result, stale) = ChangesPane.CommitPicked(repo, [], [(change, picks)], true, false, "Stale", null, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(stale).IsEqualTo(change);
+        await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(head);
+    }
+
+    // What a diff read as UTF-8 shows for a byte that isn't UTF-8: U+FFFD.
+    const char replacement = (char) 0xFFFD;
+
+    // A file in Windows-1252, not UTF-8, committed, then changed: é the byte E9, as Latin-1 has
+    // it too.
+    static string NotUtf8Repo(Scratch scratch, string committed, string changed)
+    {
+        var repo = scratch.CreateRepo("Repo");
+        var path = Path.Combine(repo, "latin.txt");
+        File.WriteAllBytes(path, Encoding.Latin1.GetBytes(committed));
+        Git(repo, "add", "latin.txt");
+        Git(repo, "commit", "-m", "Latin");
+        File.WriteAllBytes(path, Encoding.Latin1.GetBytes(changed));
+        return repo;
+    }
+
+    // Commits the lines of latin.txt picked as they are in its diff shown, which has U+FFFD for
+    // each byte that isn't UTF-8, all but those given, as the Changes pane commits them, and
+    // gives the file as the commit has it, a character a byte, as Latin-1 reads them.
+    static async Task<string> CommitPicked(string repo, params string[] unpicked)
+    {
+        var change = new Change("latin.txt", null, GitChange.Modified);
+        var diff = (TextDiff) GitFileDiff.Read(new(repo, change), false, true, Cancel.None);
+        var indexes = diff.Hunks
+            .SelectMany(_ => _.Lines)
+            .Where(_ => unpicked.Contains(_.Text))
+            .Select(_ => _.Index!.Value);
+        var picks = LinePicks.All(diff).With(indexes, false);
+
+        var (result, stale) = ChangesPane.CommitPicked(repo, [], [(change, picks)], true, false, "Picked", null, Cancel.None);
+
+        await Assert.That(stale).IsNull();
+        await Assert.That(result.Succeeded).IsTrue();
+        var file = Path.Combine(repo, "..", $"{Guid.NewGuid():N}.committed");
+        CodeCommands.GitToFile(repo, file, Cancel.None, "cat-file", "blob", "HEAD:latin.txt");
+        return Encoding.Latin1.GetString(await File.ReadAllBytesAsync(file));
+    }
+
+    // A line added to a file that isn't UTF-8 goes in as the file has it, not as EF BF BD,
+    // U+FFFD in UTF-8, which git took without a word.
+    [Test]
+    public async Task AddedNotUtf8()
+    {
+        using var scratch = new Scratch();
+        var repo = NotUtf8Repo(scratch, "one\ntwo\n", "one\ncafé\ntwo\nmore\n");
+
+        var committed = await CommitPicked(repo, "+more");
+
+        await Assert.That(committed).IsEqualTo("one\ncafé\ntwo\n");
+    }
+
+    // Lines kept in a file that isn't UTF-8, one there before and one deleted but not picked,
+    // match the file as committed before, which, as U+FFFD, they didn't, so nothing went in.
+    [Test]
+    public async Task KeptNotUtf8()
+    {
+        using var scratch = new Scratch();
+        var repo = NotUtf8Repo(scratch, "café\nthé\nold\n", "café\nnew\n");
+
+        var committed = await CommitPicked(repo, $"-th{replacement}");
+
+        await Assert.That(committed).IsEqualTo("café\nthé\nnew\n");
+    }
 }

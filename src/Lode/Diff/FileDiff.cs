@@ -116,7 +116,13 @@ sealed record TextDiff(IReadOnlyList<DiffHunk> Hunks, string Patch) : FileDiff
     /// A short hash of <see cref="Patch"/>, which lines picked to commit are noted against.
     /// </summary>
     public string PatchHash =>
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Patch)))[..16];
+        HashOf(Patch);
+
+    /// <summary>
+    /// The <see cref="PatchHash"/> of a diff whose text is <paramref name="patch"/>.
+    /// </summary>
+    public static string HashOf(string patch) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(patch)))[..16];
 }
 
 sealed record BinaryDiff : FileDiff;

@@ -60,7 +60,8 @@ sealed record Conflict(int Markers, bool Manual, bool OursDeleted = false, bool 
 
 /// <summary>
 /// A file only some of whose changed lines are to be committed, with the patch of those lines
-/// against the last commit, as <see cref="LinePatch"/> writes it.
+/// against the last commit, as <see cref="LinePatch"/> writes it from the diff
+/// <see cref="GitFileDiff.ReadToCommit"/> reads: a character a byte, as Latin-1 reads them.
 /// </summary>
 sealed record PartialChange(Change File, string Patch);
 
@@ -592,11 +593,13 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             }
         }
 
-        // Git refuses a patch with nothing in it.
+        // Git refuses a patch with nothing in it. A character a byte, as the patches were read
+        // from git's diffs, so the lines go in with the bytes the files have, whatever their
+        // encoding.
         if (partial.Count > 0)
         {
             var patchFile = Path.Combine(folder, "lines.patch");
-            File.WriteAllText(patchFile, string.Concat(partial.Select(_ => _.Patch)), new UTF8Encoding(false));
+            File.WriteAllText(patchFile, string.Concat(partial.Select(_ => _.Patch)), Encoding.Latin1);
             var applied = CodeCommands.GitToItsEnd(repo, cancel, environment, "apply", "--cached", "--unidiff-zero", "--whitespace=nowarn", patchFile);
             if (!applied.Succeeded)
             {

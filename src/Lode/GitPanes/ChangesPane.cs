@@ -1114,7 +1114,7 @@ sealed class ChangesPane : UserControl
     /// Amending, in place of <paramref name="amending"/>, only while that is still the last
     /// commit and not pushed.
     /// </summary>
-    static (CodeCommands.RepoResult Result, Change? Stale) CommitPicked(
+    internal static (CodeCommands.RepoResult Result, Change? Stale) CommitPicked(
         string repo,
         IReadOnlyList<Change> whole,
         IReadOnlyList<(Change File, LinePicks Picks)> picked,
@@ -1133,14 +1133,13 @@ sealed class ChangesPane : UserControl
         var partial = new List<PartialChange>();
         foreach (var (file, picks) in picked)
         {
-            var diff = GitFileDiff.Read(new(repo, file, null, hasCommits), false, true, cancel);
-            if (diff is not TextDiff text ||
-                text.PatchHash != picks.PatchHash)
+            var diff = GitFileDiff.ReadToCommit(new(repo, file, null, hasCommits), picks.PatchHash, cancel);
+            if (diff == null)
             {
                 return (new(repo, false, $"{file.Path} changed after its lines were picked, so nothing was committed. It is ticked whole again: pick its lines again, or commit it whole."), file);
             }
 
-            var patch = LinePatch.Format(text, picks, file.Kind == GitChange.Deleted);
+            var patch = LinePatch.Format(diff, picks, file.Kind == GitChange.Deleted);
             if (patch != null)
             {
                 partial.Add(new(file, patch));
