@@ -1612,6 +1612,51 @@ public class FolderViewTests
     }
 
     // A folder of 500 files, item000.txt to item499.txt, each as many bytes as its number.
+    // Held near the bottom of the rows, a drag scrolls the list down a row every so often, as the
+    // tree does and Explorer's list does, so a folder out of sight can be dropped into; near the
+    // top, under the headers, up. Not at once, nor in the middle.
+    [Test]
+    public async Task NearTheTopOrBottomADragScrollsTheList()
+    {
+        using var fixture = Fixture.Create();
+        var folder = FiveHundred(fixture);
+        using var form = Host();
+        var view = await OpenIn(form, folder);
+        var clock = new Clock(new(2026, 11, 28, 9, 0, 0, TimeSpan.Zero));
+        view.Time = clock;
+        var list = view.List;
+        var middle = new Point(100, list.ClientSize.Height / 2);
+        var bottom = new Point(100, list.ClientSize.Height - 2);
+        int Top() =>
+            list.TopItem!.Index;
+
+        var start = Top();
+        view.FollowDrag(middle);
+        clock.Now += TimeSpan.FromMilliseconds(500);
+        view.FollowDrag(middle);
+        var inTheMiddle = Top();
+        view.FollowDrag(bottom);
+        var atOnce = Top();
+        clock.Now += TimeSpan.FromMilliseconds(100);
+        view.FollowDrag(bottom);
+        var once = Top();
+        clock.Now += TimeSpan.FromMilliseconds(50);
+        view.FollowDrag(bottom);
+        var tooSoon = Top();
+        clock.Now += TimeSpan.FromMilliseconds(50);
+        view.FollowDrag(bottom);
+        var twice = Top();
+        var top = new Point(100, list.TopItem!.Bounds.Top + 2);
+        view.FollowDrag(top);
+        clock.Now += TimeSpan.FromMilliseconds(100);
+        view.FollowDrag(top);
+        var up = Top();
+
+        await Assert.That((start, inTheMiddle, atOnce)).IsEqualTo((0, 0, 0));
+        await Assert.That((once, tooSoon, twice)).IsEqualTo((1, 1, 2));
+        await Assert.That(up).IsEqualTo(1);
+    }
+
     static string FiveHundred(Fixture fixture)
     {
         var folder = Directory.CreateDirectory(fixture.At("Many")).FullName;

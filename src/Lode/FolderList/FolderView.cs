@@ -495,7 +495,7 @@ sealed class FolderView : UserControl
         list.DragEnter += OnDragOver;
         list.DragOver += OnDragOver;
         list.DragDrop += OnDragDrop;
-        list.DragLeave += (_, _) => list.DropTarget = -1;
+        list.DragLeave += OnDragLeave;
         Controls.Add(list);
 
         // Over the list's own scrollbar, so in front of it.
@@ -6303,13 +6303,14 @@ sealed class FolderView : UserControl
     internal void OnDragOver(object? sender, DragEventArgs args)
     {
         rightDrag = FileOperations.RightButton(args);
+        var point = list.PointToClient(new(args.X, args.Y));
+        FollowDrag(point);
         args.Effect = FileOperations.GetDropEffect(args, DropDestination(args));
         var target = -1;
         string? into = null;
         if (args.Effect != DragDropEffects.None)
         {
             into = Locations.DisplayName(CurrentPath);
-            var point = list.PointToClient(new(args.X, args.Y));
             if (list.GetItemAt(point.X, point.Y) is {Tag: FileEntry {IsDirectory: true, InArchive: false} folder} item)
             {
                 target = item.Index;
@@ -6324,7 +6325,103 @@ sealed class FolderView : UserControl
     void OnDragDrop(object? sender, DragEventArgs args)
     {
         list.DropTarget = -1;
+        dragScroll = null;
         FileOperations.Drop(Owner, args, DropDestination(args), rightDrag);
+    }
+
+    void OnDragLeave(object? sender, EventArgs args)
+    {
+        list.DropTarget = -1;
+        dragScroll = null;
+    }
+
+    // How often a drag near an edge of the list scrolls it a line, once held there that long.
+    static TimeSpan dragScrollEvery = TimeSpan.FromMilliseconds(100);
+
+    // How near an edge of the rows a drag scrolls, in pixels at 100% scale: a row of Details.
+    const int dragScrollEdge = 30;
+
+    // WM_VSCROLL and WM_HSCROLL, a line up or left, or down or right.
+    const int verticalScroll = 0x115;
+    const int horizontalScroll = 0x114;
+    const int lineBack = 0;
+    const int lineOn = 1;
+
+    /// <summary>
+    /// The time, which tests set.
+    /// </summary>
+    internal TimeProvider Time = TimeProvider.System;
+
+    // The way a drag near an edge scrolls the list, and when it last did, or since when the drag
+    // has been there.
+    (int Message, int Line)? dragScroll;
+    DateTimeOffset dragScrolledAt;
+
+    /// <summary>
+    /// Follows a drag at a point in the list, as the tree does, and Explorer's list: held near
+    /// the top or bottom of the rows, it scrolls a line every so often, and near a side where the
+    /// list scrolls sideways, sideways, so a folder out of sight can be dropped into. Not at once,
+    /// so a drag started from the last row doesn't scroll the list from under it. Windows tells
+    /// the list of the drag over and over while it is held still, so this needs no timer.
+    /// </summary>
+    internal void FollowDrag(Point location)
+    {
+        var scroll = DragScrollAt(location);
+        var now = Time.GetUtcNow();
+        if (scroll != dragScroll)
+        {
+            dragScroll = scroll;
+            dragScrolledAt = now;
+            return;
+        }
+
+        if (scroll is { } way &&
+            now - dragScrolledAt >= dragScrollEvery)
+        {
+            dragScrolledAt = now;
+            SendMessage(list.Handle, way.Message, way.Line, IntPtr.Zero);
+        }
+    }
+
+    // Which way a drag at a point scrolls the list, if it is near an edge of the rows: in Details
+    // they start under the column headers.
+    (int Message, int Line)? DragScrollAt(Point location)
+    {
+        var edge = list.LogicalToDeviceUnits(dragScrollEdge);
+        var top = 0;
+        if (list.View == View.Details &&
+            list.TopItem is { } first)
+        {
+            top = first.Bounds.Top;
+        }
+
+        var size = list.ClientSize;
+        if (location.Y < top + edge)
+        {
+            return (verticalScroll, lineBack);
+        }
+
+        if (location.Y >= size.Height - edge)
+        {
+            return (verticalScroll, lineOn);
+        }
+
+        if (list.HorizontalScrollBar == null)
+        {
+            return null;
+        }
+
+        if (location.X < edge)
+        {
+            return (horizontalScroll, lineBack);
+        }
+
+        if (location.X >= size.Width - edge)
+        {
+            return (horizontalScroll, lineOn);
+        }
+
+        return null;
     }
 
     /// <summary>
