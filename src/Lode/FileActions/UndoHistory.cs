@@ -32,10 +32,10 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
         IReadOnlyList<(string Original, string? InBin)> Recycle(IntPtr owner, IReadOnlyList<string> paths);
 
         /// <summary>
-        /// Restores items from the Recycle Bin, returning those not restored: gone from it, or
-        /// still in it, skipped at the shell's prompt.
+        /// Restores items from the Recycle Bin, all in one operation, returning those not
+        /// restored: gone from it, or still in it, skipped at the shell's prompt.
         /// </summary>
-        IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin);
+        IReadOnlyCollection<string> Restore(IntPtr owner, IReadOnlyList<string> inBin);
 
         /// <summary>
         /// Whether a file or folder is still there.
@@ -438,7 +438,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
 
         public override Outcome Redo(IFileActions actions, IntPtr owner)
         {
-            var outcome = Restore(actions, binned, out var restored);
+            var outcome = Restore(actions, owner, binned, out var restored);
             if (outcome.Result == Result.Done)
             {
                 created = restored.Select(_ => _.Original).ToList();
@@ -454,7 +454,7 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
 
         public override Outcome Undo(IFileActions actions, IntPtr owner)
         {
-            var outcome = Restore(actions, deleted, out var restored);
+            var outcome = Restore(actions, owner, deleted, out var restored);
             if (outcome.Result == Result.Done)
             {
                 deleted = restored;
@@ -517,9 +517,9 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
     // Restores the items from the Recycle Bin, giving those restored. One that has left it,
     // emptied since say, never can be. One still in it, skipped at the shell's prompt for
     // something of the same name where it goes back to, still could be.
-    static Outcome Restore(IFileActions actions, IReadOnlyList<(string Original, string InBin)> binned, out IReadOnlyList<(string Original, string InBin)> restored)
+    static Outcome Restore(IFileActions actions, IntPtr owner, IReadOnlyList<(string Original, string InBin)> binned, out IReadOnlyList<(string Original, string InBin)> restored)
     {
-        var notRestored = actions.Restore(binned.Select(_ => _.InBin).ToList());
+        var notRestored = actions.Restore(owner, binned.Select(_ => _.InBin).ToList());
         restored = binned
             .Where(_ => !notRestored.Contains(_.InBin, StringComparer.OrdinalIgnoreCase))
             .ToList();
@@ -601,8 +601,13 @@ sealed class UndoHistory(UndoHistory.IFileActions actions)
                 .Select(_ => (_.Source, _.Result))
                 .ToList();
 
-        public IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin) =>
-            RecycleBin.Restore(inBin);
+        /// <summary>
+        /// The Recycle Bin's Restore, given every item of one restore at once. Tests count it.
+        /// </summary>
+        internal Action<IntPtr, IReadOnlyList<string>> Undelete { get; init; } = RecycleBin.Undelete;
+
+        public IReadOnlyCollection<string> Restore(IntPtr owner, IReadOnlyList<string> inBin) =>
+            RecycleBin.Restore(owner, inBin, Undelete);
 
         public bool Exists(string path) =>
             Path.Exists(path);

@@ -62,7 +62,7 @@ public class UndoHistoryTests
                 .ToList();
         }
 
-        public IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin)
+        public IReadOnlyCollection<string> Restore(IntPtr owner, IReadOnlyList<string> inBin)
         {
             Calls.Add($"restore {string.Join(", ", inBin)}");
             return inBin.Where(_ => MissingFromBin.Contains(_) || SkippedInBin.Contains(_)).ToList();
@@ -269,11 +269,60 @@ public class UndoHistoryTests
             ShellFileOperation.AllowUndo | ShellFileOperation.RecycleOnDelete | ShellFileOperation.NoConfirmation);
         var inBin = outcome.Changes.Single().Result!;
 
-        var notRestored = RecycleBin.Restore([inBin]);
+        var notRestored = RecycleBin.Restore(IntPtr.Zero, [inBin]);
 
         await Assert.That(notRestored).IsEmpty();
         await Assert.That(File.Exists(fixture.At("notes.aleph"))).IsTrue();
         await Assert.That(Path.Exists(inBin)).IsFalse();
+    }
+
+    // On disk: files and folders deleted together are restored in one go of the Recycle Bin's
+    // Restore, given all of them, as Explorer's is on them all selected, rather than one for
+    // each, every one back where it was, with what it held.
+    [Test]
+    public async Task ADeleteOfSeveralIsUndoneInOneGo()
+    {
+        using var fixture = Fixture.Create();
+        var before = fixture.Tree();
+        var outcome = ShellFileOperation.Run(
+            IntPtr.Zero,
+            ShellFileOperation.Kind.Delete,
+            [fixture.At("notes.aleph"), fixture.At("report2.beta"), fixture.At("Docs"), fixture.At("Source")],
+            null,
+            ShellFileOperation.AllowUndo | ShellFileOperation.RecycleOnDelete | ShellFileOperation.NoConfirmation);
+        List<(string Original, string InBin)> deleted = outcome.Changes
+            .Select(_ => (_.Source, _.Result!))
+            .ToList();
+        var undeletes = new List<IReadOnlyList<string>>();
+        var history = new UndoHistory(
+            new UndoHistory.ShellFileActions
+            {
+                Undelete = (owner, binPaths) =>
+                {
+                    undeletes.Add(binPaths);
+                    RecycleBin.Undelete(owner, binPaths);
+                }
+            });
+        history.RecordDelete(deleted);
+        var whileDeleted = fixture.Tree();
+        string? failure;
+        try
+        {
+            failure = await history.Undo(IntPtr.Zero);
+        }
+        finally
+        {
+            // Nothing this put in the Recycle Bin is left there, whatever the undo did.
+            RecycleBin.Restore(IntPtr.Zero, deleted.Select(_ => _.InBin).Where(Path.Exists).ToList());
+        }
+
+        await Assert.That(failure).IsNull();
+        await Assert.That(whileDeleted.Count).IsEqualTo(before.Count - 8);
+        await Assert.That(undeletes.Count).IsEqualTo(1);
+        await Assert.That(undeletes[0]).IsEquivalentTo(deleted.Select(_ => _.InBin));
+        await Assert.That(fixture.Tree()).IsEquivalentTo(before, CollectionOrdering.Matching);
+        await Assert.That(deleted.Any(_ => Path.Exists(_.InBin))).IsFalse();
+        await Assert.That(history.RedoText).IsEqualTo("Redo delete");
     }
 
     // Nor can a change to something that has gone since: a new folder deleted behind Lode's

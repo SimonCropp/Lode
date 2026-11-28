@@ -997,7 +997,7 @@ public class ZipTests
                 .ToList();
         }
 
-        public IReadOnlyCollection<string> Restore(IReadOnlyList<string> inBin) =>
+        public IReadOnlyCollection<string> Restore(IntPtr owner, IReadOnlyList<string> inBin) =>
             inBin;
 
         public bool Exists(string path) =>
