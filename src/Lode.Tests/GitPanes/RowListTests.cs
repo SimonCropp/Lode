@@ -45,6 +45,62 @@ public class RowListTests
         await Assert.That(list.Columns[0].Width).IsEqualTo(list.ClientSize.Width);
     }
 
+    // Given rows while hidden, as the stashes under Changes' files are, then shown, the list is
+    // sized as its window is made, before that window is told how many rows there are: it fits
+    // its column to the row height asked for then, rather than asking for the first row's bounds,
+    // which the list hasn't got, and which threw from the size changing. Once it has rows, the
+    // height is theirs.
+    [Test]
+    public async Task SizedAsItsWindowIsMadeWithRowsAlready()
+    {
+        using var errors = new WindowErrors();
+        using var form = new Form
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000),
+            FormBorderStyle = FormBorderStyle.None,
+            ClientSize = new(400, 300)
+        };
+        var list = new RowList(29)
+        {
+            Dock = DockStyle.None,
+            Size = new(200, 100),
+            Visible = false
+        };
+        list.SetRows(3);
+        form.Controls.Add(list);
+        form.Show();
+        Application.DoEvents();
+
+        list.Visible = true;
+        Application.DoEvents();
+
+        await Assert.That(errors.Thrown).IsEmpty();
+        await Assert.That(list.IsHandleCreated).IsTrue();
+        await Assert.That(list.RowHeight()).IsEqualTo(list.GetItemRect(0).Height);
+        await Assert.That(list.Columns[0].Width).IsEqualTo(list.ClientSize.Width);
+    }
+
+    /// <summary>
+    /// What was thrown in a window's message handler on this thread while it was kept, for the
+    /// test to fail on, rather than WinForms putting up its error dialog, which would wait for
+    /// somebody to close it.
+    /// </summary>
+    internal sealed class WindowErrors : IDisposable
+    {
+        public List<Exception> Thrown { get; } = [];
+
+        public WindowErrors() =>
+            Application.ThreadException += Keep;
+
+        void Keep(object sender, ThreadExceptionEventArgs args) =>
+            Thrown.Add(args.Exception);
+
+        public void Dispose() =>
+            Application.ThreadException -= Keep;
+    }
+
     // The scrollbars taking room from the rows: along the side, the bottom, both or neither.
     internal static string Scrollbars(RowList list)
     {

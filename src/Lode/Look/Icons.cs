@@ -124,6 +124,8 @@ static class Icons
     public const char ArrowRight = '\uE72A';
     // A funnel, for narrowing a list to what matches.
     public const char Filter = '\uE71C';
+    // Layers one on another, for changes put aside in a stash.
+    public const char Stash = '\uE81E';
     // Lines of text, for a commit's description.
     public const char Description = '\uE8E4';
     // A cross, for putting away the diff shown over the folder list.

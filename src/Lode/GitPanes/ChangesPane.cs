@@ -4,8 +4,9 @@
 /// description beneath, with Commit to the branch, or, once History's Amend commit asks, Amend
 /// last commit, putting them in place of the last commit. Ticks and what is typed are kept for each
 /// repository while Lode runs, so going to another and back loses neither. Double-click a file to
-/// see its changes; right-click to discard them, open it, show it in its folder, copy its path, or
-/// have git ignore it.
+/// see its changes; right-click to discard them, stash every change, open it, show it in its
+/// folder, copy its path, or have git ignore it. The repository's stashes are under the files, to
+/// restore or discard.
 /// </summary>
 sealed class ChangesPane : UserControl
 {
@@ -102,6 +103,11 @@ sealed class ChangesPane : UserControl
         Visible = false
     };
 
+    // Under the files, the repository's stashes, as they were read with them.
+    StashList stashList = new();
+    IReadOnlyList<GitStashes.Stash> stashes = [];
+    bool stashing;
+
     string? repo;
     GitChanges changes = GitChanges.Empty;
     IReadOnlyList<Change> shown = [];
@@ -130,6 +136,11 @@ sealed class ChangesPane : UserControl
     /// Reads what is uncommitted, or what git said where it couldn't. Tests answer for git.
     /// </summary>
     internal static Func<string, Cancel, GitChanges> Read { get; set; } = GitChanges.ReadOrWhyNot;
+
+    /// <summary>
+    /// Reads the repository's stashes, with what is uncommitted. Tests answer for git.
+    /// </summary>
+    internal static Func<string, Cancel, IReadOnlyList<GitStashes.Stash>> ReadStashes { get; set; } = GitStashes.Read;
 
     public event Action<string>? ShowInFolderRequested;
     public event Action? EscapePressed;
@@ -184,6 +195,13 @@ sealed class ChangesPane : UserControl
     /// The reading under way, for tests to wait on.
     /// </summary>
     internal Task Reading { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// The stash being restored, discarded or made, for tests to wait on.
+    /// </summary>
+    internal Task Stashing { get; private set; } = Task.CompletedTask;
+
+    internal StashList StashList => stashList;
 
     internal TextBox SummaryBox => summaryFrame.Box;
     internal TextBox DescriptionBox => descriptionFrame.Box;
@@ -305,10 +323,14 @@ sealed class ChangesPane : UserControl
         abortButton.Click += (_, _) => AbortMerge();
         continueButton.Click += (_, _) => Commit();
         noChanges.ActRequested += _ => ActRequested?.Invoke(_);
+        stashList.MenuRequested += (stash, location) => PaneMenu.Show(stashList.Rows, location, StashCommands(stash), open => MenuOpen = open);
+        stashList.DiscardRequested += DiscardStash;
 
-        // The list fills what the rest leave, or, with nothing uncommitted, what says so.
+        // The list fills what the rest leave, or, with nothing uncommitted, what says so; the
+        // stashes under it, over the commit.
         Controls.Add(noChanges);
         Controls.Add(list);
+        Controls.Add(stashList);
         Controls.Add(commitArea);
         Controls.Add(tickRow);
         Controls.Add(filterRow);
@@ -500,9 +522,15 @@ sealed class ChangesPane : UserControl
             filterHeight = filterRow.Height;
         }
 
+        var stashesHeight = 0;
+        if (stashList.Visible)
+        {
+            stashesHeight = stashList.Height;
+        }
+
         if (describing)
         {
-            var room = Height - header.Height - filterHeight - tickRow.Height - height - RowHeight(Font) * 3;
+            var room = Height - header.Height - filterHeight - tickRow.Height - stashesHeight - height - RowHeight(Font) * 3;
             var description = Math.Clamp(room, LogicalToDeviceUnits(36), LogicalToDeviceUnits(84));
             if (descriptionFrame.Height != description)
             {
@@ -537,6 +565,7 @@ sealed class ChangesPane : UserControl
         readYet = false;
         failure = null;
         changes = GitChanges.Empty;
+        stashes = [];
         draft = DraftOf(repo);
         loadingDraft = true;
         summaryFrame.Box.Text = draft.Summary;
@@ -681,7 +710,7 @@ sealed class ChangesPane : UserControl
         stale = false;
         try
         {
-            var read = await Task.Run(() => Read(reading, Cancel.None));
+            var (read, stashed) = await Task.Run(() => (Read(reading, Cancel.None), ReadStashes(reading, Cancel.None)));
             if (asked != version ||
                 IsDisposed)
             {
@@ -700,6 +729,7 @@ sealed class ChangesPane : UserControl
             }
 
             changes = read;
+            stashes = stashed;
             readYet = true;
 
             // The commit being amended isn't the last any more, committed on or undone since, so
@@ -780,6 +810,19 @@ sealed class ChangesPane : UserControl
         ShowMergeBar();
         ShowCommitButton();
         ShowNone();
+        ShowStashes();
+    }
+
+    // The stashes under the files; none where git couldn't read the repository, as none could
+    // be restored or discarded then.
+    void ShowStashes()
+    {
+        var showing = stashList.Visible;
+        stashList.SetStashes(failure == null ? stashes : []);
+        if (stashList.Visible != showing)
+        {
+            PerformLayout();
+        }
     }
 
     // Nothing uncommitted, once read, says so in place of the files, and git failing to read it
@@ -1340,7 +1383,9 @@ sealed class ChangesPane : UserControl
     /// merge, the branch checked out and the branch merged in; part way through a rebase, as
     /// GitHub Desktop names them, what it goes onto, whose commits it is replaying the branch's on
     /// top of, and the branch being rebased, whose commit is being replayed; part way through a
-    /// cherry-pick, the branch checked out and the commit picked.
+    /// cherry-pick, the branch checked out and the commit picked. With none part way, a stash
+    /// restored over what clashed with it, the branch checked out and the stash, as git's markers
+    /// name them "Updated upstream" and "Stashed changes".
     /// </summary>
     internal static (string Ours, string Theirs) SideNames(GitChanges changes)
     {
@@ -1352,6 +1397,11 @@ sealed class ChangesPane : UserControl
         if (changes.CherryPicking is { } cherryPick)
         {
             return (changes.Branch ?? "the branch checked out", cherryPick.Commit);
+        }
+
+        if (!changes.Merging)
+        {
+            return (changes.Branch ?? "the branch checked out", "the stash");
         }
 
         return (changes.Branch ?? "the branch checked out", changes.MergingFrom ?? "the branch merged in");
@@ -1458,6 +1508,139 @@ sealed class ChangesPane : UserControl
     /// </summary>
     internal static Func<Control, string, DialogResult> AskDiscard { get; set; } = (owner, text) =>
         MessageBox.Show(owner, text, "Discard changes", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+
+    // Whether git can stash, or restore a stash, now: not part way through a merge or rebase,
+    // nor with files in conflict, which git refuses to stash or restore over, nor while git
+    // can't read the repository, or is stashing already.
+    bool CanStash =>
+        repo != null &&
+        !stashing &&
+        failure == null &&
+        !changes.Merging &&
+        !changes.Conflicted;
+
+    /// <summary>
+    /// What a stash's right-click menu offers: Restore, as GitHub Desktop's does, and Discard,
+    /// which asks first.
+    /// </summary>
+    internal List<QuickMenu.Command?> StashCommands(GitStashes.Stash stash) =>
+    [
+        new("Restore", () => RestoreStash(stash), CanStash)
+        {
+            Glyph = Icons.Stash
+        },
+        new("Discard…", () => DiscardStash(stash), repo != null && !stashing)
+        {
+            Glyph = Icons.Delete
+        }
+    ];
+
+    // Stash all changes, as GitHub Desktop's: every change, new files included, put aside with
+    // the message asked for, the summary typed suggested, and the files left as the last commit
+    // has them.
+    void StashAll()
+    {
+        if (repo is not { } stashingIn ||
+            !CanStash ||
+            changes.Files.Count == 0)
+        {
+            return;
+        }
+
+        var question = $"Stash all changes in {Path.GetFileName(stashingIn.TrimEnd('\\'))}";
+        var newFiles = changes.Files.Count(_ => _.Kind == GitChange.Untracked);
+        if (newFiles > 0)
+        {
+            question += $", {GitState.CountOf(newFiles, "new file")} among them";
+        }
+
+        question += ", putting them aside and the files back as the last commit has them. Restore them from Stashed changes, under the files.";
+        if (AskStashMessage(this, question, summaryFrame.Box.Text.Trim()) is not { Length: > 0 } message)
+        {
+            return;
+        }
+
+        Stashing = RunStash("Git stash", (stashRepo, cancel) => GitStashes.StashAll(stashRepo, message, cancel));
+    }
+
+    // Its changes put back, and the stash dropped, or, where they couldn't all be, kept, the
+    // clashes left as files in conflict to settle here.
+    void RestoreStash(GitStashes.Stash stash)
+    {
+        if (!CanStash)
+        {
+            return;
+        }
+
+        Stashing = RunStash("Git restore stash", (stashRepo, cancel) => GitStashes.Restore(stashRepo, stash, cancel));
+    }
+
+    // Dropped, having asked, as it can't be got back.
+    void DiscardStash(GitStashes.Stash stash)
+    {
+        if (repo == null ||
+            stashing ||
+            AskDiscardStash(this, $"Discard the stash {stash.Text}?\n\nIts changes are gone for good: this can't be undone.") != DialogResult.OK)
+        {
+            return;
+        }
+
+        Stashing = RunStash("Git discard stash", (stashRepo, cancel) => GitStashes.Discard(stashRepo, stash, cancel));
+    }
+
+    // In the Actions panel, then the files and the stashes read again, and the window told, for
+    // the status bar's count of changes.
+    async Task RunStash(string title, Func<string, Cancel, CodeCommands.RepoResult> work)
+    {
+        if (repo is not { } stashingIn)
+        {
+            return;
+        }
+
+        stashing = true;
+        try
+        {
+            await ActionLog.Run(
+                title,
+                [stashingIn],
+                async (_, cancel) =>
+                {
+                    var result = await Task.Run(() => work(stashingIn, cancel), cancel);
+                    GitCache.MarkStale([stashingIn]);
+                    return CodeCommands.GitOutcome([result]);
+                });
+        }
+        finally
+        {
+            stashing = false;
+            if (!IsDisposed)
+            {
+                Reload();
+                Committed?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Asks for the message to stash every change with, the question and the message suggested
+    /// given: null when cancelled. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, string, string, string?> AskStashMessage { get; set; } = (owner, question, suggested) =>
+    {
+        using var form = new CodeMenu.GitTextForm("Git stash", question, "Message:", suggested, "Stash", []);
+        if (form.ShowDialog(owner) != DialogResult.OK)
+        {
+            return null;
+        }
+
+        return form.Value;
+    };
+
+    /// <summary>
+    /// Asks whether to discard a stash. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, string, DialogResult> AskDiscardStash { get; set; } = (owner, text) =>
+        MessageBox.Show(owner, text, "Discard stash", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
 
     static string FullPath(string repo, string path) =>
         Path.Combine(repo, path.Replace('/', '\\'));
@@ -1644,13 +1827,21 @@ sealed class ChangesPane : UserControl
         PaneMenu.Show(list, args.Location, MenuFor(menuRepo, selected), open => MenuOpen = open);
     }
 
-    List<QuickMenu.Command?> MenuFor(string menuRepo, IReadOnlyList<Change> selected)
+    /// <summary>
+    /// What the files' right-click menu offers for <paramref name="selected"/>.
+    /// </summary>
+    internal List<QuickMenu.Command?> MenuFor(string menuRepo, IReadOnlyList<Change> selected)
     {
         var commands = ConflictCommands(selected);
         commands.Add(
             new("Discard changes…", () => Discard(selected))
             {
                 Glyph = Icons.Discard
+            });
+        commands.Add(
+            new("Stash all changes…", StashAll, CanStash)
+            {
+                Glyph = Icons.Stash
             });
         if (selected is [var one])
         {

@@ -33,10 +33,10 @@ static class GitBranches
 
     // Ahead of the branch's name in the message of the stash its changes are left in. A colon
     // can't be in a branch's name, so no branch's name ends another's marker.
-    const string stashMarker = "Lode:";
+    internal const string StashMarker = "Lode:";
 
     // How a stash is marked once putting it back has clashed: no longer one to put back.
-    const string clashedMarker = "Lode clashed:";
+    internal const string ClashedMarker = "Lode clashed:";
 
     /// <summary>
     /// The repository's branches, as git has them now, without going to origin: the list is
@@ -253,7 +253,7 @@ static class GitBranches
 
     static string? MarkedBranch(string subject)
     {
-        const string separator = ": " + stashMarker;
+        const string separator = ": " + StashMarker;
         var index = subject.IndexOf(separator, StringComparison.Ordinal);
         if (index < 0)
         {
@@ -289,7 +289,7 @@ static class GitBranches
             "push",
             "--include-untracked",
             "-m",
-            stashMarker + current);
+            StashMarker + current);
         var stashed = StashTip(repo) != before;
         if (!stash.Succeeded)
         {
@@ -459,7 +459,7 @@ static class GitBranches
             return stash;
         }
 
-        var stored = CodeCommands.Git(repo, "stash", "store", "-m", $"On {branch}: {clashedMarker}{branch}", commit.Output);
+        var stored = CodeCommands.Git(repo, "stash", "store", "-m", $"On {branch}: {ClashedMarker}{branch}", commit.Output);
         if (stored.Succeeded)
         {
             return "stash@{0}";

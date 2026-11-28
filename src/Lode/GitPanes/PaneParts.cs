@@ -609,12 +609,7 @@ sealed class RowList : ListView
         // takes from: the width set here would bring that scrollbar and take it away again,
         // round and round.
         var width = Width;
-        var rowHeight = SmallImageList?.ImageSize.Height ?? 1;
-        if (IsHandleCreated &&
-            VirtualListSize > 0)
-        {
-            rowHeight = Math.Max(rowHeight, GetItemRect(0).Height);
-        }
+        var rowHeight = RowHeight();
 
         // The scrollbar as wide as on the screen the list is on, not the one Windows started on.
         if (VirtualListSize * rowHeight > Height)
@@ -627,6 +622,34 @@ sealed class RowList : ListView
         {
             Columns[0].Width = width;
         }
+    }
+
+    const int listViewGetItemRect = 0x100E;
+
+    /// <summary>
+    /// How tall a row is as the list lays them out, or, with none laid out yet, as tall as asked.
+    /// Asked of the list itself rather than through GetItemRect: given its rows while hidden, as
+    /// the stashes under Changes' files are, the list is made and sized when it is shown, and told
+    /// how many rows there are only after, so it has no first row then, and GetItemRect threw for
+    /// it, from the handle being made and the size changing.
+    /// </summary>
+    public int RowHeight()
+    {
+        var height = SmallImageList?.ImageSize.Height ?? 1;
+        if (!IsHandleCreated ||
+            VirtualListSize == 0)
+        {
+            return height;
+        }
+
+        // LVIR_BOUNDS, the whole row, in Left.
+        var bounds = new NativeRect();
+        if (SendMessage(Handle, listViewGetItemRect, IntPtr.Zero, ref bounds) == IntPtr.Zero)
+        {
+            return height;
+        }
+
+        return Math.Max(height, bounds.Bottom - bounds.Top);
     }
 
     /// <summary>

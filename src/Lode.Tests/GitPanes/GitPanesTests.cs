@@ -1591,6 +1591,157 @@ public class GitPanesTests
         await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled, pane.ContinueButton.Enabled)).IsEqualTo(("Continue cherry-pick", true, true));
     }
 
+    static string MenuText(IEnumerable<QuickMenu.Command?> commands) =>
+        string.Join(
+            ", ",
+            commands.Select(_ =>
+            {
+                if (_ == null)
+                {
+                    return "----";
+                }
+
+                if (_.Enabled)
+                {
+                    return _.Text;
+                }
+
+                return $"{_.Text} (disabled)";
+            }));
+
+    // Stashed changes, under the files, as GitHub Desktop has them: the repository's stashes,
+    // Lode's and others', newest first, under a row saying how many, which shows them; with
+    // none, no row. Each stash's menu restores or discards it, and the files' menu stashes every
+    // change; part way through a merge, which git can't stash, or restore a stash into, neither
+    // is offered, but discarding is.
+    [Test]
+    public async Task StashedChangesUnderTheFiles()
+    {
+        using var errors = new RowListTests.WindowErrors();
+        using var stubs = new PaneStubs();
+        var stashes = new List<GitStashes.Stash>();
+        ChangesPane.ReadStashes = (_, _) => stashes;
+        var read = new GitChanges("main", true, false, PaneStubs.Files);
+        ChangesPane.Read = (_, _) => read;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        var repo = fixture.At("Docs");
+        using var form = await Show(repo, settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var list = pane.StashList;
+
+        await Assert.That(list.Visible).IsFalse();
+        await Assert.That(MenuText(pane.MenuFor(repo, [PaneStubs.Files[0]]))).StartsWith("Discard changes…, Stash all changes…, ----, Show changes");
+
+        stashes.Add(new("stash@{0}", "a1", "main", "On main: their own", PaneStubs.Now - TimeSpan.FromHours(3)));
+        stashes.Add(new("stash@{1}", "b2", "feature", "On feature: Lode:feature", PaneStubs.Now - TimeSpan.FromDays(2)));
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That((list.Visible, list.Caption, list.Expanded)).IsEqualTo((true, "Stashed changes (2)", false));
+        await Assert.That(list.Rows.Visible).IsFalse();
+        list.Toggle();
+        await Assert.That((list.Expanded, list.Rows.Visible, list.Rows.VirtualListSize)).IsEqualTo((true, true, 2));
+        await Pump.Until(() => list.Rows.IsHandleCreated);
+        await Assert.That(list.Rows.Height).IsEqualTo(list.Rows.GetItemRect(0).Height * 2);
+        await Assert.That(pane.List.Bottom).IsLessThanOrEqualTo(list.Top);
+        await Assert.That(StashList.Describe(stashes[0], PaneStubs.Now)).IsEqualTo("their own, stashed on main 3 hours ago, stash@{0}");
+        await Assert.That(StashList.Describe(stashes[1], PaneStubs.Now)).IsEqualTo("Changes left on feature, stashed on feature 2 days ago, stash@{1}");
+        await Assert.That(MenuText(pane.StashCommands(stashes[0]))).IsEqualTo("Restore, Discard…");
+
+        read = PaneStubs.Conflicted;
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That(MenuText(pane.StashCommands(stashes[0]))).IsEqualTo("Restore (disabled), Discard…");
+        await Assert.That(MenuText(pane.MenuFor(repo, [PaneStubs.Conflicted.Files[2]]))).StartsWith("Discard changes…, Stash all changes… (disabled), ----");
+
+        stashes.Clear();
+        read = new("main", true, false, PaneStubs.Files);
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That(list.Visible).IsFalse();
+        await Assert.That(errors.Thrown).IsEmpty();
+    }
+
+    // Stash all changes from the files' menu, with the message asked for, and the stash restored
+    // from Stashed changes, then another discarded, having asked, for real: the pane reads the
+    // files and the stashes again as each ends.
+    [Test]
+    public async Task StashesFromChanges()
+    {
+        using var errors = new RowListTests.WindowErrors();
+        using var stubs = new PaneStubs();
+        ChangesPane.Read = GitChanges.ReadOrWhyNot;
+        ChangesPane.ReadStashes = GitStashes.Read;
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "changed");
+        File.WriteAllText(Path.Combine(repo, "new.txt"), "new");
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var form = await Show(repo, settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var list = pane.StashList;
+        await Assert.That((pane.Changes.Files.Count, list.Visible)).IsEqualTo((2, false));
+
+        var askMessage = ChangesPane.AskStashMessage;
+        var askDiscard = ChangesPane.AskDiscardStash;
+        string? asked = null;
+        ChangesPane.AskStashMessage = (_, question, suggested) =>
+        {
+            asked = $"{question} [{suggested}]";
+            return "Half way";
+        };
+        ChangesPane.AskDiscardStash = (_, question) =>
+        {
+            asked = question;
+            return DialogResult.OK;
+        };
+        try
+        {
+            pane.MenuFor(repo, pane.Changes.Files).Single(_ => _?.Text == "Stash all changes…")!.Action();
+            await Pump.Until(() => pane is { Stashing.IsCompleted: true, Reading.IsCompleted: true, NoneShown: true } && list.Stashes.Count == 1);
+
+            await Assert.That(asked).IsEqualTo("Stash all changes in Repo, 1 new file among them, putting them aside and the files back as the last commit has them. Restore them from Stashed changes, under the files. []");
+            await Assert.That((list.Visible, list.Stashes[0].Text)).IsEqualTo((true, "Half way"));
+            await Assert.That(CodeCommandsTests.Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("");
+
+            pane.StashCommands(list.Stashes[0]).Single(_ => _?.Text == "Restore")!.Action();
+            await Pump.Until(() => pane is { Stashing.IsCompleted: true, Reading.IsCompleted: true, Changes.Files.Count: 2 } && list.Stashes.Count == 0);
+
+            await Assert.That(list.Visible).IsFalse();
+            await Assert.That(File.ReadAllText(Path.Combine(repo, "new.txt"))).IsEqualTo("new");
+
+            CodeCommandsTests.Scratch.Git(repo, "stash", "push", "-m", "kept");
+            CodeCommandsTests.Scratch.Git(repo, "stash", "push", "--include-untracked", "-m", "discarded");
+            pane.Reload();
+            await Pump.Until(() => pane.Reading.IsCompleted && list.Stashes.Count == 2);
+
+            pane.StashCommands(list.Stashes[0]).Single(_ => _?.Text == "Discard…")!.Action();
+            await Pump.Until(() => pane.Stashing.IsCompleted && pane.Reading.IsCompleted && list.Stashes.Count == 1);
+
+            await Assert.That(asked).IsEqualTo("Discard the stash discarded?\n\nIts changes are gone for good: this can't be undone.");
+            await Assert.That(list.Stashes[0].Text).IsEqualTo("kept");
+            await Assert.That(File.Exists(Path.Combine(repo, "new.txt"))).IsFalse();
+            await Assert.That(errors.Thrown).IsEmpty();
+        }
+        finally
+        {
+            ChangesPane.AskStashMessage = askMessage;
+            ChangesPane.AskDiscardStash = askDiscard;
+            ActionLog.Reset();
+        }
+    }
+
     // Compare to branch, as GitHub Desktop's: the commits the branch has that the one checked
     // out hasn't, behind, first, with how many each way; Ahead lists the others; closed, the
     // branch's own commits again. Not for a repository the panes aren't about.
