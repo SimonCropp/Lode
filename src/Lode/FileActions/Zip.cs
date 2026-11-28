@@ -224,13 +224,35 @@ static class Zip
     /// <summary>
     /// What extracting a zip did: what it made at the top of where it went, what it made there or
     /// beneath, for undo (the highest of each, made by it rather than found there), what it left
-    /// out as unsafe, and what was already there, which stops it before anything is written.
+    /// out, and why, and what was already there, which stops it before anything is written.
     /// </summary>
     public sealed record Extraction(
         IReadOnlyList<string> TopLevel,
         IReadOnlyList<string> Created,
-        IReadOnlyList<string> LeftOut,
+        IReadOnlyList<LeftOutEntry> LeftOut,
         IReadOnlyList<string> Conflicts);
+
+    /// <summary>
+    /// An entry of a zip that extracting it left out, by its name in the zip, and why.
+    /// </summary>
+    public sealed record LeftOutEntry(string Name, LeftOutReason Reason);
+
+    /// <summary>
+    /// Why an entry of a zip is left out of what is extracted from it.
+    /// </summary>
+    public enum LeftOutReason
+    {
+        /// <summary>
+        /// Named to go outside where it is extracted to, or with a name Windows can't have.
+        /// </summary>
+        Unsafe,
+
+        /// <summary>
+        /// Named, before its first dot, as a device Windows keeps the name of, aux.c say, which
+        /// would open the device rather than a file.
+        /// </summary>
+        Device
+    }
 
     /// <summary>
     /// Extracts each zip, one after another, in the Actions panel: to a new folder beside it
@@ -320,9 +342,9 @@ static class Zip
     static ActionLog.Outcome ExtractedOutcome(string name, string destination, Extraction extraction)
     {
         var details = $"Extracted {name} to {destination}";
-        if (extraction.LeftOut.Count > 0)
+        foreach (var reason in extraction.LeftOut.GroupBy(_ => _.Reason).OrderBy(_ => _.Key))
         {
-            details += $"{Environment.NewLine}{Environment.NewLine}Left out, being named to go outside the folder or with names Windows can't have:{Environment.NewLine}{string.Join(Environment.NewLine, extraction.LeftOut)}";
+            details += $"{Environment.NewLine}{Environment.NewLine}Left out, {Saying(reason.Key)}:{Environment.NewLine}{string.Join(Environment.NewLine, reason.Select(_ => _.Name))}";
         }
 
         var summary = $"Extracted {name}";
@@ -333,6 +355,14 @@ static class Zip
 
         return new(true, summary, details);
     }
+
+    // Why entries were left out, as the details of an extract say it, of each of them.
+    static string Saying(LeftOutReason reason) =>
+        reason switch
+        {
+            LeftOutReason.Device => "with names Windows keeps for devices, as CON, AUX and NUL",
+            _ => "being named to go outside the folder or with names Windows can't have"
+        };
 
     /// <summary>
     /// Writes what <paramref name="zip"/> holds into <paramref name="destination"/>, which is
@@ -347,13 +377,13 @@ static class Zip
         var mark = MarkOfTheWeb(zip);
         using var archive = OpenRead(zip);
         var targets = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>();
-        var leftOut = new List<string>();
+        var leftOut = new List<LeftOutEntry>();
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in archive.Entries)
         {
-            if (Segments(entry.FullName) is not { } segments)
+            if (Segments(entry.FullName, out var reason) is not { } segments)
             {
-                leftOut.Add(entry.FullName);
+                leftOut.Add(new(entry.FullName, reason));
                 continue;
             }
 
@@ -366,7 +396,7 @@ static class Zip
             if (!Locations.IsWithin(path, destination) ||
                 Locations.Same(path, destination))
             {
-                leftOut.Add(entry.FullName);
+                leftOut.Add(new(entry.FullName, LeftOutReason.Unsafe));
                 continue;
             }
 
@@ -377,7 +407,7 @@ static class Zip
             if (!isFolder &&
                 !files.Add(path))
             {
-                leftOut.Add(entry.FullName);
+                leftOut.Add(new(entry.FullName, LeftOutReason.Unsafe));
                 continue;
             }
 
@@ -671,11 +701,18 @@ static class Zip
     /// <summary>
     /// The folders and name of an entry, by its name in the zip, which may use either slash. Null
     /// for a name that would go outside where it is extracted to, or that Windows can't have:
-    /// rooted, with a drive, "." or "..", a character no file name can have, or ending in a dot
-    /// or a space, which Windows drops. Empty for the zip's own top.
+    /// rooted, with a drive, "." or "..", a character no file name can have, ending in a dot or
+    /// a space, which Windows drops, or named as a device is (see <see cref="IsDevice"/>). Empty
+    /// for the zip's own top.
     /// </summary>
-    public static string[]? Segments(string name)
+    public static string[]? Segments(string name) =>
+        Segments(name, out _);
+
+    // As Segments, saying why a name it refuses is refused: one that goes outside, or that
+    // Windows can't have at all, before one named as a device.
+    static string[]? Segments(string name, out LeftOutReason reason)
     {
+        reason = LeftOutReason.Unsafe;
         if (name.StartsWith('/') ||
             name.StartsWith('\\') ||
             name.Contains(':'))
@@ -684,6 +721,7 @@ static class Zip
         }
 
         var segments = name.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        var device = false;
         foreach (var segment in segments)
         {
             if (segment is "." or ".." ||
@@ -693,9 +731,48 @@ static class Zip
             {
                 return null;
             }
+
+            device |= IsDevice(segment);
+        }
+
+        if (device)
+        {
+            reason = LeftOutReason.Device;
+            return null;
         }
 
         return segments;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="segment"/> is named as a device Windows keeps the name of in every
+    /// folder: CON, PRN, AUX, NUL, or COM or LPT with a digit, as itself or before its first dot,
+    /// any spaces before the dot dropped, in any case. Windows opens the device for such a name,
+    /// aux.c or con.h as C sources made on Linux have them say, rather than a file. The digit may
+    /// be ¹, ² or ³ too, which Windows takes for digits there.
+    /// </summary>
+    static bool IsDevice(string segment)
+    {
+        var dot = segment.IndexOf('.');
+        if (dot < 0)
+        {
+            dot = segment.Length;
+        }
+
+        var stem = segment.AsSpan(0, dot).TrimEnd(' ');
+        if (stem.Length == 3)
+        {
+            return stem.Equals("CON", StringComparison.OrdinalIgnoreCase) ||
+                   stem.Equals("PRN", StringComparison.OrdinalIgnoreCase) ||
+                   stem.Equals("AUX", StringComparison.OrdinalIgnoreCase) ||
+                   stem.Equals("NUL", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return stem.Length == 4 &&
+               (stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase) ||
+                stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)) &&
+               (char.IsAsciiDigit(stem[3]) ||
+                stem[3] is '¹' or '²' or '³');
     }
 
     static void TryDelete(string path)

@@ -135,7 +135,7 @@ public class ZipTests
 
         var extraction = Zip.Extract(zip, fixture.At("Target"), null, Cancel.None);
 
-        await Assert.That(extraction.LeftOut).IsEquivalentTo(["makefile"]);
+        await Assert.That(extraction.LeftOut.Select(_ => _.Name)).IsEquivalentTo(["makefile"]);
         await Assert.That(await File.ReadAllTextAsync(fixture.At("Target", "Makefile"))).IsEqualTo("first");
         await Assert.That(File.Exists(fixture.At("Target", "other.txt"))).IsTrue();
     }
@@ -300,6 +300,48 @@ public class ZipTests
         await Assert.That(Directory.GetFileSystemEntries(fixture.At("Target")).Select(_ => Path.GetFileName(_))).IsEquivalentTo(["safe.txt"]);
     }
 
+    // Windows takes a name it keeps for a device, CON, AUX or NUL say, for the device, whatever
+    // follows the first dot, so aux.c and con.h, as C sources made on Linux have, would open the
+    // device rather than a file, and fail the extract, or lose what was written to them. Each is
+    // left out, saying so, and the rest extracted, console.h among them.
+    [Test]
+    public async Task ExtractLeavesOutDeviceNames()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Devices.zip", ("src/aux.c", "aux"), ("src/main.c", "main"), ("con.h", "con"), ("nul", "nul"), ("console.h", "console"));
+
+        var (outcome, _) = Zip.ExtractTo(zip, fixture.Root, false, null, Cancel.None);
+
+        await Verify(
+            new
+            {
+                outcome.Succeeded,
+                outcome.Summary,
+                leftOut = outcome.Details.Split(Environment.NewLine).Skip(1),
+                tree = fixture.Tree().Where(_ => _.StartsWith("Projects/Devices/", StringComparison.Ordinal))
+            })
+            .Snapshot(
+                """
+                {
+                  Succeeded: true,
+                  Summary: Extracted Devices.zip, leaving out 3 items,
+                  leftOut: [
+                    ,
+                    Left out, with names Windows keeps for devices, as CON, AUX and NUL:,
+                    src/aux.c,
+                    con.h,
+                    nul
+                  ],
+                  tree: [
+                    Projects/Devices/,
+                    Projects/Devices/console.h (7 bytes),
+                    Projects/Devices/src/,
+                    Projects/Devices/src/main.c (4 bytes)
+                  ]
+                }
+                """);
+    }
+
     [Test]
     public async Task Segments()
     {
@@ -310,6 +352,17 @@ public class ZipTests
         await Assert.That(Zip.Segments("\\a")).IsNull();
         await Assert.That(Zip.Segments("a/b?")).IsNull();
         await Assert.That(Zip.Segments("a /b")).IsNull();
+        await Assert.That(Zip.Segments("src/aux.c")).IsNull();
+        await Assert.That(Zip.Segments("Con/inner.txt")).IsNull();
+        await Assert.That(Zip.Segments("nul.tar.gz")).IsNull();
+        await Assert.That(Zip.Segments("prn .txt")).IsNull();
+        await Assert.That(Zip.Segments("COM0")).IsNull();
+        await Assert.That(Zip.Segments("lpt9.log")).IsNull();
+        await Assert.That(Zip.Segments("COM¹")).IsNull();
+        await Assert.That(Zip.Segments("LPT³.txt")).IsNull();
+        await Assert.That(Zip.Segments("console.h")).IsEquivalentTo(["console.h"]);
+        await Assert.That(Zip.Segments("auxiliary/com10.c")).IsEquivalentTo(["auxiliary", "com10.c"], CollectionOrdering.Matching);
+        await Assert.That(Zip.Segments("COM⁴")).IsEquivalentTo(["COM⁴"]);
     }
 
     // Past the old 260 character limit, both ways.
