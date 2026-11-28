@@ -1280,15 +1280,16 @@ static class CodeMenu
     };
 
     // Looking for the repositories reads two levels of folders, so that is off the UI thread, as
-    // Pull's is, and Discard's. Then it asks for the commit message, where there is anything to
-    // commit, or only whether to push, where there isn't.
+    // Pull's is, and Discard's, and so is looking in them, each at once. Then it asks for the
+    // commit message, where there is anything to commit, or only whether to push, where there
+    // isn't.
     internal static async void Push(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var (repos, untracked, changed) = await Task.Run(
+        var (repos, (changed, untracked)) = await Task.Run(
             () =>
             {
                 var found = CodeCommands.FindRepos(folders, codeFolder);
-                return (found, CodeCommands.FindUntracked(found), CodeCommands.AnyChanges(found));
+                return (found, CodeCommands.FindToCommit(found));
             });
         if (repos.Count == 0)
         {

@@ -487,15 +487,88 @@ public class CodeCommandsTests
         await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
         Scratch.Git(repo, "commit", "-am", "Earlier");
 
-        await Assert.That(CodeCommands.AnyChanges([repo])).IsFalse();
+        await Assert.That(CodeCommands.FindToCommit([repo]).Changed).IsFalse();
         var results = await CodeCommands.Push([repo], null);
 
         await Assert.That(results.Single().Succeeded).IsTrue();
         await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s")).IsEqualTo("Earlier");
 
         await File.WriteAllTextAsync(Path.Combine(repo, "new.txt"), "new");
-        await Assert.That(CodeCommands.AnyChanges([repo])).IsTrue();
+        await Assert.That(CodeCommands.FindToCommit([repo]).Changed).IsTrue();
         await Assert.That(CodeMenu.PushOnlyQuestion([repo])).IsEqualTo("Push Repo to origin?\n\nNothing is uncommitted, so only what is committed goes.");
+    }
+
+    // Push neither looks in nor pushes a repository GitCache knows, fresh, to have nothing to
+    // push, as it knows every repository once the code folder has been shown. Known is known as
+    // clean and up to date with origin, though it has a commit origin hasn't got and a new file,
+    // to show it is left as it is, and Synced, read as it is, is left too. Ahead, read with a
+    // commit not pushed, and Changed, never read, are looked in and pushed as before, the new
+    // file in Changed counted for the question. Each is in what Push did, in order.
+    [Test]
+    // The window tests of the git panes forget all GitCache knows when done.
+    [NotInParallel("windows")]
+    public async Task PushLeavesWhatGitCacheKnowsHasNothingToPush()
+    {
+        using var code = new Scratch();
+        var ahead = code.CreateRepo("Ahead");
+        var changed = code.CreateRepo("Changed");
+        var known = code.CreateRepo("Known");
+        var synced = code.CreateRepo("Synced");
+        var knownOrigin = Scratch.Git(code.Origin("Known"), "rev-parse", "main");
+        var knownPushed = Scratch.Git(known, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(known, "tracked.txt"), "not pushed");
+        Scratch.Git(known, "commit", "-am", "Not pushed");
+        await File.WriteAllTextAsync(Path.Combine(known, "new.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(ahead, "tracked.txt"), "ahead");
+        Scratch.Git(ahead, "commit", "-am", "Ahead");
+        await File.WriteAllTextAsync(Path.Combine(changed, "new.txt"), "new");
+        List<string> repos = [ahead, changed, known, synced];
+        GitCache.Watch(code.Root);
+        try
+        {
+            await KnownAs(known, () => new("main", knownPushed, 0, 0, []) {UpstreamName = "origin/main"});
+            await KnownAs(synced, () => GitState.FromGit(synced, Cancel.None)!);
+            await KnownAs(ahead, () => GitState.FromGit(ahead, Cancel.None)!);
+
+            var found = CodeCommands.FindToCommit(repos);
+            var results = await CodeCommands.Push(repos, "Tidy up");
+
+            await Assert.That(found.Changed).IsTrue();
+            await Assert.That(found.Untracked.NewFiles).IsEqualTo(1);
+            await Assert.That(results.Select(_ => code.Relative(_.Repo))).IsEquivalentTo(["Ahead", "Changed", "Known", "Synced"], CollectionOrdering.Matching);
+            await Assert.That(results.All(_ => _.Succeeded)).IsTrue();
+            await Assert.That(results[2].Output).IsEqualTo("Nothing to push: everything up-to-date");
+            await Assert.That(results[3].Output).IsEqualTo("Nothing to push: everything up-to-date");
+            await Assert.That(Scratch.Git(code.Origin("Known"), "rev-parse", "main")).IsEqualTo(knownOrigin);
+            await Assert.That(Scratch.Git(known, "status", "--porcelain")).IsEqualTo("?? new.txt");
+            await Assert.That(Scratch.Git(code.Origin("Ahead"), "log", "-1", "--format=%s")).IsEqualTo("Ahead");
+            await Assert.That(Scratch.Git(code.Origin("Changed"), "log", "-1", "--format=%s")).IsEqualTo("Tidy up");
+        }
+        finally
+        {
+            GitCache.LetGo(code.Root);
+        }
+    }
+
+    // Stores what read gives as GitCache's, as a view reading the repository does, till it is
+    // fresh: just made, Windows brings a folder's entry up to date once the folder is next
+    // opened, which the watch can hear as a change.
+    static async Task KnownAs(string repo, Func<GitState> read)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var before = GitCache.Changes(repo);
+            GitCache.Store(repo, read(), null, before);
+            if (GitCache.TryGet(repo, out _, out _, out var fresh) &&
+                fresh)
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new($"{repo} isn't known fresh");
     }
 
     // New files go in too, as the Changes pane commits them, though not what git ignores, even
@@ -512,7 +585,7 @@ public class CodeCommandsTests
         await File.WriteAllTextAsync(Path.Combine(repo, "Source", "new.txt"), "new");
         await File.WriteAllTextAsync(Path.Combine(repo, "build.log"), "ignored");
 
-        await Assert.That(CodeCommands.FindUntracked([repo]).NewFiles).IsEqualTo(1);
+        await Assert.That(CodeCommands.FindToCommit([repo]).Untracked.NewFiles).IsEqualTo(1);
         var results = await CodeCommands.Push([repo], "Add new");
 
         await Assert.That(results.Single().Succeeded).IsTrue();
@@ -521,7 +594,7 @@ public class CodeCommandsTests
         var files = Scratch.Git(origin, "ls-tree", "-r", "--name-only", "HEAD").Split('\n');
         await Assert.That(files).Contains("Source/new.txt");
         await Assert.That(files).DoesNotContain("build.log");
-        await Assert.That(CodeCommands.FindUntracked([repo]).NewFiles).IsEqualTo(0);
+        await Assert.That(CodeCommands.FindToCommit([repo]).Untracked.NewFiles).IsEqualTo(0);
     }
 
     // A repository of its own inside, git doesn't track, a clone or a worktree say: added, it
@@ -543,7 +616,7 @@ public class CodeCommandsTests
         await File.WriteAllTextAsync(Path.Combine(repo, "tools", "new.txt"), "new");
         await File.WriteAllTextAsync(Path.Combine(repo, "tools", "Inner v"), "new");
 
-        var untracked = CodeCommands.FindUntracked([repo]);
+        var untracked = CodeCommands.FindToCommit([repo]).Untracked;
         var results = await CodeCommands.Push([repo], "Add new");
 
         await Assert.That(untracked.NewFiles).IsEqualTo(2);

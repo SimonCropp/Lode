@@ -784,11 +784,44 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// Whether any of the repositories has anything to commit, for Push to ask for a message
-    /// only then.
+    /// What Push finds before it asks: whether any of the repositories has anything to commit,
+    /// <paramref name="Changed"/>, for it to ask for a message only then, and what they have
+    /// that git doesn't track, for the question to say.
     /// </summary>
-    public static bool AnyChanges(IReadOnlyList<string> repos) =>
-        repos.Any(HasChanges);
+    public sealed record ToCommit(bool Changed, Untracked Untracked);
+
+    /// <summary>
+    /// What Push finds in the repositories before it asks, as <see cref="ToCommit"/> has it.
+    /// Each repository's at once, as git runs in each on its own: one after another, a code
+    /// folder of a hundred took seconds, with nothing shown meanwhile. One GitCache knows, fresh,
+    /// to have nothing to push isn't looked in, as it has nothing to commit, nor a new file.
+    /// </summary>
+    public static ToCommit FindToCommit(IReadOnlyList<string> repos)
+    {
+        var found = InParallel(
+            repos
+                .Where(_ => !KnownNothingToPush(_))
+                .ToList(),
+            _ => new Found(_, HasChanges(_), UntrackedIn(_)));
+        var newFiles = found.Sum(_ => _.Untracked.Files);
+        var inside = found
+            .SelectMany(_ => _.Untracked.Repos.Select(name => Path.Combine(_.Repo, name.Replace('/', '\\'))))
+            .ToList();
+        return new(found.Any(_ => _.Changed), new(newFiles, inside));
+    }
+
+    sealed record Found(string Repo, bool Changed, (int Files, List<string> Repos) Untracked);
+
+    /// <summary>
+    /// Whether GitCache knows, fresh, that Push would have nothing to do in the repository: no
+    /// change to commit, new files included, and no commit the branch it tracks hasn't got, as
+    /// of the last fetch. Push neither looks in such a repository nor pushes it, as pushing is a
+    /// round trip to origin for nothing; the menu leaves Push off where every one is such.
+    /// </summary>
+    internal static bool KnownNothingToPush(string repo) =>
+        GitCache.TryGet(repo, out var state, out _, out var fresh) &&
+        fresh &&
+        state.NothingToPush;
 
     // Anything to commit: a change, staged or not, or a file git doesn't track nor ignores, as
     // Push adds them.
@@ -925,7 +958,9 @@ static class CodeCommands
     /// Commits every change with the message, new files included, as the Changes pane commits
     /// them, though not what git ignores, then pushes to origin. With no message, where nothing
     /// was uncommitted as it asked, it only pushes. A branch tracking none, as one made here
-    /// does, goes to one of its own name on origin, which it tracks from then on.
+    /// does, goes to one of its own name on origin, which it tracks from then on. One GitCache
+    /// knows, fresh as it comes to it, to have nothing to push is left as it is: see
+    /// <see cref="KnownNothingToPush"/>.
     /// </summary>
     public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string? message, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
@@ -934,6 +969,13 @@ static class CodeCommands
             cancel,
             repo =>
             {
+                // Asked as it comes to it, not as the question was, so a change made while the
+                // question waited is pushed.
+                if (KnownNothingToPush(repo))
+                {
+                    return new(repo, true, nothingToPush);
+                }
+
                 if (message == null)
                 {
                     return PushToOrigin(repo, cancel);
@@ -951,6 +993,9 @@ static class CodeCommands
                     Output = $"{commit.Output}\n{push.Output}".Trim()
                 };
             });
+
+    // What Push says of a repository it left, as git says it of one it pushed nothing from.
+    const string nothingToPush = "Nothing to push: everything up-to-date";
 
     // Pushes the branch checked out to origin, as git push does, to the branch it tracks there.
     // One tracking none, as a branch made here does, Lode's own among them, goes to a branch of
@@ -1166,24 +1211,6 @@ static class CodeCommands
     /// repositories of their own inside, by their full paths, which it leaves out.
     /// </summary>
     public sealed record Untracked(int NewFiles, IReadOnlyList<string> Repos);
-
-    /// <summary>
-    /// What the repositories have that git doesn't track yet, nor ignores, as
-    /// <see cref="Untracked"/> has it.
-    /// </summary>
-    public static Untracked FindUntracked(IReadOnlyList<string> repos)
-    {
-        var newFiles = 0;
-        var inside = new List<string>();
-        foreach (var repo in repos)
-        {
-            var (files, repositories) = UntrackedIn(repo);
-            newFiles += files;
-            inside.AddRange(repositories.Select(_ => Path.Combine(repo, _.Replace('/', '\\'))));
-        }
-
-        return new(newFiles, inside);
-    }
 
     // What git doesn't track in the repository, nor ignores: how many files, and the
     // repositories of their own inside, as git names them, relative to it. Git lists one as a
