@@ -2360,6 +2360,79 @@ public class WindowsTests
         }
     }
 
+    // The status bar has the most recent tag right after the branch, a dot between, and the
+    // commits ahead after it. A repository with no tag has none, nor its dot.
+    [Test]
+    public async Task StatusBarShowsTheMostRecentTag()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+
+        await Assert.That(await Shown("0.25.0")).IsEquivalentTo(["main", "·", "0.25.0", "·", "1 ahead"], CollectionOrdering.Matching);
+        await Assert.That(await Shown(null)).IsEquivalentTo(["main", "·", "1 ahead"], CollectionOrdering.Matching);
+
+        // The git items the bar shows, in order.
+        async Task<List<string>> Shown(string? tag)
+        {
+            GitCache.Reset();
+            FolderView.ReadGit = (_, _) => new("main", PaneStubs.History[0].Sha, 1, 0, [])
+            {
+                Upstream = true,
+                Tag = tag
+            };
+            using var form = await Show(fixture, settings, fixture.Root);
+            await PaneStubs.Settled(form);
+            var items = form.StatusBar.Strip.Items.Cast<ToolStripItem>().ToList();
+            var start = items.IndexOf(form.StatusBar.Strip.Items["git"]!);
+            var end = items.IndexOf(form.StatusBar.Strip.Items["site"]!);
+            return items[start..end]
+                .Where(_ => _.Available)
+                .Select(_ => _.Text ?? "")
+                .ToList();
+        }
+    }
+
+    // Right-clicked, the branch on the status bar offers to copy its name, and the tag its own;
+    // detached, the branch's place offers the commit's SHA.
+    [Test]
+    public async Task StatusBarCopiesTheBranchAndTagNames()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        var sha = PaneStubs.History[0].Sha;
+        var copied = new List<string>();
+        var setClipboardText = FolderView.SetClipboardText;
+        FolderView.SetClipboardText = copied.Add;
+        try
+        {
+            await Assert.That(await Copies("main", "git")).IsEqualTo(("Copy branch name", "main"));
+            await Assert.That(await Copies("main", "gitTag")).IsEqualTo(("Copy tag name", "0.25.0"));
+            await Assert.That(await Copies(null, "git")).IsEqualTo(("Copy SHA", sha));
+        }
+        finally
+        {
+            FolderView.SetClipboardText = setClipboardText;
+        }
+
+        // The one entry the item's right-click menu has, and what it copied.
+        async Task<(string, string)> Copies(string? branch, string item)
+        {
+            GitCache.Reset();
+            FolderView.ReadGit = (_, _) => new(branch, sha, 0, 0, [])
+            {
+                Upstream = branch != null,
+                Tag = "0.25.0"
+            };
+            using var form = await Show(fixture, settings, fixture.Root);
+            await PaneStubs.Settled(form);
+            var command = form.StatusBar.NameCommands(form.StatusBar.Strip.Items[item]!).Single()!;
+            command.Action();
+            return (command.Text, copied[^1]);
+        }
+    }
+
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
         Show(fixture, new(), paths);
 

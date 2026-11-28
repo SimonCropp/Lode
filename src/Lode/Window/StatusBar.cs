@@ -55,8 +55,21 @@ sealed class StatusBar : IDisposable
         Visible = false
     };
 
-    // After the branch, each after a dot: that there are no commits yet, which there is nothing
-    // to do about, then the changes, to commit or discard, and the commits to push and to pull.
+    // After the branch, after a dot: the most recent tag the commit checked out has in its
+    // history, as git describe --tags finds it, with a tag before it as the branch has a branch.
+    // Not one of GitState's parts, which the Git column says too, beside a Tag column of its own.
+    ToolStripStatusLabel tagDot = Dot();
+    ToolStripStatusLabel tagLabel = new()
+    {
+        Name = "gitTag",
+        Margin = new(0, 1, 0, 0),
+        ToolTipText = "The most recent tag: the commit checked out's, or the nearest before it",
+        Visible = false
+    };
+
+    // After the branch and its tag, each after a dot: that there are no commits yet, which there
+    // is nothing to do about, then the changes, to commit or discard, and the commits to push
+    // and to pull.
     Dictionary<GitState.PartKind, (ToolStripStatusLabel Dot, ToolStripItem Item)> gitParts = [];
 
     // The repository the branch and the parts after it are about, and its state as they say it:
@@ -87,6 +100,10 @@ sealed class StatusBar : IDisposable
         Margin = new(0, 3, 12, 2),
         Visible = false
     };
+
+    // The mouse button last pressed on the branch: right, its click shows the branch's menu, not
+    // the branches.
+    MouseButtons branchPressed;
 
     // When the branches last closed, as Environment.TickCount64. Clicking the branch while they
     // are open closes them, as the click goes to the window first, and then the click itself
@@ -122,6 +139,8 @@ sealed class StatusBar : IDisposable
         Strip.Items.Add(room);
         Strip.Items.Add(updateLabel);
         Strip.Items.Add(gitButton);
+        Strip.Items.Add(tagDot);
+        Strip.Items.Add(tagLabel);
         AddGitPart(
             GitState.PartKind.NoCommits,
             new ToolStripStatusLabel
@@ -144,7 +163,21 @@ sealed class StatusBar : IDisposable
         gitButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
         gitButton.TextImageRelation = TextImageRelation.ImageBeforeText;
         gitButton.Image = Icons.Bitmap(Icons.Branch, window.LogicalToDeviceUnits(16), SystemColors.ControlText, window.LogicalToDeviceUnits(4));
-        gitButton.Click += (_, _) => ShowBranches();
+        tagLabel.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+        tagLabel.TextImageRelation = TextImageRelation.ImageBeforeText;
+        tagLabel.Image = Icons.Bitmap(Icons.Tag, window.LogicalToDeviceUnits(16), SystemColors.ControlText, window.LogicalToDeviceUnits(4));
+        gitButton.MouseDown += (_, args) => branchPressed = args.Button;
+        gitButton.Click += (_, _) =>
+        {
+            var pressed = branchPressed;
+            branchPressed = MouseButtons.None;
+            if (pressed != MouseButtons.Right)
+            {
+                ShowBranches();
+            }
+        };
+        gitButton.MouseUp += (_, args) => ShowNameMenu(gitButton, args);
+        tagLabel.MouseUp += (_, args) => ShowNameMenu(tagLabel, args);
         updateLabel.Click += (_, _) => showOptions("Updates");
         searchInsideLabel.Click += (_, _) => activeView()?.SearchInsideTheFiles();
         siteLabel.Click += (_, _) =>
@@ -251,13 +284,78 @@ sealed class StatusBar : IDisposable
     internal static Point TipLocation(Rectangle item, int height, int gap) =>
         new(item.Left, -height - gap);
 
-    void AddGitPart(GitState.PartKind kind, ToolStripItem item)
+    /// <summary>
+    /// The right-click entries of the branch or the tag on the bar: to copy its name, as GitHub
+    /// Desktop's branch menu has Copy branch name. Detached, the commit's SHA, in the branch's
+    /// place. None for anything else, or with no repository shown.
+    /// </summary>
+    internal List<QuickMenu.Command?> NameCommands(ToolStripItem item)
     {
-        var dot = new ToolStripStatusLabel("·")
+        if (gitState is not { } state)
+        {
+            return [];
+        }
+
+        if (item == tagLabel &&
+            state.Tag is { } tag)
+        {
+            return [Copy("Copy tag name", tag)];
+        }
+
+        if (item != gitButton)
+        {
+            return [];
+        }
+
+        if (state.Branch is { } branch)
+        {
+            return [Copy("Copy branch name", branch)];
+        }
+
+        if (state.Commit is { } sha)
+        {
+            return [Copy("Copy SHA", sha)];
+        }
+
+        return [];
+
+        static QuickMenu.Command Copy(string text, string value) =>
+            new(text, () => FolderView.SetClipboardText(value))
+            {
+                Glyph = Icons.Copy
+            };
+    }
+
+    // At the pointer, what is picked run once the menu has closed, as QuickMenu does.
+    void ShowNameMenu(ToolStripItem item, MouseEventArgs args)
+    {
+        if (args.Button != MouseButtons.Right ||
+            NameCommands(item) is not { Count: > 0 } commands)
+        {
+            return;
+        }
+
+        Action? chosen = null;
+        var menu = QuickMenu.Build(commands, null, _ => chosen = _);
+        menu.Closed += (_, _) => menu.BeginInvoke(
+            () =>
+            {
+                menu.Dispose();
+                chosen?.Invoke();
+            });
+        menu.Show(Cursor.Position);
+    }
+
+    static ToolStripStatusLabel Dot() =>
+        new("·")
         {
             Margin = new(0, 3, 0, 2),
             Visible = false
         };
+
+    void AddGitPart(GitState.PartKind kind, ToolStripItem item)
+    {
+        var dot = Dot();
         item.Visible = false;
         Strip.Items.Add(dot);
         Strip.Items.Add(item);
@@ -298,13 +396,23 @@ sealed class StatusBar : IDisposable
         gitState = state;
         var parts = state?.Parts() ?? [];
         var texts = parts.ToDictionary(_ => _.Kind, _ => _.Text);
+        var tag = state?.Tag;
         ToolStripItem? last = null;
         if (parts.Count > 0)
         {
             last = ItemOf(parts[^1].Kind);
         }
 
+        // Right after the branch, so last only where the branch would be.
+        if (last == gitButton &&
+            tag != null)
+        {
+            last = tagLabel;
+        }
+
         Show(gitButton, texts.GetValueOrDefault(GitState.PartKind.Branch));
+        tagDot.Visible = tag != null;
+        Show(tagLabel, tag);
         foreach (var (kind, (dot, item)) in gitParts)
         {
             var text = texts.GetValueOrDefault(kind);
