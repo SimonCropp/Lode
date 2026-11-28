@@ -3230,6 +3230,57 @@ public class FolderViewTests
         await Assert.That(before).Contains("Tree: tree · 1 change");
     }
 
+    // A commit writes the index and HEAD in the repository's git folder, and none of its files.
+    // Where nothing hears that folder, outside the code folder as a worktree's is whose
+    // repository is there, or one cloned there with --separate-git-dir, or not in a .git, as a
+    // bare repository's worktrees have it, the repository is never fresh: gone back to, it is
+    // read again, and no longer says there is a change to commit.
+    [Test]
+    public async Task ARepositoryWhoseGitFolderIsNotHeardIsReadWhenGoneBackTo()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        using var outside = new CodeCommandsTests.Scratch();
+        var main = outside.CreateRepo("Main");
+        var tree = code.At("Tree");
+        CodeCommandsTests.Scratch.Git(main, "worktree", "add", tree, "-b", "tree");
+        var separate = code.At("Separate");
+        CodeCommandsTests.Scratch.Git(outside.Root, "clone", "--separate-git-dir", outside.At("Separate"), outside.Origin("Main"), separate);
+        CodeCommandsTests.Scratch.Identify(separate);
+        var bare = code.At("Bare.git");
+        var work = code.At("Work");
+        CodeCommandsTests.Scratch.Git(code.Root, "clone", "--bare", outside.Origin("Main"), bare);
+        CodeCommandsTests.Scratch.Identify(bare);
+        CodeCommandsTests.Scratch.Git(bare, "worktree", "add", work, "-b", "work");
+        Directory.CreateDirectory(code.At("Plain"));
+        foreach (var repo in new[] { tree, separate, work })
+        {
+            await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        }
+
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+
+        // Whatever making the repositories left to be heard has been, and read.
+        await Pump.For(TimeSpan.FromSeconds(1));
+        await GitRead(view);
+        var before = GitCells(view);
+        foreach (var repo in new[] { tree, separate, work })
+        {
+            CodeCommandsTests.Scratch.Git(repo, "commit", "-am", "Change");
+        }
+
+        view.Navigate(code.At("Plain"));
+        await Pump.Loaded(view);
+        view.Navigate(code.Root);
+        await Pump.Loaded(view);
+        await GitRead(view);
+
+        await Assert.That(before)
+            .IsEquivalentTo(["Bare.git: ", "Plain: ", "Separate: main · 1 change", "Tree: tree · 1 change", "Work: work · 1 change"], CollectionOrdering.Matching);
+        await Assert.That(GitCells(view))
+            .IsEquivalentTo(["Bare.git: ", "Plain: ", "Separate: main · 1 ahead", "Tree: tree", "Work: work"], CollectionOrdering.Matching);
+    }
+
     static bool IsFresh(string repo)
     {
         GitCache.TryGet(repo, out _, out _, out var fresh);

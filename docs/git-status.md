@@ -207,7 +207,7 @@ flowchart TD
 - Branches and config are shared by all worktrees, so each is stale when one moves.
 - A submodule's HEAD is also the commit its parent has it at, so the parent is stale too.
 
-This works only where the main repository is in the code folder as well.
+This works only where the main repository is in the code folder as well, with its git folder in a `.git`. A worktree whose main repository is outside the code folder, or is a bare repository, and a repository cloned with `--separate-git-dir` to outside it, or to a folder not in a `.git`, have their index and HEAD where nothing heard is taken as a change to them: a commit made in a terminal changes none of their files. So `TryGet` never counts one fresh, and it is read whenever its folder is, and when its tab or window comes back to the front, as where the code folder can't be watched.
 
 
 ## From stale to read again
@@ -316,7 +316,8 @@ dotnet run -c Release --project src/Lode.Benchmarks
 - Nothing here applies outside the code folder.
 - A code folder that wasn't there when it was first shown is not watched until Lode is restarted, or it is cleared in Options and chosen again.
 - A repository is tracked only once a view has asked about it.
-- A worktree whose main repository is outside the code folder, or one pointed at another git folder after it was first read, is not followed.
+- A worktree whose main repository is outside the code folder, or is a bare repository, and a repository whose git folder is outside it, or not in a `.git`, are never fresh: each is read every time its folder is, and a commit in one made in a terminal shows only once it is gone back to, or its window comes back to the front.
+- A repository pointed at another git folder after it was first read is not followed.
 - A single ignored file, in a folder that isn't ignored, still makes its repository stale.
 - A change to the index forgets every folder learned for that repository, so each is asked about again.
 - Ahead and behind are as of the last fetch: Lode never fetches to work them out. So is how far behind upstream a fork is: Fetch, and Sync fork, fetch upstream too.

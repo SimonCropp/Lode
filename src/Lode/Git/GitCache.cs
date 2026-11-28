@@ -176,6 +176,11 @@ static class GitCache
     static Dictionary<string, (string Repo, bool Shares)> gitFolders = new(StringComparer.OrdinalIgnoreCase);
     static Dictionary<string, List<string>> sharing = new(StringComparer.OrdinalIgnoreCase);
 
+    // The other way about: the git folder of each repository known whose .git is a file saying
+    // where it is, a worktree's, a submodule's or one cloned with --separate-git-dir, with the
+    // folder whose branches and config it shares, which is its own where it shares none.
+    static Dictionary<string, (string Git, string Common)> ownGitFolders = new(StringComparer.OrdinalIgnoreCase);
+
     // The watch on each code folder: one, but for tests, which have many. Null for one that
     // can't be watched, on a share say, or not there when it was first shown.
     static Dictionary<string, FolderWatcher?> watchers = new(StringComparer.OrdinalIgnoreCase);
@@ -244,6 +249,23 @@ static class GitCache
 
         return false;
     }
+
+    // Whether changes to the repository are heard: to its files, and in its git folder, and the
+    // one whose branches it shares, where a commit, a stage, a checkout or a fetch writes, and
+    // nothing of its files changes. A worktree's git folder, or one cloned with
+    // --separate-git-dir, can be outside the code folder, where nothing hears it, or not in a
+    // .git, as a bare repository's worktrees have it, where what is heard isn't taken as a
+    // change in a git folder. Such a repository is never fresh, so it is read every time, as
+    // where the code folder isn't watched. Under the gate.
+    static bool HeardAll(string repo) =>
+        Heard(repo) &&
+        (!ownGitFolders.TryGetValue(repo, out var own) ||
+         (HeardAsGit(own.Git) && HeardAsGit(own.Common)));
+
+    // Under the gate.
+    static bool HeardAsGit(string folder) =>
+        Heard(folder) &&
+        InGit(folder + Path.DirectorySeparatorChar, out _);
 
     /// <summary>
     /// Watches <paramref name="folder"/>, the code folder, unless it is watched already. One
@@ -346,7 +368,8 @@ static class GitCache
     /// <summary>
     /// The state last read of <paramref name="repo"/>, and whether it is still fresh: nothing in
     /// the repository has changed since, as far as the watch has heard, or what has is its
-    /// output still being built. False when none has been.
+    /// output still being built. Never fresh where the watch doesn't hear all of it, its git
+    /// folder say: see <see cref="HeardAll"/>. False when none has been.
     /// </summary>
     public static bool TryGet(string repo, out GitState state, out RemoteSite? site, out bool fresh)
     {
@@ -364,7 +387,7 @@ static class GitCache
             state = entry.State;
             site = entry.Site;
             fresh = entry.Fresh(Environment.TickCount64) &&
-                    Heard(repo);
+                    HeardAll(repo);
             return true;
         }
     }
@@ -434,6 +457,7 @@ static class GitCache
             return;
         }
 
+        ownGitFolders[repo] = (git, common);
         var shares = !Locations.Same(git, common);
         gitFolders[git] = (repo, shares);
         if (!shares)
@@ -1169,6 +1193,7 @@ static class GitCache
             known.Clear();
             gitFolders.Clear();
             sharing.Clear();
+            ownGitFolders.Clear();
             reading.Clear();
             folders.Clear();
             toLearn.Clear();
