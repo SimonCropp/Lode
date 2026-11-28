@@ -3033,6 +3033,76 @@ public class FolderViewTests
     static void OpenSelected(FolderView view) =>
         view.ItemCommands(view.SelectedEntries()).First(_ => _?.Id == "open")!.Action();
 
+    // Ctrl+A and Enter would open everything in the folder, going into the first folder and
+    // opening a tab for each of the rest, and starting every file. As Explorer does, opening more
+    // than 15 at once asks first, and answered no, opens nothing.
+    [Test]
+    public async Task OpeningMoreThanFifteenAsksFirst()
+    {
+        using var fixture = Fixture.Create();
+        var folder = Directory.CreateDirectory(fixture.At("Many")).FullName;
+        for (var index = 0; index < 16; index++)
+        {
+            Directory.CreateDirectory(Path.Combine(folder, $"Folder{index:D2}"));
+        }
+
+        using var view = await Open(folder);
+        var tabs = new List<string>();
+        view.NewTabRequested += tabs.Add;
+        var asked = new List<string>();
+        var answer = DialogResult.No;
+        var ask = FolderView.AskOpenMany;
+        FolderView.AskOpenMany = (_, question) =>
+        {
+            asked.Add(question);
+            return answer;
+        };
+        // The first so many folders, selected and opened from the folder they are in: where the
+        // view went, how many tabs were asked for, and what was asked first.
+        async Task<(string Path, int Tabs, List<string> Asked)> OpenFirst(int count)
+        {
+            if (view.CurrentPath != folder)
+            {
+                view.Navigate(folder);
+                await Pump.Loaded(view);
+            }
+
+            tabs.Clear();
+            asked.Clear();
+            view.List.SelectedIndices.Clear();
+            for (var index = 0; index < count; index++)
+            {
+                view.List.SelectedIndices.Add(index);
+            }
+
+            OpenSelected(view);
+            await Pump.Loaded(view);
+            return (Path.GetFileName(view.CurrentPath), tabs.Count, asked.ToList());
+        }
+
+        try
+        {
+            var declined = await OpenFirst(16);
+            answer = DialogResult.Yes;
+            var accepted = await OpenFirst(16);
+            var fifteen = await OpenFirst(15);
+
+            await Assert.That(declined.Path).IsEqualTo("Many");
+            await Assert.That(declined.Tabs).IsEqualTo(0);
+            await Assert.That(declined.Asked).IsEquivalentTo(["Open all 16 items?"]);
+            await Assert.That(accepted.Path).IsEqualTo("Folder00");
+            await Assert.That(accepted.Tabs).IsEqualTo(15);
+            await Assert.That(accepted.Asked).IsEquivalentTo(["Open all 16 items?"]);
+            await Assert.That(fifteen.Path).IsEqualTo("Folder00");
+            await Assert.That(fifteen.Tabs).IsEqualTo(14);
+            await Assert.That(fifteen.Asked).IsEmpty();
+        }
+        finally
+        {
+            FolderView.AskOpenMany = ask;
+        }
+    }
+
     // Typed in the address bar, or reached from the breadcrumb, a folder in a zip opens, and a
     // file in one is shown selected.
     [Test]

@@ -152,7 +152,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![This PC's right-click menu](src/Lode.Tests/Menus/MenuTests.ThisPCMenu.verified.png)
 
- * **The list**: details with shell icons and types, natural sort, each folder keeping its own sort. Date modified sorts newest first, as Explorer's does, and the other way when clicked again. What is cut shows dimmed. Drag from the margin left of the list to select. Right-click a column header to size columns to fit, or show or hide them, in every tab. **Sort by**, first on the right-click menu where nothing is clicked, under See more, and in the command palette, sorts by any column, a hidden one too: that one then shows for as long as the list is sorted by it, so Date modified can stay hidden until it is sorted by.
+ * **The list**: details with shell icons and types, natural sort, each folder keeping its own sort. Date modified sorts newest first, as Explorer's does, and the other way when clicked again. What is cut shows dimmed. Drag from the margin left of the list to select. Opening more than 15 items at once, with Ctrl+A and Enter say, asks first, as Explorer does. Right-click a column header to size columns to fit, or show or hide them, in every tab. **Sort by**, first on the right-click menu where nothing is clicked, under See more, and in the command palette, sorts by any column, a hidden one too: that one then shows for as long as the list is sorted by it, so Date modified can stay hidden until it is sorted by.
 
    ![Column header menu](src/Lode.Tests/Menus/MenuTests.ColumnMenu.verified.png)
 

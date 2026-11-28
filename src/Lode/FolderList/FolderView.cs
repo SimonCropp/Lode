@@ -4504,8 +4504,25 @@ sealed class FolderView : UserControl
             .Select(_ => _.FullPath)
             .ToArray();
 
+    // Ctrl+A and Enter would otherwise go into the first folder, open a tab for each of the
+    // rest and start every file, however many there are. Explorer asks first when opening more
+    // than this many at once, as its MultipleInvokePromptMinimum has it.
+    const int openWithoutAsking = 15;
+
+    /// <summary>
+    /// Asks whether to open as many items as the question says. Tests answer for the user.
+    /// </summary>
+    internal static Func<Control, string, DialogResult> AskOpenMany { get; set; } = (owner, text) =>
+        MessageBoxes.Show(owner, text, "Open", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+
     void OpenEntries(IReadOnlyList<FileEntry> selection)
     {
+        if (selection.Count > openWithoutAsking &&
+            AskOpenMany(this, $"Open all {selection.Count:N0} items?") != DialogResult.Yes)
+        {
+            return;
+        }
+
         var navigated = false;
         foreach (var entry in selection)
         {
