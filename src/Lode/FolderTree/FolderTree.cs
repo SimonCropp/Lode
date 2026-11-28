@@ -923,9 +923,10 @@ sealed class FolderTree : TreeView
         }
     }
 
-    // The folders in a folder that the tree shows, as they are found: hidden ones only when the
-    // options do not skip them, and Windows' own only when those are shown.
-    static IEnumerable<(string Name, string FullPath)> FindSubfolders(string path, EnumerationOptions options, SystemItems? hiddenSystem)
+    // The folders in a folder that the tree shows, and the address bar's chevrons list, as they
+    // are found: hidden ones only when the options do not skip them, and Windows' own only when
+    // those are shown.
+    internal static IEnumerable<(string Name, string FullPath)> FindSubfolders(string path, EnumerationOptions options, SystemItems? hiddenSystem)
     {
         var found = new FileSystemEnumerable<(string Name, string FullPath, FileAttributes Attributes)>(
             path,

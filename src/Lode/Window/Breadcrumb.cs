@@ -1,26 +1,48 @@
 /// <summary>
 /// The address bar as Explorer shows it: each folder up the path, with chevrons between.
-/// Clicking a folder goes there. Clicking anywhere else in the bar, or Ctrl+L, swaps in a text
-/// box for typing a path; Enter goes there, Escape or leaving the box swaps the folders back.
-/// The chevrons are only separators, with no menus. Drawn rather than built from buttons, so
-/// it looks like the text box it turns into, with the folders on its text line.
+/// Clicking a folder goes there; clicking it with the middle button, or with Ctrl held, opens it
+/// in a new tab, and right-clicking it offers Copy address and Open in new tab. Clicking a
+/// chevron drops down the folders in the folder before it, and clicking the ellipsis, which
+/// stands for the folders nearest the top when the bar has no room for them, drops those down;
+/// picking one goes there. Clicking anywhere else in the bar, or Ctrl+L, swaps in a text box for
+/// typing a path; Enter goes there, Escape or leaving the box swaps the folders back. Drawn
+/// rather than built from buttons, so it looks like the text box it turns into, with the
+/// folders on its text line.
 /// </summary>
 sealed class Breadcrumb : Control
 {
     const string chevron = "\uE76C";
+
+    // A chevron whose folders are dropped down points down at them, as Explorer's does.
+    const string openChevron = "\uE70D";
     const string ellipsis = "…";
 
+    Settings settings;
     Font chevronFont = new("Segoe MDL2 Assets", 7f);
     ToolTip toolTip = new();
     string path = Locations.ThisPC;
     List<(string Path, string Name)> segments = [];
 
-    // Where each shown folder is drawn, and the chevron after it. Hidden folders (the bar too
-    // narrow) are left out, and an ellipsis drawn first in their place.
+    // Where each shown folder is drawn, and the chevron after it, with the folder whose folders
+    // it lists. Hidden folders (the bar too narrow) are left out, and an ellipsis drawn first in
+    // their place, with a chevron after it for the nearest of them.
     List<(int Index, Rectangle Bounds)> layout = [];
+    List<(int Index, Rectangle Bounds)> chevrons = [];
     Rectangle ellipsisBounds;
-    int hovered = -1;
-    int pressed = -1;
+    Part hovered = Part.None;
+    Part pressed = Part.None;
+    Part middlePressed = Part.None;
+
+    // The chevron or the ellipsis whose menu is open, drawn pressed until the menu closes.
+    Part open = Part.None;
+    ToolStripDropDown? menu;
+
+    // The chevron or the ellipsis whose menu a press closed, which the same press, reaching the
+    // bar once the menu has gone, then leaves closed rather than opening it again.
+    Part dismissed = Part.None;
+
+    // Whether Ctrl, and not Shift, was held as the left button came up, as the tree takes it.
+    bool controlClicked;
 
     /// <summary>
     /// The box for typing a path, shown while editing. Borderless and centred on the bar's text
@@ -34,12 +56,22 @@ sealed class Breadcrumb : Control
     };
 
     /// <summary>
-    /// A folder was clicked.
+    /// A folder was clicked, or picked from a chevron's or the ellipsis' menu.
     /// </summary>
     public event Action<string>? PathClicked;
 
-    public Breadcrumb()
+    /// <summary>
+    /// A folder was clicked with the middle button or with Ctrl held, or Open in new tab picked
+    /// from its right-click menu.
+    /// </summary>
+    public event Action<string>? NewTabRequested;
+
+    /// <param name="settings">Whether hidden folders, and Windows' own, are among those a
+    /// chevron lists, as the list shows them.</param>
+    public Breadcrumb(Settings settings)
     {
+        this.settings = settings;
+        ShowMenu = (dropDown, location) => dropDown.Show(this, location);
         SetStyle(
             ControlStyles.AllPaintingInWmPaint |
             ControlStyles.OptimizedDoubleBuffer |
@@ -56,6 +88,7 @@ sealed class Breadcrumb : Control
 
     /// <summary>
     /// The folder shown. Setting it redraws the folders and, unless editing, the box's text.
+    /// Somewhere else, a menu of the folders on the way to where it was closes.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string Path
@@ -63,6 +96,12 @@ sealed class Breadcrumb : Control
         get => path;
         set
         {
+            if (!Locations.Same(path, value))
+            {
+                menu?.Close();
+                open = Part.None;
+            }
+
             path = value;
             if (!Editing)
             {
@@ -89,6 +128,20 @@ sealed class Breadcrumb : Control
 
         return name;
     };
+
+    /// <summary>
+    /// Reads what a chevron lists, off the UI thread: see <see cref="FoldersIn"/>. Tests wrap
+    /// it, to see where it runs, and to hold it while they look at the menu meanwhile.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<string, bool, SystemItems?, List<string>> ReadFolders { get; set; } = FoldersIn;
+
+    /// <summary>
+    /// Shows a menu of the bar's at a point in it. Tests swap it, to show the menu where it
+    /// can't be seen.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<ToolStripDropDown, Point> ShowMenu { get; set; }
 
     /// <summary>
     /// The folders from the top of <paramref name="location"/> down to it, with the name each
@@ -134,6 +187,54 @@ sealed class Breadcrumb : Control
         }
 
         return name;
+    }
+
+    /// <summary>
+    /// What the chevron after <paramref name="location"/> lists: This PC's drives, the folders a
+    /// machine on the network shares, or the folders in a folder or in a zip. Each by its name as
+    /// the list sorts names, numbers as numbers, but the drives, in their letters' order. Hidden
+    /// ones only with <paramref name="showHidden"/>, and Windows' own only when
+    /// <paramref name="hiddenSystem"/> is null, as the list and the tree show them. Never on the
+    /// UI thread: a share or a drive can be slow to answer, and finding the folders in a folder
+    /// means going through everything in it. Throws when the folder can't be read.
+    /// </summary>
+    internal static List<string> FoldersIn(string location, bool showHidden, SystemItems? hiddenSystem)
+    {
+        if (Locations.IsThisPC(location))
+        {
+            return DriveInfo.GetDrives().Select(_ => _.Name).ToList();
+        }
+
+        List<(string Name, string FullPath)> found;
+        if (Locations.IsServer(location))
+        {
+            found = FolderTree.ListShares(location)
+                .Where(_ => showHidden || !_.Hidden)
+                .Select(_ => (_.Name, System.IO.Path.Join(location, _.Name)))
+                .ToList();
+        }
+        else if (Zip.Split(location) is { } inArchive)
+        {
+            found = Zip.List(inArchive, location)
+                .Where(_ => _.IsDirectory)
+                .Select(_ => (_.Name, _.FullPath))
+                .ToList();
+        }
+        else
+        {
+            // A folder Lode is denied would read as having none, as the options pass over what
+            // can't be read: asked first, it says so instead, as the list does.
+            _ = Directory.EnumerateFileSystemEntries(location).Any();
+            var options = new EnumerationOptions
+            {
+                IgnoreInaccessible = true,
+                AttributesToSkip = showHidden ? default : FileAttributes.Hidden
+            };
+            found = FolderTree.FindSubfolders(location, options, hiddenSystem).ToList();
+        }
+
+        found.Sort((first, second) => StrCmpLogicalW(first.Name, second.Name));
+        return found.Select(_ => _.FullPath).ToList();
     }
 
     public void BeginEdit()
@@ -205,8 +306,9 @@ sealed class Breadcrumb : Control
     void Rebuild()
     {
         segments = Segments(path, drive => DriveName(drive, DriveDescribed));
-        hovered = -1;
-        pressed = -1;
+        hovered = Part.None;
+        pressed = Part.None;
+        middlePressed = Part.None;
         Arrange();
     }
 
@@ -241,22 +343,34 @@ sealed class Breadcrumb : Control
         }
 
         layout = [];
+        chevrons = [];
         var x = inner.Left;
         ellipsisBounds = Rectangle.Empty;
         if (first > 0)
         {
             ellipsisBounds = new(x, inner.Top, ellipsisWidth - ChevronWidth, inner.Height);
+            chevrons.Add((first - 1, ChevronAfter(ellipsisBounds)));
             x += ellipsisWidth;
         }
 
         for (var index = first; index < segments.Count; index++)
         {
-            layout.Add((index, new(x, inner.Top, widths[index], inner.Height)));
+            var bounds = new Rectangle(x, inner.Top, widths[index], inner.Height);
+            layout.Add((index, bounds));
+            if (index < segments.Count - 1)
+            {
+                chevrons.Add((index, ChevronAfter(bounds)));
+            }
+
             x += widths[index] + ChevronWidth;
         }
 
         Invalidate();
     }
+
+    // In the gap after an item.
+    Rectangle ChevronAfter(Rectangle item) =>
+        new(item.Right, item.Top, ChevronWidth, item.Height);
 
     int IconSize => LogicalToDeviceUnits(16);
 
@@ -282,6 +396,43 @@ sealed class Breadcrumb : Control
     int Total(List<int> widths, int first) =>
         widths.Skip(first).Sum() + ChevronWidth * (widths.Count - first - 1);
 
+    /// <summary>
+    /// Where <paramref name="location"/>'s folder is drawn, or empty when it isn't shown. For
+    /// tests, to click it.
+    /// </summary>
+    internal Rectangle FolderBounds(string location) =>
+        layout
+            .Where(_ => Locations.Same(segments[_.Index].Path, location))
+            .Select(_ => _.Bounds)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Where the chevron that lists the folders in <paramref name="location"/> is drawn, or
+    /// empty when there is none. For tests, to click it.
+    /// </summary>
+    internal Rectangle ChevronBounds(string location) =>
+        chevrons
+            .Where(_ => Locations.Same(segments[_.Index].Path, location))
+            .Select(_ => _.Bounds)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Where the ellipsis is drawn, or empty when every folder fits. For tests, to click it.
+    /// </summary>
+    internal Rectangle EllipsisBounds => ellipsisBounds;
+
+    /// <summary>
+    /// The chevron, or the ellipsis, whose menu is open, by the folder whose folders it lists,
+    /// the ellipsis' as "…"; null with none open. For tests.
+    /// </summary>
+    internal string? MenuOpenFor =>
+        open.Kind switch
+        {
+            PartKind.Chevron => segments[open.Index].Path,
+            PartKind.Ellipsis => ellipsis,
+            _ => null
+        };
+
     protected override void OnPaint(PaintEventArgs args)
     {
         var graphics = args.Graphics;
@@ -298,29 +449,13 @@ sealed class Breadcrumb : Control
                                       TextFormatFlags.EndEllipsis;
         if (!ellipsisBounds.IsEmpty)
         {
+            Shade(graphics, Part.Ellipsis, ellipsisBounds);
             TextRenderer.DrawText(graphics, ellipsis, Font, ellipsisBounds, SystemColors.GrayText, flags);
-            DrawChevron(graphics, ellipsisBounds);
         }
 
-        for (var position = 0; position < layout.Count; position++)
+        foreach (var (index, bounds) in layout)
         {
-            var (index, bounds) = layout[position];
-            // Windows 11's shades of gray, its corners rounded, in place of Windows 10's blue.
-            if (index == pressed || index == hovered)
-            {
-                var shade = ExplorerStyle.Hover(ExplorerStyle.Window);
-                if (index == pressed)
-                {
-                    shade = ExplorerStyle.Pressed(ExplorerStyle.Window);
-                }
-
-                using var brush = new SolidBrush(shade);
-                using var shape = ExplorerStyle.RoundedRectangle(bounds, LogicalToDeviceUnits(4));
-                graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                graphics.FillPath(brush, shape);
-                graphics.SmoothingMode = SmoothingMode.Default;
-            }
-
+            Shade(graphics, new(PartKind.Folder, index), bounds);
             if (Locations.IsThisPC(segments[index].Path))
             {
                 var image = Icons.Bitmap(Icons.ThisPC, IconSize, SystemColors.WindowText);
@@ -349,53 +484,110 @@ sealed class Breadcrumb : Control
             {
                 TextRenderer.DrawText(graphics, segments[index].Name, Font, bounds, SystemColors.WindowText, flags);
             }
+        }
 
-            if (position < layout.Count - 1)
+        foreach (var (index, bounds) in chevrons)
+        {
+            var part = new Part(PartKind.Chevron, index);
+            Shade(graphics, part, bounds);
+            var glyph = chevron;
+            if (part == open)
             {
-                DrawChevron(graphics, bounds);
+                glyph = openChevron;
             }
+
+            TextRenderer.DrawText(
+                graphics,
+                glyph,
+                chevronFont,
+                bounds,
+                SystemColors.GrayText,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
 
-    // In the gap after an item.
-    void DrawChevron(Graphics graphics, Rectangle after)
+    // Windows 11's shades of gray, its corners rounded, in place of Windows 10's blue: a shade
+    // under the mouse, and a lighter one while pressed, or while the menu it opened is open.
+    void Shade(Graphics graphics, Part part, Rectangle bounds)
     {
-        var bounds = new Rectangle(after.Right, after.Top, ChevronWidth, after.Height);
-        TextRenderer.DrawText(
-            graphics,
-            chevron,
-            chevronFont,
-            bounds,
-            SystemColors.GrayText,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        Color shade;
+        if (part == pressed ||
+            part == open)
+        {
+            shade = ExplorerStyle.Pressed(ExplorerStyle.Window);
+        }
+        else if (part == hovered)
+        {
+            shade = ExplorerStyle.Hover(ExplorerStyle.Window);
+        }
+        else
+        {
+            return;
+        }
+
+        using var brush = new SolidBrush(shade);
+        using var shape = ExplorerStyle.RoundedRectangle(bounds, LogicalToDeviceUnits(4));
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.FillPath(brush, shape);
+        graphics.SmoothingMode = SmoothingMode.Default;
     }
 
+    // What is at a point of the bar: a folder, by where it is in the path, the chevron after
+    // one, which lists the folders in it, or the ellipsis, which lists those the bar has no room
+    // for.
+    enum PartKind
+    {
+        None,
+        Folder,
+        Chevron,
+        Ellipsis
+    }
 
-    int IndexAt(Point point)
+    readonly record struct Part(PartKind Kind, int Index)
+    {
+        public static Part None { get; } = new(PartKind.None, -1);
+
+        public static Part Ellipsis { get; } = new(PartKind.Ellipsis, -1);
+    }
+
+    Part PartAt(Point point)
     {
         foreach (var (index, bounds) in layout)
         {
             if (bounds.Contains(point))
             {
-                return index;
+                return new(PartKind.Folder, index);
             }
         }
 
-        return -1;
+        foreach (var (index, bounds) in chevrons)
+        {
+            if (bounds.Contains(point))
+            {
+                return new(PartKind.Chevron, index);
+            }
+        }
+
+        if (ellipsisBounds.Contains(point))
+        {
+            return Part.Ellipsis;
+        }
+
+        return Part.None;
     }
 
     protected override void OnMouseMove(MouseEventArgs args)
     {
         base.OnMouseMove(args);
-        var index = IndexAt(args.Location);
-        if (index != hovered)
+        var part = PartAt(args.Location);
+        if (part != hovered)
         {
-            hovered = index;
+            hovered = part;
             // The icon-only This PC gets its name as a tooltip.
             toolTip.SetToolTip(
                 this,
-                index >= 0 &&
-                Locations.IsThisPC(segments[index].Path)
+                part.Kind == PartKind.Folder &&
+                Locations.IsThisPC(segments[part.Index].Path)
                     ? Locations.ThisPC
                     : null);
             Invalidate();
@@ -405,53 +597,333 @@ sealed class Breadcrumb : Control
     protected override void OnMouseLeave(EventArgs args)
     {
         base.OnMouseLeave(args);
-        hovered = -1;
-        pressed = -1;
+        hovered = Part.None;
+        pressed = Part.None;
+        middlePressed = Part.None;
         Invalidate();
+    }
+
+    // WM_LBUTTONUP, and the MK_CONTROL and MK_SHIFT its WPARAM has for the keys held.
+    const int leftButtonUp = 0x0202;
+    const int controlHeld = 0x0008;
+    const int shiftHeld = 0x0004;
+
+    /// <summary>
+    /// Notes the keys held as the left button came up, as the click's own message has them,
+    /// rather than as the keyboard is by the time the click is handled.
+    /// </summary>
+    protected override void WndProc(ref Message message)
+    {
+        if (message.Msg == leftButtonUp)
+        {
+            var keys = (int) message.WParam;
+            controlClicked = (keys & controlHeld) != 0 &&
+                             (keys & shiftHeld) == 0;
+        }
+
+        base.WndProc(ref message);
     }
 
     protected override void OnMouseDown(MouseEventArgs args)
     {
         base.OnMouseDown(args);
+        var part = PartAt(args.Location);
+        if (args.Button == MouseButtons.Middle)
+        {
+            middlePressed = part;
+            return;
+        }
+
         if (args.Button != MouseButtons.Left)
         {
             return;
         }
 
-        pressed = IndexAt(args.Location);
+        pressed = part;
         Invalidate();
+        if (dismissed.Kind != PartKind.None &&
+            part == dismissed)
+        {
+            dismissed = Part.None;
+            return;
+        }
+
+        // As it is pressed, as a menu opens.
+        if (part.Kind == PartKind.Chevron)
+        {
+            ShowFolders(part);
+        }
+        else if (part.Kind == PartKind.Ellipsis)
+        {
+            ShowHidden();
+        }
     }
 
     protected override void OnMouseUp(MouseEventArgs args)
     {
         base.OnMouseUp(args);
+        var part = PartAt(args.Location);
+        if (args.Button == MouseButtons.Middle)
+        {
+            var wasMiddlePressed = middlePressed;
+            middlePressed = Part.None;
+            if (part.Kind == PartKind.Folder &&
+                part == wasMiddlePressed)
+            {
+                NewTabRequested?.Invoke(segments[part.Index].Path);
+            }
+
+            return;
+        }
+
+        if (args.Button == MouseButtons.Right)
+        {
+            if (part.Kind == PartKind.Folder)
+            {
+                ShowFolderMenu(segments[part.Index].Path, args.Location);
+            }
+
+            return;
+        }
+
         if (args.Button != MouseButtons.Left)
         {
             return;
         }
 
-        var index = IndexAt(args.Location);
         var wasPressed = pressed;
-        pressed = -1;
+        pressed = Part.None;
         Invalidate();
-        if (index >= 0 &&
-            index == wasPressed)
+
+        // Anywhere but a folder, a chevron or the ellipsis starts typing a path.
+        if (wasPressed.Kind == PartKind.None)
         {
-            PathClicked?.Invoke(segments[index].Path);
+            BeginEdit();
             return;
         }
 
-        // Anywhere but a folder, the ellipsis included, starts typing a path.
-        if (wasPressed < 0)
+        if (wasPressed.Kind != PartKind.Folder ||
+            part != wasPressed)
         {
-            BeginEdit();
+            return;
+        }
+
+        var location = segments[part.Index].Path;
+        if (controlClicked)
+        {
+            NewTabRequested?.Invoke(location);
+            return;
+        }
+
+        PathClicked?.Invoke(location);
+    }
+
+    /// <summary>
+    /// What right-clicking <paramref name="location"/>'s folder in the bar offers: its path
+    /// copied, as Explorer's Copy address copies it, and Open in new tab.
+    /// </summary>
+    internal List<QuickMenu.Command?> FolderCommands(string location) =>
+    [
+        new("Copy address", () => FolderView.SetClipboardText(location))
+        {
+            Glyph = Icons.Copy
+        },
+        LodeActions.Command("openInNewTab", () => NewTabRequested?.Invoke(location))
+    ];
+
+    // At the pointer. What is picked runs once the menu has closed.
+    void ShowFolderMenu(string location, Point point)
+    {
+        var strip = QuickMenu.Build(FolderCommands(location), null, _ => BeginInvoke(_));
+        strip.Closed += (_, _) => strip.BeginInvoke(strip.Dispose);
+        ShowMenu(strip, point);
+    }
+
+    // Drops down the folders in the folder before the chevron. They are read off the UI thread,
+    // so a share or a drive slow to answer leaves the window free meanwhile: the menu says
+    // Loading… until they are read, then lists them, or says what went wrong reading them.
+    void ShowFolders(Part part)
+    {
+        var location = segments[part.Index].Path;
+        var (dropDown, images) = NewMenu();
+        dropDown.Items.Add(Note("Loading…"));
+        Open(dropDown, part, chevrons.Single(_ => _.Index == part.Index).Bounds);
+        _ = ListFolders(dropDown, images, location);
+    }
+
+    async Task ListFolders(ToolStripDropDown dropDown, MenuImages images, string location)
+    {
+        // By the options as they are as it opens, as the list reads by them as they are then.
+        var showHidden = settings.ShowHidden;
+        var hiddenSystem = settings.HiddenSystemItems();
+        var read = ReadFolders;
+        List<string>? folders = null;
+        string? failure = null;
+        try
+        {
+            folders = await Task.Run(() => read(location, showHidden, hiddenSystem));
+        }
+        catch (Exception exception)
+        {
+            // A drive not ready, a share offline, a folder Lode is denied or one gone since:
+            // said in the menu, as the list says it in place of the folder's items.
+            failure = exception.Message;
+        }
+
+        // Closed meanwhile.
+        if (dropDown.IsDisposed ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        List<ToolStripItem> items;
+        if (folders == null)
+        {
+            items = [Note(failure ?? "")];
+        }
+        else
+        {
+            items = [.. folders.Select(_ => Item(_, SegmentName(_, drive => DriveName(drive, () => { })), images))];
+            if (items.Count == 0)
+            {
+                items.Add(Note("No folders"));
+            }
+        }
+
+        dropDown.SuspendLayout();
+        var loading = dropDown.Items.Cast<ToolStripItem>().ToList();
+        dropDown.Items.Clear();
+        foreach (var item in loading)
+        {
+            item.Dispose();
+        }
+
+        dropDown.Items.AddRange(items.ToArray());
+        dropDown.ResumeLayout();
+    }
+
+    // Drops down the folders the ellipsis stands for, the nearest first.
+    void ShowHidden()
+    {
+        var (dropDown, images) = NewMenu();
+        for (var index = layout[0].Index - 1; index >= 0; index--)
+        {
+            dropDown.Items.Add(Item(segments[index].Path, segments[index].Name, images));
+        }
+
+        Open(dropDown, Part.Ellipsis, ellipsisBounds);
+    }
+
+    // Under what it drops down from, left edges level, drawn pressed while it is open.
+    void Open(ToolStripDropDown dropDown, Part part, Rectangle under)
+    {
+        menu?.Close();
+        menu = dropDown;
+        open = part;
+        dropDown.Closed += (_, args) => MenuClosed(dropDown, part, args.CloseReason);
+        Invalidate();
+        ShowMenu(dropDown, new(under.Left, ClientSize.Height));
+    }
+
+    void MenuClosed(ToolStripDropDown dropDown, Part part, ToolStripDropDownCloseReason reason)
+    {
+        // Closed by a press outside it, which, on what opened it, would open it again as the
+        // press reaches the bar. Forgotten once that press has been handled, wherever it was.
+        if (reason == ToolStripDropDownCloseReason.AppClicked)
+        {
+            dismissed = part;
+            BeginInvoke(() => dismissed = Part.None);
+        }
+
+        if (menu == dropDown)
+        {
+            menu = null;
+            open = Part.None;
+            Invalidate();
+        }
+
+        dropDown.BeginInvoke(dropDown.Dispose);
+    }
+
+    // The icons a menu's folders show, each drawn once for the menu, and let go of with it.
+    sealed class MenuImages(int size) : IDisposable
+    {
+        List<Image> made = [];
+        Image? folder;
+
+        public int Size => size;
+
+        public Image For(string location)
+        {
+            if (Locations.IsThisPC(location))
+            {
+                return Icons.Bitmap(Icons.ThisPC, size, SystemColors.MenuText);
+            }
+
+            if (Locations.IsServer(location))
+            {
+                return Icons.Bitmap(Icons.Network, size, SystemColors.MenuText);
+            }
+
+            if (!Locations.IsNetwork(location) &&
+                System.IO.Path.GetPathRoot(location) is { } root &&
+                Locations.Same(root, location))
+            {
+                return Made(ShellIcons.DescribeDrive(location, null).Icon);
+            }
+
+            return folder ??= Made(ShellIcons.FolderIcon);
+        }
+
+        Image Made(int icon)
+        {
+            var image = ShellIcons.Render(icon, new(size, size), Point.Empty);
+            made.Add(image);
+            return image;
+        }
+
+        public void Dispose()
+        {
+            foreach (var image in made)
+            {
+                image.Dispose();
+            }
         }
     }
+
+    (ToolStripDropDown DropDown, MenuImages Images) NewMenu()
+    {
+        var dropDown = new ExplorerMenu();
+        var images = new MenuImages(LogicalToDeviceUnits(16));
+        dropDown.ImageScalingSize = new(images.Size, images.Size);
+        dropDown.Disposed += (_, _) => images.Dispose();
+        return (dropDown, images);
+    }
+
+    // An entry for going to a folder. What is picked runs once the menu has closed.
+    ToolStripMenuItem Item(string location, string name, MenuImages images)
+    {
+        // An ampersand would mark the next letter as the item's access key and not show: a
+        // folder named "R&D".
+        var item = new ToolStripMenuItem(name.Replace("&", "&&"), images.For(location));
+        item.Click += (_, _) => BeginInvoke(() => PathClicked?.Invoke(location));
+        return item;
+    }
+
+    // An entry that only says something: that the folders are being read, that there are none,
+    // or what went wrong reading them.
+    static ToolStripMenuItem Note(string text) =>
+        new(text.Replace("&", "&&"))
+        {
+            Enabled = false
+        };
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            menu?.Close();
             chevronFont.Dispose();
             toolTip.Dispose();
         }

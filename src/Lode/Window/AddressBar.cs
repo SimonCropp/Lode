@@ -20,7 +20,7 @@ sealed class AddressBar : IDisposable
     Func<FolderView?> activeView;
     Func<IReadOnlyList<QuickMenu.Command?>> menuCommands;
     ToolTip toolTip = new();
-    Breadcrumb breadcrumb = new();
+    Breadcrumb breadcrumb;
     TextBox addressBox;
     FramedTextBox filterFrame = new();
     TextBox filterBox;
@@ -30,15 +30,20 @@ sealed class AddressBar : IDisposable
     bool updatingFilter;
 
     /// <param name="window">The window the bar is along the top of.</param>
+    /// <param name="settings">Whether the folders a chevron lists include hidden ones, and
+    /// Windows' own.</param>
     /// <param name="activeView">The view the bar shows and acts on, null while there is none.</param>
     /// <param name="reload">Refresh.</param>
     /// <param name="newTab">New tab.</param>
+    /// <param name="openInNewTab">A folder of the address opened in a new tab: one middle-clicked
+    /// or Ctrl+clicked, or Open in new tab on its right-click menu.</param>
     /// <param name="menuCommands">What the ⋯ menu lists, as it opens. A null entry is a separator.</param>
-    public AddressBar(Form window, Func<FolderView?> activeView, Action reload, Action newTab, Func<IReadOnlyList<QuickMenu.Command?>> menuCommands)
+    public AddressBar(Form window, Settings settings, Func<FolderView?> activeView, Action reload, Action newTab, Action<string> openInNewTab, Func<IReadOnlyList<QuickMenu.Command?>> menuCommands)
     {
         this.window = window;
         this.activeView = activeView;
         this.menuCommands = menuCommands;
+        breadcrumb = new(settings);
         addressBox = breadcrumb.Box;
         filterBox = filterFrame.Box;
 
@@ -63,6 +68,7 @@ sealed class AddressBar : IDisposable
             activeView()?.Navigate(_);
             activeView()?.FocusList();
         };
+        breadcrumb.NewTabRequested += openInNewTab;
         addressBox.AutoCompleteMode = AutoCompleteMode.Suggest;
         addressBox.AutoCompleteSource = AutoCompleteSource.FileSystemDirectories;
         addressBox.KeyDown += OnAddressKeyDown;

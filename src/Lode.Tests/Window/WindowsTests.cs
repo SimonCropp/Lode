@@ -252,6 +252,35 @@ public class WindowsTests
         }
     }
 
+    // A folder of the address middle-clicked opens in a new tab behind the one showing, which
+    // stays where it is, as one middle-clicked in the tree does; Open in new tab, on its
+    // right-click menu, does the same.
+    [Test]
+    public async Task AFolderOfTheAddressOpensInANewTab()
+    {
+        const int middleButtonDown = 0x0207;
+        const int middleButtonUp = 0x0208;
+        const int middleButton = 0x0010;
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.At("Source", "Deep"));
+        var address = (Breadcrumb)form.Controls.Find("address", true)[0].Parent!;
+        var source = address.FolderBounds(fixture.At("Source"));
+        var point = ((source.Top + source.Height / 2) << 16) | (source.Left + source.Width / 2);
+
+        NativeMethods.SendMessage(address.Handle, middleButtonDown, middleButton, point);
+        NativeMethods.SendMessage(address.Handle, middleButtonUp, 0, point);
+        address.FolderCommands(fixture.Root).Single(_ => _?.Id == "openInNewTab")!.Action();
+        foreach (var view in form.Views)
+        {
+            await Pump.Loaded(view);
+        }
+
+        await Assert.That(form.Views.Select(_ => _.CurrentPath)).IsEquivalentTo(
+            [fixture.At("Source", "Deep"), fixture.At("Source"), fixture.Root],
+            CollectionOrdering.Matching);
+        await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(fixture.At("Source", "Deep"));
+    }
+
     // Closing the last window showing hides it to the tray. One already there, a window closed
     // before another opened for a folder from another app, closes for real, so the tray holds
     // one window at most: the one closed last. A window closed while another shows closes.

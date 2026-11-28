@@ -121,7 +121,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
 ## Features
 
- * **Address bar**: each folder up the path is a button, as in Explorer. Click the empty space after it, or press Ctrl+L, to type: a path, full or from the folder open (`src`, `..`); a shell name, `shell:downloads`; or a command, `cmd`, `wt` or `code .`, run in the folder open.
+ * **Address bar**: each folder up the path is a button, as in Explorer: click one to go there, middle-click or Ctrl+click it to open it in a new tab, or right-click it to **Copy address** or **Open in new tab**. Click the chevron after a folder to drop down the folders in it, hidden ones and Windows' own as the options show them, and, where the bar is too narrow for the whole path, the **…** at its start to drop down the folders it stands for, the nearest first; pick one to go there, with the mouse or the arrow keys and Enter, or press Escape to close the list. Click the empty space after the path, or press Ctrl+L, to type: a path, full or from the folder open (`src`, `..`); a shell name, `shell:downloads`; or a command, `cmd`, `wt` or `code .`, run in the folder open.
  * **Actions bar**: a button for any of the right-click menus' actions, enabled when it applies to the selection. On the **Button actions** page of Options, choose which actions are buttons, and which are nested under their parent (Clipboard, File, Open, Terminal, AI, Git, Packages) in a drop-down button; on the **Menu actions** page, which are in the right-click menus, and which are nested under their parent in a submenu. The rest are under **See more** (⋯), as are the buttons a narrow window has no room for. Right-click a button to hide it, which puts it under See more, or nest it under its parent; right-click a parent's drop-down to hide it, or un-nest what is in it, all of it or one; right-click an action in the drop-down to hide or un-nest just that one. **Customize buttons…**, on the same menu, opens the Button actions page.
 
    Right-clicking the **Git** drop-down:
@@ -336,7 +336,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+H                            | Show or hide hidden items     |
 | Ctrl+N                            | New window                    |
 
-Click a tab's cross or middle-click the tab to close it. Middle-click or Ctrl+click a folder in the tree to open it in a new tab, behind the one showing. The mouse back and forward buttons work too.
+Click a tab's cross or middle-click the tab to close it. Middle-click or Ctrl+click a folder in the tree or the address bar to open it in a new tab, behind the one showing. The mouse back and forward buttons work too.
 
 
 ## Icon

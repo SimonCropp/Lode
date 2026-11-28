@@ -137,7 +137,10 @@ class MainForm : Form
         GitPanes.ChangesRead += DiffHost.ChangesRead;
         GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
         Commands = new(this, settings, places);
-        AddressBar = new(this, () => ActiveView, Reload, NewTab, Commands.Menu);
+        // Behind the tab showing, as the tree and the list open folders in new tabs. A zip on the
+        // way to a folder inside it opens inside it, as the list's Open in new tab opens one: in
+        // the address it is somewhere gone through, rather than a file.
+        AddressBar = new(this, settings, () => ActiveView, Reload, NewTab, _ => AddTab(_, false, intoZip: true), Commands.Menu);
         ActionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
         StatusBar = new(this, settings, updates, () => ActiveView, ShowOptions, url => OpenSite(url), folder => AddTab(folder, true));
         FindHost.ProgressChanged += () => StatusBar.ShowProgress(FindHost.Progress);
