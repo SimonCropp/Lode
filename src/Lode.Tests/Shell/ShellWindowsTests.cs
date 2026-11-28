@@ -277,6 +277,70 @@ public class ShellWindowsTests
         Marshal.Release(shareDispatch);
     }
 
+    // Windows made on two threads, as each test makes its own on its own thread, the first still
+    // about while the second is asked: each window and document looks names up in type
+    // information had on its own thread. Before, the second was handed the first thread's,
+    // through COM's marshalling, in which no name can be looked up, so every name a script asked
+    // for failed as not implemented.
+    [Test]
+    public async Task AScriptFindsWindowsMadeOnAnotherThread()
+    {
+        using var fixture = Fixture.Create();
+        string Asked()
+        {
+            var window = new ShellWindows.ShellWindow(null!, IntPtr.Zero, null!, 0, fixture.Root, []);
+            var dispatch = TypedDispatch.DispatchOf(window);
+            try
+            {
+                using var document = LateBound.Object(dispatch, "Document");
+                using var shellFolder = LateBound.Object(document.Pointer, "Folder");
+                return $"{LateBound.Text(dispatch, "LocationName")}, {LateBound.Text(shellFolder.Pointer, "Title")}";
+            }
+            finally
+            {
+                Marshal.Release(dispatch);
+            }
+        }
+
+        using var asked = new ManualResetEventSlim();
+        using var done = new ManualResetEventSlim();
+        string? onAnother = null;
+        Exception? failed = null;
+        var thread = new Thread(
+            () =>
+            {
+                try
+                {
+                    onAnother = Asked();
+                }
+                catch (Exception exception)
+                {
+                    failed = exception;
+                }
+
+                asked.Set();
+                // Still about, as another test's thread can be: a wait on it answers calls made
+                // to what it made.
+                done.Wait(TimeSpan.FromSeconds(30));
+            });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        string onThis;
+        try
+        {
+            await Pump.Until(() => asked.IsSet);
+            onThis = Asked();
+        }
+        finally
+        {
+            done.Set();
+            thread.Join();
+        }
+
+        await Assert.That(failed).IsNull();
+        await Assert.That((onAnother, onThis)).IsEqualTo(("Projects, Projects", "Projects, Projects"));
+    }
+
     // As a script in PowerShell has it, in another process, from what the list hands it: the
     // properties by name, with the type information PowerShell reads them by, which without it
     // it saw none of.
@@ -374,6 +438,9 @@ public class ShellWindowsTests
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         delegate int InvokeMethod(IntPtr self, int id, ref Guid reserved, int locale, ushort flags, ref Parameters parameters, IntPtr result, IntPtr exception, IntPtr argumentError);
 
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate int GetDocumentationMethod(IntPtr self, int member, out IntPtr name, IntPtr documentation, IntPtr helpContext, IntPtr helpFile);
+
         // DISPPARAMS, with no arguments.
         [StructLayout(LayoutKind.Sequential)]
         struct Parameters
@@ -439,16 +506,25 @@ public class ShellWindowsTests
 
         public static string TypeName(IntPtr dispatch)
         {
-            Marshal.ThrowExceptionForHR(Method<GetTypeInfoMethod>(dispatch, 4)(dispatch, 0, 0, out var pointer));
+            Marshal.ThrowExceptionForHR(Method<GetTypeInfoMethod>(dispatch, 4)(dispatch, 0, 0, out var typeInfo));
             try
             {
-                var typeInfo = (System.Runtime.InteropServices.ComTypes.ITypeInfo)Marshal.GetObjectForIUnknown(pointer);
-                typeInfo.GetDocumentation(-1, out var typeName, out _, out _, out _);
-                return typeName;
+                // ITypeInfo::GetDocumentation, of the type itself, as a script asks it: through
+                // .NET, the type information, one object for every thread, would be called on the
+                // thread that first had it.
+                Marshal.ThrowExceptionForHR(Method<GetDocumentationMethod>(typeInfo, 12)(typeInfo, -1, out var name, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero));
+                try
+                {
+                    return Marshal.PtrToStringBSTR(name);
+                }
+                finally
+                {
+                    Marshal.FreeBSTR(name);
+                }
             }
             finally
             {
-                Marshal.Release(pointer);
+                Marshal.Release(typeInfo);
             }
         }
 

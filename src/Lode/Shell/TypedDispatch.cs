@@ -1,6 +1,3 @@
-using ComTypeInfo = System.Runtime.InteropServices.ComTypes.ITypeInfo;
-using ComTypeLibrary = System.Runtime.InteropServices.ComTypes.ITypeLib;
-
 /// <summary>
 /// IDispatch for one of Lode's COM objects that stands in for one of Windows', described by the
 /// type library Windows describes its own by: what a script, PowerShell, VBScript or AutoHotkey,
@@ -35,19 +32,8 @@ sealed class TypedDispatch
     /// </summary>
     public static TypedDispatch? Create(object owner, Type interfaceType, Guid library, ushort major, ushort minor)
     {
-        ComTypeInfo typeInfo;
-        try
-        {
-            if (LoadRegTypeLib(ref library, major, minor, 0, out var typeLibrary) < 0)
-            {
-                return null;
-            }
-
-            var interfaceId = interfaceType.GUID;
-            typeLibrary.GetTypeInfoOfGuid(ref interfaceId, out typeInfo);
-            typeInfo = VtableOf(typeInfo);
-        }
-        catch (COMException)
+        var typeInfo = TypeInfo(interfaceType.GUID, library, major, minor);
+        if (typeInfo == IntPtr.Zero)
         {
             return null;
         }
@@ -59,7 +45,7 @@ sealed class TypedDispatch
         try
         {
             // Neither is kept counted: the standard IDispatch is part of the object, which holds
-            // it, so lives no longer than the object does.
+            // it, so lives no longer than the object does. The type information it counts itself.
             if (CreateStdDispatch(outer, implementation, typeInfo, out var inner) < 0)
             {
                 return null;
@@ -71,25 +57,65 @@ sealed class TypedDispatch
         {
             Marshal.Release(implementation);
             Marshal.Release(outer);
+            Marshal.Release(typeInfo);
         }
     }
 
-    // A dual interface is found as its dispatch half, which says nothing of where each method
-    // is in the vtable the standard IDispatch calls it through. Its vtable half does.
-    static ComTypeInfo VtableOf(ComTypeInfo typeInfo)
+    // The interface's type information, counted, or zero where Windows hasn't the library or the
+    // interface in it. Had as Windows' own pointers, not through .NET: Windows loads a library
+    // once for every thread, and .NET keeps one object for each of Windows', tied to the thread
+    // that first had it, so a second thread, each test's own say, was handed it through COM's
+    // marshalling, as its type information, in which no name can be looked up: asked, it says it
+    // isn't implemented, and so did the standard IDispatch, for every name a script asked for.
+    static unsafe IntPtr TypeInfo(Guid interfaceId, Guid library, ushort major, ushort minor)
     {
+        if (LoadRegTypeLib(ref library, major, minor, 0, out var typeLibrary) < 0)
+        {
+            return IntPtr.Zero;
+        }
+
+        IntPtr typeInfo;
         try
         {
-            typeInfo.GetRefTypeOfImplType(-1, out var vtable);
-            typeInfo.GetRefTypeInfo(vtable, out var vtableInfo);
-            return vtableInfo;
+            // ITypeLib::GetTypeInfoOfGuid, after IUnknown's three methods and three of its own.
+            var getTypeInfoOfGuid = (delegate* unmanaged[Stdcall]<IntPtr, Guid*, IntPtr*, int>)Method(typeLibrary, 6);
+            if (getTypeInfoOfGuid(typeLibrary, &interfaceId, &typeInfo) < 0)
+            {
+                return IntPtr.Zero;
+            }
         }
-        catch (COMException)
+        finally
+        {
+            Marshal.Release(typeLibrary);
+        }
+
+        return VtableOf(typeInfo);
+    }
+
+    // A dual interface is found as its dispatch half, which says nothing of where each method
+    // is in the vtable the standard IDispatch calls it through. Its vtable half does. Takes the
+    // count of what it is given, and gives one counted.
+    static unsafe IntPtr VtableOf(IntPtr typeInfo)
+    {
+        // ITypeInfo::GetRefTypeOfImplType and GetRefTypeInfo.
+        var getRefTypeOfImplType = (delegate* unmanaged[Stdcall]<IntPtr, uint, uint*, int>)Method(typeInfo, 8);
+        var getRefTypeInfo = (delegate* unmanaged[Stdcall]<IntPtr, uint, IntPtr*, int>)Method(typeInfo, 14);
+        uint vtable;
+        IntPtr vtableInfo;
+        if (getRefTypeOfImplType(typeInfo, unchecked((uint)-1), &vtable) < 0 ||
+            getRefTypeInfo(typeInfo, vtable, &vtableInfo) < 0)
         {
             // Not dual: an interface that is only a vtable already.
             return typeInfo;
         }
+
+        Marshal.Release(typeInfo);
+        return vtableInfo;
     }
+
+    // A method of a COM interface, by its place in the interface's vtable.
+    static unsafe IntPtr Method(IntPtr pointer, int slot) =>
+        (*(IntPtr**)pointer)[slot];
 
     /// <summary>
     /// The IDispatch, counted, for the object's <see cref="ICustomQueryInterface"/> to hand out.
@@ -130,8 +156,8 @@ sealed class TypedDispatch
     }
 
     [DllImport("oleaut32.dll")]
-    static extern int LoadRegTypeLib(ref Guid library, ushort major, ushort minor, int locale, out ComTypeLibrary typeLibrary);
+    static extern int LoadRegTypeLib(ref Guid library, ushort major, ushort minor, int locale, out IntPtr typeLibrary);
 
     [DllImport("oleaut32.dll")]
-    static extern int CreateStdDispatch(IntPtr outer, IntPtr implementation, [MarshalAs(UnmanagedType.Interface)] ComTypeInfo typeInfo, out IntPtr standard);
+    static extern int CreateStdDispatch(IntPtr outer, IntPtr implementation, IntPtr typeInfo, out IntPtr standard);
 }
