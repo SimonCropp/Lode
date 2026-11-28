@@ -69,8 +69,8 @@ sealed class AddressBar : IDisposable
             activeView()?.FocusList();
         };
         breadcrumb.NewTabRequested += openInNewTab;
-        addressBox.AutoCompleteMode = AutoCompleteMode.Suggest;
-        addressBox.AutoCompleteSource = AutoCompleteSource.FileSystemDirectories;
+        Completion = new(settings, () => activeView()?.CurrentPath);
+        Completion.Attach(addressBox);
         addressBox.KeyDown += OnAddressKeyDown;
         addressBox.Enter += (_, _) => window.BeginInvoke(addressBox.SelectAll);
 
@@ -115,6 +115,11 @@ sealed class AddressBar : IDisposable
     /// The row the bar is, for the window to dock along its top.
     /// </summary>
     public TableLayoutPanel Row { get; }
+
+    /// <summary>
+    /// What the address suggests as a path is typed into it. For tests, to see where it reads.
+    /// </summary>
+    internal AddressCompletion Completion { get; }
 
     /// <summary>
     /// Brings the bar in line with the tab showing: its folder in the address, its filter in the
