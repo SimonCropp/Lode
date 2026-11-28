@@ -535,7 +535,7 @@ sealed class CloneDialog : Form
 
         if (RemoteSite.For(text) is { } site)
         {
-            return (text, NameOf(site.Url));
+            return (CloneUrl(text, site), NameOf(site.Url));
         }
 
         // A url on a site Lode doesn't know: named for its last part.
@@ -552,6 +552,30 @@ sealed class CloneDialog : Form
         }
 
         return (text, last);
+    }
+
+    // The url to clone for one typed on a site Lode knows the pages of: a page of the repository,
+    // pasted from the browser's address bar, its files on a branch or a pull request say, which
+    // git can't clone, is the repository's url, with .git where the site's clone urls have it,
+    // and its user name, which says which account signs in, kept. GitLab's pages Lode can't tell
+    // from a repository in a group, nor ssh and git's user@host:path from a page, so they are
+    // cloned as typed.
+    static string CloneUrl(string text, RemoteSite site)
+    {
+        if (site.Name is not ("GitHub" or "Bitbucket" or "Azure DevOps") ||
+            !Uri.TryCreate(text, UriKind.Absolute, out var typed) ||
+            typed.Scheme is not ("https" or "http"))
+        {
+            return text;
+        }
+
+        var suffix = ".git";
+        if (site.Name == "Azure DevOps")
+        {
+            suffix = "";
+        }
+
+        return $"{typed.GetLeftPart(UriPartial.Authority)}{new Uri(site.Url).AbsolutePath}{suffix}";
     }
 
     // owner/name, or project/name on Azure DevOps, from a repository's page.

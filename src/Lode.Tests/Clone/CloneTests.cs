@@ -146,6 +146,27 @@ public class CloneTests
         await Assert.That(CloneDialog.FromUrl("  ")).IsNull();
     }
 
+    // A page of a repository, pasted from the browser's address bar, clones the repository, as git
+    // can clone none of its pages: its url on the site, with .git where the site's clone urls have
+    // it, and the user name typed, which says which account signs in.
+    [Test]
+    [Arguments("https://github.com/octo/lode/tree/main", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode/tree/feature/login", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode/blob/main/src/Program.cs", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode/pull/12", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode/issues", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode/", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode?tab=readme-ov-file", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://github.com/octo/lode#readme", "https://github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://octo@github.com/octo/lode/tree/main", "https://octo@github.com/octo/lode.git", "octo/lode")]
+    [Arguments("https://bitbucket.org/team/tool/src/main/", "https://bitbucket.org/team/tool.git", "team/tool")]
+    [Arguments("https://bitbucket.org/team/tool/pull-requests/3", "https://bitbucket.org/team/tool.git", "team/tool")]
+    [Arguments("https://someone@bitbucket.org/team/tool.git", "https://someone@bitbucket.org/team/tool.git", "team/tool")]
+    [Arguments("https://dev.azure.com/contoso/Shop/_git/Api?path=/README.md", "https://dev.azure.com/contoso/Shop/_git/Api", "Shop/Api")]
+    [Arguments("https://contoso@dev.azure.com/contoso/Shop/_git/Api#readme", "https://contoso@dev.azure.com/contoso/Shop/_git/Api", "Shop/Api")]
+    public async Task FromUrlClonesTheRepositoryOfAPage(string page, string remote, string name) =>
+        await Assert.That(CloneDialog.FromUrl(page)).IsEqualTo((remote, name));
+
     [Test]
     public async Task OrganizationOf()
     {
