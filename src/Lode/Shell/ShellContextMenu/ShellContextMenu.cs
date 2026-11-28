@@ -370,9 +370,21 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     }
 
     /// <summary>
-    /// Pins a folder to Quick access, or unpins it, as the shell's own menu entries do.
+    /// Pins a folder to Quick access, or unpins it, as the shell's own menu entries do. Done off
+    /// the UI thread, as <see cref="MoveToEnd"/> is: pinning reads all of Quick access, to see
+    /// whether the folder is pinned already, which asks the shell about every folder it has,
+    /// and that can wait on the network, with every window waiting were it on the UI thread.
+    /// Quick access is read again once it is done, back on the calling thread, when the task
+    /// completes.
     /// </summary>
-    public static void SetPinned(IntPtr owner, string path, bool pin)
+    public static Task SetPinned(IntPtr owner, string path, bool pin) =>
+        TakeTurn("Lode pinning", () => ChangePinned(owner, path, pin));
+
+    /// <summary>
+    /// Pins the folder or unpins it, on the thread <see cref="SetPinned"/> does it on. Tests
+    /// swap it, which must not change the machine's Quick access.
+    /// </summary>
+    internal static Action<IntPtr, string, bool> ChangePinned = (owner, path, pin) =>
     {
         if (pin)
         {
@@ -382,34 +394,51 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         {
             Unpin(owner, path);
         }
-
-        QuickAccessChanged?.Invoke();
-    }
+    };
 
     /// <summary>
     /// Moves pinned folders to the end of the Pinned list one after another, so they end up
     /// last in this order: each is unpinned and pinned again, which puts it at the end. Quick
     /// access is read again once, after them all, back on the calling thread, when the task
     /// completes. The shell shows its busy cursor while it pins or unpins, which on the UI
-    /// thread made the pointer flicker twice for each folder moved, so they are moved on a
-    /// thread of their own, set up for the shell's COM objects as the UI thread is, and in the
-    /// background, so a slow shell does not keep Lode from exiting.
+    /// thread made the pointer flicker twice for each folder moved, so they are moved off it.
     /// </summary>
-    public static Task MoveToEnd(IntPtr owner, IReadOnlyList<string> folders)
+    public static Task MoveToEnd(IntPtr owner, IReadOnlyList<string> folders) =>
+        TakeTurn("Lode pinned order", () => MoveEachToEnd(owner, folders));
+
+    // The pin, unpin or move asked for last, done once it has been. They take turns, in the
+    // order they were asked for: pinning works out from Quick access whether the folder is
+    // pinned already, and a move from the order it has, which another running alongside would
+    // change under it. Folders dropped on Pinned are pinned, then those after where they were
+    // dropped moved after them, which must wait for the pins.
+    static Task lastTurn = Task.CompletedTask;
+
+    // Does the work once what was asked for before it is done, on a thread of its own, set up
+    // for the shell's COM objects as the UI thread is, and in the background, so a slow shell
+    // does not keep Lode from exiting. Quick access is then read again, back on the calling
+    // thread, when the task completes.
+    static Task TakeTurn(string name, Action work)
     {
         var context = SynchronizationContext.Current ?? new SynchronizationContext();
+        var finished = new TaskCompletionSource();
+        var before = Interlocked.Exchange(ref lastTurn, finished.Task);
         var done = new TaskCompletionSource();
         var thread = new Thread(
             () =>
             {
                 try
                 {
-                    MoveEachToEnd(owner, folders);
+                    before.Wait();
+                    work();
                 }
                 catch (Exception)
                 {
                     // Left as far as it got. Quick access is read again regardless, so the
                     // tree shows that.
+                }
+                finally
+                {
+                    finished.SetResult();
                 }
 
                 try
@@ -429,7 +458,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             })
         {
             IsBackground = true,
-            Name = "Lode pinned order"
+            Name = name
         };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
@@ -494,7 +523,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     {
         // Read once for folders pinned one straight after another, several dropped together
         // say: reading Quick access asks the shell for all of it, and looks for each folder on
-        // disk, with the window waiting.
+        // disk. Pins take turns, so no other is reading or changing this meanwhile.
         var now = Environment.TickCount64;
         if (pinnedRead is not { } read ||
             now - read.At > 2000)

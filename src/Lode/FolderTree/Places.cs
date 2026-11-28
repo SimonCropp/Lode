@@ -147,7 +147,7 @@ sealed record Places(
             var folder = Call(shell, "Namespace", quickAccess)!;
             foreach (var item in (IEnumerable)Call(folder, "Items")!)
             {
-                if (FolderToList(item, _ => Locations.IsNetwork(_)) is not { } path)
+                if (FolderToList(item) is not { } path)
                 {
                     continue;
                 }
@@ -167,14 +167,26 @@ sealed record Places(
     }
 
     /// <summary>
+    /// Whether a folder is somewhere on the network, a share or a drive mapped to one. Tests
+    /// swap it, having no mapped drive.
+    /// </summary>
+    internal static Func<string, bool> IsRemote = Locations.IsRemote;
+
+    /// <summary>
+    /// Whether a folder is there. Tests swap it, to see what is looked for.
+    /// </summary>
+    internal static Func<string, bool> FolderExists = Directory.Exists;
+
+    /// <summary>
     /// The path of a shell item to list as a folder, or null. Quick access also lists recent
     /// files, and can hold virtual folders such as the Recycle Bin, which have no path to browse.
     /// A machine on the network is not part of the file system either, but Lode lists its
     /// shares. A .zip is a folder in the file system to the shell, one it browses into, and is
-    /// left out by that, as somewhere <paramref name="takenOnTrust"/>, a share being slow to say
-    /// it isn't there, is not looked for.
+    /// left out by that, as a folder on the network is not looked for: asking a share, or a drive
+    /// mapped to one, whether a folder is there waits, when it can't be reached, off the VPN say,
+    /// for as long as the network takes to give up, and pinning reads Quick access too.
     /// </summary>
-    internal static string? FolderToList(object item, Func<string, bool> takenOnTrust)
+    internal static string? FolderToList(object item)
     {
         if (Get(item, "IsFolder") is not true ||
             Get(item, "Path") is not string path)
@@ -195,8 +207,8 @@ sealed record Places(
             return null;
         }
 
-        if (!takenOnTrust(path) &&
-            !Directory.Exists(path))
+        if (!IsRemote(path) &&
+            !FolderExists(path))
         {
             return null;
         }

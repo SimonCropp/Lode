@@ -125,17 +125,159 @@ public class PlacesTests
             zip.CreateEntry("inside.txt");
         }
 
-        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+        var isRemote = Places.IsRemote;
+        Places.IsRemote = _ => true;
         var listed = new List<string>();
-        foreach (var item in shell.Namespace(fixture.Root).Items())
+        try
         {
-            if (Places.FolderToList((object)item, _ => true) is string path)
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            foreach (var item in shell.Namespace(fixture.Root).Items())
             {
-                listed.Add(Path.GetFileName(path));
+                if (Places.FolderToList((object)item) is string path)
+                {
+                    listed.Add(Path.GetFileName(path));
+                }
             }
+        }
+        finally
+        {
+            Places.IsRemote = isRemote;
         }
 
         await Assert.That(listed).Contains("Docs");
         await Assert.That(listed).DoesNotContain("Archive.zip");
     }
+
+    // Asking a drive mapped to a share whether a folder is there waits, when the share can't be
+    // reached, off the VPN say, for as long as the network takes to give up, as asking the share
+    // does. Quick access is read to pin a folder too, so a folder pinned on one is taken on trust,
+    // as one on a share is, and only one on a drive of the machine's own is looked for.
+    [Test]
+    public async Task AFolderOnAMappedDriveIsTakenOnTrust()
+    {
+        var isRemote = Places.IsRemote;
+        var folderExists = Places.FolderExists;
+        var lookedFor = new List<string>();
+        Places.IsRemote = _ => Locations.IsNetwork(_) || _.StartsWith(@"Z:\", StringComparison.OrdinalIgnoreCase);
+        Places.FolderExists = _ =>
+        {
+            lookedFor.Add(_);
+            return false;
+        };
+        string? mapped;
+        string? share;
+        string? local;
+        try
+        {
+            mapped = Places.FolderToList(new ShellItem(@"Z:\Work"));
+            share = Places.FolderToList(new ShellItem(@"\\server\share\Work"));
+            local = Places.FolderToList(new ShellItem(@"C:\Gone"));
+        }
+        finally
+        {
+            Places.IsRemote = isRemote;
+            Places.FolderExists = folderExists;
+        }
+
+        await Assert.That(mapped).IsEqualTo(@"Z:\Work");
+        await Assert.That(share).IsEqualTo(@"\\server\share\Work");
+        await Assert.That(local).IsNull();
+        await Assert.That(lookedFor).IsEquivalentTo([@"C:\Gone"]);
+    }
+
+    // Pinning reads Quick access, all of it, to see whether the folder is pinned already, and
+    // that can wait on the network, so it is done off the UI thread, on one set up for the
+    // shell's COM objects, the window going on meanwhile. Pinned shows the folder once it has
+    // been pinned and Quick access read again. Nothing here pins anything for real.
+    [Test]
+    public async Task PinningIsDoneOffTheUIThread()
+    {
+        var changePinned = ShellContextMenu.ChangePinned;
+        var uiThread = Thread.CurrentThread;
+        var pinned = new List<string> {@"C:\Before"};
+        Thread? pinnedOn = null;
+        var apartment = ApartmentState.Unknown;
+        ShellContextMenu.ChangePinned = (_, path, _) =>
+        {
+            pinnedOn = Thread.CurrentThread;
+            apartment = Thread.CurrentThread.GetApartmentState();
+            lock (pinned)
+            {
+                pinned.Add(path);
+            }
+        };
+        var places = Places.Remembering(
+            new()
+            {
+                PinnedFolders = [@"C:\Before"]
+            },
+            () =>
+            {
+                lock (pinned)
+                {
+                    return (pinned.ToList(), []);
+                }
+            });
+        ShellContextMenu.QuickAccessChanged += places.Reread;
+        try
+        {
+            var done = ShellContextMenu.SetPinned(IntPtr.Zero, @"C:\Work", true);
+            await Pump.Until(() => done.IsCompleted && places.Pinned.Contains(@"C:\Work"));
+        }
+        finally
+        {
+            ShellContextMenu.QuickAccessChanged -= places.Reread;
+            ShellContextMenu.ChangePinned = changePinned;
+        }
+
+        await Assert.That(pinnedOn).IsNotNull();
+        await Assert.That(pinnedOn).IsNotEqualTo(uiThread);
+        await Assert.That(apartment).IsEqualTo(ApartmentState.STA);
+        await Assert.That(places.Pinned).IsEquivalentTo([@"C:\Before", @"C:\Work"], CollectionOrdering.Matching);
+    }
+
+    // Folders dropped on Pinned are pinned, then those pinned after where they were dropped
+    // moved after them. Each is done on a thread of its own, and they take turns, in the order
+    // asked for, each working from what the one before left.
+    [Test]
+    public async Task PinsTakeTurns()
+    {
+        var changePinned = ShellContextMenu.ChangePinned;
+        var order = new List<string>();
+        var running = 0;
+        var overlapped = false;
+        ShellContextMenu.ChangePinned = (_, path, _) =>
+        {
+            if (Interlocked.Increment(ref running) > 1)
+            {
+                overlapped = true;
+            }
+
+            // Long enough for another, were it not waiting its turn, to start meanwhile.
+            Thread.Sleep(50);
+            lock (order)
+            {
+                order.Add(path);
+            }
+
+            Interlocked.Decrement(ref running);
+        };
+        try
+        {
+            var pins = new[] {"First", "Second", "Third"}
+                .Select(_ => ShellContextMenu.SetPinned(IntPtr.Zero, $@"C:\{_}", true))
+                .ToList();
+            await Pump.Until(() => pins.All(_ => _.IsCompleted));
+        }
+        finally
+        {
+            ShellContextMenu.ChangePinned = changePinned;
+        }
+
+        await Assert.That(overlapped).IsFalse();
+        await Assert.That(order).IsEquivalentTo([@"C:\First", @"C:\Second", @"C:\Third"], CollectionOrdering.Matching);
+    }
+
+    // A shell item as Quick access gives one, by default for a folder in the file system.
+    sealed record ShellItem(string Path, bool IsFolder = true, bool IsFileSystem = true, bool IsBrowsable = false);
 }
