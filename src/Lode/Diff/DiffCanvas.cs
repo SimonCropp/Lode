@@ -160,6 +160,11 @@ sealed class DiffCanvas : Control
     internal LinePicks? Picks => picks;
 
     /// <summary>
+    /// Whether lines are being picked by dragging down their numbers, the drag not yet let go.
+    /// </summary>
+    internal bool Dragging => dragging;
+
+    /// <summary>
     /// The first row showing.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -206,12 +211,44 @@ sealed class DiffCanvas : Control
     /// <paramref name="lines"/>, the file's lines, and lines to pick only given
     /// <paramref name="linePicks"/>. <paramref name="hint"/>, when there is one, is said when the
     /// numbers are clicked instead: why lines can't be picked. With <paramref name="keepPlace"/>,
-    /// the same rows show as before, as for the same file read again.
+    /// for the same file read again, the diff stays as it was, expanded, scrolled and selected,
+    /// when it is the same diff; when the file changed, what was expanded still is where it can
+    /// be, and the same line is at the top.
     /// </summary>
     public void Show(TextDiff shown, IReadOnlyList<string>? lines, bool sideBySide, LinePicks? linePicks, string? hint, bool keepPlace)
     {
+        // The same diff, of the same file as it was, read again, as it is whenever anything in the
+        // repository changes, mostly another file: nothing changes but what is picked, and how
+        // it shows. The file's lines too, which an expansion shows.
+        if (keepPlace &&
+            diff != null &&
+            diff.Patch == shown.Patch &&
+            SameLines(newLines, lines))
+        {
+            pickHint = hint;
+            if (!dragging)
+            {
+                picks = linePicks;
+            }
+
+            Split = sideBySide;
+
+            // Lines to pick, or none, take the strip beside the numbers, or give it back.
+            Arrange();
+            Invalidate();
+            return;
+        }
+
         var top = vertical.Value;
         var left = horizontal.Value;
+        TopLine? topLine = null;
+        if (keepPlace)
+        {
+            topLine = LineAtTop();
+        }
+
+        var shownBefore = hunks;
+        var expandedBefore = IsExpanded;
         diff = shown;
         newLines = lines;
         split = sideBySide;
@@ -226,17 +263,99 @@ sealed class DiffCanvas : Control
 
         unexpanded = start;
         hunks = start;
+        if (keepPlace &&
+            expandedBefore &&
+            lines != null)
+        {
+            hunks = DiffExpansion.ExpandAsShown(start, shownBefore, lines);
+        }
+
         dragging = false;
         BuildRows();
         if (keepPlace)
         {
-            TopRow = top;
+            TopRow = TopFor(topLine) ?? top;
             horizontal.Value = Math.Clamp(left, horizontal.Minimum, Math.Max(horizontal.Minimum, horizontal.Maximum - horizontal.LargeChange + 1));
             return;
         }
 
         vertical.Value = 0;
         horizontal.Value = 0;
+    }
+
+    static bool SameLines(IReadOnlyList<string>? first, IReadOnlyList<string>? second)
+    {
+        if (first == null ||
+            second == null)
+        {
+            return first == second;
+        }
+
+        return first.SequenceEqual(second, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// A line at or near the top, by its number, for it to be at the top again once the file,
+    /// changed, is read again, though the rows above it changed: its number in the last commit,
+    /// which saving the file doesn't move, or, in a file all added, in the file; and how many rows
+    /// down from the top it is.
+    /// </summary>
+    readonly record struct TopLine(int Number, bool Old, int Below);
+
+    static int? NumberOf(DiffRow row, bool old)
+    {
+        if (old)
+        {
+            return row.Before?.OldNumber;
+        }
+
+        return row.After?.NewNumber;
+    }
+
+    // The first row with a number from the top down, or, with none below, up.
+    TopLine? LineAtTop()
+    {
+        var top = vertical.Value;
+        foreach (var old in (bool[]) [true, false])
+        {
+            for (var index = top; index < rows.Count; index++)
+            {
+                if (NumberOf(rows[index], old) is { } number)
+                {
+                    return new(number, old, index - top);
+                }
+            }
+
+            for (var index = Math.Min(top, rows.Count) - 1; index >= 0; index--)
+            {
+                if (NumberOf(rows[index], old) is { } number)
+                {
+                    return new(number, old, index - top);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // The top row that puts the line where it was: the first row of it, or, no longer shown, of
+    // the line after it; past the last, the end.
+    int? TopFor(TopLine? topLine)
+    {
+        if (topLine is not { } line)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < rows.Count; index++)
+        {
+            if (NumberOf(rows[index], line.Old) >= line.Number)
+            {
+                return index - line.Below;
+            }
+        }
+
+        return rows.Count;
     }
 
     /// <summary>

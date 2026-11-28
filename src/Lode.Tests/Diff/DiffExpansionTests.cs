@@ -1,18 +1,23 @@
 public class DiffExpansionTests
 {
-    // A 100 line file, line 30 and line 80 changed: two hunks far apart, each with three lines
-    // of context either side.
+    // A 100 line file, line 30 and line 80 changed, or the lines given: hunks far apart, each
+    // with three lines of context either side.
     static IReadOnlyList<string> FileLines() =>
     [
         .. Enumerable.Range(1, 100)
             .Select(_ => $"line {_}")
     ];
 
-    static IReadOnlyList<DiffHunk> Hunks(int first = 30, int second = 80)
+    static IReadOnlyList<DiffHunk> Hunks(params int[] changes)
     {
+        if (changes.Length == 0)
+        {
+            changes = [30, 80];
+        }
+
         var lines = FileLines();
         var patch = new StringBuilder("--- a/f\n+++ b/f\n");
-        foreach (var changed in (int[]) [first, second])
+        foreach (var changed in changes)
         {
             patch.Append($"@@ -{changed - 3},7 +{changed - 3},7 @@\n");
             for (var number = changed - 3; number <= changed + 3; number++)
@@ -106,6 +111,38 @@ public class DiffExpansionTests
         await Assert.That(hunks.Count).IsEqualTo(1);
         await Assert.That(hunks[0].Header).IsEqualTo(new(1, 100, 1, 100));
         await Assert.That(hunks[0].Lines.Count(_ => _.Kind == DiffLineKind.Delete)).IsEqualTo(2);
+    }
+
+    // The file changed between the two hunks: what was shown above each is shown above it
+    // again, and nothing next to the hunk that is new, nor below the last, where nothing was.
+    [Test]
+    public async Task AsShown()
+    {
+        var shown = DiffExpansion.WithBottom(Hunks(), 100, 100);
+        shown = DiffExpansion.Expand(shown, 1, up: true, FileLines())!;
+        shown = DiffExpansion.Expand(shown, 0, up: true, FileLines())!;
+        var hunks = DiffExpansion.WithBottom(Hunks(30, 50, 80), 100, 100);
+
+        var expanded = DiffExpansion.ExpandAsShown(hunks, shown, FileLines());
+
+        await Assert.That(expanded.Select(_ => _.Header)).IsEquivalentTo(
+            [
+                new HunkHeader(7, 27, 7, 27),
+                new HunkHeader(47, 7, 47, 7),
+                new HunkHeader(57, 27, 57, 27),
+                new HunkHeader(84, 17, 84, 17)
+            ],
+            CollectionOrdering.Matching);
+        await Assert.That(expanded[0].Expansion).IsEqualTo(HunkExpansion.Up);
+        await Assert.That(expanded[2].Expansion).IsEqualTo(HunkExpansion.Short);
+
+        // All of the file shown: all of it again, one hunk.
+        var whole = DiffExpansion.ExpandAsShown(hunks, DiffExpansion.ExpandWhole(shown, FileLines())!, FileLines());
+        await Assert.That(whole.Select(_ => _.Header)).IsEquivalentTo([new HunkHeader(1, 100, 1, 100)]);
+
+        // Only what git showed: nothing.
+        var unexpanded = DiffExpansion.WithBottom(Hunks(), 100, 100);
+        await Assert.That(DiffExpansion.ExpandAsShown(hunks, unexpanded, FileLines())).IsSameReferenceAs(hunks);
     }
 
     [Test]

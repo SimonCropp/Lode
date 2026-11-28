@@ -54,6 +54,29 @@ static class DiffSample
     public static TextDiff Diff => (TextDiff) DiffParser.Parse(Patch);
 
     /// <summary>
+    /// The sample saved again with another line added in the first hunk: the second hunk, and the
+    /// rest of the file, a line further down.
+    /// </summary>
+    public static TextDiff MoreAdded => (TextDiff) DiffParser.Parse(
+        Patch
+            .Replace("@@ -118,6 +118,7 @@", "@@ -118,6 +118,8 @@")
+            .Replace("+        var written = document.Written;\n", "+        var written = document.Written;\n+        var reader = document.Reader;\n")
+            .Replace("@@ -137,7 +138,13 @@", "@@ -137,7 +139,13 @@"));
+
+    /// <summary>
+    /// The file as <see cref="MoreAdded"/> has it.
+    /// </summary>
+    public static IReadOnlyList<string> MoreAddedLines
+    {
+        get
+        {
+            var lines = NewLines.ToList();
+            lines.Insert(121, "        var reader = document.Reader;");
+            return lines;
+        }
+    }
+
+    /// <summary>
     /// The file now: a step on each line but those the hunks show.
     /// </summary>
     static IReadOnlyList<string> NewLines

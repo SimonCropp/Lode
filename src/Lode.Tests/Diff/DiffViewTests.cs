@@ -229,6 +229,106 @@ public class DiffViewTests
         await Assert.That(DiffCanvas.WordAt("", 0)).IsEqualTo((0, 0));
     }
 
+    // Read again as it was, as it is whenever anything in the repository changes: it stays as
+    // it was, expanded, scrolled and selected.
+    [Test]
+    public async Task ReadAgainUnchanged()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var canvas = view.Canvas;
+        canvas.ExpandWhole();
+        canvas.TopRow = 50;
+        canvas.Select(new(52, 4), new(54, 12), right: false);
+        var hunks = canvas.Hunks;
+        var selected = canvas.SelectedText();
+        await Assert.That(selected).IsNotEmpty();
+
+        view.Reload();
+        await Read(view);
+
+        await Assert.That(canvas.Hunks).IsSameReferenceAs(hunks);
+        await Assert.That(canvas.TopRow).IsEqualTo(50);
+        await Assert.That(canvas.SelectedText()).IsEqualTo(selected);
+    }
+
+    // Read again once the file changed, a line more added above: the whole file still shows,
+    // and the same line is at the top, though it is a row further down.
+    [Test]
+    public async Task ReadAgainChanged()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var canvas = view.Canvas;
+        canvas.ExpandWhole();
+        var row = OldRow(canvas, 130);
+        canvas.TopRow = row;
+        await Assert.That(canvas.TopRow).IsEqualTo(row);
+
+        using var changed = DiffSample.Stub(DiffSample.MoreAdded, DiffSample.MoreAddedLines);
+        view.Reload();
+        await Read(view);
+
+        await Assert.That(canvas.Hunks.Count).IsEqualTo(1);
+        await Assert.That(canvas.CanExpand).IsFalse();
+        await Assert.That(canvas.Rows.Count(_ => _.Kind == DiffRowKind.Added)).IsEqualTo(9);
+        await Assert.That(canvas.TopRow).IsEqualTo(row + 1);
+        await Assert.That(canvas.Rows[canvas.TopRow].Before!.OldNumber).IsEqualTo(130);
+    }
+
+    // Read again part way through picking lines by dragging down their numbers: the drag goes
+    // on, and what it picked is noted once it ends.
+    [Test]
+    public async Task ReadAgainWhilePicking()
+    {
+        var repo = Unique();
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(repo, DiffSample.File));
+        var canvas = view.Canvas;
+        var added = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Deleted) + 1;
+
+        Press(canvas, leftButtonDown, Numbers(canvas, added));
+        Press(canvas, mouseMove, Numbers(canvas, added + 1));
+        view.Reload();
+        await Read(view);
+        Press(canvas, mouseMove, Numbers(canvas, added + 2));
+        Press(canvas, leftButtonUp, Numbers(canvas, added + 2));
+
+        // The three lines dragged over left out, of the nine.
+        await Assert.That(canvas.Picks!.PickedCount).IsEqualTo(6);
+        await Assert.That(CommitDrafts.Of(repo).TickOf(DiffSample.File.Path)).IsNull();
+    }
+
+    // The file changed part way through the drag: the drag goes on over the diff it started on,
+    // and the file as it is now shows once it is let go, ticked whole, as the lines picked were
+    // of the diff before.
+    [Test]
+    public async Task ChangedWhilePicking()
+    {
+        var repo = Unique();
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(repo, DiffSample.File));
+        var canvas = view.Canvas;
+        var added = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Deleted) + 1;
+
+        Press(canvas, leftButtonDown, Numbers(canvas, added));
+        Press(canvas, mouseMove, Numbers(canvas, added + 1));
+        using var changed = DiffSample.Stub(DiffSample.MoreAdded, DiffSample.MoreAddedLines);
+        view.Reload();
+        await Read(view);
+        Press(canvas, mouseMove, Numbers(canvas, added + 2));
+
+        await Assert.That(canvas.Dragging).IsTrue();
+        await Assert.That(canvas.Picks!.PickedCount).IsEqualTo(6);
+        await Assert.That(canvas.Rows.Count(_ => _.Kind == DiffRowKind.Added)).IsEqualTo(8);
+
+        Press(canvas, leftButtonUp, Numbers(canvas, added + 2));
+
+        await Assert.That(canvas.Rows.Count(_ => _.Kind == DiffRowKind.Added)).IsEqualTo(9);
+        await Assert.That(canvas.Picks!.PickedCount).IsEqualTo(10);
+        await Assert.That(CommitDrafts.Of(repo).TickOf(DiffSample.File.Path)).IsTrue();
+    }
+
     const int mouseMove = 0x0200;
     const int leftButtonDown = 0x0201;
     const int leftButtonUp = 0x0202;
@@ -237,6 +337,14 @@ public class DiffViewTests
     // The row a line is drawn on, one above the other.
     static int Row(DiffCanvas canvas, string content) =>
         canvas.Rows.ToList().FindIndex(_ => (_.After ?? _.Before)?.Content == content);
+
+    // The row of a line of the last commit's file.
+    static int OldRow(DiffCanvas canvas, int number) =>
+        canvas.Rows.ToList().FindIndex(_ => _.Before?.OldNumber == number);
+
+    // Where a row's numbers are, to click or drag down.
+    static Point Numbers(DiffCanvas canvas, int row) =>
+        new(4, canvas.PointOf(new(row, 0), right: false).Y);
 
     // The button held for all but its letting go, as a drag has it.
     static void Press(DiffCanvas canvas, int message, Point point)
@@ -281,8 +389,13 @@ public class DiffViewTests
         };
         view.CreateControl();
         view.Show(source);
+        await Read(view);
+        return view;
+    }
+
+    static async Task Read(DiffView view)
+    {
         await Pump.Until(() => view.Reading.IsCompleted);
         await view.Reading;
-        return view;
     }
 }

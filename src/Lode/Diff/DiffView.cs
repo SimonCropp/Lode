@@ -31,6 +31,10 @@ sealed class DiffView : UserControl
     FileDiff? shown;
     int version;
 
+    // The file read again while lines of it were being picked by dragging down their numbers,
+    // to show once the drag is let go.
+    (DiffSource File, FileDiff Diff, IReadOnlyList<string>? Lines, bool HideWhitespace)? held;
+
     /// <summary>
     /// Reads a file's diff. Tests answer for git.
     /// </summary>
@@ -139,6 +143,7 @@ sealed class DiffView : UserControl
         version++;
         source = null;
         shown = null;
+        held = null;
         header.Visible = false;
         ShowOnly(message);
         message.Show(text, null);
@@ -171,6 +176,16 @@ sealed class DiffView : UserControl
 
     void Present(DiffSource file, FileDiff diff, IReadOnlyList<string>? lines, bool keepPlace, bool hideWhitespace)
     {
+        // The drag picks lines of the diff it started on: what was read waits for it to end,
+        // rather than taking the lines from under it, the drag lost.
+        if (keepPlace &&
+            canvas.Dragging)
+        {
+            held = (file, diff, lines, hideWhitespace);
+            return;
+        }
+
+        held = null;
         shown = diff;
         header.Show(file.File, diff as TextDiff);
         header.Visible = true;
@@ -312,6 +327,18 @@ sealed class DiffView : UserControl
         if (source is { IsUncommitted: true } file)
         {
             CommitDrafts.SetPicks(file.Repo, file.File.Path, picks);
+        }
+
+        // A drag let go, the lines it picked noted: what was read during it shows now, as long
+        // as the diff is still of that file.
+        if (held is { } waiting &&
+            !canvas.Dragging)
+        {
+            held = null;
+            if (waiting.File.SameFile(source))
+            {
+                Present(waiting.File, waiting.Diff, waiting.Lines, keepPlace: true, waiting.HideWhitespace);
+            }
         }
     }
 

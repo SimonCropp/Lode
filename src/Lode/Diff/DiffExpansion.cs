@@ -274,6 +274,114 @@ static class DiffExpansion
         return result;
     }
 
+    /// <summary>
+    /// <paramref name="hunks"/>, a diff's as git wrote it, expanded to show what
+    /// <paramref name="shown"/>, the hunks of the diff it was before, as they were expanded,
+    /// showed of the file: the file changed, the lines more of it shown still are. Lines are known
+    /// by their number in the last commit, which saving the file doesn't move. What was shown of
+    /// the file next to a hunk, above it or below, is shown next to it again, wherever the hunks
+    /// are now; what was shown apart from any hunk now is not, as an expansion can't show it. Only
+    /// lines an expansion showed count: what git showed of a hunk that is gone isn't expanded to.
+    /// </summary>
+    public static IReadOnlyList<DiffHunk> ExpandAsShown(IReadOnlyList<DiffHunk> hunks, IReadOnlyList<DiffHunk> shown, IReadOnlyList<string> newLines)
+    {
+        var before = new HashSet<int>();
+        var expanded = new HashSet<int>();
+        foreach (var line in shown.SelectMany(_ => _.Lines))
+        {
+            if (line.OldNumber is not { } number)
+            {
+                continue;
+            }
+
+            before.Add(number);
+            if (line.Index == null)
+            {
+                expanded.Add(number);
+            }
+        }
+
+        if (expanded.Count == 0)
+        {
+            return hunks;
+        }
+
+        bool AnyExpanded(int first, int count) =>
+            Enumerable.Range(first, count).Any(expanded.Contains);
+
+        // From the last gap between hunks to the first, so expanding one, or merging two, leaves
+        // the hunks before it where they were.
+        var result = hunks;
+        for (var index = result.Count - 1; index >= 0; index--)
+        {
+            var hunk = result[index];
+
+            // The lines between this hunk and the one before it, the bottom's its own, by their
+            // numbers in the last commit.
+            int gapStart;
+            int gapEnd;
+            if (hunk.IsBottom)
+            {
+                gapStart = hunk.Header.OldStart;
+                gapEnd = hunk.Header.OldStart + hunk.Header.OldCount - 1;
+            }
+            else if (index == 0)
+            {
+                gapStart = 1;
+                gapEnd = hunk.Header.OldStart - 1;
+            }
+            else
+            {
+                var previous = result[index - 1].Header;
+                gapStart = previous.OldStart + previous.OldCount;
+                gapEnd = hunk.Header.OldStart - 1;
+            }
+
+            // Above the hunk: none for the bottom, which shows only what is below the one before.
+            var above = 0;
+            if (!hunk.IsBottom)
+            {
+                while (gapEnd - above >= gapStart &&
+                       before.Contains(gapEnd - above))
+                {
+                    above++;
+                }
+
+                // All of the gap shown merges the hunk into the one before.
+                if (above > 0 &&
+                    AnyExpanded(gapEnd - above + 1, above))
+                {
+                    result = Expand(result, index, up: true, newLines, above) ?? result;
+                }
+                else
+                {
+                    above = 0;
+                }
+            }
+
+            // Below the hunk before, up to what was shown above this one.
+            if (index == 0)
+            {
+                continue;
+            }
+
+            var below = 0;
+            while (gapStart + below <= gapEnd - above &&
+                   before.Contains(gapStart + below))
+            {
+                below++;
+            }
+
+            if (below > 0 &&
+                AnyExpanded(gapStart, below))
+            {
+                result = Expand(result, index - 1, up: false, newLines, below) ?? result;
+            }
+        }
+
+        return result;
+    }
+
     static DiffHunk Merge(DiffHunk first, DiffHunk second)
     {
         var header = first.Header with
