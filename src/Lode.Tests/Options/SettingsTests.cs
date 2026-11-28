@@ -135,6 +135,13 @@ public class SettingsTests
                   "TextEditor": null,
                   "CodeDirectory": null,
                   "PurgePermanently": false,
+                  "PurgeKeeps": [
+                    ".env",
+                    ".env.*",
+                    ".vs/",
+                    ".idea/",
+                    "*.user"
+                  ],
                   "FetchInBackground": true,
                   "FetchMinutes": 60,
                   "PromotedFiles": [],
@@ -207,6 +214,13 @@ public class SettingsTests
                   DiffSplit: false,
                   DiffHideWhitespace: false,
                   PurgePermanently: false,
+                  PurgeKeeps: [
+                    .env,
+                    .env.*,
+                    .vs/,
+                    .idea/,
+                    *.user
+                  ],
                   FetchInBackground: true,
                   FetchMinutes: 60,
                   FindRegex: false,
@@ -223,6 +237,48 @@ public class SettingsTests
                   Maximized: true,
                   Tabs: [
                     D:\Work
+                  ]
+                }
+                """);
+    }
+
+    // What Git purge keeps loads as saved, emptied too, rather than as it is at first; settings
+    // saved before Lode kept anything have it as it is at first.
+    [Test]
+    public async Task WhatPurgeKeepsLoadsAsSaved()
+    {
+        using var fixture = Fixture.Create();
+        var changed = fixture.At("changed.json");
+        var settings = Settings.Load(changed);
+        settings.PurgeKeeps = [".env", "secrets/"];
+        settings.Save();
+        var emptied = fixture.At("emptied.json");
+        settings = Settings.Load(emptied);
+        settings.PurgeKeeps = [];
+        settings.Save();
+        var older = fixture.At("older.json");
+        await File.WriteAllTextAsync(older, """{ "PurgePermanently": true }""");
+
+        await Assert.That(Settings.Load(emptied).PurgeKeeps).IsEmpty();
+        await Verify(
+            new
+            {
+                changed = Settings.Load(changed).PurgeKeeps,
+                older = Settings.Load(older).PurgeKeeps
+            })
+            .Snapshot(
+                """
+                {
+                  changed: [
+                    .env,
+                    secrets/
+                  ],
+                  older: [
+                    .env,
+                    .env.*,
+                    .vs/,
+                    .idea/,
+                    *.user
                   ]
                 }
                 """);
@@ -425,6 +481,13 @@ public class SettingsTests
                   DiffSplit: false,
                   DiffHideWhitespace: false,
                   PurgePermanently: false,
+                  PurgeKeeps: [
+                    .env,
+                    .env.*,
+                    .vs/,
+                    .idea/,
+                    *.user
+                  ],
                   FetchInBackground: true,
                   FetchMinutes: 60,
                   FindRegex: false,

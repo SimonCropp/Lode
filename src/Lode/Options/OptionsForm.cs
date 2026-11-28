@@ -155,9 +155,31 @@ class OptionsForm : Form
     CheckBox purgePermanently = new()
     {
         Name = "purgePermanently",
-        Text = "Delete them permanently instead, which is faster",
+        Text = "Delete them permanently, not to the Recycle Bin, which is faster",
         AutoSize = true,
         Margin = new(3, 0, 3, 3)
+    };
+
+    Label purgeKeepsLabel = new()
+    {
+        Text = "Keep",
+        AutoSize = true
+    };
+
+    // Patterns with a space between them, on one line beside the rest of Git purge's settings,
+    // where one a line would take a box of its own. See PurgeKeeps.
+    TextBox purgeKeeps = new()
+    {
+        Name = "purgeKeeps",
+        AccessibleName = "What Git purge keeps, patterns as in .gitignore",
+        PlaceholderText = "Nothing",
+        Width = 260
+    };
+
+    Label purgeKeepsUnit = new()
+    {
+        Text = "patterns, as in .gitignore",
+        AutoSize = true
     };
 
     CheckBox fetchInBackground = new()
@@ -507,6 +529,8 @@ class OptionsForm : Form
         };
         purgePermanently.Checked = settings.PurgePermanently;
         purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
+        purgeKeeps.Text = string.Join(' ', settings.PurgeKeeps);
+        purgeKeeps.TextChanged += (_, _) => settings.PurgeKeeps = [.. purgeKeeps.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
         fetchInBackground.Checked = settings.FetchInBackground;
         fetchMinutes.Value = Math.Clamp(settings.FetchMinutes, (int) fetchMinutes.Minimum, (int) fetchMinutes.Maximum);
         fetchMinutes.Enabled = settings.FetchInBackground;
@@ -907,8 +931,8 @@ class OptionsForm : Form
             Row(fetchInBackground, fetchMinutes, fetchMinutesUnit)),
         .. Section(
             "Git purge",
-            "Git purge deletes every file and folder git doesn't track, ignored ones " +
-            "included, such as bin and obj. It moves them to the Recycle Bin.",
+            "Git purge deletes what git doesn't track, ignored ones too, such as bin and obj.",
+            Row(purgeKeepsLabel, purgeKeeps, purgeKeepsUnit),
             Row(purgePermanently)),
         .. Section(
             "Microsoft Defender",

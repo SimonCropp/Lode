@@ -1,7 +1,8 @@
 /// <summary>
 /// Git purge: deletes every file and folder git doesn't track, ignored ones included (bin, obj,
 /// node_modules and the like), as git clean -xdf would, leaving repositories nested inside
-/// alone. They go to the Recycle Bin, unless Options says to delete them outright.
+/// alone, and what Options keeps. They go to the Recycle Bin, unless Options says to delete them
+/// outright.
 /// </summary>
 static class GitPurge
 {
@@ -128,12 +129,22 @@ static class GitPurge
 
     /// <summary>
     /// What git clean -xd would delete from the folder: every file and folder git doesn't track,
-    /// ignored ones included, but no repository nested inside. A folder holding nothing tracked
-    /// is one entry.
+    /// ignored ones included, but no repository nested inside, nor what matches a pattern of
+    /// <paramref name="keep"/>, as .gitignore has them. A folder holding nothing tracked is one
+    /// entry, unless it holds something kept, when what else it holds is listed instead.
     /// </summary>
-    public static Found Find(string folder)
+    public static Found Find(string folder, IReadOnlyList<string>? keep = null)
     {
-        var result = CodeCommands.Git(folder, "-c", "core.quotepath=off", "clean", "-xdn");
+        // With -x git uses none of the ignore rules but those it is given, and leaves what they
+        // match: a folder whole, or a file in a folder it would otherwise delete whole, the rest
+        // of which it then deletes around it.
+        List<string> arguments = ["-c", "core.quotepath=off", "clean", "-xdn"];
+        foreach (var pattern in keep ?? [])
+        {
+            arguments.Add($"--exclude={pattern}");
+        }
+
+        var result = CodeCommands.Git(folder, [.. arguments]);
         if (!result.Succeeded)
         {
             return new(folder, [], result.Output);
@@ -189,9 +200,10 @@ static class GitPurge
     /// Purges <paramref name="folders"/>, to the Recycle Bin unless
     /// <paramref name="permanent"/>. <paramref name="owner"/> is the window the shell's progress
     /// dialog belongs to. Once what will go is known, <paramref name="confirm"/>, if given, is
-    /// asked, with <see cref="Question"/>, and nothing goes unless it says yes.
+    /// asked, with <see cref="Question"/>, and nothing goes unless it says yes. What matches a
+    /// pattern of <paramref name="keep"/>, as Options has them, is left.
     /// </summary>
-    public static Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, bool permanent, IntPtr owner, IProgress<string>? progress = null, Func<string, bool>? confirm = null)
+    public static Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, bool permanent, IntPtr owner, IProgress<string>? progress = null, Func<string, bool>? confirm = null, IReadOnlyList<string>? keep = null)
     {
         var remove = ToRecycleBin(owner);
         if (permanent)
@@ -199,19 +211,19 @@ static class GitPurge
             remove = Outright;
         }
 
-        return Run(folders, remove, permanent, progress, confirm);
+        return Run(folders, remove, permanent, progress, confirm, keep);
     }
 
     /// <summary>
     /// Finds what git doesn't track in each folder, asks, then deletes all of it in one go with
     /// <paramref name="remove"/>.
     /// </summary>
-    internal static async Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, Remover remove, bool permanent, IProgress<string>? progress = null, Func<string, bool>? confirm = null)
+    internal static async Task<ActionLog.Outcome> Run(IReadOnlyList<string> folders, Remover remove, bool permanent, IProgress<string>? progress = null, Func<string, bool>? confirm = null, IReadOnlyList<string>? keep = null)
     {
         // Several folders looked in at once, as git runs in each on its own.
         var found = await Task.Run(() => CodeCommands.InParallel(
             folders,
-            Find,
+            _ => Find(_, keep),
             done =>
             {
                 if (folders.Count > 1)
@@ -229,7 +241,7 @@ static class GitPurge
         {
             progress?.Report($"Measuring {Items(paths.Count)}");
             var size = await Task.Run(() => paths.Sum(Size));
-            if (!confirm(Question(found, size, permanent)))
+            if (!confirm(Question(found, size, permanent, keep)))
             {
                 return new(false, "Cancelled", "");
             }
@@ -247,15 +259,44 @@ static class GitPurge
     // How many entries the question lists before saying how many more there are.
     const int listed = 10;
 
+    // Folders builds and package managers make, and make again: what is in one, or is one, is
+    // named after the rest.
+    static HashSet<string> buildOutput = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bin",
+        "obj",
+        "node_modules",
+        "packages",
+        "dist",
+        "build",
+        "out",
+        "target",
+        "artifacts",
+        "TestResults",
+        "coverage",
+        "__pycache__",
+        ".gradle",
+        ".next"
+    };
+
+    static bool IsBuildOutput(string name) =>
+        name
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(buildOutput.Contains);
+
     /// <summary>
     /// What a purge asks, once its dry run has found what will go: how many items, how big, the
-    /// first of them by name, where they go, and the folders git couldn't look in.
+    /// first of them by name, where they go, what is kept, and the folders git couldn't look in.
+    /// Git lists them by name, so bin and obj folders by the dozen can come before a file someone
+    /// wants, a .env Options doesn't keep, say, which is then never named: what isn't build output
+    /// is named first.
     /// </summary>
-    internal static string Question(IReadOnlyList<Found> found, long size, bool permanent)
+    internal static string Question(IReadOnlyList<Found> found, long size, bool permanent, IReadOnlyList<string>? keep = null)
     {
         var withEntries = found.Where(_ => _.Entries.Count > 0).ToList();
         var entries = withEntries
             .SelectMany(_ => _.Entries.Select(entry => (_.Folder, entry.Name)))
+            .OrderBy(_ => IsBuildOutput(_.Name))
             .ToList();
         var folders = withEntries
             .Select(_ => _.Folder)
@@ -287,6 +328,13 @@ static class GitPurge
         else
         {
             question.Append("They go to the Recycle Bin.");
+        }
+
+        if (keep is { Count: > 0 })
+        {
+            question.AppendLine();
+            question.AppendLine();
+            question.Append($"Kept, as set in Options: {string.Join(' ', keep)}");
         }
 
         var errors = found.Count(_ => _.Error != null);

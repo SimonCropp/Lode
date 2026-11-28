@@ -1953,11 +1953,12 @@ static class CodeMenu
         }
 
         var permanent = settings.PurgePermanently;
+        var keep = settings.PurgeKeeps;
         var window = owner.FindForm()?.Handle ?? owner.Handle;
         _ = ActionLog.Run(
             "Git purge",
             selected,
-            progress => GitPurge.Run(folders, permanent, window, progress, question => Ask(owner, question)));
+            progress => GitPurge.Run(folders, permanent, window, progress, question => Ask(owner, question), keep));
     }
 
     // The window may have closed while the dry run ran.

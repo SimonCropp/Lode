@@ -275,7 +275,7 @@ public class GitPurgeTests
     }
 
     // It asks once the dry run has found what will go, saying how many items, how big, the first
-    // of them, and where they go; turned down, nothing goes.
+    // of them, build output after the rest, and where they go; turned down, nothing goes.
     [Test]
     public async Task AsksOnceItKnowsWhatWillGo()
     {
@@ -308,11 +308,11 @@ public class GitPurgeTests
                     Delete 6 items, 34 bytes, that git doesn't track, ignored ones included, in Repo?
 
                     Empty/
-                    bin/
                     src/Untracked.cs
                     src/build.log
-                    src/obj/
                     src/ünï cödé.txt
+                    bin/
+                    src/obj/
 
                 They are deleted permanently, as set in Options. This cannot be undone.
                   ],
@@ -364,15 +364,15 @@ public class GitPurgeTests
                     Delete 12 items, 68 bytes, that git doesn't track, ignored ones included, in 2 repositories (One, Two)?
 
                     One/Empty/
-                    One/bin/
                     One/src/Untracked.cs
                     One/src/build.log
-                    One/src/obj/
                     One/src/ünï cödé.txt
                     Two/Empty/
-                    Two/bin/
                     Two/src/Untracked.cs
                     Two/src/build.log
+                    Two/src/ünï cödé.txt
+                    One/bin/
+                    One/src/obj/
                     and 2 more
 
                 They go to the Recycle Bin.
@@ -446,6 +446,133 @@ public class GitPurgeTests
         var outcome = await GitPurge.Run([repo], permanent: true, IntPtr.Zero);
 
         await Assert.That(outcome).IsEqualTo(new(true, "Nothing to purge", ""));
+    }
+
+    // What Options keeps is left, as git clean -e leaves it, ignored or not, deep down or at the
+    // top, the rest of a folder going around a file kept in it; the question says what is kept.
+    // As Options has it at first: a .env and its siblings, Visual Studio's and Rider's folders,
+    // and a project's .user file.
+    [Test]
+    public async Task WhatOptionsKeepsIsLeft()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = Untidy(code, "Repo");
+        Write(repo, ".env", "SECRET=1");
+        Write(repo, ".env.local", "SECRET=2");
+        Write(repo, ".vs/Repo/v17/.suo", "breakpoints");
+        Write(repo, ".idea/workspace.xml", "run settings");
+        Write(repo, "src/Repo.csproj.user", "launch arguments");
+        Write(repo, "config/.env", "SECRET=3");
+        Write(repo, "config/generated.json", "{}");
+        var questions = new List<string>();
+
+        var outcome = await GitPurge.Run(
+            [repo],
+            permanent: true,
+            IntPtr.Zero,
+            confirm: question =>
+            {
+                questions.Add(question);
+                return true;
+            },
+            keep: new Settings().PurgeKeeps);
+
+        await Verify(
+            new
+            {
+                questions,
+                outcome,
+                left = Left(repo)
+            })
+            .Snapshot(
+                """
+                {
+                  questions: [
+                    Delete 7 items, 36 bytes, that git doesn't track, ignored ones included, in Repo?
+
+                    Empty/
+                    config/generated.json
+                    src/Untracked.cs
+                    src/build.log
+                    src/ünï cödé.txt
+                    bin/
+                    src/obj/
+
+                They are deleted permanently, as set in Options. This cannot be undone.
+
+                Kept, as set in Options: .env .env.* .vs/ .idea/ *.user
+                  ],
+                  outcome: {
+                    Succeeded: true,
+                    Summary: 7 items deleted,
+                    Details:
+                Repo: 7 items
+                  Empty/
+                  bin/
+                  config/generated.json
+                  src/Untracked.cs
+                  src/build.log
+                  src/obj/
+                  src/ünï cödé.txt
+                  },
+                  left: [
+                    .env,
+                    .env.local,
+                    .gitignore,
+                    .idea,
+                    .idea/workspace.xml,
+                    .vs,
+                    .vs/Repo,
+                    .vs/Repo/v17,
+                    .vs/Repo/v17/.suo,
+                    Nested,
+                    Nested/Untracked.txt,
+                    config,
+                    config/.env,
+                    src,
+                    src/Repo.csproj.user,
+                    src/Tracked.cs,
+                    tracked.txt
+                  ]
+                }
+                """);
+    }
+
+    // What someone might want, a .env say, where Options doesn't keep it, is named first, rather
+    // than after however many bin folders git lists before it.
+    [Test]
+    public async Task TheQuestionNamesWhatIsntBuildOutputFirst()
+    {
+        var folder = @"C:\Code\Repo";
+        var names = Enumerable.Range(1, 20)
+            .Select(_ => $"Project{_:00}/bin/")
+            .Append(".env")
+            .Append("Project01/obj/")
+            .Append("web/node_modules/")
+            .Append("notes.txt");
+        var found = new GitPurge.Found(folder, names.Select(_ => new GitPurge.Entry(_, Path.Combine(folder, _))).ToList(), null);
+
+        var question = GitPurge.Question([found], 1024, permanent: false, keep: []);
+
+        await Verify(question)
+            .Snapshot(
+                """
+                Delete 24 items, 1.00 KB, that git doesn't track, ignored ones included, in Repo?
+
+                    .env
+                    notes.txt
+                    Project01/bin/
+                    Project02/bin/
+                    Project03/bin/
+                    Project04/bin/
+                    Project05/bin/
+                    Project06/bin/
+                    Project07/bin/
+                    Project08/bin/
+                    and 14 more
+
+                They go to the Recycle Bin.
+                """);
     }
 
     // Git's complaint is passed on, and the other folders are still purged.

@@ -808,6 +808,26 @@ public class OptionsFormTests
                 """);
     }
 
+    // What Git purge keeps shows as set, a space between patterns, and changes as each key is
+    // typed, however many spaces are between them; emptied, purge keeps nothing.
+    [Test]
+    public async Task TypingWhatPurgeKeepsChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var box = (TextBox) form.Controls.Find("purgeKeeps", true)[0];
+        var shown = box.Text;
+
+        box.Text = "  .env   secrets/ *.db ";
+        var typed = settings.PurgeKeeps.ToList();
+        box.Text = "";
+
+        await Assert.That(shown).IsEqualTo(".env .env.* .vs/ .idea/ *.user");
+        await Assert.That(typed).IsEquivalentTo([".env", "secrets/", "*.db"], CollectionOrdering.Matching);
+        await Assert.That(settings.PurgeKeeps).IsEmpty();
+    }
+
     // Off by default, with the hours greyed out until it is ticked.
     [Test]
     public async Task TickingCloseUnusedTabsChangesTheSetting()

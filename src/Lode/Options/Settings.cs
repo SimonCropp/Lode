@@ -385,6 +385,12 @@ sealed class Settings
     // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
     public bool PurgePermanently { get; set; }
 
+    // What Git purge leaves, patterns as .gitignore has them: secrets, and what IDEs keep for
+    // each user, run settings and breakpoints, which no build makes again, unlike the bin, obj
+    // and node_modules purge is for. Local databases aren't among them, as *.db would keep what
+    // builds and tests make too. Emptied in Options, purge takes everything. See GitPurge.
+    public List<string> PurgeKeeps { get; set; } = [".env", ".env.*", ".vs/", ".idea/", "*.user"];
+
     // The repositories open in tabs are fetched in the background, each once FetchMinutes have
     // passed since it was last fetched, as GitHub Desktop fetches about hourly, so how far behind
     // origin each branch is stays close to what origin has. See BackgroundFetch.
