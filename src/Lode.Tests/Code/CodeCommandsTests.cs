@@ -780,6 +780,41 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(fork, "rev-parse", "upstream/main")).IsEqualTo(upstream);
     }
 
+    // A branch deleted on origin, merged and deleted on its site say, goes from the branches
+    // here as Fetch learns it has gone, as git fetch --prune takes it away, rather than piling
+    // up as origin/x. In a fork, upstream's too.
+    [Test]
+    public async Task FetchPrunesWhatOriginDeleted()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var fork = code.CreateFork("Fork");
+        Scratch.Git(repo, "push", "origin", "HEAD:refs/heads/merged");
+        Scratch.Git(fork, "push", "origin", "HEAD:refs/heads/merged");
+        Scratch.Git(code.At("ForkUpstream"), "push", "origin", "HEAD:refs/heads/released");
+        Scratch.Git(fork, "fetch", "upstream");
+        var elsewhere = code.Clone("Repo", "Elsewhere");
+        var forkElsewhere = code.Clone("Fork", "ForkElsewhere");
+        Scratch.Git(elsewhere, "push", "origin", "--delete", "merged");
+        Scratch.Git(forkElsewhere, "push", "origin", "--delete", "merged");
+        Scratch.Git(code.At("ForkUpstream"), "push", "origin", "--delete", "released");
+        string[] before =
+        [
+            Scratch.Git(repo, "branch", "--remotes", "--list", "origin/merged"),
+            Scratch.Git(fork, "branch", "--remotes", "--list", "origin/merged"),
+            Scratch.Git(fork, "branch", "--remotes", "--list", "upstream/released")
+        ];
+
+        var results = await CodeCommands.Fetch([repo, fork]);
+
+        await Assert.That(results.Where(_ => !_.Succeeded)).IsEmpty();
+        await Assert.That(before).IsEquivalentTo(["origin/merged", "origin/merged", "upstream/released"], CollectionOrdering.Matching);
+        await Assert.That(Scratch.Git(repo, "branch", "--remotes", "--list", "origin/merged")).IsEmpty();
+        await Assert.That(Scratch.Git(fork, "branch", "--remotes", "--list", "origin/merged")).IsEmpty();
+        await Assert.That(Scratch.Git(fork, "branch", "--remotes", "--list", "upstream/released")).IsEmpty();
+        await Assert.That(Scratch.Git(repo, "branch", "--remotes", "--list", "origin/main")).IsEqualTo("origin/main");
+    }
+
     [Test]
     public async Task AForkIsARepositoryWithAnUpstream()
     {

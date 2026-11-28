@@ -12,6 +12,9 @@ sealed class WindowContext : ApplicationContext
     NotifyIcon tray;
     Icon trayIcon = ShellIcons.FolderWindowIcon();
 
+    // One for every window, so no repository is fetched twice at once from two.
+    BackgroundFetch backgroundFetch;
+
     // After the tray icon's tooltip and its menu's header: " (Debug)" in a Debug build, so its
     // icon is easy to tell from the installed Lode's beside it, as its window titles are.
     const string buildSuffix =
@@ -76,6 +79,8 @@ sealed class WindowContext : ApplicationContext
         instance.HandTo(OnLaunched);
         ReportUpdate();
         Updates.Instance.Start();
+        backgroundFetch = new(settings);
+        backgroundFetch.Start();
     }
 
     // Lode goes away while it updates and comes back, which looks the same whether the update
@@ -369,6 +374,7 @@ sealed class WindowContext : ApplicationContext
         {
             global::MainForm.WindowOpened -= Track;
             global::MainForm.ExitRequested -= Exit;
+            backgroundFetch.Dispose();
             tray.Dispose();
             trayIcon.Dispose();
         }

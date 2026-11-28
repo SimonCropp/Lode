@@ -119,6 +119,18 @@ sealed class Commands
             ]);
         }
 
+        // For the repository the status bar is about, which is the panes' but for one selected in
+        // a folder of repositories, so with them where they are.
+        if (window.StatusBar.PullRequestCommand() is { } pullRequest)
+        {
+            if (panes.Repo == null)
+            {
+                commands.Add(null);
+            }
+
+            commands.Add(pullRequest);
+        }
+
         if (PinnablePath() is { } path)
         {
             var pinned = IsPinned(path);
@@ -188,6 +200,11 @@ sealed class Commands
             Add("Changes", () => panes.Toggle(GitPane.Changes), "Ctrl+Shift+G");
             Add("History", () => panes.Toggle(GitPane.History), "Ctrl+Shift+H");
             Add("Compare to branch…", () => CodeMenu.CompareToBranch(window, repo));
+        }
+
+        if (window.StatusBar.PullRequestCommand() is { } pullRequest)
+        {
+            Add(pullRequest.Text, pullRequest.Action, "Ctrl+R");
         }
 
         if (page != null)
@@ -401,6 +418,9 @@ sealed class Commands
                 return true;
             case Keys.Control | Keys.B:
                 window.StatusBar.ShowBranches();
+                return true;
+            case Keys.Control | Keys.R:
+                window.StatusBar.CreatePullRequest();
                 return true;
             case Keys.Control | Keys.Shift | Keys.G:
                 window.GitPanes.Toggle(GitPane.Changes);

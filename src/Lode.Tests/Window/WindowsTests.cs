@@ -2488,9 +2488,10 @@ public class WindowsTests
         }
     }
 
-    // Right-clicked, the branch on the status bar offers to copy its name and to view it on the
-    // site origin is on, and the tag the same of its own. Detached, the branch's place offers the
-    // commit, and a branch tracking none, not on the site yet, only its name.
+    // Right-clicked, the branch on the status bar offers to copy its name, to view it on the
+    // site origin is on, and to create a pull request from it there, and the tag to copy and view
+    // its own. Detached, the branch's place offers the commit, and a branch tracking none, not on
+    // the site yet, its name, and to create a pull request once it is pushed.
     [Test]
     public async Task StatusBarMenusCopyAndViewTheBranchAndTag()
     {
@@ -2502,10 +2503,16 @@ public class WindowsTests
         var done = new List<string>();
         var setClipboardText = FolderView.SetClipboardText;
         FolderView.SetClipboardText = _ => done.Add($"copied {_}");
+        var ask = GitStatusActions.Ask;
+        GitStatusActions.Ask = (_, question) =>
+        {
+            done.Add($"asked {question.Heading}");
+            return null;
+        };
         try
         {
             await Assert.That(await Run("main", "origin/main", "git")).IsEquivalentTo(
-                ["Copy branch name: copied main", "View on GitHub: opened https://github.com/octo/Lode/tree/main"],
+                ["Copy branch name: copied main", "View on GitHub: opened https://github.com/octo/Lode/tree/main", "Create pull request: opened https://github.com/octo/Lode/compare/main?expand=1"],
                 CollectionOrdering.Matching);
             await Assert.That(await Run("main", "origin/main", "gitTag")).IsEquivalentTo(
                 ["Copy tag name: copied 0.25.0", "View on GitHub: opened https://github.com/octo/Lode/releases/tag/0.25.0"],
@@ -2514,12 +2521,13 @@ public class WindowsTests
                 [$"Copy SHA: copied {sha}", $"View on GitHub: opened https://github.com/octo/Lode/commit/{sha}"],
                 CollectionOrdering.Matching);
             await Assert.That(await Run("local-only", null, "git")).IsEquivalentTo(
-                ["Copy branch name: copied local-only"],
+                ["Copy branch name: copied local-only", "Create pull request…: asked local-only isn't on origin yet"],
                 CollectionOrdering.Matching);
         }
         finally
         {
             FolderView.SetClipboardText = setClipboardText;
+            GitStatusActions.Ask = ask;
         }
 
         // Each entry of the item's right-click menu, run, with what it did.
@@ -2549,7 +2557,9 @@ public class WindowsTests
     // origin's main under a name of its own is viewed at main. One whose branch on origin has
     // gone, merged and deleted say, one tracking a branch of the repository's own, and one
     // tracking another remote's, as a fork's tracks upstream's, aren't on origin as they are, so
-    // offer only their names.
+    // offer only their names. Create pull request, and Ctrl+R, open the page that creates one
+    // from the branch origin has, wherever it is viewed there; one tracking none asks to push it
+    // first, and Ctrl+R on the others says why there is none to create.
     [Test]
     public async Task StatusBarViewsTheBranchOriginHas()
     {
@@ -2564,6 +2574,7 @@ public class WindowsTests
         CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "fix", "--track", "origin/main");
         CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "local", "--track", "main");
         CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "synced", "--track", "upstream/main");
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "unpushed");
         CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "merged");
         CodeCommandsTests.Scratch.Git(fork, "push", "-u", "origin", "merged");
         CodeCommandsTests.Scratch.Git(fork, "push", "origin", "--delete", "merged");
@@ -2571,6 +2582,12 @@ public class WindowsTests
         var done = new List<string>();
         var setClipboardText = FolderView.SetClipboardText;
         FolderView.SetClipboardText = _ => done.Add($"copied {_}");
+        var ask = GitStatusActions.Ask;
+        GitStatusActions.Ask = (_, question) =>
+        {
+            done.Add($"asked {question.Heading}");
+            return null;
+        };
         try
         {
             await Verify(
@@ -2581,6 +2598,7 @@ public class WindowsTests
                     otherName = await Run("fix"),
                     local = await Run("local"),
                     otherRemote = await Run("synced"),
+                    unpushed = await Run("unpushed"),
                     gone = await Run("merged")
                 })
                 .Snapshot(
@@ -2588,24 +2606,38 @@ public class WindowsTests
                     {
                       main: [
                         Copy branch name: copied main,
-                        View on GitHub: opened https://github.com/octo/Lode/tree/main
+                        View on GitHub: opened https://github.com/octo/Lode/tree/main,
+                        Create pull request: opened https://github.com/octo/Lode/compare/main?expand=1,
+                        Ctrl+R: opened https://github.com/octo/Lode/compare/main?expand=1
                       ],
                       sameName: [
                         Copy branch name: copied feature/x,
-                        View on GitHub: opened https://github.com/octo/Lode/tree/feature/x
+                        View on GitHub: opened https://github.com/octo/Lode/tree/feature/x,
+                        Create pull request: opened https://github.com/octo/Lode/compare/feature/x?expand=1,
+                        Ctrl+R: opened https://github.com/octo/Lode/compare/feature/x?expand=1
                       ],
                       otherName: [
                         Copy branch name: copied fix,
-                        View on GitHub: opened https://github.com/octo/Lode/tree/main
+                        View on GitHub: opened https://github.com/octo/Lode/tree/main,
+                        Create pull request: opened https://github.com/octo/Lode/compare/main?expand=1,
+                        Ctrl+R: opened https://github.com/octo/Lode/compare/main?expand=1
                       ],
                       local: [
-                        Copy branch name: copied local
+                        Copy branch name: copied local,
+                        Ctrl+R: told local tracks main, not a branch on origin, so there is none there to create a pull request from.
                       ],
                       otherRemote: [
-                        Copy branch name: copied synced
+                        Copy branch name: copied synced,
+                        Ctrl+R: told synced tracks upstream/main, not a branch on origin, so there is none there to create a pull request from.
+                      ],
+                      unpushed: [
+                        Copy branch name: copied unpushed,
+                        Create pull request…: asked unpushed isn't on origin yet,
+                        Ctrl+R: asked unpushed isn't on origin yet
                       ],
                       gone: [
-                        Copy branch name: copied merged
+                        Copy branch name: copied merged,
+                        Ctrl+R: told merged tracks origin/merged, which has gone from origin, deleted once it was merged say, so there is no branch there to create a pull request from.
                       ]
                     }
                     """);
@@ -2613,10 +2645,11 @@ public class WindowsTests
         finally
         {
             FolderView.SetClipboardText = setClipboardText;
+            GitStatusActions.Ask = ask;
         }
 
-        // The branch's right-click entries, each run, with what it did, the branch checked out
-        // and its state read from the repository as Lode reads it.
+        // The branch's right-click entries, each run, with what it did, then Ctrl+R, the branch
+        // checked out and its state read from the repository as Lode reads it.
         async Task<List<string>> Run(string branch)
         {
             CodeCommandsTests.Scratch.Git(fork, "switch", branch);
@@ -2625,6 +2658,7 @@ public class WindowsTests
             using var form = await Show(fixture, settings, fixture.Root);
             await PaneStubs.Settled(form);
             form.OpenSite = _ => done.Add($"opened {_}");
+            form.StatusBar.Tell = (_, text) => done.Add($"told {text}");
             var ran = new List<string>();
             foreach (var command in form.StatusBar.CommandsFor(form.StatusBar.Strip.Items["git"]!))
             {
@@ -2632,8 +2666,111 @@ public class WindowsTests
                 ran.Add($"{command.Text}: {done[^1]}");
             }
 
+            var before = done.Count;
+            form.Commands.RunKey(Keys.Control | Keys.R);
+            ran.Add($"Ctrl+R: {string.Join(", ", done[before..])}");
             return ran;
         }
+    }
+
+    // The background fetch fetches the repositories the tabs of every window showing are in,
+    // read yet or not, each once, a tab in a folder inside one counting as one in it, and the
+    // repository selected in a folder of them, but not those of a window gone to the tray, nor
+    // a folder in no repository.
+    [Test]
+    public async Task TheBackgroundFetchFetchesTheRepositoriesOfTheTabsShowing()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var first = code.CreateRepo("First");
+        var second = code.CreateRepo("Second");
+        var selected = code.CreateRepo("Selected");
+        var hidden = code.CreateRepo("Hidden");
+        var inside = Path.Combine(first, "src");
+        Directory.CreateDirectory(inside);
+        Directory.CreateDirectory(code.At("Plain"));
+        using var fixture = Fixture.Create();
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var form = await Show(fixture, settings, inside, second, first, code.At("Plain"), code.Root);
+        using var gone = await Show(fixture, settings, hidden);
+        gone.Hide();
+        var listing = form.ActiveView!;
+        await Pump.Until(() => listing.GitReading.IsCompleted);
+        listing.List.SelectedIndices.Add(listing.Entries.ToList().FindIndex(_ => _.FullPath == selected));
+        await Pump.Until(() => listing.GitRepo == selected);
+        var fetched = new List<string>();
+        using var fetcher = new BackgroundFetch(
+            settings,
+            MainForm.OpenFolders,
+            new Clock(DateTimeOffset.UtcNow),
+            () => [],
+            _ => { },
+            (repo, _) =>
+            {
+                lock (fetched)
+                {
+                    fetched.Add(repo);
+                }
+
+                return new(repo, true, "");
+            });
+
+        await fetcher.Tick();
+
+        await Assert.That(fetched).IsEquivalentTo([first, second, selected], CollectionOrdering.Any);
+    }
+
+    // A branch tracking none isn't on origin yet, so Create pull request asks to push it first,
+    // as GitHub Desktop asks to publish one. Pushed, as Push publishes it, to a branch of its name
+    // on origin, the page that creates one from it opens. Declined, nothing is pushed or opened.
+    [Test]
+    public async Task StatusBarPushesABranchBeforeCreatingItsPullRequest()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        // On GitHub as Lode reads origin, while git goes to the scratch origin in its place.
+        CodeCommandsTests.Scratch.Git(repo, "remote", "set-url", "origin", "https://github.com/octo/Repo.git");
+        CodeCommandsTests.Scratch.Git(repo, "config", $"url.{code.Origin("Repo").Replace('\\', '/')}.insteadOf", "https://github.com/octo/Repo.git");
+        CodeCommandsTests.Scratch.Git(repo, "switch", "-c", "feature");
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, new Settings { CodeDirectory = code.Root }, repo);
+        await Pump.Until(() => form.StatusBar.PullRequestCommand() != null);
+        var opened = new List<string>();
+        form.OpenSite = opened.Add;
+        var asked = new List<string>();
+        GitStatusActions.Choice? answer = null;
+        var ask = GitStatusActions.Ask;
+        GitStatusActions.Ask = (_, question) =>
+        {
+            asked.Add($"{question.Heading}: {string.Join(", ", question.Options.Select(option => option.Text))}");
+            return answer;
+        };
+        string declined;
+        try
+        {
+            form.StatusBar.PullRequestCommand()!.Action();
+            declined = CodeCommandsTests.Scratch.Git(repo, "ls-remote", "--heads", "origin", "feature");
+            answer = GitStatusActions.Choice.Push;
+            form.Commands.RunKey(Keys.Control | Keys.R);
+            await Pump.Until(() => opened.Count > 0);
+        }
+        finally
+        {
+            GitStatusActions.Ask = ask;
+            ActionLog.Reset();
+        }
+
+        await Assert.That(declined).IsEmpty();
+        await Assert.That(asked).IsEquivalentTo(
+            [
+                "feature isn't on origin yet: Push, then create the pull request",
+                "feature isn't on origin yet: Push, then create the pull request"
+            ]);
+        await Assert.That(opened).IsEquivalentTo(["https://github.com/octo/Repo/compare/feature?expand=1"]);
+        await Assert.That(CodeCommandsTests.Scratch.Git(repo, "ls-remote", "--heads", "origin", "feature")).EndsWith("refs/heads/feature");
+        await Assert.That(CodeCommandsTests.Scratch.Git(repo, "rev-parse", "--abbrev-ref", "feature@{upstream}")).IsEqualTo("origin/feature");
     }
 
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>

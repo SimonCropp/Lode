@@ -60,6 +60,37 @@ public class RemoteSiteTests
         await Assert.That(azure.TagUrl("0.37.0")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo?version=GT0.37.0");
     }
 
+    // The page that creates a pull request from a branch, where each site has it, from origin
+    // however it is written: GitHub's compare, the name's slashes kept as for its page, GitLab's
+    // new merge request, Bitbucket's and Azure DevOps' new pull request, each with the branch as
+    // a value, so its slashes escaped too, as is anything else a url can't hold.
+    [Test]
+    public async Task PullRequestUrl()
+    {
+        static string Url(string remote, string branch) =>
+            RemoteSite.For(remote)!.PullRequestUrl(branch);
+
+        await Assert.That(Url("https://github.com/octo/repo.git", "feature/a")).IsEqualTo("https://github.com/octo/repo/compare/feature/a?expand=1");
+        await Assert.That(Url("git@github.com:octo/repo.git", "fix #1&2")).IsEqualTo("https://github.com/octo/repo/compare/fix%20%231%262?expand=1");
+        await Assert.That(Url("https://gitlab.com/group/sub/repo.git", "feature/a")).IsEqualTo("https://gitlab.com/group/sub/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=feature%2Fa");
+        await Assert.That(Url("ssh://git@gitlab.com/group/repo.git", "fix #1&2")).IsEqualTo("https://gitlab.com/group/repo/-/merge_requests/new?merge_request%5Bsource_branch%5D=fix%20%231%262");
+        await Assert.That(Url("https://bitbucket.org/team/repo.git", "feature/a")).IsEqualTo("https://bitbucket.org/team/repo/pull-requests/new?source=feature%2Fa&t=1");
+        await Assert.That(Url("git@bitbucket.org:team/repo.git", "fix #1&2")).IsEqualTo("https://bitbucket.org/team/repo/pull-requests/new?source=fix%20%231%262&t=1");
+        await Assert.That(Url("https://dev.azure.com/org/Project/_git/repo", "feature/a")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo/pullrequestcreate?sourceRef=feature%2Fa");
+        await Assert.That(Url("git@ssh.dev.azure.com:v3/org/Project/repo", "fix #1&2")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo/pullrequestcreate?sourceRef=fix%20%231%262");
+        await Assert.That(Url("https://org.visualstudio.com/DefaultCollection/Project/_git/repo", "main")).IsEqualTo("https://org.visualstudio.com/DefaultCollection/Project/_git/repo/pullrequestcreate?sourceRef=main");
+    }
+
+    // GitLab's are merge requests, everywhere else's pull requests, as each site calls them.
+    [Test]
+    public async Task PullRequestName()
+    {
+        await Assert.That(RemoteSite.For("https://github.com/octo/repo.git")!.PullRequestName).IsEqualTo("pull request");
+        await Assert.That(RemoteSite.For("https://gitlab.com/group/repo.git")!.PullRequestName).IsEqualTo("merge request");
+        await Assert.That(RemoteSite.For("git@bitbucket.org:team/repo.git")!.PullRequestName).IsEqualTo("pull request");
+        await Assert.That(RemoteSite.For("https://dev.azure.com/org/Project/_git/repo")!.PullRequestName).IsEqualTo("pull request");
+    }
+
     // Origins on no site Lode knows, or none at all, a folder say, have no page.
     [Test]
     public async Task NoSite()

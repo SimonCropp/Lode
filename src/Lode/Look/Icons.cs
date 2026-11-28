@@ -68,6 +68,8 @@ static class Icons
     // The branch checked out taken up into another: an arrow up, as Update from default branch
     // brings one down.
     public const char MergeInto = '';
+    // A branch's commits offered up into another, on the site: Merge current branch into's.
+    public const char PullRequest = MergeInto;
     // Arrows pointing in on each other: a branch's commits squashed into one.
     public const char Squash = '';
     // Two arrows round, as Repeat all has: a branch's commits played again on top of another.

@@ -160,6 +160,28 @@ class OptionsForm : Form
         Margin = new(3, 0, 3, 3)
     };
 
+    CheckBox fetchInBackground = new()
+    {
+        Name = "fetchInBackground",
+        Text = "Fetch the repositories open in tabs every",
+        AutoSize = true
+    };
+
+    NumericUpDown fetchMinutes = new()
+    {
+        Name = "fetchMinutes",
+        AccessibleName = "Minutes between fetches of each repository open in a tab",
+        Minimum = BackgroundFetch.MinimumMinutes,
+        Maximum = BackgroundFetch.MaximumMinutes,
+        Width = 60
+    };
+
+    Label fetchMinutesUnit = new()
+    {
+        Text = "minutes",
+        AutoSize = true
+    };
+
     // One pattern a line. See PromotedFiles.
     TextBox promotedFiles = new()
     {
@@ -485,6 +507,15 @@ class OptionsForm : Form
         };
         purgePermanently.Checked = settings.PurgePermanently;
         purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
+        fetchInBackground.Checked = settings.FetchInBackground;
+        fetchMinutes.Value = Math.Clamp(settings.FetchMinutes, (int) fetchMinutes.Minimum, (int) fetchMinutes.Maximum);
+        fetchMinutes.Enabled = settings.FetchInBackground;
+        fetchInBackground.CheckedChanged += (_, _) =>
+        {
+            settings.FetchInBackground = fetchInBackground.Checked;
+            fetchMinutes.Enabled = fetchInBackground.Checked;
+        };
+        fetchMinutes.ValueChanged += (_, _) => settings.FetchMinutes = (int) fetchMinutes.Value;
         promotedFiles.Text = string.Join(Environment.NewLine, settings.PromotedFiles);
         promotedApplied = [.. settings.PromotedFiles];
         promotedFiles.TextChanged += (_, _) => settings.PromotedFiles = PatternLines(promotedFiles.Text);
@@ -870,6 +901,10 @@ class OptionsForm : Form
             "Lode watches it while it runs, so Windows won't let a folder it is in be renamed or " +
             "moved until it is cleared here, or Lode exits.",
             Row(codeDirectory, browseCodeDirectory, clearCodeDirectory)),
+        .. Section(
+            "Fetch",
+            "In the background, as GitHub Desktop does, never asking to sign in.",
+            Row(fetchInBackground, fetchMinutes, fetchMinutesUnit)),
         .. Section(
             "Git purge",
             "Git purge deletes every file and folder git doesn't track, ignored ones " +

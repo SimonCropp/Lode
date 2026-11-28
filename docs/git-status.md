@@ -322,4 +322,4 @@ dotnet run -c Release --project src/Lode.Benchmarks
 - A repository pointed at another git folder after it was first read is not followed.
 - A single ignored file, in a folder that isn't ignored, still makes its repository stale.
 - A change to the index forgets every folder learned for that repository, so each is asked about again.
-- Ahead and behind are as of the last fetch: Lode never fetches to work them out. So is how far behind upstream a fork is: Fetch, and Sync fork, fetch upstream too.
+- Ahead and behind are as of the last fetch: reading a repository never fetches to work them out. The repositories open in tabs are fetched in the background, each an hour after it was last fetched unless Options says otherwise (see [Fetching in the background](../readme.md#background-fetch)), so between fetches they may not count what origin has had since. So is how far behind upstream a fork is: Fetch, the background fetch, and Sync fork fetch upstream too. A background fetch changes refs in the git folder, which makes the repository stale like any other change, and the windows read their repositories again as it ends, as they do once one of Lode's git actions has.

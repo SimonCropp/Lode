@@ -1110,6 +1110,35 @@ class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Every window's repositories read again, as one of Lode's git actions finishing has them
+    /// read: the background fetch fetched them, outside the Actions panel.
+    /// </summary>
+    internal static void ReadGitStateInAllWindows()
+    {
+        foreach (var window in Application.OpenForms.OfType<MainForm>().ToList())
+        {
+            window.ReadGitState();
+        }
+    }
+
+    /// <summary>
+    /// Where the background fetch looks for the repositories to fetch: the folder of every tab
+    /// of every window showing, read yet or not, as a tab not looked at since Lode started has
+    /// read nothing, and the repository each tab's status bar is about, one selected in a folder
+    /// of repositories say. Not those of a window gone to the tray, which nobody is looking at:
+    /// they are fetched once it is back, if they are due by then.
+    /// </summary>
+    internal static List<string> OpenFolders() =>
+        Application.OpenForms
+            .OfType<MainForm>()
+            .Where(_ => _.Visible)
+            .SelectMany(_ => _.Views)
+            .SelectMany(_ => new[] {_.CurrentPath, _.GitRepo})
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     // Back at the front, where a commit made in a terminal meanwhile went unseen: git changes
     // only .git, not the folder listed.
     protected override void OnActivated(EventArgs args)

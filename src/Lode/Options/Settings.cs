@@ -357,6 +357,12 @@ sealed class Settings
     // Git purge deletes what git doesn't track outright, rather than to the Recycle Bin.
     public bool PurgePermanently { get; set; }
 
+    // The repositories open in tabs are fetched in the background, each once FetchMinutes have
+    // passed since it was last fetched, as GitHub Desktop fetches about hourly, so how far behind
+    // origin each branch is stays close to what origin has. See BackgroundFetch.
+    public bool FetchInBackground { get; set; } = true;
+    public int FetchMinutes { get; set; } = 60;
+
     // The files a folder down from a repository's root that are listed at the root too, as
     // shortcuts, one pattern each: a whole name, or one with a * for how it starts and ends,
     // *.slnx say. None unless added in Options. See PromotedFiles.

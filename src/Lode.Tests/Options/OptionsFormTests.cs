@@ -855,6 +855,54 @@ public class OptionsFormTests
                 """);
     }
 
+    // On by default, hourly, as GitHub Desktop fetches; unticked, the minutes are greyed out,
+    // and the background fetch, which reads the settings at each tick, stops.
+    [Test]
+    public async Task UntickingFetchInBackgroundChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings();
+        using var form = Show(scratch.Replacement(), settings);
+        var tick = (CheckBox) form.Controls.Find("fetchInBackground", true)[0];
+        var minutes = (NumericUpDown) form.Controls.Find("fetchMinutes", true)[0];
+        var before = new
+        {
+            settings.FetchInBackground,
+            settings.FetchMinutes,
+            minutesEnabled = minutes.Enabled
+        };
+
+        minutes.Value = 15;
+        tick.Checked = false;
+
+        await Verify(
+            new
+            {
+                before,
+                after = new
+                {
+                    settings.FetchInBackground,
+                    settings.FetchMinutes,
+                    minutesEnabled = minutes.Enabled
+                }
+            })
+            .Snapshot(
+                """
+                {
+                  before: {
+                    FetchInBackground: true,
+                    FetchMinutes: 60,
+                    minutesEnabled: true
+                  },
+                  after: {
+                    FetchInBackground: false,
+                    FetchMinutes: 15,
+                    minutesEnabled: false
+                  }
+                }
+                """);
+    }
+
     // Same as Windows by default. Picking another is kept for the next start, which is when it
     // takes effect.
     [Test]

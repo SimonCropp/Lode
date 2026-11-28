@@ -42,6 +42,29 @@ sealed record RemoteSite(string Name, string Url)
             _ => $"{Url}/releases/tag/{InPath(tag)}"
         };
 
+    /// <summary>
+    /// The page that creates a pull request from a branch origin has, as GitHub Desktop's Create
+    /// pull request opens it, into the default branch, which each site picks: GitHub's compare,
+    /// which in a fork compares with the repository it was made from, GitLab's new merge
+    /// request, Bitbucket's and Azure DevOps' new pull request, as each links to one from what
+    /// it says to a push. The branch is a value in the url for all but GitHub, so escaped whole,
+    /// its slashes too.
+    /// </summary>
+    public string PullRequestUrl(string branch) =>
+        Name switch
+        {
+            "GitLab" => $"{Url}/-/merge_requests/new?merge_request%5Bsource_branch%5D={Uri.EscapeDataString(branch)}",
+            "Bitbucket" => $"{Url}/pull-requests/new?source={Uri.EscapeDataString(branch)}&t=1",
+            "Azure DevOps" => $"{Url}/pullrequestcreate?sourceRef={Uri.EscapeDataString(branch)}",
+            _ => $"{Url}/compare/{InPath(branch)}?expand=1"
+        };
+
+    /// <summary>
+    /// What the site calls a pull request: GitLab a merge request.
+    /// </summary>
+    public string PullRequestName =>
+        Name == "GitLab" ? "merge request" : "pull request";
+
     // A branch's or tag's name in a url's path: each part escaped, the slashes between kept, as
     // the sites take feature/x.
     static string InPath(string name) =>

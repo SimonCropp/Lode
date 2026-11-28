@@ -252,6 +252,8 @@ static class CodeCommands
     /// Learns what origin has now, its branches and their commits, changing nothing checked
     /// out: how far ahead and behind each branch is follows. In a fork, what upstream has too,
     /// as GitHub Desktop fetches it, so how far behind upstream the branch is follows as well.
+    /// A branch deleted on origin, merged and deleted on its site say, goes from the branches
+    /// here too, rather than staying as origin/x for ever.
     /// </summary>
     public static Task<List<RepoResult>> Fetch(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(repos, progress, cancel, repo => Git(repo, cancel, network: true, FetchArguments(repo)));
@@ -260,11 +262,33 @@ static class CodeCommands
     {
         if (IsFork(repo))
         {
-            return ["fetch", "--multiple", "origin", "upstream"];
+            return ["fetch", "--prune", "--multiple", "origin", "upstream"];
         }
 
-        return ["fetch"];
+        return ["fetch", "--prune"];
     }
+
+    /// <summary>
+    /// A fetch nobody asked for, as <see cref="Fetch"/> does it, for the background fetch: git
+    /// is never to ask anything, a password say, nor is the credential helper it asks, Git
+    /// Credential Manager say, which would otherwise show its window to sign in. Where either
+    /// would have to, the fetch fails, as nobody may be there to answer, and the user's own
+    /// Fetch asks as git does.
+    /// </summary>
+    internal static RepoResult FetchQuietly(string repo, Cancel cancel) =>
+        Git(repo, cancel, network: true, null, ["-c", "credential.interactive=false", .. FetchArguments(repo)], quietly);
+
+    static Dictionary<string, string> quietly = new()
+    {
+        // Git Credential Manager's own switch, which credential.interactive is too, for one
+        // that reads only this.
+        ["GCM_INTERACTIVE"] = "never",
+
+        // Empty, so git asks no program for what it has no answer to, neither core.askPass's
+        // nor SSH_ASKPASS's: it looks at this first, and takes it being empty as there being
+        // none. GIT_TERMINAL_PROMPT, which every git has, stops the terminal's prompt.
+        ["GIT_ASKPASS"] = ""
+    };
 
     /// <summary>
     /// Whether the repository is a fork: one with an upstream remote, the repository it was made

@@ -124,6 +124,7 @@ sealed class StatusBar : IDisposable
         this.updates = updates;
         this.openTab = openTab;
         this.openSite = openSite;
+        Tell = (caption, text) => MessageBox.Show(window, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
         // 11 windows are resized from their edges.
@@ -293,8 +294,9 @@ sealed class StatusBar : IDisposable
     /// origin has it, by its name there, so only one tracking a branch on origin that is there
     /// still: one tracking none isn't on the site yet, and one whose branch on origin has gone,
     /// one tracking a branch of the repository's own, or another remote's, upstream's in a fork
-    /// say, isn't there by its name, so none of them is viewed there. None for anything else, or
-    /// with no repository shown.
+    /// say, isn't there by its name, so none of them is viewed there. A branch has Create pull
+    /// request too, where it is viewed there, and, asking to push it first, where it tracks none:
+    /// see <see cref="PullRequest"/>. None for anything else, or with no repository shown.
     /// </summary>
     internal List<QuickMenu.Command?> CommandsFor(ToolStripItem item)
     {
@@ -323,7 +325,13 @@ sealed class StatusBar : IDisposable
                 url = site?.BranchUrl(onOrigin);
             }
 
-            return WithView(Copy("Copy branch name", branch), url);
+            var commands = WithView(Copy("Copy branch name", branch), url);
+            if (PullRequestCommand() is { } pullRequest)
+            {
+                commands.Add(pullRequest);
+            }
+
+            return commands;
         }
 
         if (state.Commit is { } sha)
@@ -355,6 +363,98 @@ sealed class StatusBar : IDisposable
                     Glyph = Icons.Links
                 }
             ];
+        }
+    }
+
+    /// <summary>
+    /// Create pull request, for the branch the bar shows, named as its site names one, where it
+    /// would create one, or would ask to push the branch first, which it ends with an ellipsis
+    /// for: see <see cref="PullRequest"/>. Null where it would only say why it can't, for the
+    /// menus to leave it out.
+    /// </summary>
+    internal QuickMenu.Command? PullRequestCommand()
+    {
+        if (gitState is not { } state ||
+            siteLabel.Tag is not RemoteSite site)
+        {
+            return null;
+        }
+
+        var text = $"Create {site.PullRequestName}";
+        return PullRequest.For(state, site) switch
+        {
+            PullRequest.Open => new(text, CreatePullRequest)
+            {
+                Glyph = Icons.PullRequest,
+                Shortcut = "Ctrl+R"
+            },
+            PullRequest.PushFirst => new($"{text}…", CreatePullRequest)
+            {
+                Glyph = Icons.PullRequest,
+                Shortcut = "Ctrl+R"
+            },
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Says why there is no pull request to create, for Ctrl+R. Tests listen in.
+    /// </summary>
+    internal Action<string, string> Tell;
+
+    /// <summary>
+    /// Ctrl+R, or Create pull request on the branch's right-click menu: the page on the site
+    /// origin is on that creates one from the branch the bar shows, opened in the browser. A
+    /// branch tracking none is pushed first, asked as the bar's parts ask, in the Actions panel,
+    /// and the page opens once it is on origin. Otherwise it says why there is none to create.
+    /// Outside a repository, nothing.
+    /// </summary>
+    public void CreatePullRequest()
+    {
+        if (gitRepo is not { } repo ||
+            gitState is not { } state)
+        {
+            return;
+        }
+
+        var site = siteLabel.Tag as RemoteSite;
+        switch (PullRequest.For(state, site))
+        {
+            case PullRequest.Open open:
+                openSite(open.Url);
+                return;
+            case PullRequest.PushFirst push when site != null:
+                if (GitStatusActions.Ask(window, PullRequest.PushFirstQuestion(push.Branch, state, site)) == GitStatusActions.Choice.Push)
+                {
+                    _ = PushThenCreate(repo, push.Branch, site);
+                }
+
+                return;
+            case PullRequest.Cannot cannot:
+                Tell($"Create {site?.PullRequestName ?? "pull request"}", cannot.Why);
+                return;
+        }
+    }
+
+    // Published as Push publishes a branch tracking none, to a branch of its name on origin, so
+    // the page is the one for that.
+    async Task PushThenCreate(string repo, string branch, RemoteSite site)
+    {
+        var entry = await ActionLog.Run(
+            "Git push",
+            [repo],
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.Push([repo], null, progress, cancel);
+                // Before the entry ends, which has the windows read the states again, as the bar's
+                // own Push does.
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome(results);
+            });
+        if (entry.State == ActionLog.State.Succeeded &&
+            !window.IsDisposed)
+        {
+            openSite(site.PullRequestUrl(branch));
         }
     }
 
