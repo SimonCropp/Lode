@@ -59,13 +59,14 @@ sealed class ChangesPane : UserControl
     ToolTip tip = new();
 
     // Part way through a merge, as GitHub Desktop's banner has it: what is being merged, how many
-    // files are left to settle, and a button giving the merge up.
+    // files are left to settle, and a button giving the merge up; part way through a rebase, as
+    // its dialog has it, one going on with the rebase too.
     TableLayoutPanel mergeBar = new()
     {
         Dock = DockStyle.Top,
         AutoSize = true,
         AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        ColumnCount = 2,
+        ColumnCount = 3,
         RowCount = 1,
         Visible = false
     };
@@ -75,6 +76,14 @@ sealed class ChangesPane : UserControl
         Anchor = AnchorStyles.Left,
         UseMnemonic = false,
         Margin = new(0, 3, 6, 3)
+    };
+    Button continueButton = new()
+    {
+        Name = "continueRebase",
+        Text = "Continue rebase",
+        AutoSize = true,
+        Anchor = AnchorStyles.Right,
+        Visible = false
     };
     Button abortButton = new()
     {
@@ -282,15 +291,18 @@ sealed class ChangesPane : UserControl
         mergeBar.BackColor = DesktopStyle.AltBackground;
         mergeBar.ColumnStyles.Add(new(SizeType.Percent, 100));
         mergeBar.ColumnStyles.Add(new(SizeType.AutoSize));
+        mergeBar.ColumnStyles.Add(new(SizeType.AutoSize));
         mergeBar.Controls.Add(mergeText, 0, 0);
-        mergeBar.Controls.Add(abortButton, 1, 0);
-        mergeBar.SizeChanged += (_, _) => mergeText.MaximumSize = new(Math.Max(1, mergeBar.ClientSize.Width - abortButton.Width - mergeBar.Padding.Horizontal - 12), 0);
+        mergeBar.Controls.Add(continueButton, 1, 0);
+        mergeBar.Controls.Add(abortButton, 2, 0);
+        mergeBar.SizeChanged += (_, _) => FitMergeText();
         mergeBar.Paint += (_, args) =>
         {
             using var pen = new Pen(DesktopStyle.Border);
             args.Graphics.DrawLine(pen, 0, mergeBar.Height - 1, mergeBar.Width, mergeBar.Height - 1);
         };
         abortButton.Click += (_, _) => AbortMerge();
+        continueButton.Click += (_, _) => Commit();
         noChanges.ActRequested += _ => ActRequested?.Invoke(_);
 
         // The list fills what the rest leave, or, with nothing uncommitted, what says so.
@@ -788,6 +800,10 @@ sealed class ChangesPane : UserControl
 
     internal bool MergeBarShown => changes.Merging;
 
+    internal Button AbortButton => abortButton;
+
+    internal Button ContinueButton => continueButton;
+
     void ShowMergeBar()
     {
         mergeBar.Visible = changes.Merging;
@@ -796,17 +812,48 @@ sealed class ChangesPane : UserControl
             return;
         }
 
+        var rebasing = changes.Rebasing != null;
         mergeText.Text = MergeBarText(changes);
+        abortButton.Text = rebasing ? "Abort rebase" : "Abort merge";
+        continueButton.Visible = rebasing;
+        FitMergeText();
+    }
+
+    // The text wrapping in what the buttons beside it leave.
+    void FitMergeText()
+    {
+        var buttons = abortButton.Width;
+        if (continueButton.Visible)
+        {
+            buttons += continueButton.Width + continueButton.Margin.Horizontal;
+        }
+
+        mergeText.MaximumSize = new(Math.Max(1, mergeBar.ClientSize.Width - buttons - mergeBar.Padding.Horizontal - 12), 0);
     }
 
     /// <summary>
-    /// What the bar says: what is being merged into what, and how many files are left to
-    /// settle, or that the merge is ready to commit.
+    /// What the bar says: what is being merged into what, or rebased onto what, and how many
+    /// files are left to settle, or that the merge is ready to commit, or the rebase to go on.
     /// </summary>
     internal static string MergeBarText(GitChanges changes)
     {
         var what = "Merging";
-        if (changes.MergingFrom is { } from)
+        var next = "Commit the merge.";
+        if (changes.Rebasing is { } rebase)
+        {
+            what = "Rebasing";
+            next = "Continue the rebase.";
+            if (rebase.Branch is { } rebased)
+            {
+                what += $" {rebased}";
+            }
+
+            if (rebase.Onto is { } onto)
+            {
+                what += $" onto {onto}";
+            }
+        }
+        else if (changes.MergingFrom is { } from)
         {
             what = $"Merging {from}";
             if (changes.Branch is { } branch)
@@ -818,29 +865,42 @@ sealed class ChangesPane : UserControl
         var left = changes.ConflictsLeft;
         if (left == 0)
         {
-            return $"{what}: no conflicts left. Commit the merge.";
+            return $"{what}: no conflicts left. {next}";
         }
 
         return $"{what}: {GitState.CountOf(left, "conflicted file")} left. Right-click one to pick a side, or settle its markers in the editor.";
     }
 
     // Whether any of the file goes in the commit: all of it, or the lines picked.
-    bool IsTicked(Change change) =>
-        changes.Merging ||
-        !draft.Unticked.Contains(change.Path);
+    bool IsTicked(Change change)
+    {
+        if (changes.Merging)
+        {
+            return MergeTakes(change);
+        }
+
+        return !draft.Unticked.Contains(change.Path);
+    }
 
     /// <summary>
     /// How a file's tick shows: ticked, not, or, with only some of its lines picked, partly.
     /// </summary>
-    bool? TickOf(Change change)
+    internal bool? TickOf(Change change)
     {
         if (changes.Merging)
         {
-            return true;
+            return MergeTakes(change);
         }
 
         return draft.TickOf(change.Path);
     }
+
+    // Part way through a merge, every file goes in its commit; part way through a rebase, every
+    // file git tracks goes in the commit being replayed, one it doesn't being no part of the
+    // branch rebased.
+    bool MergeTakes(Change change) =>
+        changes.Rebasing == null ||
+        change.Kind != GitChange.Untracked;
 
     IReadOnlyList<Change> Ticked() =>
         changes.Files
@@ -929,6 +989,12 @@ sealed class ChangesPane : UserControl
             commitButton.Bold = "";
             tipText = "Put the ticked files, and the summary and description, in the last commit (Ctrl+Enter)";
         }
+        else if (changes.Rebasing != null)
+        {
+            commitButton.Text = "Continue rebase";
+            commitButton.Bold = "";
+            tipText = "Put the files git tracks in the commit being replayed, with its own message, and go on with the rebase (Ctrl+Enter)";
+        }
         else if (changes.Merging)
         {
             commitButton.Text = "Commit merge";
@@ -958,18 +1024,22 @@ sealed class ChangesPane : UserControl
         }
 
         commitButton.Enabled = CanCommit;
+        continueButton.Enabled = CanCommit;
         commitButton.Invalidate();
     }
 
     // Amending, the summary alone can be changed, with no file ticked. Nothing is, where git
-    // couldn't read the files, which are hidden then.
+    // couldn't read the files, which are hidden then. Part way through a rebase, going on with
+    // it needs neither, the commit being replayed keeping its own message, and taking whatever
+    // there is, nothing where the conflicts were settled as what it goes onto had it.
     bool CanCommit =>
         repo != null &&
         !committing &&
         failure == null &&
-        summaryFrame.Box.Text.Trim().Length > 0 &&
         !changes.Conflicted &&
-        (Amending || changes.Files.Any(IsTicked));
+        (changes.Rebasing != null ||
+         (summaryFrame.Box.Text.Trim().Length > 0 &&
+          (Amending || changes.Files.Any(IsTicked))));
 
     /// <summary>
     /// Whether the commit goes in place of the last, as Amend commit asked: never part way
@@ -1041,7 +1111,8 @@ sealed class ChangesPane : UserControl
 
     /// <summary>
     /// Commits the ticked files with the summary and description, in the Actions panel. What is
-    /// typed is cleared once it has gone in.
+    /// typed is cleared once it has gone in. Part way through a rebase, goes on with it, what is
+    /// typed kept, as it doesn't go in.
     /// </summary>
     internal async void Commit()
     {
@@ -1053,12 +1124,17 @@ sealed class ChangesPane : UserControl
         var committingIn = repo!;
         var ticked = Ticked();
         var merging = changes.Merging;
+        var rebasing = changes.Rebasing != null;
         string? amending = null;
         var title = "Git commit";
         if (Amending)
         {
             amending = draft.Amending;
             title = "Git amend commit";
+        }
+        else if (rebasing)
+        {
+            title = "Git continue rebase";
         }
 
         var hasCommits = changes.HasCommits;
@@ -1101,7 +1177,8 @@ sealed class ChangesPane : UserControl
                 CommitDrafts.ForgetPicks(committingIn, changedSincePicked.Path);
             }
 
-            if (entry.State == ActionLog.State.Succeeded)
+            if (entry.State == ActionLog.State.Succeeded &&
+                !rebasing)
             {
                 var committed = DraftOf(committingIn);
                 committed.Summary = "";
@@ -1178,8 +1255,8 @@ sealed class ChangesPane : UserControl
     }
 
     /// <summary>
-    /// For files in conflict, as GitHub Desktop offers them: one file settled with the branch
-    /// checked out's file whole, or the branch merged in's, or a deletion where that side deleted
+    /// For files in conflict, as GitHub Desktop offers them: one file settled with one side's
+    /// file whole, as <see cref="SideNames"/> names them, or a deletion where that side deleted
     /// it; then files taken as they are now, once no markers are left in them. None otherwise.
     /// </summary>
     internal List<QuickMenu.Command?> ConflictCommands(IReadOnlyList<Change> selected)
@@ -1193,8 +1270,7 @@ sealed class ChangesPane : UserControl
         var commands = new List<QuickMenu.Command?>();
         if (selected is [var one])
         {
-            var ours = changes.Branch ?? "the branch checked out";
-            var theirs = changes.MergingFrom ?? "the branch merged in";
+            var (ours, theirs) = SideNames(changes);
             commands.Add(new(SideText(one.Conflict?.OursDeleted == true, ours), () => Settle($"Git use {ours}'s {one.Path}", (repo, cancel) => GitChanges.UseSide(repo, one, ours: true, cancel))));
             commands.Add(new(SideText(one.Conflict?.TheirsDeleted == true, theirs), () => Settle($"Git use {theirs}'s {one.Path}", (repo, cancel) => GitChanges.UseSide(repo, one, ours: false, cancel))));
         }
@@ -1214,6 +1290,22 @@ sealed class ChangesPane : UserControl
 
             return $"Use the file from {branch}";
         }
+    }
+
+    /// <summary>
+    /// What git's two sides of a file in conflict are named, ours then theirs: part way through a
+    /// merge, the branch checked out and the branch merged in; part way through a rebase, as
+    /// GitHub Desktop names them, what it goes onto, whose commits it is replaying the branch's on
+    /// top of, and the branch being rebased, whose commit is being replayed.
+    /// </summary>
+    internal static (string Ours, string Theirs) SideNames(GitChanges changes)
+    {
+        if (changes.Rebasing is { } rebase)
+        {
+            return (rebase.Onto ?? "the branch rebased onto", rebase.Branch ?? "the commit being replayed");
+        }
+
+        return (changes.Branch ?? "the branch checked out", changes.MergingFrom ?? "the branch merged in");
     }
 
     // A file in conflict settled, or the merge given up, in the Actions panel, then read again.
@@ -1240,28 +1332,35 @@ sealed class ChangesPane : UserControl
         }
     }
 
-    // Abort merge: having asked, the branch and its files go back to how they were before the
-    // merge began.
+    // Abort merge, or Abort rebase: having asked, the branch and its files go back to how they
+    // were before it began.
     void AbortMerge()
     {
+        var what = "merge";
+        if (changes.Rebasing != null)
+        {
+            what = "rebase";
+        }
+
         if (repo == null ||
             !changes.Merging ||
-            AskAbort(this) != DialogResult.OK)
+            AskAbort(this, what) != DialogResult.OK)
         {
             return;
         }
 
-        Settle("Git abort merge", GitChanges.Abort);
+        Settle($"Git abort {what}", GitChanges.Abort);
     }
 
     /// <summary>
-    /// Asks whether to abort the merge. Tests answer for the user.
+    /// Asks whether to abort what is part way, the merge or the rebase, as named. Tests answer
+    /// for the user.
     /// </summary>
-    internal static Func<Control, DialogResult> AskAbort { get; set; } = owner =>
+    internal static Func<Control, string, DialogResult> AskAbort { get; set; } = (owner, what) =>
         MessageBox.Show(
             owner,
-            "Abort the merge?\n\nThe branch and its files go back to how they were before it began, and any conflicts settled are lost.",
-            "Abort merge",
+            $"Abort the {what}?\n\nThe branch and its files go back to how they were before it began, and any conflicts settled are lost.",
+            $"Abort {what}",
             MessageBoxButtons.OKCancel,
             MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2);

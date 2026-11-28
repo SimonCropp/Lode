@@ -59,6 +59,14 @@ sealed record Conflict(int Markers, bool Manual, bool OursDeleted = false, bool 
 }
 
 /// <summary>
+/// A rebase git is part way through, stopped by conflicts say: the branch being rebased, whose
+/// commit being replayed is git's theirs, and what it goes onto, git's ours, as a branch at that
+/// commit is named, or the commit's short sha. Either is null where it can't be told: the branch
+/// for a commit rebased detached.
+/// </summary>
+sealed record Rebase(string? Branch, string? Onto);
+
+/// <summary>
 /// A file only some of whose changed lines are to be committed, with the patch of those lines
 /// against the last commit, as <see cref="LinePatch"/> writes it from the diff
 /// <see cref="GitFileDiff.ReadToCommit"/> reads: a character a byte, as Latin-1 reads them.
@@ -68,8 +76,8 @@ sealed record PartialChange(Change File, string Patch);
 /// <summary>
 /// What is uncommitted in a repository, file by file, for the Changes pane: each file git doesn't
 /// track on its own, not the folder it is in, as each is ticked to commit on its own. With the
-/// branch, null when detached, whether there is a commit yet, and whether a merge, cherry pick or
-/// revert is part way, when git commits everything or nothing.
+/// branch, null when detached, whether there is a commit yet, and whether a merge, cherry pick,
+/// revert or rebase is part way, when git commits everything or nothing.
 /// </summary>
 /// <param name="MergingFrom">Part way through a merge, the branch being merged in, feature say,
 /// as git's message for the merge names it; null where it can't be told.</param>
@@ -78,7 +86,9 @@ sealed record PartialChange(Change File, string Patch);
 /// <param name="Head">The commit checked out, null before the first, or where it wasn't read.</param>
 /// <param name="Failure">Where git couldn't read what is uncommitted, what it said, with nothing
 /// else read; null where it could.</param>
-sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null)
+/// <param name="Rebasing">Part way through a rebase, which it is; <paramref name="Merging"/> too
+/// then, as going on with it takes every file git tracks.</param>
+sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null, Rebase? Rebasing = null)
 {
     public static GitChanges Empty { get; } = new(null, true, false, []);
 
@@ -153,18 +163,130 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             return Failed(why);
         }
 
-        var merging = IsMerging(repo);
+        var rebasing = RebaseOf(repo, cancel);
+        var merging = rebasing != null || IsMerging(repo);
         var parsed = Parse(result.Output, merging);
         var files = parsed.Files
             .Select(_ => WithMarkers(repo, _))
             .ToList();
-        var (from, summary) = MergeMessage(repo, merging);
+
+        // Part way through a rebase, git's message is the commit being replayed's, which going
+        // on with it keeps, so the summary doesn't start as it.
+        var (from, summary) = MergeMessage(repo, merging && rebasing == null);
         return parsed with
         {
             Files = files,
             MergingFrom = from,
-            MergeSummary = summary
+            MergeSummary = summary,
+            Rebasing = rebasing
         };
+    }
+
+    // The rebase git is part way through in the repository, from the folder it keeps while it
+    // is, or null where it is part way through none.
+    static Rebase? RebaseOf(string repo, Cancel cancel)
+    {
+        if (RebaseFolder(repo) is not { } folder)
+        {
+            return null;
+        }
+
+        string? branch = null;
+        const string heads = "refs/heads/";
+        if (FirstLine(Path.Combine(folder, "head-name")) is { } head &&
+            head.StartsWith(heads, StringComparison.Ordinal))
+        {
+            branch = head[heads.Length..];
+        }
+
+        return new(branch, OntoName(repo, FirstLine(Path.Combine(folder, "onto")), cancel));
+    }
+
+    // The folder git keeps a rebase in while it is part way, rebase-merge, or rebase-apply for
+    // one applying patches, or null where there is none. Git am keeps its own in rebase-apply
+    // too, marked as applying, which is no rebase to go on with or give up.
+    static string? RebaseFolder(string repo)
+    {
+        try
+        {
+            if (CodeCommands.GitDirectory(repo) is not { } git)
+            {
+                return null;
+            }
+
+            foreach (var name in (string[]) ["rebase-merge", "rebase-apply"])
+            {
+                var folder = Path.Combine(git, name);
+                if (Directory.Exists(folder) &&
+                    !File.Exists(Path.Combine(folder, "applying")))
+                {
+                    return folder;
+                }
+            }
+
+            return null;
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    // What a rebase goes onto, by the branch at that commit, the repository's own before a
+    // remote's, as git rebase main or git pull --rebase was given main or origin/main; otherwise
+    // the commit's short sha. Null where the commit isn't known.
+    static string? OntoName(string repo, string? onto, Cancel cancel)
+    {
+        if (onto is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var refs = CodeCommands.GitOutput(repo, cancel, ["for-each-ref", $"--points-at={onto}", "--format=%(refname)", "refs/heads", "refs/remotes"]);
+        if (refs.Succeeded)
+        {
+            // In the order git lists them, by name, so a branch of the repository's own first;
+            // origin/HEAD is only where origin's default branch is, named already.
+            var names = refs.Output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(_ => !_.EndsWith("/HEAD", StringComparison.Ordinal))
+                .ToList();
+            foreach (var prefix in (string[]) ["refs/heads/", "refs/remotes/"])
+            {
+                if (names.FirstOrDefault(_ => _.StartsWith(prefix, StringComparison.Ordinal)) is { } name)
+                {
+                    return name[prefix.Length..];
+                }
+            }
+        }
+
+        return onto[..Math.Min(7, onto.Length)];
+    }
+
+    // The first line of a file git keeps, or null where it isn't there.
+    static string? FirstLine(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            return File.ReadLines(path).FirstOrDefault()?.Trim();
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     // A file in conflict with how many conflicts are still marked in it, read from the file as
@@ -461,8 +583,9 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// <summary>
     /// Commits <paramref name="ticked"/>, and only them, with <paramref name="message"/>, leaving
     /// whatever else is staged staged. Part way through a merge git commits everything or
-    /// nothing, so then it is everything. Each step is let finish once started, as one stopped
-    /// part way leaves the index locked.
+    /// nothing, so then it is everything; part way through a rebase, it goes on with the rebase,
+    /// as <see cref="ContinueRebase"/> does, rather than commit. Each step is let finish once
+    /// started, as one stopped part way leaves the index locked.
     /// </summary>
     /// <param name="partial">Files only some of whose lines go in, each with the patch of those
     /// lines against the last commit.</param>
@@ -471,6 +594,15 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// With none ticked, only its message changes.</param>
     public static CodeCommands.RepoResult Commit(string repo, IReadOnlyList<Change> ticked, bool merging, string message, Cancel cancel, IReadOnlyList<PartialChange>? partial = null, bool amend = false)
     {
+        // A commit of its own would be one more on top of what the rebase has replayed so far,
+        // the rebase still stopped, and then replayed again by it: the commit being replayed is
+        // the one to take the files.
+        if (merging &&
+            RebaseFolder(repo) != null)
+        {
+            return ContinueRebase(repo, cancel);
+        }
+
         var folder = Path.Combine(Path.GetTempPath(), "Lode", "Commits", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
         try
@@ -728,7 +860,9 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// <summary>
     /// Settles a file in conflict with one side's file whole, as GitHub Desktop's Use the
     /// modified file from main does: the branch checked out's with <paramref name="ours"/>,
-    /// otherwise the branch merged in's. Where that side deleted it, it is deleted.
+    /// otherwise the branch merged in's. Part way through a rebase, git's ours is what it goes
+    /// onto, and its theirs the commit being replayed, the branch's own. Where that side deleted
+    /// it, it is deleted.
     /// </summary>
     public static CodeCommands.RepoResult UseSide(string repo, Change change, bool ours, Cancel cancel)
     {
@@ -761,13 +895,17 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
         CodeCommands.GitToItsEnd(repo, cancel, ["--literal-pathspecs", "add", "--all", "--", .. changes.Select(_ => _.Path)]);
 
     /// <summary>
-    /// Gives up the merge, cherry pick or revert part way, the branch and its files as they were
-    /// before it, as GitHub Desktop's Abort merge does.
+    /// Gives up the merge, cherry pick, revert or rebase part way, the branch and its files as
+    /// they were before it, as GitHub Desktop's Abort merge and Abort rebase do.
     /// </summary>
     public static CodeCommands.RepoResult Abort(string repo, Cancel cancel)
     {
         var command = "merge";
-        if (CodeCommands.GitDirectory(repo) is { } git)
+        if (RebaseFolder(repo) != null)
+        {
+            command = "rebase";
+        }
+        else if (CodeCommands.GitDirectory(repo) is { } git)
         {
             if (File.Exists(Path.Combine(git, "CHERRY_PICK_HEAD")))
             {
@@ -780,6 +918,29 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
         }
 
         return CodeCommands.GitToItsEnd(repo, cancel, command, "--abort");
+    }
+
+    /// <summary>
+    /// Goes on with the rebase part way, as GitHub Desktop's Continue rebase does: the files git
+    /// tracks staged as they are, settled, for the commit being replayed, which keeps its own
+    /// message, then the rest of the branch replayed. Files git doesn't track stay out of it, as
+    /// they are no part of what is rebased. Stopped by conflicts again, it is left part way.
+    /// </summary>
+    public static CodeCommands.RepoResult ContinueRebase(string repo, Cancel cancel)
+    {
+        var added = CodeCommands.GitToItsEnd(repo, cancel, "add", "--update");
+        if (!added.Succeeded)
+        {
+            return added;
+        }
+
+        // Git opens an editor for the message of a commit whose conflicts were settled, which
+        // nobody could answer in a hidden window: an editor of ":" is none at all to it.
+        var environment = new Dictionary<string, string>
+        {
+            ["GIT_EDITOR"] = ":"
+        };
+        return CodeCommands.GitToItsEnd(repo, cancel, environment, "rebase", "--continue");
     }
 
     /// <summary>

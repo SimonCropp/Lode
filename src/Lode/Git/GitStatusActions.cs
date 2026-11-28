@@ -368,7 +368,7 @@ static class GitStatusActions
                 Start("Git sync fork", repo, CodeCommands.SyncFork);
                 return;
             case Choice.AbortMerge:
-                if (ChangesPane.AskAbort(owner) == DialogResult.OK)
+                if (ChangesPane.AskAbort(owner, "merge") == DialogResult.OK)
                 {
                     Start(
                         "Git abort merge",

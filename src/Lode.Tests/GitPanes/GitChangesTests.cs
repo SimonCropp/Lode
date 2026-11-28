@@ -323,6 +323,119 @@ public class GitChangesTests
         await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(head);
     }
 
+    // A rebase stopped by conflicts, as git rebase or git pull --rebase from a terminal leaves
+    // one, is read as part way: the branch being rebased, what it goes onto, and the file in
+    // conflict, the summary not starting as the message of the commit being replayed, which it
+    // keeps. Git's sides are named for what they are then, ours what it goes onto and theirs the
+    // branch's own commit being replayed, so Use the file from feature takes feature's.
+    [Test]
+    public async Task ReadsARebase()
+    {
+        using var scratch = new Scratch();
+        var repo = await Rebasing(scratch);
+
+        var changes = GitChanges.Read(repo, Cancel.None)!;
+        var tracked = changes.Files.Single(_ => _.Path == "tracked.txt");
+        var theirs = GitChanges.UseSide(repo, tracked, ours: false, Cancel.None);
+
+        await Assert.That((changes.Merging, changes.Rebasing, changes.MergeSummary, changes.ConflictsLeft)).IsEqualTo((true, new Rebase("feature", "main"), (string?) null, 1));
+        await Assert.That(changes.Files.Select(_ => $"{_.Path}: {_.Kind}")).IsEquivalentTo(["stray.txt: Untracked", "tracked.txt: Conflicted"]);
+        await Assert.That(ChangesPane.MergeBarText(changes)).IsEqualTo("Rebasing feature onto main: 1 conflicted file left. Right-click one to pick a side, or settle its markers in the editor.");
+        await Assert.That(ChangesPane.SideNames(changes)).IsEqualTo(("main", "feature"));
+        await Assert.That(theirs.Succeeded).IsTrue();
+        await Assert.That((await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).ReplaceLineEndings("\n")).IsEqualTo("feature\n");
+    }
+
+    // Git pull --rebase stopped by conflicts rebases main onto origin's main, which is what it
+    // goes onto, by name: main itself stays where it was till the rebase is done.
+    [Test]
+    public async Task ReadsAPullRebase()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var other = scratch.Clone("Repo", "Other");
+        await File.WriteAllTextAsync(Path.Combine(other, "tracked.txt"), "theirs\n");
+        Git(other, "commit", "-qam", "Theirs");
+        Git(other, "push", "-q", "origin", "main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "ours\n");
+        Git(repo, "commit", "-qam", "Ours");
+
+        var pull = CodeCommands.Git(repo, "pull", "--rebase");
+        var changes = GitChanges.Read(repo, Cancel.None)!;
+
+        await Assert.That(pull.Succeeded).IsFalse();
+        await Assert.That(changes.Rebasing).IsEqualTo(new Rebase("main", "origin/main"));
+        await Assert.That(ChangesPane.MergeBarText(changes)).IsEqualTo("Rebasing main onto origin/main: 1 conflicted file left. Right-click one to pick a side, or settle its markers in the editor.");
+        await Assert.That(ChangesPane.SideNames(changes)).IsEqualTo(("origin/main", "main"));
+    }
+
+    // Committed part way through a rebase, the rebase goes on, rather than a commit being made of
+    // its own: the files git tracks, settled, go in the commit being replayed, with its own
+    // message, no editor waited for, and the branch, done, is checked out again on top of what
+    // it went onto. The file git doesn't track stays out of it, untracked.
+    [Test]
+    public async Task CommitContinuesARebase()
+    {
+        using var scratch = new Scratch();
+        var repo = await Rebasing(scratch);
+        var main = Git(repo, "rev-parse", "main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "settled\n");
+        var changes = GitChanges.Read(repo, Cancel.None)!;
+
+        var result = GitChanges.Commit(repo, changes.Files, changes.Merging, "Not this", Cancel.None);
+
+        await Assert.That(changes.Conflicted).IsFalse();
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Merging).IsFalse();
+        await Assert.That(Git(repo, "symbolic-ref", "--short", "HEAD")).IsEqualTo("feature");
+        await Assert.That(Git(repo, "rev-parse", "HEAD^")).IsEqualTo(main);
+        await Assert.That(Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Feature");
+        await Assert.That(Git(repo, "show", "HEAD:tracked.txt")).IsEqualTo("settled");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("?? stray.txt");
+    }
+
+    // Abort part way through a rebase gives it up, the branch and its files back as they were
+    // before it, though a side was picked meanwhile: ours, what it goes onto, main's file.
+    [Test]
+    public async Task AbortsARebase()
+    {
+        using var scratch = new Scratch();
+        var repo = await Rebasing(scratch);
+        var before = Git(repo, "rev-parse", "feature");
+        var tracked = GitChanges.Read(repo, Cancel.None)!.Files.Single(_ => _.Path == "tracked.txt");
+        var ours = GitChanges.UseSide(repo, tracked, ours: true, Cancel.None);
+        var afterOurs = await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"));
+
+        var result = GitChanges.Abort(repo, Cancel.None);
+
+        await Assert.That((ours.Succeeded, afterOurs.ReplaceLineEndings("\n"))).IsEqualTo((true, "main\n"));
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Merging).IsFalse();
+        await Assert.That(Git(repo, "symbolic-ref", "--short", "HEAD")).IsEqualTo("feature");
+        await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(before);
+        await Assert.That((await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).ReplaceLineEndings("\n")).IsEqualTo("feature\n");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("?? stray.txt");
+    }
+
+    // Main and feature both changed tracked.txt, then feature rebased onto main, as git rebase
+    // main from a terminal rebases it, stopped by the conflict, with a file git doesn't track
+    // lying about.
+    static async Task<string> Rebasing(Scratch scratch)
+    {
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "switch", "-q", "-c", "feature");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "feature\n");
+        Git(repo, "commit", "-qam", "Feature");
+        Git(repo, "switch", "-q", "main");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "main\n");
+        Git(repo, "commit", "-qam", "Main");
+        Git(repo, "switch", "-q", "feature");
+        await File.WriteAllTextAsync(Path.Combine(repo, "stray.txt"), "stray\n");
+        var rebase = CodeCommands.Git(repo, "rebase", "main");
+        await Assert.That(rebase.Succeeded).IsFalse();
+        return repo;
+    }
+
     [Test]
     public async Task CountsMarkersAndNamesTheBranch()
     {

@@ -1232,6 +1232,67 @@ public class GitPanesTests
         await Assert.That(Entries(PaneStubs.Conflicted.Files[0])).IsEqualTo("Use the file from main, Use the deletion from feature, Mark as resolved, ----");
         await Assert.That(Entries(PaneStubs.Conflicted.Files[1])).IsEqualTo("Use the file from main, Use the file from feature, Mark as resolved (disabled), ----");
         await Assert.That(pane.ConflictCommands([PaneStubs.Conflicted.Files[2]])).IsEmpty();
+        await Assert.That((pane.AbortButton.Text, pane.ContinueButton.Visible)).IsEqualTo(("Abort merge", false));
+    }
+
+    // Part way through a rebase stopped by conflicts, as git pull --rebase from a terminal
+    // leaves one: the bar over the files says what is rebased onto what, with Continue rebase and
+    // Abort rebase, and git's sides are named for what they are then, ours what it goes onto and
+    // theirs the branch's own. Commit is Continue rebase, held back until no conflicts are left,
+    // but needing no summary, as the commit being replayed keeps its own message. A file git
+    // doesn't track isn't ticked, as it stays out of it.
+    [Test]
+    public async Task ChangesSettleARebasesConflicts()
+    {
+        using var stubs = new PaneStubs();
+        var conflicted = new Change("Source/main.aleph", null, GitChange.Conflicted, new(2, false));
+        var untracked = new Change("notes.aleph", null, GitChange.Untracked);
+        var read = new GitChanges(null, true, true, [conflicted, untracked], Rebasing: new("feature", "origin/main"));
+        ChangesPane.Read = (_, _) => read;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var entries = string.Join(", ", pane.ConflictCommands([conflicted]).Select(_ => _?.Text ?? "----"));
+
+        await Assert.That(pane.MergeText).IsEqualTo("Rebasing feature onto origin/main: 1 conflicted file left. Right-click one to pick a side, or settle its markers in the editor.");
+        await Assert.That((pane.AbortButton.Text, pane.ContinueButton.Visible, pane.ContinueButton.Enabled)).IsEqualTo(("Abort rebase", true, false));
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Continue rebase", false));
+        await Assert.That(pane.SummaryBox.Text).IsEqualTo("");
+        await Assert.That(entries).IsEqualTo("Use the file from origin/main, Use the file from feature, Mark as resolved, ----");
+        await Assert.That((pane.TickOf(conflicted), pane.TickOf(untracked))).IsEqualTo(((bool?) true, (bool?) false));
+
+        string? asked = null;
+        var ask = ChangesPane.AskAbort;
+        ChangesPane.AskAbort = (_, what) =>
+        {
+            asked = what;
+            return DialogResult.Cancel;
+        };
+        try
+        {
+            pane.AbortButton.PerformClick();
+        }
+        finally
+        {
+            ChangesPane.AskAbort = ask;
+        }
+
+        await Assert.That(asked).IsEqualTo("rebase");
+
+        read = read with
+        {
+            Files = [conflicted with { Conflict = new(0, false) }, untracked]
+        };
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That(pane.MergeText).IsEqualTo("Rebasing feature onto origin/main: no conflicts left. Continue the rebase.");
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled, pane.ContinueButton.Enabled)).IsEqualTo(("Continue rebase", true, true));
     }
 
     // Compare to branch, as GitHub Desktop's: the commits the branch has that the one checked
