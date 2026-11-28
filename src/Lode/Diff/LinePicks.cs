@@ -98,7 +98,9 @@ sealed record LinePicks(bool AllByDefault, ImmutableHashSet<int> Diverging, int 
 /// The patch of the lines picked in a file's diff, for git apply --cached to put in the index a
 /// commit is made from, as GitHub Desktop's formatPatch in patch-formatter.ts writes it: a line
 /// added and picked is added, one not is left out, as if never added; a line deleted and picked
-/// is deleted, one not is kept, as context. A hunk with nothing picked is left out.
+/// is deleted, one not is kept, as context. A hunk with nothing picked is left out. A last line
+/// that had no newline, kept, gains one when lines picked are added after it, as they can't
+/// follow it otherwise.
 /// </summary>
 static class LinePatch
 {
@@ -117,8 +119,9 @@ static class LinePatch
             var oldCount = 0;
             var newCount = 0;
             var anyChange = false;
-            foreach (var line in hunkLines)
+            for (var i = 0; i < hunkLines.Count; i++)
             {
+                var line = hunkLines[i];
                 if (line.Kind == DiffLineKind.Context)
                 {
                     lines.Append(line.Text).Append('\n');
@@ -143,6 +146,20 @@ static class LinePatch
                 else if (line.Kind == DiffLineKind.Add)
                 {
                     // Never added, as far as this patch goes.
+                    continue;
+                }
+                else if (line.NoTrailingNewline &&
+                         PickedAddedAfter(hunkLines, i, picks))
+                {
+                    // The last line, which had no newline, kept, with lines picked added after
+                    // it: as context, still with no newline, git would join it to the first of
+                    // them. Taken away and added back with a newline instead, as the lines
+                    // picked can't follow it without one.
+                    lines.Append(line.Text).Append('\n');
+                    lines.Append("\\ No newline at end of file\n");
+                    lines.Append('+').Append(line.Text, 1, line.Text.Length - 1).Append('\n');
+                    oldCount++;
+                    newCount++;
                     continue;
                 }
                 else
@@ -189,6 +206,12 @@ static class LinePatch
 
         return Header(diff.Patch, deleted) + body;
     }
+
+    // Whether any line added after the one at position in the hunk is picked.
+    static bool PickedAddedAfter(IReadOnlyList<DiffLine> hunkLines, int position, LinePicks picks) =>
+        hunkLines
+            .Skip(position + 1)
+            .Any(_ => _ is { Kind: DiffLineKind.Add, Index: { } index } && picks.IsPicked(index));
 
     // The lines git wrote above the first hunk, which name the file as git would have them
     // named. A deleted file's say it is modified instead, as only some of its lines go.

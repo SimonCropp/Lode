@@ -44,6 +44,16 @@ public class LinePatchTests
         return Git(repo, "show", $":{path}");
     }
 
+    // As Apply, but what the index then has of the file byte for byte, its last newline or none
+    // with it, where Git trims what git writes.
+    static string ApplyExactly(string repo, string patch, string path)
+    {
+        Apply(repo, patch, path);
+        var file = Path.Combine(repo, "..", $"{Guid.NewGuid():N}.staged");
+        CodeCommands.GitToFile(repo, file, Cancel.None, "cat-file", "blob", $":{path}");
+        return File.ReadAllText(file);
+    }
+
     // The second hunk alone: the first left out, as nothing in it is picked.
     [Test]
     public async Task OneHunk()
@@ -153,6 +163,56 @@ public class LinePatchTests
         await Assert.That(patch).Contains("\\ No newline at end of file");
         await Assert.That(Apply(repo, patch, "tracked.txt")).IsEqualTo("original");
         await Assert.That(Git(repo, "cat-file", "-s", ":tracked.txt")).IsEqualTo("9");
+    }
+
+    // Lines added after a last line that had no newline, picked without the newline it gained:
+    // it gains it all the same, as the lines picked can't follow it otherwise, where git would
+    // join it to the first of them.
+    [Test]
+    public async Task AddedAfterNoNewline()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "original\nmore\nlast\n");
+        var diff = Diff(repo, new("tracked.txt", null, GitChange.Modified));
+        var picks = LinePicks.All(diff).With(Indexes(diff, "-original", "+original"), false);
+
+        var patch = LinePatch.Format(diff, picks, deleted: false)!;
+
+        await Assert.That(ApplyExactly(repo, patch, "tracked.txt")).IsEqualTo("original\nmore\nlast\n");
+    }
+
+    // As above, the last line changed too, and its new text not picked: the line stays as it
+    // was, gaining the newline, and the last line added has none, as the file has none.
+    [Test]
+    public async Task AddedAfterNoNewlineChanged()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed\nmore");
+        var diff = Diff(repo, new("tracked.txt", null, GitChange.Modified));
+        var picks = LinePicks.All(diff).With(Indexes(diff, "-original", "+changed"), false);
+
+        var patch = LinePatch.Format(diff, picks, deleted: false)!;
+
+        await Assert.That(ApplyExactly(repo, patch, "tracked.txt")).IsEqualTo("original\nmore");
+    }
+
+    // Nothing added after a last line that had no newline: it stays as it was, without one.
+    [Test]
+    public async Task NothingAddedAfterNoNewline()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "first\noriginal");
+        Git(repo, "commit", "-am", "First");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "original\nmore\n");
+        var diff = Diff(repo, new("tracked.txt", null, GitChange.Modified));
+        var picks = LinePicks.All(diff).With(Indexes(diff, "-original", "+original", "+more"), false);
+
+        var patch = LinePatch.Format(diff, picks, deleted: false)!;
+
+        await Assert.That(ApplyExactly(repo, patch, "tracked.txt")).IsEqualTo("original");
     }
 
     // Picks keep to all or none once every line is picked alike, and say how the tick shows.
