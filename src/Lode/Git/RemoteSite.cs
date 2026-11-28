@@ -17,6 +17,37 @@ sealed record RemoteSite(string Name, string Url)
         };
 
     /// <summary>
+    /// A branch's page on the site, its files as the branch has them, for the status bar's View
+    /// on: GitLab's under /-/tree/, Bitbucket's under /src/, Azure DevOps' as a version.
+    /// </summary>
+    public string BranchUrl(string branch) =>
+        Name switch
+        {
+            "GitLab" => $"{Url}/-/tree/{InPath(branch)}",
+            "Bitbucket" => $"{Url}/src/{InPath(branch)}",
+            "Azure DevOps" => $"{Url}?version=GB{Uri.EscapeDataString(branch)}",
+            _ => $"{Url}/tree/{InPath(branch)}"
+        };
+
+    /// <summary>
+    /// A tag's page on the site, for the status bar's View on: GitHub's has the tag's release,
+    /// where it has one, GitLab's the tag, Bitbucket's and Azure DevOps' its files.
+    /// </summary>
+    public string TagUrl(string tag) =>
+        Name switch
+        {
+            "GitLab" => $"{Url}/-/tags/{Uri.EscapeDataString(tag)}",
+            "Bitbucket" => $"{Url}/src/{InPath(tag)}",
+            "Azure DevOps" => $"{Url}?version=GT{Uri.EscapeDataString(tag)}",
+            _ => $"{Url}/releases/tag/{InPath(tag)}"
+        };
+
+    // A branch's or tag's name in a url's path: each part escaped, the slashes between kept, as
+    // the sites take feature/x.
+    static string InPath(string name) =>
+        string.Join('/', name.Split('/').Select(Uri.EscapeDataString));
+
+    /// <summary>
     /// The site origin is on, read from the repository's config, as git would take too long for
     /// every folder gone into. Null without an origin, or one on a site Lode doesn't know.
     /// </summary>

@@ -39,6 +39,27 @@ public class RemoteSiteTests
         await Assert.That(RemoteSite.For("https://dev.azure.com/org/Project/_git/repo")!.CommitUrl("abc")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo/commit/abc");
     }
 
+    // A branch's page and a tag's, where each site has them, a name's slashes kept and anything
+    // else a url can't hold escaped.
+    [Test]
+    public async Task BranchAndTagUrls()
+    {
+        var github = RemoteSite.For("https://github.com/octo/repo.git")!;
+        var gitlab = RemoteSite.For("https://gitlab.com/group/repo.git")!;
+        var bitbucket = RemoteSite.For("git@bitbucket.org:team/repo.git")!;
+        var azure = RemoteSite.For("https://dev.azure.com/org/Project/_git/repo")!;
+
+        await Assert.That(github.BranchUrl("feature/a#1")).IsEqualTo("https://github.com/octo/repo/tree/feature/a%231");
+        await Assert.That(gitlab.BranchUrl("feature/a")).IsEqualTo("https://gitlab.com/group/repo/-/tree/feature/a");
+        await Assert.That(bitbucket.BranchUrl("feature/a")).IsEqualTo("https://bitbucket.org/team/repo/src/feature/a");
+        await Assert.That(azure.BranchUrl("feature/a")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo?version=GBfeature%2Fa");
+
+        await Assert.That(github.TagUrl("0.37.0")).IsEqualTo("https://github.com/octo/repo/releases/tag/0.37.0");
+        await Assert.That(gitlab.TagUrl("0.37.0")).IsEqualTo("https://gitlab.com/group/repo/-/tags/0.37.0");
+        await Assert.That(bitbucket.TagUrl("0.37.0")).IsEqualTo("https://bitbucket.org/team/repo/src/0.37.0");
+        await Assert.That(azure.TagUrl("0.37.0")).IsEqualTo("https://dev.azure.com/org/Project/_git/repo?version=GT0.37.0");
+    }
+
     // Origins on no site Lode knows, or none at all, a folder say, have no page.
     [Test]
     public async Task NoSite()

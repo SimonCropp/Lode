@@ -8,6 +8,7 @@ sealed class StatusBar : IDisposable
     Form window;
     Settings settings;
     Action<string> openTab;
+    Action<string> openSite;
 
     // The instance the bar listens to, so it stops listening to that one when the window closes.
     Updates updates;
@@ -122,6 +123,7 @@ sealed class StatusBar : IDisposable
         this.settings = settings;
         this.updates = updates;
         this.openTab = openTab;
+        this.openSite = openSite;
 
         // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
         // 11 windows are resized from their edges.
@@ -176,8 +178,8 @@ sealed class StatusBar : IDisposable
                 ShowBranches();
             }
         };
-        gitButton.MouseUp += (_, args) => ShowNameMenu(gitButton, args);
-        tagLabel.MouseUp += (_, args) => ShowNameMenu(tagLabel, args);
+        gitButton.MouseUp += (_, args) => ShowItemMenu(gitButton, args);
+        tagLabel.MouseUp += (_, args) => ShowItemMenu(tagLabel, args);
         updateLabel.Click += (_, _) => showOptions("Updates");
         searchInsideLabel.Click += (_, _) => activeView()?.SearchInsideTheFiles();
         siteLabel.Click += (_, _) =>
@@ -286,20 +288,23 @@ sealed class StatusBar : IDisposable
 
     /// <summary>
     /// The right-click entries of the branch or the tag on the bar: to copy its name, as GitHub
-    /// Desktop's branch menu has Copy branch name. Detached, the commit's SHA, in the branch's
-    /// place. None for anything else, or with no repository shown.
+    /// Desktop's branch menu has Copy branch name, and to view it on the site origin is on, as
+    /// History views a commit. Detached, the commit, in the branch's place. A branch tracking
+    /// none isn't on the site yet, so isn't viewed there. None for anything else, or with no
+    /// repository shown.
     /// </summary>
-    internal List<QuickMenu.Command?> NameCommands(ToolStripItem item)
+    internal List<QuickMenu.Command?> CommandsFor(ToolStripItem item)
     {
         if (gitState is not { } state)
         {
             return [];
         }
 
+        var site = siteLabel.Tag as RemoteSite;
         if (item == tagLabel &&
             state.Tag is { } tag)
         {
-            return [Copy("Copy tag name", tag)];
+            return WithView(Copy("Copy tag name", tag), site?.TagUrl(tag));
         }
 
         if (item != gitButton)
@@ -309,12 +314,18 @@ sealed class StatusBar : IDisposable
 
         if (state.Branch is { } branch)
         {
-            return [Copy("Copy branch name", branch)];
+            string? url = null;
+            if (state.Upstream)
+            {
+                url = site?.BranchUrl(branch);
+            }
+
+            return WithView(Copy("Copy branch name", branch), url);
         }
 
         if (state.Commit is { } sha)
         {
-            return [Copy("Copy SHA", sha)];
+            return WithView(Copy("Copy SHA", sha), site?.CommitUrl(sha));
         }
 
         return [];
@@ -324,13 +335,31 @@ sealed class StatusBar : IDisposable
             {
                 Glyph = Icons.Copy
             };
+
+        List<QuickMenu.Command?> WithView(QuickMenu.Command copy, string? url)
+        {
+            if (site == null ||
+                url == null)
+            {
+                return [copy];
+            }
+
+            return
+            [
+                copy,
+                new($"View on {site.Name}", () => openSite(url))
+                {
+                    Glyph = Icons.Links
+                }
+            ];
+        }
     }
 
     // At the pointer, what is picked run once the menu has closed, as QuickMenu does.
-    void ShowNameMenu(ToolStripItem item, MouseEventArgs args)
+    void ShowItemMenu(ToolStripItem item, MouseEventArgs args)
     {
         if (args.Button != MouseButtons.Right ||
-            NameCommands(item) is not { Count: > 0 } commands)
+            CommandsFor(item) is not { Count: > 0 } commands)
         {
             return;
         }

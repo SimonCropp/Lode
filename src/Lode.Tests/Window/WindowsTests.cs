@@ -2393,43 +2393,60 @@ public class WindowsTests
         }
     }
 
-    // Right-clicked, the branch on the status bar offers to copy its name, and the tag its own;
-    // detached, the branch's place offers the commit's SHA.
+    // Right-clicked, the branch on the status bar offers to copy its name and to view it on the
+    // site origin is on, and the tag the same of its own. Detached, the branch's place offers the
+    // commit, and a branch tracking none, not on the site yet, only its name.
     [Test]
-    public async Task StatusBarCopiesTheBranchAndTagNames()
+    public async Task StatusBarMenusCopyAndViewTheBranchAndTag()
     {
         using var stubs = new PaneStubs();
         using var fixture = Fixture.Create();
         var settings = PaneStubs.InRepository(fixture);
+        await File.WriteAllTextAsync(fixture.At(".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/octo/Lode.git\n");
         var sha = PaneStubs.History[0].Sha;
-        var copied = new List<string>();
+        var done = new List<string>();
         var setClipboardText = FolderView.SetClipboardText;
-        FolderView.SetClipboardText = copied.Add;
+        FolderView.SetClipboardText = _ => done.Add($"copied {_}");
         try
         {
-            await Assert.That(await Copies("main", "git")).IsEqualTo(("Copy branch name", "main"));
-            await Assert.That(await Copies("main", "gitTag")).IsEqualTo(("Copy tag name", "0.25.0"));
-            await Assert.That(await Copies(null, "git")).IsEqualTo(("Copy SHA", sha));
+            await Assert.That(await Run("main", true, "git")).IsEquivalentTo(
+                ["Copy branch name: copied main", "View on GitHub: opened https://github.com/octo/Lode/tree/main"],
+                CollectionOrdering.Matching);
+            await Assert.That(await Run("main", true, "gitTag")).IsEquivalentTo(
+                ["Copy tag name: copied 0.25.0", "View on GitHub: opened https://github.com/octo/Lode/releases/tag/0.25.0"],
+                CollectionOrdering.Matching);
+            await Assert.That(await Run(null, false, "git")).IsEquivalentTo(
+                [$"Copy SHA: copied {sha}", $"View on GitHub: opened https://github.com/octo/Lode/commit/{sha}"],
+                CollectionOrdering.Matching);
+            await Assert.That(await Run("local-only", false, "git")).IsEquivalentTo(
+                ["Copy branch name: copied local-only"],
+                CollectionOrdering.Matching);
         }
         finally
         {
             FolderView.SetClipboardText = setClipboardText;
         }
 
-        // The one entry the item's right-click menu has, and what it copied.
-        async Task<(string, string)> Copies(string? branch, string item)
+        // Each entry of the item's right-click menu, run, with what it did.
+        async Task<List<string>> Run(string? branch, bool upstream, string item)
         {
             GitCache.Reset();
             FolderView.ReadGit = (_, _) => new(branch, sha, 0, 0, [])
             {
-                Upstream = branch != null,
+                Upstream = upstream,
                 Tag = "0.25.0"
             };
             using var form = await Show(fixture, settings, fixture.Root);
             await PaneStubs.Settled(form);
-            var command = form.StatusBar.NameCommands(form.StatusBar.Strip.Items[item]!).Single()!;
-            command.Action();
-            return (command.Text, copied[^1]);
+            form.OpenSite = _ => done.Add($"opened {_}");
+            var ran = new List<string>();
+            foreach (var command in form.StatusBar.CommandsFor(form.StatusBar.Strip.Items[item]!))
+            {
+                command!.Action();
+                ran.Add($"{command.Text}: {done[^1]}");
+            }
+
+            return ran;
         }
     }
 
