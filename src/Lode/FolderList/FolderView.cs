@@ -4995,8 +4995,12 @@ sealed class FolderView : UserControl
             return;
         }
 
-        pendingSelection = placed;
-        Reload();
+        if (!ClearFilterHiding(placed))
+        {
+            pendingSelection = placed;
+            Reload();
+        }
+
         await Loading;
     }
 
@@ -5149,8 +5153,12 @@ sealed class FolderView : UserControl
             return;
         }
 
-        pendingSelection = placed;
-        Reload();
+        if (!ClearFilterHiding(placed))
+        {
+            pendingSelection = placed;
+            Reload();
+        }
+
         await Loading;
     }
 
@@ -5162,9 +5170,10 @@ sealed class FolderView : UserControl
             return;
         }
 
+        string made;
         try
         {
-            pendingRename = create(CurrentPath);
+            made = create(CurrentPath);
         }
         catch (Exception exception)
         {
@@ -5172,7 +5181,28 @@ sealed class FolderView : UserControl
             return;
         }
 
-        Loading = LoadAsync(true);
+        pendingRename = made;
+        if (!ClearFilterHiding([made]))
+        {
+            Loading = LoadAsync(true);
+        }
+    }
+
+    // Whether the filter would hide any of what was just made in the folder, and with it the
+    // selection, and a new item's name to edit, so that making it would seem to have done
+    // nothing. Then it is cleared, as Reveal clears it, by opening the folder again, where it
+    // is in the history, with what was made to select once it is read.
+    bool ClearFilterHiding(IReadOnlyList<string> made)
+    {
+        if (filter.Length == 0 ||
+            !made.Any(_ => Locations.IsChildOf(_, CurrentPath) &&
+                           !Matches(filter, Path.GetFileName(_))))
+        {
+            return false;
+        }
+
+        Open(CurrentPath, historyIndex, select: made);
+        return true;
     }
 
     public void ShowProperties()

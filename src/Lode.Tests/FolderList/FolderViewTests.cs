@@ -3106,6 +3106,77 @@ public class FolderViewTests
                 """);
     }
 
+    // With the search box filled, what is made that it doesn't match would be hidden, and with
+    // it the selection, and a new folder's name to edit: the filter is cleared, as Reveal clears
+    // it, the search box told, so what was made shows, selected, and the new folder's name is
+    // ready to edit. What it matches leaves it be.
+    [Test]
+    public async Task WhatIsMadeShowsThoughTheFilterWouldHideIt()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllBytesAsync(fixture.At("Docs", "report3.beta"), new byte[3]);
+        var zip = MakeZip(fixture, "Bundle.zip", "inside.txt");
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root);
+        var list = view.List;
+        var told = 0;
+        view.PathChanged += () => told++;
+
+        // The names whose edit the list began. Heard as it begins, rather than looked for as the
+        // edit box afterwards, which anything taking the focus meanwhile ends.
+        var editBegun = new List<string>();
+        list.BeforeLabelEdit += (_, args) => editBegun.Add(view.Entries[args.Item].Name);
+        (string Filter, string Selected) Shown() =>
+            (view.Filter, string.Join(", ", Selected(view)));
+
+        try
+        {
+            view.Filter = "report";
+            await Pump.Loaded(view);
+            view.CreateFolder();
+            await Pump.Loaded(view);
+            await Pump.Until(() => editBegun.Count > 0);
+            var created = Shown();
+            var boxTold = told > 0;
+            NativeMethods.SendMessage(list.Handle, cancelEdit, IntPtr.Zero, IntPtr.Zero);
+            await Pump.Until(() => NativeMethods.SendMessage(list.Handle, NativeMethods.ListViewGetEditControl, IntPtr.Zero, IntPtr.Zero) == IntPtr.Zero);
+
+            view.Filter = "report";
+            await Pump.Loaded(view);
+            view.Paste(new([fixture.At("Docs", "guide.aleph")], false));
+            await Pump.Until(() => Selected(view).SequenceEqual(["guide.aleph"]));
+            var pasted = Shown();
+
+            view.Filter = "report";
+            await Pump.Loaded(view);
+            view.Paste(new([fixture.At("Docs", "report3.beta")], false));
+            await Pump.Until(() => Selected(view).SequenceEqual(["report3.beta"]));
+            var pastedMatching = Shown();
+
+            view.Filter = "bundle";
+            await Pump.Loaded(view);
+            view.Extract([zip], true);
+            await Pump.Until(() => Selected(view).SequenceEqual(["inside.txt"]));
+            var extracted = Shown();
+
+            await Assert.That(created).IsEqualTo(("", "New folder"));
+            await Assert.That(editBegun).IsEquivalentTo(["New folder"]);
+            await Assert.That(boxTold).IsTrue();
+            await Assert.That(pasted).IsEqualTo(("", "guide.aleph"));
+            await Assert.That(pastedMatching).IsEqualTo(("report", "report3.beta"));
+            await Assert.That(extracted).IsEqualTo(("", "inside.txt"));
+
+            // Cleared where it is, rather than gone to again: Back has nowhere new to go.
+            await Assert.That(view.CanGoBack).IsFalse();
+        }
+        finally
+        {
+            ActionLog.Reset();
+        }
+    }
+
+    const int cancelEdit = 0x10B3;
+
     static string MakeZip(Fixture fixture, string name, params string[] entries)
     {
         var zip = fixture.At(name);
