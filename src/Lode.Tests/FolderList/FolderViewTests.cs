@@ -1765,6 +1765,28 @@ public class FolderViewTests
         await Assert.That(Names(view)).Contains("guide.aleph");
     }
 
+    // Hidden by another program, attrib +h say, a file leaves the list while hidden items aren't
+    // shown, and unhidden, it comes back, as in Explorer: a change to a file's attributes changes
+    // neither its name, its size nor when it was written, which was all the watch heard of.
+    [Test]
+    public async Task AFileHiddenElsewhereLeavesTheList()
+    {
+        using var fixture = Fixture.Create();
+        using var view = await Open(fixture.Root);
+        var notes = fixture.At("notes.aleph");
+
+        File.SetAttributes(notes, File.GetAttributes(notes) | FileAttributes.Hidden);
+        await Pump.Until(() => !Names(view).Contains("notes.aleph"));
+        await Pump.Loaded(view);
+        var hidden = Names(view);
+        File.SetAttributes(notes, File.GetAttributes(notes) & ~FileAttributes.Hidden);
+        await Pump.Until(() => Names(view).Contains("notes.aleph"));
+        await Pump.Loaded(view);
+
+        await Assert.That(hidden).DoesNotContain("notes.aleph");
+        await Assert.That(Names(view)).Contains("notes.aleph");
+    }
+
     // Renamed by Lode, from the tree say, the view follows it, with what was selected still
     // selected, and Back still goes where it went before.
     [Test]

@@ -6161,12 +6161,15 @@ sealed class FolderView : UserControl
 
     /// <summary>
     /// Starts the watch on the folder open, given what to call for a change. Replaced in tests,
-    /// to watch somewhere taken to be on the network without a share.
+    /// to watch somewhere taken to be on the network without a share. Attributes too, as an
+    /// item hidden or unhidden elsewhere, by attrib say, changes neither its name, its size nor
+    /// when it was written, and leaves the list or comes back to it while hidden items aren't
+    /// shown.
     /// </summary>
     internal Func<string, Action, IFolderWatch> StartWatch = (path, changed) =>
         new FolderWatcher(
             path,
-            NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.Attributes,
             changed);
 
     /// <summary>
