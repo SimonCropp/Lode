@@ -119,34 +119,34 @@ public class GitStatusActionsTests
                   changes:
                 [Uncommitted changes] 3 uncommitted changes on main
                   -> Commit and push…: Commit every change, new files included, with a message you give, and push.
-                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first.
                   files: Modified: src/0.cs; Modified: src/1.cs; Untracked: new0.txt,
                   untrackedOnly:
                 [Uncommitted changes] 2 uncommitted changes on main
                   -> Commit and push…: Commit every change, new files included, with a message you give, and push.
-                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first.
                   files: Untracked: new0.txt; Untracked: new1.txt,
                   trackedOnly:
                 [Uncommitted changes] 1 uncommitted change on main
                   -> Commit and push…: Commit every change, with a message you give, and push.
-                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first.
                   files: Modified: src/0.cs,
                   detached:
                 [Uncommitted changes] 1 uncommitted change here
-                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first.
                   files: Modified: src/0.cs,
                   merging:
                 [Uncommitted changes] 2 uncommitted changes on main
                 Part way through a merge, with 1 file in conflict: settle them in Changes and commit it, or abort it.
                   -> Abort merge…: Put the branch and its files back as they were before the merge began. Asks again first.
-                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first.
                   files: Conflicted: src/0.cs; Modified: src/1.cs,
                   mergingSettled:
                 [Uncommitted changes] 1 uncommitted change on main
                 Part way through a merge: commit it in Changes, or abort it.
                   -> Commit and push…: Commit every change, with a message you give, and push.
                   -> Abort merge…: Put the branch and its files back as they were before the merge began. Asks again first.
-                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track. Asks again first.
+                  -> Discard…: Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first.
                   files: Modified: src/0.cs,
                   noCommits: (nothing to ask),
                   nothingBehind: (nothing to ask),

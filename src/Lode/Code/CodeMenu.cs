@@ -1777,10 +1777,13 @@ static class CodeMenu
             });
     }
 
+    // Discards what is uncommitted in the folders, having asked: a folder inside a repository
+    // alone, as Purge purges it alone, otherwise every repository it holds, the files as they are
+    // going to the Recycle Bin first, as the Changes pane's Discard sends them.
     internal static async void Discard(Control owner, IReadOnlyList<string> folders, string? codeFolder)
     {
-        var repos = await Task.Run(() => CodeCommands.FindRepos(folders, codeFolder));
-        if (repos.Count == 0)
+        var targets = await Task.Run(() => CodeCommands.DiscardTargets(folders, codeFolder));
+        if (targets.Count == 0)
         {
             NoRepos("Git discard", folders);
             return;
@@ -1793,7 +1796,7 @@ static class CodeMenu
 
         var answer = MessageBox.Show(
             owner,
-            $"Discard every uncommitted change, and delete untracked files, in {Describe(repos)}?\n\nThis cannot be undone.",
+            DiscardQuestion(targets),
             "Git discard",
             MessageBoxButtons.OKCancel,
             MessageBoxIcon.Warning,
@@ -1803,10 +1806,53 @@ static class CodeMenu
             return;
         }
 
+        var window = owner.FindForm()?.Handle ?? owner.Handle;
         _ = ActionLog.Run(
             "Git discard",
             folders,
-            async (progress, cancel) => CodeCommands.GitOutcome(await CodeCommands.Discard(repos, progress, cancel)));
+            async (progress, cancel) =>
+            {
+                var results = await CodeCommands.Discard(
+                    targets,
+                    paths => FileOperations.Delete(window, paths, permanent: false),
+                    progress,
+                    cancel);
+                return CodeCommands.GitOutcome(results);
+            });
+    }
+
+    /// <summary>
+    /// What Discard asks: where it discards, a folder inside a repository named for where it is
+    /// in it, and that the files as they are go to the Recycle Bin.
+    /// </summary>
+    internal static string DiscardQuestion(IReadOnlyList<CodeCommands.Discarding> targets)
+    {
+        var where = Describe(targets.Select(_ => _.Repo).ToList());
+        if (targets.Any(_ => _.Folders.Count > 0))
+        {
+            // Each, not how many: folders counted would read as repositories.
+            var places = targets
+                .SelectMany(Places)
+                .ToList();
+            where = string.Join(", ", places.Take(8));
+            if (places.Count > 8)
+            {
+                where += $", and {places.Count - 8} more";
+            }
+        }
+
+        return $"Discard every uncommitted change, and delete untracked files, in {where}?\n\nThe files as they are now go to the Recycle Bin.";
+
+        static IEnumerable<string> Places(CodeCommands.Discarding target)
+        {
+            var name = Path.GetFileName(target.Repo);
+            if (target.Folders.Count == 0)
+            {
+                return [name];
+            }
+
+            return target.Folders.Select(_ => $"{Path.GetRelativePath(target.Repo, _)} in {name}");
+        }
     }
 
     // Deletes what git doesn't track, ignored files too. Finding the repositories can mean

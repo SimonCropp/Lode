@@ -1156,33 +1156,198 @@ static class CodeCommands
     }
 
     /// <summary>
-    /// Throws away every uncommitted change, staged or not, and deletes what git doesn't track,
-    /// folders included, though not what it ignores: that is Purge's. A repository with nothing
-    /// committed yet goes back to empty. Cannot be undone.
+    /// What Discard works on in <paramref name="Repo"/>: the whole of it, with no
+    /// <paramref name="Folders"/>, or only those folders inside it, by their full paths.
     /// </summary>
-    public static Task<List<RepoResult>> Discard(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
-        ForEach(
-            repos,
-            progress,
-            cancel,
-            repo =>
+    public sealed record Discarding(string Repo, IReadOnlyList<string> Folders);
+
+    /// <summary>
+    /// What Discard of <paramref name="folders"/> works on, each repository once. A folder below
+    /// the top of a repository is that folder alone, as Purge purges it alone; a repository's own
+    /// folder is the whole of it, and a folder holding repositories, the code folder say, the
+    /// whole of each, found as Push finds them. A folder inside another picked, or in a
+    /// repository picked whole, is discarded with that.
+    /// </summary>
+    public static List<Discarding> DiscardTargets(IReadOnlyList<string> folders, string? codeFolder = null)
+    {
+        var whole = new List<string>();
+        var inside = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in folders)
+        {
+            if (RepoContaining(folder, codeFolder ?? folder) is { } repo &&
+                !Locations.Same(repo, folder))
             {
-                // Rather than restore, which puts back only what is not staged, leaving staged
-                // changes for the next Push to commit.
-                var reset = GitToItsEnd(repo, cancel, "reset", "--hard");
-                if (!reset.Succeeded)
+                if (!inside.TryGetValue(repo, out var picked))
                 {
-                    return reset;
+                    picked = [];
+                    inside[repo] = picked;
                 }
 
-                // Stopped where it is when cancelled, unlike the reset: it locks nothing, and
-                // what it has yet to delete is what cancelling is for.
-                var clean = Git(repo, cancel, network: false, "clean", "-f", "-d");
-                return clean with
+                picked.Add(folder);
+                continue;
+            }
+
+            whole.AddRange(FindRepos(folder, codeFolder));
+        }
+
+        var targets = whole
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(_ => new Discarding(_, []))
+            .ToList();
+        targets.AddRange(
+            inside
+                .Where(_ => !whole.Contains(_.Key, StringComparer.OrdinalIgnoreCase))
+                .Select(_ => new Discarding(_.Key, Outermost(_.Value))));
+        targets.Sort((first, second) => StringComparer.OrdinalIgnoreCase.Compare(first.Repo, second.Repo));
+        return targets;
+    }
+
+    /// <summary>
+    /// Moves the files to the Recycle Bin in one go, giving whether they all went.
+    /// </summary>
+    public delegate Task<bool> Recycler(IReadOnlyList<string> paths);
+
+    /// <summary>
+    /// Throws away every uncommitted change in what each of <paramref name="targets"/> covers,
+    /// staged or not, and deletes what git doesn't track, folders included, though not what it
+    /// ignores, that being Purge's, nor a repository of its own inside. The files as they are go
+    /// to the Recycle Bin first, with <paramref name="recycle"/>, as the Changes pane's Discard
+    /// sends them, so each can be got back: those to be put back as the last commit has them, and
+    /// those to be deleted. Where they can't all go, nothing is discarded. A whole repository with
+    /// nothing committed yet goes back to empty.
+    /// </summary>
+    public static async Task<List<RepoResult>> Discard(IReadOnlyList<Discarding> targets, Recycler recycle, IProgress<string>? progress = null, Cancel cancel = default)
+    {
+        var byRepo = targets.ToDictionary(_ => _.Repo, StringComparer.OrdinalIgnoreCase);
+        var repos = targets
+            .Select(_ => _.Repo)
+            .ToList();
+
+        // Found once asked, so a change made while the question waited goes to the Recycle Bin
+        // too. Each repository's at once, as git runs in each on its own.
+        var found = await Task.Run(
+            () => InParallel(
+                repos,
+                _ => FindDiscarding(byRepo[_], cancel),
+                done =>
                 {
-                    Output = $"{reset.Output}\n{clean.Output}".Trim()
-                };
-            });
+                    if (repos.Count > 1)
+                    {
+                        progress?.Report($"Looked in {done} of {repos.Count}");
+                    }
+                },
+                cancel),
+            cancel);
+        cancel.ThrowIfCancellationRequested();
+
+        var paths = found
+            .SelectMany(_ => _.OnDisk)
+            .ToList();
+        if (paths.Count > 0)
+        {
+            progress?.Report($"Moving {GitState.CountOf(paths.Count, "file")} to the Recycle Bin");
+            if (!await recycle(paths))
+            {
+                return found
+                    .Select(_ => new RepoResult(_.Target.Repo, false, "Not all the files could go to the Recycle Bin, so nothing was discarded. Those that went are there, to restore."))
+                    .ToList();
+            }
+        }
+
+        // Seen through once the files are in the Recycle Bin, cancelled or not: stopped there,
+        // a file changed would be missing, not put back as the last commit has it.
+        var byFound = found.ToDictionary(_ => _.Target.Repo, StringComparer.OrdinalIgnoreCase);
+        return await ForEach(
+            found
+                .Select(_ => _.Target.Repo)
+                .ToList(),
+            progress,
+            Cancel.None,
+            _ => DiscardIn(byFound[_]));
+    }
+
+    // What Discard found in a repository: the changes in what it covers, as the Changes pane
+    // reads them, null where git couldn't read them, and the files as they are on disk among
+    // them, which go to the Recycle Bin. A repository of its own inside is listed as a folder,
+    // which git clean leaves, so isn't among them, nor is a file deleted already.
+    sealed record Discardable(Discarding Target, GitChanges? Changes, IReadOnlyList<Change> Covered, IReadOnlyList<string> OnDisk);
+
+    static Discardable FindDiscarding(Discarding target, Cancel cancel)
+    {
+        if (GitChanges.Read(target.Repo, cancel) is not { } changes)
+        {
+            return new(target, null, [], []);
+        }
+
+        var covered = changes.Files
+            .Where(_ => target.Folders.Count == 0 ||
+                        _.Paths().Any(path => target.Folders.Any(folder => Locations.IsWithin(FullPath(target.Repo, path), folder))))
+            .ToList();
+        // As the Changes pane's Discard finds them: where a rename was from too, which putting it
+        // back writes over, and each once, as two rows can share a path.
+        var onDisk = GitChanges.OnDisk(target.Repo, covered);
+        return new(target, changes, covered, onDisk);
+    }
+
+    static string FullPath(string repo, string path) =>
+        Path.Combine(repo, path.Replace('/', '\\'));
+
+    static RepoResult DiscardIn(Discardable found)
+    {
+        var repo = found.Target.Repo;
+        if (found.Changes is not { } changes)
+        {
+            return new(repo, false, "Git couldn't read its changes, so nothing was discarded.");
+        }
+
+        List<string> output = [];
+        if (found.OnDisk.Count > 0)
+        {
+            output.Add($"Moved {GitState.CountOf(found.OnDisk.Count, "file")} as they were to the Recycle Bin");
+        }
+
+        if (found.Target.Folders.Count == 0)
+        {
+            // Rather than restore, which puts back only what is not staged, leaving staged
+            // changes for the next Push to commit. It ends a merge part way too.
+            var reset = GitToItsEnd(repo, Cancel.None, "reset", "--hard");
+            output.Add(reset.Output);
+            if (!reset.Succeeded)
+            {
+                return new(repo, false, Lines(output));
+            }
+
+            var clean = Git(repo, "clean", "-f", "-d");
+            output.Add(clean.Output);
+            return new(repo, clean.Succeeded, Lines(output));
+        }
+
+        // Only the files found in the folders are put back, staged changes too, as the Changes
+        // pane puts them back: reset has no way to stop at a folder.
+        var restore = GitChanges.Restore(repo, found.Covered, changes.HasCommits, Cancel.None);
+        output.Add(restore.Output);
+        if (!restore.Succeeded)
+        {
+            return new(repo, false, Lines(output));
+        }
+
+        // Run in each folder, clean goes no further than it, and leaves the folder itself, as
+        // Purge does.
+        foreach (var folder in found.Target.Folders)
+        {
+            var clean = Git(folder, "clean", "-f", "-d");
+            output.Add(clean.Output);
+            if (!clean.Succeeded)
+            {
+                return new(repo, false, Lines(output));
+            }
+        }
+
+        return new(repo, true, Lines(output));
+    }
+
+    static string Lines(IEnumerable<string> lines) =>
+        string.Join('\n', lines.Where(_ => _.Length > 0));
 
     // Several repositories at once, each its own working tree, so a code folder's worth of
     // pulls is not one wait on the network after another. With more than one, reports how many

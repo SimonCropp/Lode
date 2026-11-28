@@ -82,6 +82,8 @@ public class CodeCommandsTests
         await Assert.That(CodeCommands.CommonFolder([@"C:\Code\Group\One", @"C:\Code\Group\Two"])).IsEqualTo(@"C:\Code\Group");
     }
 
+    // The files as they were go to the Recycle Bin first, here a stand-in, the changed one and
+    // the new one, so either can be got back.
     [Test]
     public async Task DiscardRestoresAndCleans()
     {
@@ -89,16 +91,22 @@ public class CodeCommandsTests
         var repo = code.CreateRepo("Repo");
         await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
         await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "new");
+        var bin = new Bin(code);
 
-        var results = await CodeCommands.Discard([repo]);
+        var results = await CodeCommands.Discard(CodeCommands.DiscardTargets([repo]), bin.Recycle);
 
         await Assert.That(results.Single().Succeeded).IsTrue();
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
         await Assert.That(File.Exists(Path.Combine(repo, "untracked.txt"))).IsFalse();
+        await Assert.That(bin.Recycled).IsEquivalentTo(["Repo/tracked.txt", "Repo/untracked.txt"], CollectionOrdering.Matching);
+        await Assert.That(bin.Read("Repo/tracked.txt")).IsEqualTo("changed");
+        await Assert.That(bin.Read("Repo/untracked.txt")).IsEqualTo("new");
+        await Assert.That(results.Single().Output).StartsWith("Moved 2 files as they were to the Recycle Bin\n");
     }
 
     // Every uncommitted change, as its prompt says: staged ones too, which the next Push would
-    // otherwise commit, and untracked folders as well as files. Not what git ignores.
+    // otherwise commit, and untracked folders as well as files, each file going to the Recycle
+    // Bin. Not what git ignores.
     [Test]
     public async Task DiscardTakesStagedChangesAndUntrackedFolders()
     {
@@ -113,14 +121,135 @@ public class CodeCommandsTests
         Directory.CreateDirectory(Path.Combine(repo, "folder"));
         await File.WriteAllTextAsync(Path.Combine(repo, "folder", "untracked.txt"), "new");
         await File.WriteAllTextAsync(Path.Combine(repo, "ignored.txt"), "kept");
+        var bin = new Bin(code);
 
-        var results = await CodeCommands.Discard([repo]);
+        var results = await CodeCommands.Discard(CodeCommands.DiscardTargets([repo]), bin.Recycle);
 
         await Assert.That(results.Single().Succeeded).IsTrue();
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
         await Assert.That(File.Exists(Path.Combine(repo, "added.txt"))).IsFalse();
         await Assert.That(Directory.Exists(Path.Combine(repo, "folder"))).IsFalse();
         await Assert.That(File.Exists(Path.Combine(repo, "ignored.txt"))).IsTrue();
+        await Assert.That(bin.Recycled).IsEquivalentTo(["Repo/added.txt", "Repo/folder/untracked.txt", "Repo/tracked.txt"], CollectionOrdering.Matching);
+        await Assert.That(bin.Read("Repo/tracked.txt")).IsEqualTo("staged");
+    }
+
+    // A folder inside a repository is discarded alone, as Purge purges it alone: what is
+    // changed, staged, or new in it, each file as it was going to the Recycle Bin first. The
+    // changes in the folder beside it stay as they are, staged ones staged.
+    [Test]
+    public async Task DiscardingAFolderInARepo()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var one = Path.Combine(repo, "src", "One");
+        var two = Path.Combine(repo, "src", "Two");
+        Directory.CreateDirectory(one);
+        Directory.CreateDirectory(two);
+        await File.WriteAllTextAsync(Path.Combine(one, "one.txt"), "original");
+        await File.WriteAllTextAsync(Path.Combine(two, "two.txt"), "original");
+        Scratch.Git(repo, "add", ".");
+        Scratch.Git(repo, "commit", "-m", "Folders");
+        await File.WriteAllTextAsync(Path.Combine(one, "one.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(one, "added.txt"), "added");
+        await File.WriteAllTextAsync(Path.Combine(two, "two.txt"), "changed");
+        Scratch.Git(repo, "add", ".");
+        await File.WriteAllTextAsync(Path.Combine(one, "new.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(two, "new.txt"), "new");
+        var bin = new Bin(code);
+
+        var targets = CodeCommands.DiscardTargets([one], code.Root);
+        var results = await CodeCommands.Discard(targets, bin.Recycle);
+
+        await Assert.That(CodeMenu.DiscardQuestion(targets)).IsEqualTo("Discard every uncommitted change, and delete untracked files, in src\\One in Repo?\n\nThe files as they are now go to the Recycle Bin.");
+        await Assert.That(results.Single().Succeeded).IsTrue();
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(one, "one.txt"))).IsEqualTo("original");
+        await Assert.That(File.Exists(Path.Combine(one, "added.txt"))).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(one, "new.txt"))).IsFalse();
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(two, "two.txt"))).IsEqualTo("changed");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("M  src/Two/two.txt\n?? src/Two/new.txt");
+        await Assert.That(bin.Recycled).IsEquivalentTo(["Repo/src/One/added.txt", "Repo/src/One/new.txt", "Repo/src/One/one.txt"], CollectionOrdering.Matching);
+        await Assert.That(bin.Read("Repo/src/One/one.txt")).IsEqualTo("changed");
+        await Assert.That(bin.Read("Repo/src/One/added.txt")).IsEqualTo("added");
+        await Assert.That(bin.Read("Repo/src/One/new.txt")).IsEqualTo("new");
+    }
+
+    // Files that can't all go to the Recycle Bin, one in use say: nothing is discarded, so
+    // nothing is lost.
+    [Test]
+    public async Task DiscardWithoutTheRecycleBinDiscardsNothing()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "new");
+
+        var results = await CodeCommands.Discard(CodeCommands.DiscardTargets([repo]), _ => Task.FromResult(false));
+
+        await Assert.That(results.Single().Succeeded).IsFalse();
+        await Assert.That(results.Single().Output).IsEqualTo("Not all the files could go to the Recycle Bin, so nothing was discarded. Those that went are there, to restore.");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("changed");
+        await Assert.That(File.Exists(Path.Combine(repo, "untracked.txt"))).IsTrue();
+    }
+
+    // A folder below the top of a repository is that folder alone, and two in one repository
+    // are one discard there, of both; but a folder in a repository picked whole, or in another
+    // folder picked, goes with that. A folder holding repositories, as the code folder does, is
+    // every one of them, whole.
+    [Test]
+    public async Task WhatDiscardWorksOn()
+    {
+        using var code = new Scratch();
+        Directory.CreateDirectory(code.At("One", ".git"));
+        Directory.CreateDirectory(code.At("One", "src", "Deep"));
+        Directory.CreateDirectory(code.At("One", "tests"));
+        Directory.CreateDirectory(code.At("Group", "Two", ".git"));
+        Directory.CreateDirectory(code.At("Group", "Two", "src"));
+        Directory.CreateDirectory(code.At("Group", "Three", ".git"));
+
+        // Each folder relative to the code folder, which is "".
+        List<string> Targets(params string[] folders) =>
+            CodeCommands.DiscardTargets([.. folders.Select(_ => code.At(_.Replace('/', '\\')))], code.Root)
+                .Select(_ => $"{code.Relative(_.Repo)}: {string.Join(", ", _.Folders.Select(code.Relative))}")
+                .ToList();
+
+        await Assert.That(Targets("One/src")).IsEquivalentTo(["One: One/src"]);
+        await Assert.That(Targets("One/src", "One/tests", "One/src/Deep")).IsEquivalentTo(["One: One/src, One/tests"]);
+        await Assert.That(Targets("One/src", "One")).IsEquivalentTo(["One: "]);
+        await Assert.That(Targets("Group", "Group/Two/src", "One/tests")).IsEquivalentTo(["Group/Three: ", "Group/Two: ", "One: One/tests"], CollectionOrdering.Matching);
+        await Assert.That(Targets("")).IsEquivalentTo(["Group/Three: ", "Group/Two: ", "One: "], CollectionOrdering.Matching);
+
+        // Its question names each folder by where it is in its repository.
+        await Assert.That(CodeMenu.DiscardQuestion(CodeCommands.DiscardTargets([code.Root], code.Root)))
+            .IsEqualTo("Discard every uncommitted change, and delete untracked files, in 3 repositories (Three, Two, One)?\n\nThe files as they are now go to the Recycle Bin.");
+        await Assert.That(CodeMenu.DiscardQuestion(CodeCommands.DiscardTargets([code.At("One", "src"), code.At("One", "tests"), code.At("Group", "Two")], code.Root)))
+            .IsEqualTo("Discard every uncommitted change, and delete untracked files, in Two, src in One, tests in One?\n\nThe files as they are now go to the Recycle Bin.");
+    }
+
+    // Stands in for the Recycle Bin, so a test run leaves nothing there: each file is moved into
+    // a folder of the scratch folder's, under where it was, as the Recycle Bin keeps where each
+    // came from.
+    sealed class Bin(Scratch code)
+    {
+        public List<string> Recycled { get; } = [];
+
+        public Task<bool> Recycle(IReadOnlyList<string> paths)
+        {
+            foreach (var path in paths)
+            {
+                var relative = code.Relative(path);
+                Recycled.Add(relative);
+                var inBin = code.At("Bin", relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(inBin)!);
+                File.Move(path, inBin);
+            }
+
+            Recycled.Sort(StringComparer.Ordinal);
+            return Task.FromResult(true);
+        }
+
+        public string Read(string relative) =>
+            File.ReadAllText(code.At("Bin", relative));
     }
 
     // Git waiting on something that never comes, ssh on a passphrase say, is stopped where it

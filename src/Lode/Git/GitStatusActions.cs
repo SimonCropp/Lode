@@ -223,7 +223,7 @@ static class GitStatusActions
             }
         }
 
-        options.Add(new(Choice.Discard, "Discard…", "Undo every uncommitted change, and delete the files git doesn't track. Asks again first."));
+        options.Add(new(Choice.Discard, "Discard…", "Undo every uncommitted change, and delete the files git doesn't track, the files as they are going to the Recycle Bin first. Asks again first."));
         var where = $"on {branch}";
         if (state.Branch == null)
         {
@@ -340,8 +340,8 @@ static class GitStatusActions
     }
 
     // Each in the Actions panel. Committing and discarding ask as they do from the right-click
-    // menu: for the message, and whether to discard, which can't be undone. Aborting a merge asks
-    // as Changes' Abort merge does.
+    // menu: for the message, and whether to discard, the whole repository, the files as they are
+    // going to the Recycle Bin. Aborting a merge asks as Changes' Abort merge does.
     static void Run(Control owner, Choice choice, string repo, string? codeFolder)
     {
         switch (choice)
