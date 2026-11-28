@@ -195,6 +195,11 @@ static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool ImageList_GetIconSize(IntPtr imageList, out int width, out int height);
 
+    // Makes an image list hold this many images: those added are blank until each is replaced.
+    [LibraryImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ImageList_SetImageCount(IntPtr imageList, uint count);
+
     // The system image list of a size, SHIL_LARGE or SHIL_EXTRALARGE say, as an HIMAGELIST.
     [LibraryImport("shell32.dll")]
     public static partial int SHGetImageList(int imageList, in Guid interfaceId, out IntPtr list);

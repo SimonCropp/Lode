@@ -63,6 +63,56 @@ public class FolderViewTests
             .IsEqualTo(ShellListView.PaddedIcon(ShellIcons.GetIcon(target, false)));
     }
 
+    // Two tabs, with room for one icon between them: the second's took the first's place, yet
+    // the first, drawn again, shows its own, as the rows it kept are made again for where their
+    // icon is now, and so does the second after it.
+    [Test]
+    public async Task ARowShowsItsOwnIconOnceItsPlaceIsGivenToAnother()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Archive", "One"));
+        Directory.CreateDirectory(fixture.At("Archive", "Two"));
+        using var icons = new ShellListView.PaddedIcons(1, ShellListViewTests.Solid);
+        using var foldersForm = Host();
+        using var filesForm = Host();
+
+        async Task<FolderView> OpenWithTheIcons(Form form, string path)
+        {
+            var view = new FolderView(new() {ShowHidden = false}, noPlaces)
+            {
+                Dock = DockStyle.Fill
+            };
+            view.List.Icons = icons;
+            form.Controls.Add(view);
+            form.Show();
+            view.Navigate(path);
+            await Pump.Loaded(view);
+            return view;
+        }
+
+        static int IconColor(FolderView view, string name)
+        {
+            var list = view.List;
+            using var bitmap = new Bitmap(list.Width, list.Height);
+            list.DrawToBitmap(bitmap, new(0, 0, list.Width, list.Height));
+            var icon = list.GetItemRect(view.FindRow(name, 0), ItemBoundsPortion.Icon);
+            return bitmap.GetPixel(icon.X + icon.Width / 2, icon.Y + icon.Height / 2).ToArgb();
+        }
+
+        var folders = await OpenWithTheIcons(foldersForm, fixture.At("Archive"));
+        var files = await OpenWithTheIcons(filesForm, fixture.At("Docs"));
+        var folder = ShellListViewTests.ColorOf(ShellIcons.GetIcon(fixture.At("Archive", "One"), true), 0).ToArgb();
+        var file = ShellListViewTests.ColorOf(ShellIcons.GetIcon(fixture.At("Docs", "guide.aleph"), false), 0).ToArgb();
+
+        await Assert.That(file).IsNotEqualTo(folder);
+        await Assert.That(IconColor(folders, "One")).IsEqualTo(folder);
+        await Assert.That(IconColor(files, "guide")).IsEqualTo(file);
+        await Assert.That(IconColor(folders, "One")).IsEqualTo(folder);
+        await Assert.That(IconColor(folders, "Two")).IsEqualTo(folder);
+        await Assert.That(IconColor(files, "guide")).IsEqualTo(file);
+        await Assert.That(icons.Count).IsEqualTo(1);
+    }
+
     // Opening a shortcut reads where it leads, and asks whether that is a folder, off the UI
     // thread: for a shortcut to a share on a machine that is off, that waits as long as the
     // network does, and the window would wait with it. One to a folder still goes there, one to

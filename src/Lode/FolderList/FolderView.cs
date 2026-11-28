@@ -324,6 +324,10 @@ sealed class FolderView : UserControl
     Dictionary<int, ListViewItem> rows = [];
     const int maximumRows = 512;
 
+    // The padded icons' generation the rows kept were made in: once icons have been let go of,
+    // a row kept may have the index of one given to another icon since.
+    int rowsIconGeneration;
+
     // Stands in for a row that is asked for but not needed: one that has gone, or one of those
     // being selected again, which the list asks for only to say that it changed. A cell for every
     // column there could be, so whichever it is asked for is there.
@@ -1413,6 +1417,15 @@ sealed class FolderView : UserControl
             return blankRow;
         }
 
+        // Icons let go of since the rows were made, among them, perhaps, some of theirs: each is
+        // made again as it is asked for, with its icon's place now.
+        var iconGeneration = list.Icons.Generation;
+        if (iconGeneration != rowsIconGeneration)
+        {
+            rowsIconGeneration = iconGeneration;
+            rows.Clear();
+        }
+
         if (rows.TryGetValue(index, out var row))
         {
             return row;
@@ -1574,7 +1587,7 @@ sealed class FolderView : UserControl
             return thumbnails.Slot(entry, icon, overlay);
         }
 
-        return ShellListView.PaddedIcon(icon, overlay);
+        return list.Icons.Index(icon, overlay);
     }
 
     void WantThumbnails()

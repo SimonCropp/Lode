@@ -21,23 +21,97 @@ sealed class ShellListView : ListView
     /// size, so they share one set of these, rather than each tab keeping a copy of every icon it
     /// has shown. A set for each scale a list has been on holds the same icons at the same
     /// indexes, so a list moved to another monitor keeps its rows' images, only bigger or smaller.
+    /// <para>
+    /// A program, an icon file or a shortcut each has an icon of its own, so a folder of
+    /// thousands of them, scrolled through, would have every one held for as long as Lode runs,
+    /// some 15 KB each at 200%. So the sets hold so many at most, and past that the places of
+    /// those used least lately are given to new ones. An image list can't let go of an image
+    /// without moving every one after it to another index, so each keeps its place, and the rows
+    /// that showed an icon given up are made again, as <see cref="Generation"/> tells. A set
+    /// draws each icon as a list on its scale first asks for it, as it draws a row, rather than
+    /// every icon there is as it is made, which on the first move to another monitor was every
+    /// icon seen so far, at once.
+    /// </para>
     /// </summary>
-    static class PaddedIcons
+    internal sealed class PaddedIcons : IDisposable
     {
-        static Lock gate = new();
-        static List<(int Icon, int Overlay)> icons = [];
-        static Dictionary<(int Icon, int Overlay), int> indexes = [];
-        static Dictionary<int, Set> sets = [];
+        /// <summary>
+        /// How many icons the lists hold at most: about 7 MB of images at 100% scale and 30 MB at
+        /// 200%, which is many times what every tab shows at once.
+        /// </summary>
+        public const int MostIcons = 2048;
+
+        // How many places the sets have to begin with, doubled as they fill.
+        const int firstCapacity = 64;
+
         static int systemDpi = (int)GetDpiForSystem();
 
-        sealed class Set
+        /// <summary>
+        /// The icons every list shows.
+        /// </summary>
+        public static PaddedIcons Shared { get; } = new(MostIcons);
+
+        // Tests make lists on more than one UI thread; the app has one.
+        Lock gate = new();
+        int most;
+        Func<int, Size, Point, int, int, Bitmap> render;
+
+        // What is at each place, null where nothing is, and when it was last asked for or drawn,
+        // by a count that goes up with each.
+        List<(int Icon, int Overlay)?> places = [];
+        List<long> used = [];
+        Stack<int> free = [];
+        Dictionary<(int Icon, int Overlay), int> indexes = [];
+        Dictionary<int, Set> sets = [];
+        long uses;
+        int capacity;
+        int generation;
+
+        /// <param name="most">How many icons are held at most.</param>
+        /// <param name="render">Draws an icon of the system image list, with an overlay, at a size,
+        /// onto a transparent canvas at an offset, as <see cref="ShellIcons.Render(int, Size, Point,
+        /// int, int)"/> does, which it is unless a test gives another.</param>
+        public PaddedIcons(int most, Func<int, Size, Point, int, int, Bitmap>? render = null)
         {
+            this.most = most;
+            this.render = render ?? ShellIcons.Render;
+        }
+
+        /// <summary>
+        /// Goes up each time icons are let go of, their places given to others: a row made
+        /// before then may show another icon than its own, so is made again.
+        /// </summary>
+        public int Generation => Volatile.Read(ref generation);
+
+        /// <summary>
+        /// How many icons are held. For tests.
+        /// </summary>
+        internal int Count
+        {
+            get
+            {
+                lock (gate)
+                {
+                    return indexes.Count;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The images at a scale, as a list shows them.
+        /// </summary>
+        public sealed class Set
+        {
+            PaddedIcons owner;
             ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
             Point offset;
             int iconSize;
+            List<bool> drawn = [];
 
-            public Set(int dpi)
+            internal Set(PaddedIcons owner, int dpi, int capacity)
             {
+                this.owner = owner;
+
                 // The system image list's small icons are for the scale Windows started at.
                 var small = ShellIcons.SmallIconSize;
                 iconSize = small.Width * dpi / systemDpi;
@@ -46,58 +120,179 @@ sealed class ShellListView : ListView
                 offset = new((int)(paddingBeforeIcon * scale), (height - iconSize) / 2);
                 images.ImageSize = new(offset.X + iconSize + (int)(paddingAfterIcon * scale), height);
 
-                // Created now so that each image is copied in as it is added. Until an image
-                // list has its handle it only keeps a reference to what it is given, and Add
-                // disposes its bitmap straight after adding it.
+                // Created now so that each image is copied in as it is put in. Until an image
+                // list has its handle it only keeps a reference to what it is given.
                 Handle = images.Handle;
-                foreach (var (icon, overlay) in icons)
-                {
-                    Add(icon, overlay);
-                }
+                Grow(capacity);
             }
 
             public IntPtr Handle { get; }
 
-            public void Add(int icon, int overlay)
+            /// <summary>
+            /// How many icons are drawn in the set. For tests.
+            /// </summary>
+            internal int Drawn
             {
-                using var image = ShellIcons.Render(icon, images.ImageSize, offset, overlay, iconSize);
-                images.Images.Add(image);
+                get
+                {
+                    lock (owner.gate)
+                    {
+                        return drawn.Count(_ => _);
+                    }
+                }
             }
+
+            /// <summary>
+            /// The list is about to draw the image at an index: its icon is drawn there first,
+            /// unless it is already.
+            /// </summary>
+            public void Show(int index) =>
+                owner.Show(this, index);
+
+            // Under the gate, from here on. Places made, blank, for the icons to come.
+            internal void Grow(int count)
+            {
+                if (count <= drawn.Count)
+                {
+                    return;
+                }
+
+                ImageList_SetImageCount(Handle, (uint)count);
+                drawn.AddRange(Enumerable.Repeat(false, count - drawn.Count));
+            }
+
+            internal bool IsDrawn(int index) =>
+                drawn[index];
+
+            internal void Forget(int index) =>
+                drawn[index] = false;
+
+            internal void Draw(int index, (int Icon, int Overlay) icon)
+            {
+                using var image = owner.render(icon.Icon, images.ImageSize, offset, icon.Overlay, iconSize);
+                images.Images[index] = image;
+                drawn[index] = true;
+            }
+
+            internal void Dispose() =>
+                images.Dispose();
         }
 
-        // Tests make lists on more than one UI thread; the app has one.
-        public static IntPtr Handle(int dpi)
+        /// <summary>
+        /// The set of images for a monitor at <paramref name="dpi"/>, made the first time with
+        /// every icon's place, none of them drawn.
+        /// </summary>
+        public Set For(int dpi)
         {
             lock (gate)
             {
                 if (!sets.TryGetValue(dpi, out var set))
                 {
-                    set = new(dpi);
+                    set = new(this, dpi, capacity);
                     sets[dpi] = set;
                 }
 
-                return set.Handle;
+                return set;
             }
         }
 
-        public static int Index(int systemIcon, int overlay)
+        /// <summary>
+        /// The index, in every set, of an icon from the system image list with an overlay drawn
+        /// over it, given a place the first time.
+        /// </summary>
+        public int Index(int systemIcon, int overlay)
         {
             lock (gate)
             {
-                if (indexes.TryGetValue((systemIcon, overlay), out var index))
+                var key = (systemIcon, overlay);
+                if (indexes.TryGetValue(key, out var index))
                 {
+                    used[index] = ++uses;
                     return index;
                 }
 
-                foreach (var set in sets.Values)
+                if (free.Count == 0 &&
+                    places.Count >= most)
                 {
-                    set.Add(systemIcon, overlay);
+                    LetGoOfLeastUsed();
                 }
 
-                index = icons.Count;
-                icons.Add((systemIcon, overlay));
-                indexes[(systemIcon, overlay)] = index;
+                if (free.TryPop(out index))
+                {
+                    places[index] = key;
+                    used[index] = ++uses;
+                }
+                else
+                {
+                    index = places.Count;
+                    places.Add(key);
+                    used.Add(++uses);
+                    if (places.Count > capacity)
+                    {
+                        capacity = Math.Min(most, Math.Max(firstCapacity, capacity * 2));
+                        foreach (var set in sets.Values)
+                        {
+                            set.Grow(capacity);
+                        }
+                    }
+                }
+
+                indexes[key] = index;
                 return index;
+            }
+        }
+
+        // A quarter of the places, those used least lately, given up together, so the rows are
+        // made again once for many new icons rather than for each.
+        void LetGoOfLeastUsed()
+        {
+            var leastUsed = Enumerable.Range(0, places.Count)
+                .OrderBy(_ => used[_])
+                .Take(Math.Max(1, most / 4));
+            foreach (var index in leastUsed)
+            {
+                indexes.Remove(places[index]!.Value);
+                places[index] = null;
+                free.Push(index);
+                foreach (var set in sets.Values)
+                {
+                    set.Forget(index);
+                }
+            }
+
+            Interlocked.Increment(ref generation);
+        }
+
+        void Show(Set set, int index)
+        {
+            lock (gate)
+            {
+                if (index < 0 ||
+                    index >= places.Count ||
+                    places[index] is not { } icon)
+                {
+                    return;
+                }
+
+                used[index] = ++uses;
+                if (!set.IsDrawn(index))
+                {
+                    set.Draw(index, icon);
+                }
+            }
+        }
+
+        // The shared icons last as long as Lode; a test's or a benchmark's own are let go of.
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                foreach (var set in sets.Values)
+                {
+                    set.Dispose();
+                }
+
+                sets.Clear();
             }
         }
     }
@@ -230,7 +425,7 @@ sealed class ShellListView : ListView
     /// drawn over it, as <see cref="ShellIcons.GetOverlay"/> gives it, or none.
     /// </summary>
     public static int PaddedIcon(int systemIcon, int overlay = 0) =>
-        PaddedIcons.Index(systemIcon, overlay);
+        PaddedIcons.Shared.Index(systemIcon, overlay);
 
     /// <summary>
     /// The size of the image a row shows on a monitor at <paramref name="dpi"/>, the icon with
@@ -239,8 +434,28 @@ sealed class ShellListView : ListView
     /// </summary>
     internal static Size PaddedIconSize(int dpi)
     {
-        ImageList_GetIconSize(PaddedIcons.Handle(dpi), out var width, out var height);
+        ImageList_GetIconSize(PaddedIcons.Shared.For(dpi).Handle, out var width, out var height);
         return new(width, height);
+    }
+
+    PaddedIcons icons = PaddedIcons.Shared;
+
+    // The set the rows show, at the list's scale, once it has a window.
+    PaddedIcons.Set? rowImages;
+
+    /// <summary>
+    /// The padded icons the rows show, whose indexes a row is given: those every list shares,
+    /// unless a test gives the list its own.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal PaddedIcons Icons
+    {
+        get => icons;
+        set
+        {
+            icons = value;
+            UseImagesFor(DeviceDpi);
+        }
     }
 
     /// <summary>
@@ -260,7 +475,22 @@ sealed class ShellListView : ListView
     {
         if (IsHandleCreated)
         {
-            SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(dpi));
+            rowImages = icons.For(dpi);
+            SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, rowImages.Handle);
+        }
+    }
+
+    // The list asks for each row's image as it draws it, as it does its text, so the icon at the
+    // index it is given is drawn into the set it shows, if it isn't yet, before it is drawn from.
+    // Large icons draws from the thumbnails instead.
+    void DrawRowImage(IntPtr notification)
+    {
+        if (rowImages != null &&
+            View != View.LargeIcon &&
+            View != View.Tile &&
+            (Marshal.ReadInt32(notification, itemOffset) & listViewItemImage) != 0)
+        {
+            rowImages.Show(Marshal.ReadInt32(notification, imageOffset));
         }
     }
 
@@ -290,7 +520,8 @@ sealed class ShellListView : ListView
         // shared list hold on to every list that ever showed it. Before the rows go in, which
         // take their height from it. Windows leaves the list alone when this window closes, as
         // every ListView asks it to.
-        SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(DeviceDpi));
+        rowImages = icons.For(DeviceDpi);
+        SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, rowImages.Handle);
         if (largeImages != IntPtr.Zero)
         {
             SendMessage(Handle, ListViewSetImageList, ListViewImageListNormal, largeImages);
@@ -320,6 +551,10 @@ sealed class ShellListView : ListView
     // NMLVDISPINFO is NMHDR, then LVITEM: mask, item, subitem, state, state mask. LVITEM holds
     // pointers, so starts on a pointer's boundary.
     static int itemOffset = IntPtr.Size == 8 ? 24 : 12;
+
+    // LVIF_IMAGE, and the image's index in LVITEM, after the text and its length.
+    const int listViewItemImage = 0x2;
+    static int imageOffset = itemOffset + (IntPtr.Size == 8 ? 36 : 28);
 
     /// <summary>
     /// Whether the row at an index is of an item cut to the clipboard, which the list draws
@@ -579,6 +814,7 @@ sealed class ShellListView : ListView
             Marshal.ReadInt32(message.LParam, notificationCodeOffset) == listViewGetDisplayInfo)
         {
             base.WndProc(ref message);
+            DrawRowImage(message.LParam);
             if (AnswerState(message.LParam))
             {
                 CutAsked++;
