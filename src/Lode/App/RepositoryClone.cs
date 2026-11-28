@@ -8,8 +8,10 @@ static class RepositoryClone
     /// <summary>
     /// Offers to clone the repository <paramref name="link"/> names into
     /// <paramref name="codeFolder"/>, showing how far it has got, or to hand the link on to the
-    /// app it was for, as Windows did before Lode took such links over. The clone, or the file in
-    /// it the link names, once cloned; otherwise null.
+    /// app it was for, as Windows did before Lode took such links over. Its submodules, where it
+    /// has any, are fetched once asked, saying where they come from, as a link from a web page
+    /// could name any repository, and so its submodules any url. The clone, or the file in it the
+    /// link names, once cloned, its submodules fetched or not; otherwise null.
     /// </summary>
     public static string? Offer(RepositoryLink link, string codeFolder, RepositoryLinks links)
     {
@@ -89,15 +91,135 @@ static class RepositoryClone
 
         TaskDialogPage Cloning()
         {
+            var url = RemoteSite.For(link.Remote)?.Url ?? link.Remote;
+            return Working(
+                $"Cloning {link.Name}",
+                (progress, cancel) => Clone(url, destination, link.Branch, progress, cancel),
+                async (page, result, cancelled) =>
+                {
+                    if (result.Succeeded)
+                    {
+                        cloned = link.In(destination);
+
+                        // A link from a web page could name any repository, and so its
+                        // submodules any url: they are fetched only once asked, saying where
+                        // from.
+                        var submodules = await Task.Run(() => SubmoduleUrls(destination), Cancel.None);
+                        if (submodules.Count > 0)
+                        {
+                            page.Navigate(AskSubmodules(submodules));
+                            return;
+                        }
+
+                        page.BoundDialog?.Close();
+                        return;
+                    }
+
+                    if (cancelled)
+                    {
+                        page.BoundDialog?.Close();
+                        return;
+                    }
+
+                    page.Navigate(Failed(result.Output));
+                });
+        }
+
+        // The clone is there by now, and opens however this is answered, but for its submodules
+        // being fetched first.
+        TaskDialogPage AskSubmodules(IReadOnlyList<string> urls)
+        {
+            var fetch = new TaskDialogCommandLinkButton(
+                "Fetch them",
+                "And any they have in turn, then open it in Lode.")
+            {
+                // The dialog stays, to show them coming.
+                AllowCloseDialog = false
+            };
+            var leave = new TaskDialogCommandLinkButton(
+                "Open it without them",
+                "Their folders stay empty: git submodule update --init --recursive fetches them later.");
+            var from = string.Join(Environment.NewLine, urls.Select(_ => $"  {_}"));
+            var page = new TaskDialogPage
+            {
+                Caption = "Lode",
+                Heading = $"Fetch the submodules of {link.Name}?",
+                Text = $"""
+                        It is cloned, to {destination}. Its submodules come from:
+
+                        {from}
+
+                        A link from a web page can name any repository, so Lode asks before fetching them. Those they have in turn can't be seen until they are fetched.
+                        """,
+                AllowCancel = true,
+                DefaultButton = fetch,
+                Buttons =
+                {
+                    fetch,
+                    leave
+                }
+            };
+            page.Created += (_, _) => PageShown?.Invoke(page);
+            fetch.Click += (_, _) => page.Navigate(FetchingSubmodules());
+            return page;
+        }
+
+        // Cancelled, git is stopped, and the clone opens with what of them it fetched.
+        TaskDialogPage FetchingSubmodules() =>
+            Working(
+                $"Fetching the submodules of {link.Name}",
+                (progress, cancel) => FetchSubmodules(destination, progress, cancel),
+                (page, result, cancelled) =>
+                {
+                    if (result.Succeeded ||
+                        cancelled)
+                    {
+                        page.BoundDialog?.Close();
+                        return Task.CompletedTask;
+                    }
+
+                    page.Navigate(SubmodulesFailed(result.Output));
+                    return Task.CompletedTask;
+                });
+
+        TaskDialogPage SubmodulesFailed(string output)
+        {
+            var page = new TaskDialogPage
+            {
+                Caption = "Lode",
+                Heading = $"Cloned {link.Name}, but couldn't fetch its submodules",
+                Text = Reason(output),
+                Icon = TaskDialogIcon.Warning,
+                AllowCancel = true,
+                Expander = new(output)
+                {
+                    CollapsedButtonText = "Show what git said",
+                    ExpandedButtonText = "Hide what git said"
+                },
+                Buttons =
+                {
+                    new TaskDialogCommandLinkButton(
+                        "Open it as it is",
+                        "Their folders are empty: git submodule update --init --recursive fetches them once what stopped it is put right.")
+                }
+            };
+            page.Created += (_, _) => PageShown?.Invoke(page);
+            return page;
+        }
+
+        // A page showing git's progress at the work, with Cancel, which stops git, then what it
+        // came to, and whether it was cancelled, given to what ends it.
+        TaskDialogPage Working(string heading, Func<Action<string>, Cancel, CodeCommands.RepoResult> work, Func<TaskDialogPage, CodeCommands.RepoResult, bool, Task> ended)
+        {
             var cancellation = new CancelSource();
             var cancel = TaskDialogButton.Cancel;
 
-            // Git is stopped, and what it cloned so far deleted, before the dialog goes.
+            // Git is stopped, and what it leaves taken care of, before the dialog goes.
             cancel.AllowCloseDialog = false;
             var page = new TaskDialogPage
             {
                 Caption = "Lode",
-                Heading = $"Cloning {link.Name}",
+                Heading = heading,
                 Text = Showing(destination, "Starting git"),
                 ProgressBar = new(TaskDialogProgressBarState.Marquee),
                 AllowCancel = true,
@@ -123,29 +245,15 @@ static class RepositoryClone
                         Show(page, destination, line);
                     }
                 });
-                var url = RemoteSite.For(link.Remote)?.Url ?? link.Remote;
 
-                // Cancel.None, not the token: Clone watches the token itself, and cancelled, ends
-                // with what it cloned so far deleted. Given the token, a Cancel before the clone
-                // had started would have the await throw instead, and nothing would close the
-                // dialog.
+                // Cancel.None, not the token: the work watches the token itself, and cancelled,
+                // ends having taken care of what it leaves, a clone what it cloned so far
+                // deleted. Given the token, a Cancel before the work had started would have the
+                // await throw instead, and nothing would close the dialog.
                 var result = await Task.Run(
-                    () => Clone(url, destination, link.Branch, progress.Report, cancellation.Token),
+                    () => work(progress.Report, cancellation.Token),
                     Cancel.None);
-                if (result.Succeeded)
-                {
-                    cloned = link.In(destination);
-                    page.BoundDialog?.Close();
-                    return;
-                }
-
-                if (cancellation.IsCancellationRequested)
-                {
-                    page.BoundDialog?.Close();
-                    return;
-                }
-
-                page.Navigate(Failed(result.Output));
+                await ended(page, result, cancellation.IsCancellationRequested);
             };
             return page;
         }
@@ -402,6 +510,138 @@ static class RepositoryClone
             {
                 Output = $"{clone.Output}\n{text}".Trim()
             };
+    }
+
+    /// <summary>
+    /// The clone, with its submodules fetched, as GitHub Desktop's clone has them, so it builds:
+    /// see <see cref="FetchSubmodules"/>. Where it has none, the clone as it was. One that can't
+    /// be fetched fails the whole, as its folder is left empty, saying so, but the clone stays
+    /// where it is.
+    /// </summary>
+    /// <param name="options">Given to git ahead of submodule: -c protocol.file.allow=always, for
+    /// tests, whose submodules are file:// ones.</param>
+    internal static CodeCommands.RepoResult WithSubmodules(CodeCommands.RepoResult clone, Action<string>? progress, Cancel cancel, params string[] options)
+    {
+        if (SubmoduleUrls(clone.Repo).Count == 0)
+        {
+            return clone;
+        }
+
+        var fetched = FetchSubmodules(clone.Repo, progress, cancel, options);
+        return clone with
+        {
+            Succeeded = fetched.Succeeded,
+            Output = $"{clone.Output}\n{fetched.Output}".Trim()
+        };
+    }
+
+    /// <summary>
+    /// Fetches the submodules of a clone, and those they have in turn, each checked out at the
+    /// commit the clone has for it, as git submodule update --init --recursive does, giving
+    /// <paramref name="progress"/> each line of git's progress, as the clone does. Git is given
+    /// nothing of Lode's own, so it takes a submodule's url as it would in a terminal: never an
+    /// ext:: one, which runs a command, nor a file:// one unless the user's config allows it, as
+    /// protocol.file.allow does. What it couldn't fetch is said to be left for the user, once
+    /// what stopped it is put right.
+    /// </summary>
+    internal static CodeCommands.RepoResult FetchSubmodules(string repo, Action<string>? progress, Cancel cancel, params string[] options)
+    {
+        var update = CodeCommands.Git(repo, cancel, network: true, progress, [.. options, "submodule", "update", "--init", "--recursive", "--progress"]);
+        if (update.Succeeded)
+        {
+            return update;
+        }
+
+        return update with
+        {
+            Output = $"{update.Output}\nCloned, but couldn't fetch its submodules, so the folders they go in are left empty: git submodule update --init --recursive fetches them once what stopped it is put right.".Trim()
+        };
+    }
+
+    /// <summary>
+    /// Where the repository's submodules come from, as its .gitmodules names them and git will
+    /// fetch them: one relative to origin, ../library.git say, made whole from origin's url.
+    /// None where it has none.
+    /// </summary>
+    internal static List<string> SubmoduleUrls(string repo)
+    {
+        if (!File.Exists(Path.Combine(repo, ".gitmodules")))
+        {
+            return [];
+        }
+
+        // Each "submodule.<name>.url <url>", whatever the name holds.
+        var read = CodeCommands.GitOutput(repo, Cancel.None, ["config", "--file", ".gitmodules", "--get-regexp", @"^submodule\..*\.url$"]);
+        if (!read.Succeeded)
+        {
+            return [];
+        }
+
+        var origin = CodeCommands.GitOutput(repo, Cancel.None, ["remote", "get-url", "origin"]).Output.Trim();
+        return read.Output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(UrlOf)
+            .Where(_ => _.Length > 0)
+            .Select(_ => SubmoduleUrl(_, origin))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        static string UrlOf(string line)
+        {
+            var space = line.IndexOf(' ');
+            if (space < 0)
+            {
+                return "";
+            }
+
+            return line[(space + 1)..].Trim();
+        }
+    }
+
+    /// <summary>
+    /// A submodule's url as git takes it: whole as written, or, starting ./ or ../, from
+    /// <paramref name="origin"/>'s, each ../ a folder up from it, and past an ssh one's path,
+    /// git@host:repository.git's, to its host.
+    /// </summary>
+    internal static string SubmoduleUrl(string url, string origin)
+    {
+        if (!url.StartsWith("./", StringComparison.Ordinal) &&
+            !url.StartsWith("../", StringComparison.Ordinal))
+        {
+            return url;
+        }
+
+        var whole = origin.TrimEnd('/', '\\');
+        var separator = '/';
+        while (true)
+        {
+            if (url.StartsWith("./", StringComparison.Ordinal))
+            {
+                url = url[2..];
+                continue;
+            }
+
+            if (!url.StartsWith("../", StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            url = url[3..];
+            var slash = whole.LastIndexOfAny(['/', '\\']);
+            var colon = whole.LastIndexOf(':');
+            if (slash > colon)
+            {
+                whole = whole[..slash];
+            }
+            else if (colon >= 0)
+            {
+                // What follows the host comes after its colon, as it did in origin's url.
+                whole = whole[..colon];
+                separator = ':';
+            }
+        }
+
+        return $"{whole}{separator}{url}";
     }
 
     // Git takes back what it made when it fails, but not when it is stopped part way. Stopped,

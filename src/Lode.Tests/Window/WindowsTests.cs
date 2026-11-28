@@ -2455,6 +2455,68 @@ public class WindowsTests
         }
     }
 
+    // A repository cloned from the Clone dialog brings its submodules, without asking, as the
+    // repository was picked or typed in Lode. One that can't be fetched, here a file:// one, which
+    // git refuses unless told it may, as the update never is, fails the clone in the Actions
+    // panel, saying so and why; but the clone stays, and opens in its tab all the same.
+    [Test]
+    public async Task ACloneWhoseSubmoduleCanNotBeFetchedStillOpens()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        code.CreateRepo("Library");
+        CodeCommandsTests.Scratch.Git(repo, "-c", "protocol.file.allow=always", "submodule", "add", code.Origin("Library").Replace('\\', '/'), "Library");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Library");
+        CodeCommandsTests.Scratch.Git(repo, "push", "origin", "main");
+        using var fixture = Fixture.Create();
+        var destination = code.At("Cloned");
+        var list = HostedRepos.ListGitHub;
+        HostedRepos.ListGitHub = _ => Task.FromResult(
+            new HostedListing(
+                [new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Repo", code.Origin("Repo"), "https://github.com/octo/Repo", false, false)],
+                []));
+        CloneDialog.Forget();
+        ActionLog.Reset();
+        try
+        {
+            using var form = await Show(fixture, new Settings { CodeDirectory = fixture.Root }, fixture.Root);
+            form.Commands.ShowCloneDialog = dialog =>
+            {
+                dialog.ShowInTaskbar = false;
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new(-20000, -20000);
+                dialog.Show();
+                var waited = Stopwatch.StartNew();
+                while (!(dialog.Rows.Count > 1 && dialog.Loaded.IsCompleted) &&
+                       waited.Elapsed < TimeSpan.FromSeconds(20))
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(10);
+                }
+
+                dialog.List.SelectedIndex = 1;
+                dialog.PathBox.Text = destination;
+                dialog.CloneButton.PerformClick();
+                return dialog.DialogResult;
+            };
+
+            form.Commands.ShowClone();
+            await Pump.Until(() => form.Views.Count() == 2);
+            var entry = ActionLog.Entries.Single(_ => _.Title == "Git clone");
+
+            await Assert.That(entry.State).IsEqualTo(ActionLog.State.Failed);
+            await Assert.That(entry.Details).Contains("Cloned, but couldn't fetch its submodules");
+            await Assert.That(entry.Details).Contains("transport 'file' not allowed");
+            await Assert.That(File.Exists(Path.Combine(destination, "tracked.txt"))).IsTrue();
+            await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(destination);
+        }
+        finally
+        {
+            HostedRepos.ListGitHub = list;
+            ActionLog.Reset();
+        }
+    }
+
     // The status bar has the most recent tag right after the branch, a dot between, and the
     // commits ahead after it. A repository with no tag has none, nor its dot.
     [Test]

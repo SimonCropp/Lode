@@ -284,6 +284,106 @@ public class RepositoryCloneTests
         await Assert.That(Directory.Exists(destination)).IsFalse();
     }
 
+    // A repository whose origin has a submodule, Library, from a bare origin of its own, added as
+    // git adds one once it is let take a file:// one, which it refuses by default. Or, given a
+    // url, with the submodule said to be there instead.
+    static string WithSubmodule(CodeCommandsTests.Scratch code, string name, string? url = null)
+    {
+        var repo = code.CreateRepo(name);
+        code.CreateRepo("Library");
+        CodeCommandsTests.Scratch.Git(repo, "-c", "protocol.file.allow=always", "submodule", "add", Slashed(code.Origin("Library")), "Library");
+        if (url != null)
+        {
+            CodeCommandsTests.Scratch.Git(repo, "config", "--file", ".gitmodules", "submodule.Library.url", url);
+            CodeCommandsTests.Scratch.Git(repo, "add", ".gitmodules");
+        }
+
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-m", "Library");
+        CodeCommandsTests.Scratch.Git(repo, "push", "origin", "main");
+        return repo;
+    }
+
+    static string Slashed(string path) =>
+        path.Replace('\\', '/');
+
+    // Git's own -c, given to the update, as the real one is given none: git takes file://
+    // submodules only once told it may.
+    static readonly string[] fileSubmodules = ["-c", "protocol.file.allow=always"];
+
+    // Its submodules come too, checked out, and nested ones in them, as git submodule update
+    // --init --recursive fetches them, so the clone builds, as GitHub Desktop's does. What git
+    // says as it goes is reported, as the clone's is.
+    [Test]
+    public async Task ClonesTheSubmodulesToo()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        WithSubmodule(code, "Lode");
+        var destination = code.At("Code", "Lode");
+        Directory.CreateDirectory(code.At("Code"));
+        var reported = new List<string>();
+
+        var clone = RepositoryClone.Clone(code.Origin("Lode"), destination, null, reported.Add, Cancel.None);
+        var urls = RepositoryClone.SubmoduleUrls(destination);
+        var result = RepositoryClone.WithSubmodules(clone, reported.Add, Cancel.None, fileSubmodules);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(urls).IsEquivalentTo([Slashed(code.Origin("Library"))]);
+        await Assert.That(File.ReadAllText(Path.Combine(destination, "Library", "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(reported).Contains(_ => _.Contains("Library", StringComparison.Ordinal));
+    }
+
+    // A repository with none is left as it was cloned.
+    [Test]
+    public async Task NoSubmodulesIsTheCloneAsItWas()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Lode");
+        var destination = code.At("Code", "Lode");
+        Directory.CreateDirectory(code.At("Code"));
+
+        var clone = RepositoryClone.Clone(code.Origin("Lode"), destination, null, null, Cancel.None);
+        var result = RepositoryClone.WithSubmodules(clone, null, Cancel.None, fileSubmodules);
+
+        await Assert.That(RepositoryClone.SubmoduleUrls(destination)).IsEmpty();
+        await Assert.That(result).IsEqualTo(clone);
+    }
+
+    // A submodule that can't be fetched, its origin gone say, fails the whole, saying so and what
+    // git said, as its folder is empty and the clone won't build; but the clone stays, the rest of
+    // it as cloned, for it to be fetched once what stopped it is put right.
+    [Test]
+    public async Task ASubmoduleThatCanNotBeFetchedLeavesTheClone()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        WithSubmodule(code, "Lode", Slashed(code.Origin("Missing")));
+        var destination = code.At("Code", "Lode");
+        Directory.CreateDirectory(code.At("Code"));
+
+        var clone = RepositoryClone.Clone(code.Origin("Lode"), destination, null, null, Cancel.None);
+        var result = RepositoryClone.WithSubmodules(clone, null, Cancel.None, fileSubmodules);
+
+        await Assert.That(clone.Succeeded).IsTrue();
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Repo).IsEqualTo(destination);
+        await Assert.That(result.Output).Contains("Cloned, but couldn't fetch its submodules");
+        await Assert.That(result.Output).Contains("Missing");
+        await Assert.That(File.Exists(Path.Combine(destination, "tracked.txt"))).IsTrue();
+        await Assert.That(Directory.EnumerateFileSystemEntries(Path.Combine(destination, "Library"))).IsEmpty();
+    }
+
+    // As git takes a submodule's url: whole as it is, or, starting ./ or ../, from origin's, each
+    // ../ a folder up from it, an ssh one's host too.
+    [Test]
+    public async Task SubmoduleUrlFromOrigin()
+    {
+        await Assert.That(RepositoryClone.SubmoduleUrl("https://github.com/other/library.git", "https://github.com/octo/repo.git")).IsEqualTo("https://github.com/other/library.git");
+        await Assert.That(RepositoryClone.SubmoduleUrl("../library.git", "https://github.com/octo/repo.git")).IsEqualTo("https://github.com/octo/library.git");
+        await Assert.That(RepositoryClone.SubmoduleUrl("../../other/library", "https://github.com/octo/repo/")).IsEqualTo("https://github.com/other/library");
+        await Assert.That(RepositoryClone.SubmoduleUrl("./library", "https://github.com/octo/repo")).IsEqualTo("https://github.com/octo/repo/library");
+        await Assert.That(RepositoryClone.SubmoduleUrl("../library.git", "git@github.com:octo/repo.git")).IsEqualTo("git@github.com:octo/library.git");
+        await Assert.That(RepositoryClone.SubmoduleUrl("../library.git", "git@host:repo.git")).IsEqualTo("git@host:library.git");
+    }
+
     // Through the dialog: asked, cloned into the code folder, and the file the link names is the
     // one opened.
     [Test]
@@ -369,6 +469,142 @@ public class RepositoryCloneTests
         await Assert.That(Directory.EnumerateFileSystemEntries(codeFolder)).IsEmpty();
     }
 
+    // Through the dialog, from a link, which a web page could make point anywhere: once cloned,
+    // it asks before fetching the submodules, saying where each comes from, and fetched, they are
+    // checked out, and the file the link names is opened.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public async Task OfferAsksBeforeFetchingTheSubmodules()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        WithSubmodule(code, "Lode");
+        var codeFolder = code.At("Code");
+        Directory.CreateDirectory(codeFolder);
+        var headings = new List<string>();
+        string? asked = null;
+
+        string? opened;
+        using (Rewrite("https://github.com/LodeTests/Lode", code.Origin("Lode"), ("protocol.file.allow", "always")))
+        {
+            opened = OfferAnswering(
+                "x-github-client://openRepo/https://github.com/LodeTests/Lode?filepath=tracked.txt",
+                codeFolder,
+                null,
+                page =>
+                {
+                    headings.Add(page.Heading ?? "");
+                    if (page.Heading == "Fetch the submodules of LodeTests/Lode?")
+                    {
+                        asked = page.Text;
+                    }
+
+                    Click(page, "Clone it into the code folder");
+                    Click(page, "Fetch them");
+                });
+        }
+
+        await Assert.That(opened).IsEqualTo(Path.Combine(codeFolder, "Lode", "tracked.txt"));
+        await Assert.That(headings).IsEquivalentTo(
+            [
+                "LodeTests/Lode isn't cloned in the code folder",
+                "Cloning LodeTests/Lode",
+                "Fetch the submodules of LodeTests/Lode?",
+                "Fetching the submodules of LodeTests/Lode"
+            ],
+            CollectionOrdering.Matching);
+        await Assert.That(asked).Contains(Slashed(code.Origin("Library")));
+        await Assert.That(File.Exists(Path.Combine(codeFolder, "Lode", "Library", "tracked.txt"))).IsTrue();
+    }
+
+    // Declined, the clone opens without them, their folder left empty, and nothing is fetched
+    // from where they would have come.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public async Task OfferLeavesTheSubmodulesOutWhenDeclined()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        WithSubmodule(code, "Lode");
+        var codeFolder = code.At("Code");
+        Directory.CreateDirectory(codeFolder);
+        var headings = new List<string>();
+
+        string? opened;
+        using (Rewrite("https://github.com/LodeTests/Lode", code.Origin("Lode"), ("protocol.file.allow", "always")))
+        {
+            opened = OfferAnswering(
+                "x-github-client://openRepo/https://github.com/LodeTests/Lode",
+                codeFolder,
+                null,
+                page =>
+                {
+                    headings.Add(page.Heading ?? "");
+                    Click(page, "Clone it into the code folder");
+                    Click(page, "Open it without them");
+                });
+        }
+
+        await Assert.That(opened).IsEqualTo(Path.Combine(codeFolder, "Lode"));
+        await Assert.That(headings).IsEquivalentTo(
+            [
+                "LodeTests/Lode isn't cloned in the code folder",
+                "Cloning LodeTests/Lode",
+                "Fetch the submodules of LodeTests/Lode?"
+            ],
+            CollectionOrdering.Matching);
+        await Assert.That(File.Exists(Path.Combine(codeFolder, "Lode", "tracked.txt"))).IsTrue();
+        await Assert.That(Directory.EnumerateFileSystemEntries(Path.Combine(codeFolder, "Lode", "Library"))).IsEmpty();
+    }
+
+    // Through the dialog, a submodule that can't be fetched says why, and the clone, there all
+    // the same, is opened.
+    [Test]
+    [STAThreadExecutor]
+    [NotInParallel("windows")]
+    public async Task OfferSaysWhyTheSubmodulesCouldNotBeFetched()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        WithSubmodule(code, "Lode", Slashed(code.Origin("Missing")));
+        var codeFolder = code.At("Code");
+        Directory.CreateDirectory(codeFolder);
+        var headings = new List<string>();
+        string? reason = null;
+
+        string? opened;
+        using (Rewrite("https://github.com/LodeTests/Lode", code.Origin("Lode"), ("protocol.file.allow", "always")))
+        {
+            opened = OfferAnswering(
+                "x-github-client://openRepo/https://github.com/LodeTests/Lode",
+                codeFolder,
+                null,
+                page =>
+                {
+                    headings.Add(page.Heading ?? "");
+                    Click(page, "Clone it into the code folder");
+                    Click(page, "Fetch them");
+                    if (page.Icon == TaskDialogIcon.Warning)
+                    {
+                        reason = page.Text;
+                        Click(page, "Open it as it is");
+                    }
+                });
+        }
+
+        await Assert.That(opened).IsEqualTo(Path.Combine(codeFolder, "Lode"));
+        await Assert.That(headings).IsEquivalentTo(
+            [
+                "LodeTests/Lode isn't cloned in the code folder",
+                "Cloning LodeTests/Lode",
+                "Fetch the submodules of LodeTests/Lode?",
+                "Fetching the submodules of LodeTests/Lode",
+                "Cloned LodeTests/Lode, but couldn't fetch its submodules"
+            ],
+            CollectionOrdering.Matching);
+        await Assert.That(reason).StartsWith("fatal:");
+        await Assert.That(File.Exists(Path.Combine(codeFolder, "Lode", "tracked.txt"))).IsTrue();
+    }
+
     // The dialog answered by answer, with forward as the command of the app the link was for.
     static string? OfferAnswering(string link, string codeFolder, string? forward, Action<TaskDialogPage> answer)
     {
@@ -397,19 +633,25 @@ public class RepositoryCloneTests
         }
     }
 
-    // Git, and so the clone, gets origin in the temp folder for the site's url.
-    static Restore Rewrite(string url, string origin)
+    // Git, and so the clone, gets origin in the temp folder for the site's url, and whatever more
+    // of git's config is given, as the dialog gives git nothing of its own.
+    static Restore Rewrite(string url, string origin, params (string Key, string Value)[] more)
     {
         var restore = new Restore();
-        Environment.SetEnvironmentVariable("GIT_CONFIG_COUNT", "1");
-        Environment.SetEnvironmentVariable("GIT_CONFIG_KEY_0", $"url.{origin.Replace('\\', '/')}.insteadOf");
-        Environment.SetEnvironmentVariable("GIT_CONFIG_VALUE_0", url);
+        (string Key, string Value)[] entries = [($"url.{origin.Replace('\\', '/')}.insteadOf", url), .. more];
+        Environment.SetEnvironmentVariable("GIT_CONFIG_COUNT", entries.Length.ToString(CultureInfo.InvariantCulture));
+        for (var index = 0; index < entries.Length; index++)
+        {
+            Environment.SetEnvironmentVariable($"GIT_CONFIG_KEY_{index}", entries[index].Key);
+            Environment.SetEnvironmentVariable($"GIT_CONFIG_VALUE_{index}", entries[index].Value);
+        }
+
         return restore;
     }
 
     sealed class Restore : IDisposable
     {
-        static readonly string[] names = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"];
+        static readonly string[] names = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_VALUE_1"];
         readonly string?[] values = names.Select(Environment.GetEnvironmentVariable).ToArray();
 
         public void Dispose()

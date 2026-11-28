@@ -665,17 +665,27 @@ sealed class Commands
         Clone(dialog.Remote, dialog.Destination);
     }
 
+    // Its submodules too, without asking, as the repository was picked or typed here, not handed
+    // over by a link from a web page, which RepositoryClone.Offer asks about. One that can't be
+    // fetched fails the entry, saying so, but the clone stays, and opens all the same.
     async void Clone(string remote, string destination)
     {
-        var entry = await ActionLog.Run(
+        var cloned = false;
+        await ActionLog.Run(
             "Git clone",
             [destination],
             async (progress, cancel) =>
             {
                 var result = await Task.Run(() => RepositoryClone.Clone(remote, destination, null, progress.Report, cancel), cancel);
+                if (result.Succeeded)
+                {
+                    cloned = true;
+                    result = await Task.Run(() => RepositoryClone.WithSubmodules(result, progress.Report, cancel), cancel);
+                }
+
                 return CodeCommands.GitOutcome([result]);
             });
-        if (entry.State == ActionLog.State.Succeeded &&
+        if (cloned &&
             !window.IsDisposed)
         {
             window.AddTab(destination, true);
