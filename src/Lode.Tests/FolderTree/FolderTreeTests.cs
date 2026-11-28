@@ -855,6 +855,29 @@ public class FolderTreeTests
                 """);
     }
 
+    // A folder that can't be watched, on a share that sends no word of what changes in it, as
+    // WSL's doesn't, is read again on F5, so a folder made in it since shows, without collapsing
+    // it and expanding it again.
+    [Test]
+    public async Task F5ReadsAgainAFolderThatCantBeWatched()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        tree.MakeWatcher = (_, _) => null;
+        var projects = await Projects(tree);
+        await Expand(tree, projects);
+
+        Directory.CreateDirectory(fixture.At("Build"));
+        await Pump.For(TimeSpan.FromMilliseconds(500));
+        var beforeF5 = Names(projects);
+        tree.ReadAgain();
+        await Pump.Loaded(tree);
+
+        await Assert.That(beforeF5).DoesNotContain("Build");
+        await Assert.That(projects.IsExpanded).IsTrue();
+        await Assert.That(Names(projects)).IsEquivalentTo(["Archive", "Build", "Docs", "Source"], CollectionOrdering.Matching);
+    }
+
     [Test]
     public async Task ExpandingAgainPicksUpChangesMadeWhileCollapsed()
     {

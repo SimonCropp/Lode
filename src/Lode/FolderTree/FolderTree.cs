@@ -820,6 +820,28 @@ sealed class FolderTree : TreeView
     }
 
     /// <summary>
+    /// For Refresh: picks up drives plugged in or removed, and reads again, off the UI thread,
+    /// every folder the tree keeps up to date, those expanded and the one selected, as if each
+    /// had been seen to change. One that can't be watched, on a share that sends no word of what
+    /// changes in it, as WSL's doesn't, would otherwise only be read again once collapsed and
+    /// expanded.
+    /// </summary>
+    public void ReadAgain()
+    {
+        RefreshDrives();
+        foreach (var node in watched.Keys)
+        {
+            changed[node] = true;
+        }
+
+        // Unless a round is under way already, which this one waits for.
+        if (!SyncChanged())
+        {
+            changes.Raise();
+        }
+    }
+
+    /// <summary>
     /// Picks up drives that were plugged in or removed since the tree was built.
     /// </summary>
     public void RefreshDrives()

@@ -1394,7 +1394,7 @@ class MainForm : Form
         OpenWith.Forget();
         ShellIcons.ForgetDrives();
         TextEditors.ForgetTypes();
-        Tree.RefreshDrives();
+        Tree.ReadAgain();
         places.ReadAgain();
         GitPanes.Reload();
         if (FindHost.ResultsShowing)
