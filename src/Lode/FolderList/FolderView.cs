@@ -840,7 +840,7 @@ sealed class FolderView : UserControl
     /// </summary>
     public void OpenAt(string path, bool intoZip = false)
     {
-        var reveal = !intoZip || !Zip.IsZip(path);
+        var reveal = !intoZip || !Zip.IsArchive(path);
         if (IsRemote(path))
         {
             Go(path, null, revealFile: reveal);
@@ -980,7 +980,7 @@ sealed class FolderView : UserControl
         looking = null;
         if (found == Found.Folder ||
             (found == Found.File &&
-             !revealFile && Zip.IsZip(normalized)))
+             !revealFile && Zip.IsArchive(normalized)))
         {
             Open(normalized, position, select: select);
             return;
@@ -1053,7 +1053,7 @@ sealed class FolderView : UserControl
         // A zip, the view inside it.
         if (found == Found.Folder ||
             (found == Found.File &&
-             !revealIfFile && Zip.IsZip(path)))
+             !revealIfFile && Zip.IsArchive(path)))
         {
             ReadFolder(preserveState);
             return;
@@ -4594,7 +4594,7 @@ sealed class FolderView : UserControl
             if (entry is {InArchive: true, IsDirectory: false})
             {
                 _ = OpenFromArchive(entry, !navigated);
-                navigated |= Zip.IsZip(entry.Name);
+                navigated |= Zip.IsArchive(entry.Name);
                 continue;
             }
 
@@ -4626,7 +4626,7 @@ sealed class FolderView : UserControl
     static string? FolderToOpen(FileEntry entry, Dictionary<string, string?>? shortcutFolders)
     {
         if (entry.IsDirectory ||
-            Zip.IsZip(entry.FullPath))
+            Zip.IsArchive(entry.FullPath))
         {
             return entry.FullPath;
         }
@@ -4661,7 +4661,7 @@ sealed class FolderView : UserControl
             return;
         }
 
-        if (!Zip.IsZip(extracted))
+        if (!Zip.IsArchive(extracted))
         {
             FileOperations.Open(this, extracted);
             return;
@@ -5618,7 +5618,7 @@ sealed class FolderView : UserControl
                 commands.Add(LodeActions.Submenu("openWith", QuickMenu.Deferred(() => OpenWithCommands(extension, paths))));
             }
 
-            if (paths.All(Zip.IsZip))
+            if (paths.All(Zip.IsArchive))
             {
                 commands.Add(LodeActions.Command("extractAll", () => Extract(paths, false)));
                 commands.Add(LodeActions.Command("extractHere", () => Extract(paths, true)));

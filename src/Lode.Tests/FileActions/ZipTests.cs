@@ -966,4 +966,251 @@ public class ZipTests
             }
         }
     }
+
+    // When each entry of a tar made here was last changed.
+    static readonly DateTimeOffset tarWritten = new(2024, 5, 6, 7, 8, 9, TimeSpan.Zero);
+
+    // A tar of the entries, gzipped unless it is named .tar: each a file holding what is given,
+    // a folder, or a link, symbolic or hard, to what is given, or a pipe.
+    static string MakeTar(Fixture fixture, string name, params (TarEntryType Type, string Name, string Content)[] entries)
+    {
+        var tar = fixture.At(name);
+        Stream stream = File.Create(tar);
+        if (!name.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
+        {
+            stream = new GZipStream(stream, CompressionLevel.Optimal);
+        }
+
+        using var writer = new TarWriter(stream, TarEntryFormat.Pax);
+        foreach (var (type, entryName, content) in entries)
+        {
+            var entry = new PaxTarEntry(type, entryName)
+            {
+                ModificationTime = tarWritten
+            };
+            if (type is TarEntryType.SymbolicLink or TarEntryType.HardLink)
+            {
+                entry.LinkName = content;
+            }
+            else if (type == TarEntryType.RegularFile)
+            {
+                entry.DataStream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            }
+
+            writer.WriteEntry(entry);
+        }
+
+        return tar;
+    }
+
+    // What a tar made by tar -czf of a folder as itself holds: every name after ./, and a folder
+    // with no slash at its end, nested folders, one only there in the names of what is in it,
+    // and an empty one, a name going outside, one Windows keeps for a device, links, symbolic
+    // and hard, and a pipe.
+    static readonly (TarEntryType Type, string Name, string Content)[] source =
+    [
+        (TarEntryType.Directory, "./", ""),
+        (TarEntryType.Directory, "./src", ""),
+        (TarEntryType.RegularFile, "./src/main.c", "main"),
+        (TarEntryType.RegularFile, "./src/deep/leaf.txt", "leaf"),
+        (TarEntryType.RegularFile, "../escaped.txt", "escaped"),
+        (TarEntryType.RegularFile, "src/aux.c", "aux"),
+        (TarEntryType.SymbolicLink, "src/passwd", "../../../etc/passwd"),
+        (TarEntryType.HardLink, "src/again.c", "src/main.c"),
+        (TarEntryType.Fifo, "pipe", ""),
+        (TarEntryType.Directory, "empty/", ""),
+        (TarEntryType.RegularFile, "readme.md", "readme")
+    ];
+
+    // A tar, gzipped or not, is extracted as a zip is: to a folder named for it, without its
+    // .tar, .tar.gz or .tgz, each file with the time the tar gives it. What a zip would have left
+    // out is, and so are links, which, followed or made, could lead outside the folder, and
+    // what is neither file nor folder. Nothing goes outside the folder.
+    [Test]
+    public async Task ExtractsATar()
+    {
+        using var fixture = Fixture.Create();
+        var tars = new[] {"Plain.tar", "Gzipped.tar.gz", "Short.tgz"}
+            .Select(_ => MakeTar(fixture, _, source))
+            .ToList();
+
+        var extracted = new List<string>();
+        var written = new List<DateTime>();
+        foreach (var tar in tars)
+        {
+            var (outcome, topLevel) = Zip.ExtractTo(tar, fixture.Root, false, null, Cancel.None);
+            var folder = $"{fixture.Relative(topLevel.Single())}/";
+            extracted.Add(
+                string.Join(
+                    Environment.NewLine,
+                    [
+                        outcome.Succeeded.ToString(),
+                        outcome.Summary.Replace(Path.GetFileName(tar), "the tar"),
+                        .. outcome.Details.Split(Environment.NewLine).Skip(1),
+                        "",
+                        .. fixture.Tree()
+                            .Where(_ => _.StartsWith(folder, StringComparison.Ordinal) &&
+                                        _.Length > folder.Length)
+                            .Select(_ => _[folder.Length..])
+                    ]));
+            written.Add(File.GetLastWriteTimeUtc(Path.Combine(topLevel[0], "src", "main.c")));
+        }
+
+        await Assert.That(fixture.Tree().Any(_ => _.Contains("escaped", StringComparison.Ordinal))).IsFalse();
+        await Assert.That(written.All(_ => _ == tarWritten.UtcDateTime)).IsTrue();
+        await Assert.That(extracted[1]).IsEqualTo(extracted[0]);
+        await Assert.That(extracted[2]).IsEqualTo(extracted[0]);
+        await Verify(extracted[0])
+            .Snapshot(
+                """
+                True
+                Extracted the tar, leaving out 5 items
+
+                Left out, being named to go outside the folder or with names Windows can't have:
+                ../escaped.txt
+
+                Left out, with names Windows keeps for devices, as CON, AUX and NUL:
+                src/aux.c
+
+                Left out, being links, which are neither followed nor made, as one could lead outside the folder:
+                src/passwd
+                src/again.c
+
+                Left out, being neither files nor folders, as a device or a pipe is:
+                pipe
+
+                empty/
+                readme.md (6 bytes)
+                src/
+                src/deep/
+                src/deep/leaf.txt (4 bytes)
+                src/main.c (4 bytes)
+                """);
+    }
+
+    // As a zip's, a big entry of a gzipped tar, stopped part way, stops within the piece it is
+    // writing, saying how far it had got, and takes away what it wrote, here or in a folder of
+    // its own, which goes too.
+    [Test]
+    public async Task CancelledTarExtractStopsPartWayAndTakesAwayWhatItMade()
+    {
+        using var fixture = Fixture.Create();
+        var tar = MakeTar(fixture, "Big.tgz", (TarEntryType.Directory, "Inner/", ""), (TarEntryType.RegularFile, "Inner/big.bin", new('a', bigLength)));
+        var before = fixture.Tree();
+        using var all = new CancelSource();
+        using var here = new CancelSource();
+        var (progress, reports) = CancelOnTheSecondReport(all);
+
+        await Assert.That(() => Zip.ExtractTo(tar, fixture.Root, false, progress, all.Token)).Throws<OperationCanceledException>();
+        await Assert.That(() => Zip.ExtractTo(tar, fixture.Root, true, CancelOnTheSecondReport(here).Progress, here.Token)).Throws<OperationCanceledException>();
+
+        await Assert.That(reports.Count).IsEqualTo(2);
+        await Assert.That(reports[0]).IsEqualTo("Extracting 1 of 1, 0 bytes of 3.81 MB");
+        await Assert.That(reports[1]).StartsWith("Extracting 1 of 1, ").And.EndsWith(" KB of 3.81 MB");
+        await Assert.That(fixture.Tree()).IsEquivalentTo(before, CollectionOrdering.Matching);
+    }
+
+    // What is named as a tar but isn't one, a gzipped text, gzipped or not, short or long, or
+    // what isn't gzipped at all, is refused, saying so, and nothing is extracted, here or to a
+    // folder of its own, which goes.
+    [Test]
+    public async Task WhatIsNotATarIsRefused()
+    {
+        using var fixture = Fixture.Create();
+        void Gzipped(string name, string text)
+        {
+            using var stream = new GZipStream(File.Create(fixture.At(name)), CompressionLevel.Optimal);
+            stream.Write(Encoding.UTF8.GetBytes(text));
+        }
+
+        Gzipped("Notes.tar.gz", new('x', 2_000));
+        Gzipped("Short.tgz", "hello");
+        await File.WriteAllTextAsync(fixture.At("Plain.tgz"), "no gzip at all");
+        await File.WriteAllTextAsync(fixture.At("Text.tar"), new string('x', 2_000));
+        var before = fixture.Tree();
+
+        var outcomes = new[] {"Notes.tar.gz", "Short.tgz", "Plain.tgz", "Text.tar"}
+            .SelectMany(_ => new[]
+            {
+                Zip.ExtractTo(fixture.At(_), fixture.Root, false, null, Cancel.None),
+                Zip.ExtractTo(fixture.At(_), fixture.Root, true, null, Cancel.None)
+            })
+            .ToList();
+
+        await Assert.That(fixture.Tree()).IsEquivalentTo(before, CollectionOrdering.Matching);
+        await Assert.That(outcomes.All(_ => _.TopLevel.Count == 0)).IsTrue();
+        await Verify(outcomes.Select(_ => $"{_.Outcome.Succeeded}, {_.Outcome.Summary}: {_.Outcome.Details}"))
+            .Snapshot(
+                """
+                [
+                  False, Can't be read: Nothing was extracted: Notes.tar.gz is not a tar archive compressed with gzip.,
+                  False, Can't be read: Nothing was extracted: Notes.tar.gz is not a tar archive compressed with gzip.,
+                  False, Can't be read: Nothing was extracted: Short.tgz is not a tar archive compressed with gzip.,
+                  False, Can't be read: Nothing was extracted: Short.tgz is not a tar archive compressed with gzip.,
+                  False, Can't be read: Nothing was extracted: Plain.tgz is not a tar archive compressed with gzip.,
+                  False, Can't be read: Nothing was extracted: Plain.tgz is not a tar archive compressed with gzip.,
+                  False, Can't be read: Nothing was extracted: Text.tar is not a tar archive.,
+                  False, Can't be read: Nothing was extracted: Text.tar is not a tar archive.
+                ]
+                """);
+    }
+
+    // A tar is looked inside as a zip is: what each folder holds, without the ./ before its
+    // names, and without its links or what is neither file nor folder; somewhere in it is found
+    // by its path; and what is opened, copied or dragged out of it is extracted to the temp
+    // folder, a folder with all it holds, but for its links.
+    [Test]
+    public async Task ATarIsLookedInsideAsAZipIs()
+    {
+        using var fixture = Fixture.Create();
+        var tar = MakeTar(fixture, "Source.tar.gz", source);
+
+        var folders = Zip.Read(tar);
+        var extracted = Zip.ExtractToTemp([Path.Combine(tar, "readme.md"), Path.Combine(tar, "src")]);
+
+        try
+        {
+            await Assert.That(Zip.Split(Path.Combine(tar, "src", "main.c"))).IsEqualTo(new Zip.Location(tar, @"src\main.c"));
+            await Assert.That(Zip.Split(fixture.At("Source.tar"))).IsNull();
+            await Assert.That(Zip.Find(new(tar, @"src\deep"))).IsEqualTo(Zip.Kind.Folder);
+            await Assert.That(Zip.Find(new(tar, "empty"))).IsEqualTo(Zip.Kind.Folder);
+            await Assert.That(Zip.Find(new(tar, @"src\passwd"))).IsEqualTo(Zip.Kind.Missing);
+            await Assert.That(await File.ReadAllTextAsync(extracted[0])).IsEqualTo("readme");
+            await Assert.That(Directory.GetFileSystemEntries(extracted[1], "*", SearchOption.AllDirectories).Select(_ => Path.GetRelativePath(extracted[1], _)))
+                .IsEquivalentTo(["deep", "main.c", @"deep\leaf.txt"]);
+            await Verify(
+                    folders
+                        .OrderBy(_ => _.Key, StringComparer.Ordinal)
+                        .ToDictionary(
+                            _ => _.Key,
+                            _ => _.Value.Values
+                                .Select(item => $"{item.Name}{(item.IsFolder ? "/" : $" ({item.Size} bytes)")}")
+                                .Order(StringComparer.Ordinal)
+                                .ToList()))
+                .Snapshot(
+                    """
+                    {
+                      : [
+                        empty/,
+                        readme.md (6 bytes),
+                        src/
+                      ],
+                      src: [
+                        deep/,
+                        main.c (4 bytes)
+                      ],
+                      src\deep: [
+                        leaf.txt (4 bytes)
+                      ]
+                    }
+                    """);
+        }
+        finally
+        {
+            foreach (var path in extracted)
+            {
+                Directory.Delete(Path.GetDirectoryName(path)!, true);
+            }
+        }
+    }
 }

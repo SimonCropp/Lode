@@ -1,5 +1,6 @@
 global using System.Buffers.Binary;
 global using System.Drawing.Imaging;
+global using System.Formats.Tar;
 global using System.Globalization;
 global using System.IO.Compression;
 global using System.Net;

@@ -8,6 +8,7 @@ global using System.Diagnostics;
 global using System.Drawing.Drawing2D;
 global using System.Drawing.Imaging;
 global using System.Drawing.Text;
+global using System.Formats.Tar;
 global using System.Globalization;
 global using System.IO.Compression;
 global using System.IO.Enumeration;

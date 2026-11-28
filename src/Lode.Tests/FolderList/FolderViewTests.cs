@@ -3308,6 +3308,48 @@ public class FolderViewTests
         await Assert.That(Selected(view)).IsEquivalentTo(["Bundle.zip"]);
     }
 
+    // A gzipped tar is offered Extract All and Extract here as a zip is, and opened, is gone
+    // into as a zip is, without what is neither file nor folder in it, a link say.
+    [Test]
+    public async Task GoingIntoATar()
+    {
+        using var fixture = Fixture.Create();
+        var tar = fixture.At("Bundle.tgz");
+        using (var writer = new TarWriter(new GZipStream(File.Create(tar), CompressionLevel.Optimal), TarEntryFormat.Pax))
+        {
+            writer.WriteEntry(new PaxTarEntry(TarEntryType.Directory, "./Docs/"));
+            writer.WriteEntry(
+                new PaxTarEntry(TarEntryType.RegularFile, "./Docs/guide.aleph")
+                {
+                    DataStream = new MemoryStream(new byte[5])
+                });
+            writer.WriteEntry(
+                new PaxTarEntry(TarEntryType.SymbolicLink, "./outside")
+                {
+                    LinkName = "../.."
+                });
+        }
+
+        using var view = await Open(fixture.Root);
+        view.Reveal(tar);
+        await Pump.Loaded(view);
+
+        var commands = view.ItemCommands(view.SelectedEntries()).Select(_ => _?.Id).ToList();
+        OpenSelected(view);
+        await Pump.Loaded(view);
+        var atTop = Names(view);
+        view.Reveal(Path.Combine(tar, "Docs"));
+        await Pump.Loaded(view);
+        OpenSelected(view);
+        await Pump.Loaded(view);
+
+        await Assert.That(commands).Contains("extractAll").And.Contains("extractHere");
+        await Assert.That(atTop).IsEquivalentTo(["Docs"]);
+        await Assert.That(view.InArchive).IsTrue();
+        await Assert.That(view.CurrentPath).IsEqualTo(Path.Combine(tar, "Docs"));
+        await Assert.That(Names(view)).IsEquivalentTo(["guide.aleph"]);
+    }
+
     static void OpenSelected(FolderView view) =>
         view.ItemCommands(view.SelectedEntries()).First(_ => _?.Id == "open")!.Action();
 

@@ -3,10 +3,17 @@
 /// Explorer's Compress to ZIP file and Extract All do, each as an entry in the Actions panel,
 /// which shows how far it has got and can stop it. And looking inside one, as a folder that can't
 /// be changed: what is opened, copied or dragged out of it is extracted to the temp folder first.
+/// Tars, .tar, .tar.gz and .tgz, are extracted and looked inside the same way, though not made.
 /// </summary>
 static class Zip
 {
     public const string Extension = ".zip";
+
+    // What an archive is named with: a zip, or a tar, gzipped or not. 7z and rar, which Explorer
+    // opens too, would need a library to read.
+    static string[] extensions = [Extension, ".tar", ".tar.gz", ".tgz"];
+
+    static string[] gzippedTarExtensions = [".tar.gz", ".tgz"];
 
     // For reading. An entry that says its name is UTF-8 is read as that whatever is given here:
     // this is for those that don't say.
@@ -54,8 +61,244 @@ static class Zip
             UTF8.GetMaxByteCount(charCount);
     }
 
-    public static bool IsZip(string path) =>
-        path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Whether <paramref name="path"/> is named as an archive Lode reads: a zip, or a tar,
+    /// gzipped or not.
+    /// </summary>
+    public static bool IsArchive(string path) =>
+        IsArchive(path.AsSpan());
+
+    static bool IsArchive(CharSpan path)
+    {
+        foreach (var extension in extensions)
+        {
+            if (path.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool IsTar(string path) =>
+        !path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase) &&
+        IsArchive(path);
+
+    static bool IsGzipped(string path) =>
+        gzippedTarExtensions.Any(_ => path.EndsWith(_, StringComparison.OrdinalIgnoreCase));
+
+    // What messages call the kind of archive path is.
+    static string Noun(string path)
+    {
+        if (IsTar(path))
+        {
+            return "tar";
+        }
+
+        return "zip";
+    }
+
+    // An archive's name without what names it an archive: Bundle, of Bundle.zip, Bundle.tar.gz
+    // or Bundle.tgz, where Bundle.tar would be left of Bundle.tar.gz without its last extension.
+    static string ArchiveStem(string path)
+    {
+        var name = Path.GetFileName(path);
+        foreach (var extension in extensions)
+        {
+            if (name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            {
+                return name[..^extension.Length];
+            }
+        }
+
+        return Path.GetFileNameWithoutExtension(name);
+    }
+
+    /// <summary>
+    /// What an entry of an archive is: a file, a folder, a link, symbolic or hard, which is
+    /// neither followed nor made, as it could lead outside where it is extracted to, or
+    /// something else, a device or a pipe, which Windows has no file for.
+    /// </summary>
+    enum EntryKind
+    {
+        File,
+        Folder,
+        Link,
+        Special
+    }
+
+    // An entry of an archive as it is read: its name in it, what it is, how much it holds, and
+    // when it was last changed.
+    abstract class ArchiveEntry(string name, EntryKind kind, long length, DateTimeOffset modified)
+    {
+        public string Name { get; } = name;
+
+        public EntryKind Kind { get; } = kind;
+
+        public bool IsFolder => Kind == EntryKind.Folder;
+
+        // Neither a file nor a folder, and so left out.
+        public bool IsLeftOut => Kind is EntryKind.Link or EntryKind.Special;
+
+        public long Length { get; } = length;
+
+        public DateTimeOffset Modified { get; } = modified;
+
+        // Writes what it holds to target, a piece at a time, told of each, and stopped by cancel
+        // between pieces. Only while it is the entry come to: a tar is read from its start to its
+        // end, and what an entry holds is passed by once the next is read.
+        public abstract void CopyTo(Stream target, Action<long>? copied, Cancel cancel);
+    }
+
+    // An archive, its entries read in its order, from the first, each time they are asked for.
+    abstract class Reader : IDisposable
+    {
+        public static Reader Open(string path)
+        {
+            if (IsTar(path))
+            {
+                return new TarFile(path, IsGzipped(path));
+            }
+
+            return new ZipReader(path);
+        }
+
+        public abstract IEnumerable<ArchiveEntry> Entries();
+
+        public virtual void Dispose()
+        {
+        }
+    }
+
+    // A zip, which is read from its end, where it lists what it holds, and its entries from
+    // wherever they are in it, so read once, and its entries kept.
+    sealed class ZipReader(string path) : Reader
+    {
+        ZipArchive archive = OpenRead(path);
+        List<ArchiveEntry>? entries;
+
+        public override IEnumerable<ArchiveEntry> Entries() =>
+            entries ??= archive.Entries
+                .Select(_ => (ArchiveEntry) new ZipMember(_))
+                .ToList();
+
+        public override void Dispose() =>
+            archive.Dispose();
+    }
+
+    sealed class ZipMember(ZipArchiveEntry entry) :
+        ArchiveEntry(entry.FullName, IsFolderEntry(entry.FullName) ? EntryKind.Folder : EntryKind.File, entry.Length, entry.LastWriteTime)
+    {
+        public override void CopyTo(Stream target, Action<long>? copied, Cancel cancel)
+        {
+            using var content = entry.Open();
+            Copy(content, target, copied, cancel);
+        }
+    }
+
+    // A tar, or a tar gzipped, as a .tar.gz or .tgz is, which can only be read from its start,
+    // so is, each time its entries are asked for.
+    sealed class TarFile(string path, bool gzipped) : Reader
+    {
+        public override IEnumerable<ArchiveEntry> Entries()
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, pieceLength);
+            Stream content = file;
+            if (gzipped)
+            {
+                content = new GZipStream(file, CompressionMode.Decompress);
+            }
+
+            using var reader = new TarReader(content);
+            var first = true;
+            while (Next(reader, first) is { } entry)
+            {
+                first = false;
+
+                // What a pax tar says of all that follows, not an item of its own.
+                if (entry.EntryType == TarEntryType.GlobalExtendedAttributes)
+                {
+                    continue;
+                }
+
+                yield return new TarMember(entry, Unprefixed(entry.Name), KindOf(entry.EntryType));
+            }
+        }
+
+        // The next entry, or null at the end. What can't be read at all, a .tar.gz that is a
+        // gzipped text say, or no gzip at all, is said to be no tar; one that ends part way,
+        // as a download not finished does, to be cut short.
+        TarEntry? Next(TarReader reader, bool first)
+        {
+            try
+            {
+                return reader.GetNextEntry();
+            }
+            catch (Exception exception)
+                when (
+                    first &&
+                    exception is
+                        InvalidDataException or
+                        EndOfStreamException)
+            {
+                var kind = "a tar archive";
+                if (gzipped)
+                {
+                    kind = "a tar archive compressed with gzip";
+                }
+
+                throw new InvalidDataException($"{Path.GetFileName(path)} is not {kind}.", exception);
+            }
+            catch (EndOfStreamException exception)
+            {
+                throw new InvalidDataException($"{Path.GetFileName(path)} ends part way through what it holds, as one not all downloaded does.", exception);
+            }
+        }
+
+        static EntryKind KindOf(TarEntryType type) =>
+            type switch
+            {
+                TarEntryType.RegularFile or
+                    TarEntryType.V7RegularFile or
+                    TarEntryType.ContiguousFile => EntryKind.File,
+                TarEntryType.Directory or
+                    TarEntryType.DirectoryList => EntryKind.Folder,
+                TarEntryType.SymbolicLink or
+                    TarEntryType.HardLink => EntryKind.Link,
+                _ => EntryKind.Special
+            };
+
+        // Without the ./ a tar of a folder made as itself, by tar -cf folder.tar . say, puts
+        // before every name: ./src/main.c is src/main.c, and ./ the tar's top.
+        static string Unprefixed(string name)
+        {
+            while (name.StartsWith("./", StringComparison.Ordinal))
+            {
+                name = name[2..];
+            }
+
+            if (name == ".")
+            {
+                return "";
+            }
+
+            return name;
+        }
+    }
+
+    sealed class TarMember(TarEntry entry, string name, EntryKind kind) :
+        ArchiveEntry(name, kind, entry.Length, entry.ModificationTime)
+    {
+        // Not disposed: the reader goes on from where it ends to the next entry.
+        public override void CopyTo(Stream target, Action<long>? copied, Cancel cancel)
+        {
+            if (entry.DataStream is { } content)
+            {
+                Copy(content, target, copied, cancel);
+            }
+        }
+    }
 
     /// <summary>
     /// What an archive of <paramref name="source"/> is named for, as Explorer names it: a
@@ -309,7 +552,7 @@ static class Zip
     /// What extracting a zip did: what it made at the top of where it went, what it made there or
     /// beneath, for undo (the highest of each, made by it rather than found there), what it left
     /// out, and why, and what was already there, which stops it before anything is written, as
-    /// <see cref="TooLittleRoom"/> does.
+    /// <see cref="TooLittleRoom"/> and <see cref="Unreadable"/> do.
     /// </summary>
     public sealed record Extraction(
         IReadOnlyList<string> TopLevel,
@@ -321,6 +564,11 @@ static class Zip
         /// How much it would write, and the room the drive it goes to has, where that is less.
         /// </summary>
         public Room? TooLittleRoom { get; init; }
+
+        /// <summary>
+        /// Why the archive can't be read, where it can't: a .tar.gz that is no tar, say.
+        /// </summary>
+        public string? Unreadable { get; init; }
     }
 
     /// <summary>
@@ -353,7 +601,19 @@ static class Zip
         /// Named as another entry is but for case, which Windows takes for the same name: the
         /// second of two files, or a file where the zip has a folder.
         /// </summary>
-        Duplicate
+        Duplicate,
+
+        /// <summary>
+        /// A link in a tar, symbolic or hard, which is neither followed nor made: it could lead
+        /// outside where it is extracted to, or have what is written through it go there.
+        /// </summary>
+        Link,
+
+        /// <summary>
+        /// Something in a tar that is neither a file nor a folder, a device or a pipe, which
+        /// Windows has nothing to make of.
+        /// </summary>
+        Special
     }
 
     /// <summary>
@@ -401,6 +661,11 @@ static class Zip
         if (here)
         {
             var extraction = Extract(zip, folder, progress, cancel);
+            if (extraction.Unreadable is { } unreadable)
+            {
+                return (UnreadableOutcome(unreadable), []);
+            }
+
             if (extraction.Conflicts.Count > 0)
             {
                 return (ConflictOutcome(name, extraction.Conflicts), []);
@@ -412,13 +677,13 @@ static class Zip
             }
 
             UndoHistory.Instance.RecordCreated("extract", extraction.Created);
-            return (ExtractedOutcome(name, folder, extraction), extraction.TopLevel);
+            return (ExtractedOutcome(zip, folder, extraction), extraction.TopLevel);
         }
 
         // Named as FreePath names one, but each name made only where nothing is, and the next
         // tried where something is, so a folder another extract made a moment before, of a zip
         // named as this one's would be numbered, is not taken for this one's too.
-        var stem = Path.GetFileNameWithoutExtension(zip);
+        var stem = ArchiveStem(zip);
         var destination = Path.Combine(folder, stem);
         for (var counter = 2; !CreateNewFolder(destination); counter++)
         {
@@ -428,6 +693,12 @@ static class Zip
         try
         {
             var extraction = Extract(zip, destination, progress, cancel, intoNewFolder: true);
+            if (extraction.Unreadable is { } unreadable)
+            {
+                TakeAway([destination]);
+                return (UnreadableOutcome(unreadable), []);
+            }
+
             if (extraction.TooLittleRoom is { } room)
             {
                 TakeAway([destination]);
@@ -435,7 +706,7 @@ static class Zip
             }
 
             UndoHistory.Instance.RecordCreated("extract", [destination]);
-            return (ExtractedOutcome(name, destination, extraction), [destination]);
+            return (ExtractedOutcome(zip, destination, extraction), [destination]);
         }
         catch
         {
@@ -459,12 +730,17 @@ static class Zip
         return new(false, $"Not enough room: needs {needed}, {free} free", $"Nothing was extracted from {name}: it needs {needed}, and the drive it goes to has {free} free.");
     }
 
-    static ActionLog.Outcome ExtractedOutcome(string name, string destination, Extraction extraction)
+    // Nothing written, as the archive can't be read, what was read of it saying why.
+    static ActionLog.Outcome UnreadableOutcome(string reason) =>
+        new(false, "Can't be read", $"Nothing was extracted: {reason}");
+
+    static ActionLog.Outcome ExtractedOutcome(string archive, string destination, Extraction extraction)
     {
+        var name = Path.GetFileName(archive);
         var details = $"Extracted {name} to {destination}";
         foreach (var reason in extraction.LeftOut.GroupBy(_ => _.Reason).OrderBy(_ => _.Key))
         {
-            details += $"{Environment.NewLine}{Environment.NewLine}Left out, {Saying(reason.Key)}:{Environment.NewLine}{string.Join(Environment.NewLine, reason.Select(_ => _.Name))}";
+            details += $"{Environment.NewLine}{Environment.NewLine}Left out, {Saying(reason.Key, Noun(archive))}:{Environment.NewLine}{string.Join(Environment.NewLine, reason.Select(_ => _.Name))}";
         }
 
         var summary = $"Extracted {name}";
@@ -476,24 +752,29 @@ static class Zip
         return new(true, summary, details);
     }
 
-    // Why entries were left out, as the details of an extract say it, of each of them.
-    static string Saying(LeftOutReason reason) =>
+    // Why entries were left out, as the details of an extract say it, of each of them, of the
+    // kind of archive, noun, they were in.
+    static string Saying(LeftOutReason reason, string noun) =>
         reason switch
         {
             LeftOutReason.Device => "with names Windows keeps for devices, as CON, AUX and NUL",
-            LeftOutReason.Duplicate => "being named as another item in the zip is, but for case, which Windows takes for the same name",
+            LeftOutReason.Duplicate => $"being named as another item in the {noun} is, but for case, which Windows takes for the same name",
+            LeftOutReason.Link => "being links, which are neither followed nor made, as one could lead outside the folder",
+            LeftOutReason.Special => "being neither files nor folders, as a device or a pipe is",
             _ => "being named to go outside the folder or with names Windows can't have"
         };
 
     /// <summary>
-    /// Writes what <paramref name="zip"/> holds into <paramref name="destination"/>, which is
-    /// there, each item with the time it was last changed, and each file with the zip's mark of
-    /// the web, should it have one. Leaves out an entry named to go outside it, with a name
-    /// Windows can't have, or keeps for a device, or named as another is but for case, which
-    /// Windows takes for the same name. When anything it would write is there already, or the
-    /// drive hasn't the room for all of it, writes nothing and returns that. Says how far it has
-    /// got, in files and bytes. When it fails, or <paramref name="cancel"/> stops it, which it
-    /// heeds part way through a file, deletes what it made, and only that.
+    /// Writes what <paramref name="zip"/>, a zip or a tar, holds into
+    /// <paramref name="destination"/>, which is there, each item with the time it was last
+    /// changed, and each file with the archive's mark of the web, should it have one. Leaves out
+    /// an entry named to go outside it, with a name Windows can't have, or keeps for a device,
+    /// or named as another is but for case, which Windows takes for the same name, and a tar's
+    /// links, and what else in one is neither file nor folder. When anything it would write is
+    /// there already, the drive hasn't the room for all of it, or the archive can't be read,
+    /// writes nothing and returns that. Says how far it has got, in files and bytes. When it
+    /// fails, or <paramref name="cancel"/> stops it, which it heeds part way through a file,
+    /// deletes what it made, and only that.
     /// </summary>
     public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel) =>
         Extract(zip, destination, progress, cancel, intoNewFolder: false);
@@ -504,44 +785,68 @@ static class Zip
     static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel, bool intoNewFolder)
     {
         var mark = MarkOfTheWeb(zip);
-        using var archive = OpenRead(zip);
-        var named = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>();
+        using var reader = Reader.Open(zip);
+        var named = new List<Target>();
         var leftOut = new List<LeftOutEntry>();
 
         // The folders it would make there, or find: those the zip has entries of their own for,
         // and those only there in the names of what is in them. A folder's being in it says
         // those it is in are too.
         var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in archive.Entries)
+
+        // Read through before anything is written: a tar is read as it is gone through, so
+        // whether it is one, and all of it there, is only known at its end.
+        try
         {
-            if (Segments(entry.FullName, out var reason) is not { } segments)
+            foreach (var (index, entry) in reader.Entries().Index())
             {
-                leftOut.Add(new(entry.FullName, reason));
-                continue;
-            }
+                if (entry.Kind == EntryKind.Link)
+                {
+                    leftOut.Add(new(entry.Name, LeftOutReason.Link));
+                    continue;
+                }
 
-            if (segments.Length == 0)
-            {
-                continue;
-            }
+                if (entry.Kind == EntryKind.Special)
+                {
+                    leftOut.Add(new(entry.Name, LeftOutReason.Special));
+                    continue;
+                }
 
-            var path = Path.Join([destination, .. segments]);
-            if (!Locations.IsWithin(path, destination) ||
-                Locations.Same(path, destination))
-            {
-                leftOut.Add(new(entry.FullName, LeftOutReason.Unsafe));
-                continue;
-            }
+                if (Segments(entry.Name, out var reason) is not { } segments)
+                {
+                    leftOut.Add(new(entry.Name, reason));
+                    continue;
+                }
 
-            var isFolder = IsFolderEntry(entry.FullName);
-            named.Add((entry, path, isFolder));
-            var folder = isFolder ? path : Path.GetDirectoryName(path);
-            while (folder != null &&
-                   !Locations.Same(folder, destination) &&
-                   folders.Add(folder))
-            {
-                folder = Path.GetDirectoryName(folder);
+                if (segments.Length == 0)
+                {
+                    continue;
+                }
+
+                var path = Path.Join([destination, .. segments]);
+                if (!Locations.IsWithin(path, destination) ||
+                    Locations.Same(path, destination))
+                {
+                    leftOut.Add(new(entry.Name, LeftOutReason.Unsafe));
+                    continue;
+                }
+
+                named.Add(new(entry, index, path));
+                var folder = entry.IsFolder ? path : Path.GetDirectoryName(path);
+                while (folder != null &&
+                       !Locations.Same(folder, destination) &&
+                       folders.Add(folder))
+                {
+                    folder = Path.GetDirectoryName(folder);
+                }
             }
+        }
+        catch (InvalidDataException exception)
+        {
+            return new([], [], leftOut, [])
+            {
+                Unreadable = exception.Message
+            };
         }
 
         // Entries that are one item here, as a zip made where case tells names apart can hold:
@@ -549,15 +854,15 @@ static class Zip
         // folder, README and readme/notes.txt, of which the folder is, the file before it or
         // after. Each is the one shown when the zip is gone into, and the other is left out,
         // rather than writing it failing on the first, and all that was written being taken away.
-        var targets = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>(named.Count);
+        var targets = new List<Target>(named.Count);
         var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var target in named)
         {
-            if (!target.IsFolder &&
+            if (!target.Entry.IsFolder &&
                 (folders.Contains(target.Path) ||
                  !files.Add(target.Path)))
             {
-                leftOut.Add(new(target.Entry.FullName, LeftOutReason.Duplicate));
+                leftOut.Add(new(target.Entry.Name, LeftOutReason.Duplicate));
                 continue;
             }
 
@@ -565,7 +870,7 @@ static class Zip
         }
 
         var conflicts = targets
-            .Where(_ => _.IsFolder ? File.Exists(_.Path) : Path.Exists(_.Path))
+            .Where(_ => _.Entry.IsFolder ? File.Exists(_.Path) : Path.Exists(_.Path))
             .Select(_ => _.Path)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -578,11 +883,11 @@ static class Zip
         // more than it takes, a few megabytes that fill the disk, which, written till it was
         // full, failed then, and took all it had written away again.
         var total = 0L;
-        foreach (var (entry, _, isFolder) in targets)
+        foreach (var target in targets)
         {
-            if (!isFolder)
+            if (!target.Entry.IsFolder)
             {
-                total += entry.Length;
+                total += target.Entry.Length;
             }
         }
 
@@ -602,9 +907,9 @@ static class Zip
         if (!intoNewFolder)
         {
             var tops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (_, path, _) in targets)
+            foreach (var target in targets)
             {
-                var top = TopOf(path, destination);
+                var top = TopOf(target.Path, destination);
                 if (tops.Add(top))
                 {
                     topLevel.Add(top);
@@ -625,10 +930,30 @@ static class Zip
         Action<long> copied = reporter.Copied;
         try
         {
-            foreach (var (entry, path, isFolder) in targets)
+            // Through the archive again, in its order, which the targets are in, each written as
+            // it is come to: what a tar's entry holds is there to be read only then.
+            var next = 0;
+            foreach (var (index, entry) in reader.Entries().Index())
             {
+                if (next == targets.Count)
+                {
+                    break;
+                }
+
+                var (planned, plannedIndex, path) = targets[next];
+                if (index != plannedIndex)
+                {
+                    continue;
+                }
+
+                next++;
                 cancel.ThrowIfCancellationRequested();
-                if (isFolder)
+                if (!string.Equals(entry.Name, planned.Name, StringComparison.Ordinal))
+                {
+                    throw Changed(zip);
+                }
+
+                if (entry.IsFolder)
                 {
                     MakeFolder(path, known, made);
                     continue;
@@ -637,6 +962,11 @@ static class Zip
                 reporter.Next();
                 MakeFolder(Path.GetDirectoryName(path)!, known, made);
                 ExtractFile(entry, path, mark, made, copied, cancel);
+            }
+
+            if (next < targets.Count)
+            {
+                throw Changed(zip);
             }
         }
         catch
@@ -658,6 +988,15 @@ static class Zip
             .ToList();
         return new(topLevel, created, leftOut, []);
     }
+
+    // An entry to be extracted: the entry, as first read, how far along the archive it is, and
+    // where it goes.
+    readonly record struct Target(ArchiveEntry Entry, int Index, string Path);
+
+    // Read through a second time, to be written, the archive is not as it was the first: it was
+    // written to meanwhile.
+    static IOException Changed(string archive) =>
+        new($"{Path.GetFileName(archive)} changed while it was extracted.");
 
     /// <summary>
     /// How much the drive <paramref name="folder"/> is on has room for, for this user, or null
@@ -837,13 +1176,12 @@ static class Zip
     // mark would change. A drive that can't hold the mark, FAT or exFAT say, has the file without
     // it, as Explorer leaves it there, rather than the extract failing. Told of what it writes as
     // it goes, a piece at a time, and stopped by cancel between pieces.
-    static void ExtractFile(ZipArchiveEntry entry, string path, byte[]? mark, List<string>? made, Action<long>? copied = null, Cancel cancel = default)
+    static void ExtractFile(ArchiveEntry entry, string path, byte[]? mark, List<string>? made, Action<long>? copied = null, Cancel cancel = default)
     {
         using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             made?.Add(path);
-            using var content = entry.Open();
-            Copy(content, file, copied, cancel);
+            entry.CopyTo(file, copied, cancel);
         }
 
         if (mark != null)
@@ -861,10 +1199,11 @@ static class Zip
             }
         }
 
-        // As ExtractToFile, which goes on without it where the time can't be given.
+        // As ExtractToFile, which goes on without it where the time can't be given. A zip's time
+        // is the clock's here, which its offset is, as ExtractToFile takes it.
         try
         {
-            File.SetLastWriteTime(path, entry.LastWriteTime.DateTime);
+            File.SetLastWriteTimeUtc(path, entry.Modified.UtcDateTime);
         }
         catch (Exception exception)
             when (
@@ -1005,36 +1344,35 @@ static class Zip
     }
 
     /// <summary>
-    /// Where <paramref name="path"/> is in a zip, when it is the zip itself or somewhere inside
-    /// one: the first part of it named *.zip that is a file. Null for anywhere else, a folder
-    /// named *.zip included. Only those parts are asked after, so most paths cost nothing.
+    /// Where <paramref name="path"/> is in an archive, when it is the archive itself or
+    /// somewhere inside one: the first part of it named as one, *.zip, *.tar, *.tar.gz or *.tgz,
+    /// that is a file. Null for anywhere else, a folder named *.zip included. Only those parts
+    /// are asked after, so most paths cost nothing.
     /// </summary>
     public static Location? Split(string path)
     {
-        var start = 0;
-        while (true)
+        for (var start = 0; start <= path.Length;)
         {
-            var found = path.IndexOf(Extension, start, StringComparison.OrdinalIgnoreCase);
-            if (found < 0)
+            var found = path.AsSpan(start).IndexOfAny(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var end = path.Length;
+            if (found >= 0)
             {
-                return null;
+                end = start + found;
             }
 
-            var end = found + Extension.Length;
-            start = end;
-            if (end < path.Length &&
-                path[end] != Path.DirectorySeparatorChar &&
-                path[end] != Path.AltDirectorySeparatorChar)
+            if (IsArchive(path.AsSpan(0, end)))
             {
-                continue;
+                var archive = path[..end];
+                if (File.Exists(archive))
+                {
+                    return new(archive, path[end..].Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                }
             }
 
-            var archive = path[..end];
-            if (File.Exists(archive))
-            {
-                return new(archive, path[end..].Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            }
+            start = end + 1;
         }
+
+        return null;
     }
 
     /// <summary>
@@ -1091,16 +1429,17 @@ static class Zip
         {
             [""] = new(StringComparer.OrdinalIgnoreCase)
         };
-        using var archive = OpenRead(path);
-        foreach (var entry in archive.Entries)
+        using var reader = Reader.Open(path);
+        foreach (var entry in reader.Entries())
         {
-            if (Segments(entry.FullName) is not { Length: > 0 } segments)
+            if (entry.IsLeftOut ||
+                Segments(entry.Name) is not { Length: > 0 } segments)
             {
                 continue;
             }
 
-            var isFolder = IsFolderEntry(entry.FullName);
-            var modified = entry.LastWriteTime.LocalDateTime;
+            var isFolder = entry.IsFolder;
+            var modified = entry.Modified.LocalDateTime;
             var folderCount = segments.Length;
             if (!isFolder)
             {
@@ -1250,7 +1589,7 @@ static class Zip
         {
             if (Split(path) is not { Inner.Length: > 0 } location)
             {
-                throw new FileNotFoundException($"'{path}' is not in a zip.");
+                throw new FileNotFoundException($"'{path}' is not in an archive.");
             }
 
             locations.Add(location);
@@ -1262,8 +1601,8 @@ static class Zip
         {
             foreach (var location in locations)
             {
-                using var archive = OpenRead(location.Archive);
-                total += SizeOf(archive, location.Inner);
+                using var reader = Reader.Open(location.Archive);
+                total += SizeOf(reader, location.Inner);
             }
         }
 
@@ -1292,9 +1631,9 @@ static class Zip
             {
                 var written = Path.Combine(staging, Path.GetFileName(target));
                 var mark = MarkOfTheWeb(location.Archive);
-                using (var archive = OpenRead(location.Archive))
+                using (var reader = Reader.Open(location.Archive))
                 {
-                    ExtractItem(archive, location.Inner, written, mark, Copied, cancel);
+                    ExtractItem(reader, location.Inner, written, mark, Copied, cancel);
                 }
 
                 if (TryClear(target))
@@ -1341,14 +1680,14 @@ static class Zip
     }
 
     // How much the item at inner, a file or a folder with all beneath it, comes to extracted.
-    static long SizeOf(ZipArchive archive, string inner)
+    static long SizeOf(Reader reader, string inner)
     {
         var innerSegments = inner.Split(Path.DirectorySeparatorChar);
         var size = 0L;
-        foreach (var entry in archive.Entries)
+        foreach (var entry in reader.Entries())
         {
             if (IsBeneath(entry, innerSegments) is not null &&
-                !IsFolderEntry(entry.FullName))
+                !entry.IsFolder)
             {
                 size += entry.Length;
             }
@@ -1358,9 +1697,11 @@ static class Zip
     }
 
     // The segments of the entry's name, where it is the item innerSegments names, or beneath it.
-    static string[]? IsBeneath(ZipArchiveEntry entry, string[] innerSegments)
+    // Never a tar's link, nor what else in one is neither file nor folder.
+    static string[]? IsBeneath(ArchiveEntry entry, string[] innerSegments)
     {
-        if (Segments(entry.FullName) is not { } segments ||
+        if (entry.IsLeftOut ||
+            Segments(entry.Name) is not { } segments ||
             segments.Length < innerSegments.Length ||
             !innerSegments.AsSpan().SequenceEqual(segments.AsSpan(0, innerSegments.Length), StringComparer.OrdinalIgnoreCase))
         {
@@ -1400,11 +1741,11 @@ static class Zip
     // the zip's mark of the web, should it have one: opened from there, or copied or dragged on
     // from there, Windows is as wary of it as of the zip it came out of. Told of what it writes
     // as it goes, and stopped by cancel.
-    static void ExtractItem(ZipArchive archive, string inner, string target, byte[]? mark, Action<long> copied, Cancel cancel)
+    static void ExtractItem(Reader reader, string inner, string target, byte[]? mark, Action<long> copied, Cancel cancel)
     {
         var innerSegments = inner.Split(Path.DirectorySeparatorChar);
         var any = false;
-        foreach (var entry in archive.Entries)
+        foreach (var entry in reader.Entries())
         {
             cancel.ThrowIfCancellationRequested();
             if (IsBeneath(entry, innerSegments) is not { } segments)
@@ -1413,7 +1754,7 @@ static class Zip
             }
 
             var path = Path.Join([target, .. segments[innerSegments.Length..]]);
-            if (IsFolderEntry(entry.FullName))
+            if (entry.IsFolder)
             {
                 Directory.CreateDirectory(path);
                 any = true;
