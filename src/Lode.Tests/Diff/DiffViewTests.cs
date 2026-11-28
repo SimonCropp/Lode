@@ -157,6 +157,105 @@ public class DiffViewTests
         await Assert.That(canvas.SelectedText()).IsEqualTo("");
     }
 
+    // The pointer over the strip beside the numbers: the run of changes it is over is drawn
+    // lighter, all of it and nothing else, moved along that run, to another, and off them to a
+    // line both sides have; side by side too; and, shown one above the other again without the
+    // pointer moving, the run of the row it is over as the rows are now, longer, rather than as
+    // they were.
+    [Test]
+    public async Task StripLightsTheRunUnderThePointer()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        view.Height = 900;
+        var canvas = view.Canvas;
+        var deleted = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Deleted);
+        var written = Row(canvas, "        var written = document.Written;");
+        var options = Row(canvas, "        var options = BuildOptions();");
+
+        // Drawn as soon as the pointer moves, before what follows lets Windows say it left.
+        var lit = new List<(List<int> Lit, List<int> Run)>();
+        void HoverAndDraw(int row)
+        {
+            Press(canvas, mouseMove, canvas.StripPointOf(row), held: false);
+            lit.Add((Lit(canvas), RunAround(canvas, row)));
+        }
+
+        HoverAndDraw(deleted + 2);
+        HoverAndDraw(deleted + 5);
+        HoverAndDraw(written);
+        HoverAndDraw(options);
+        HoverAndDraw(deleted + 3);
+        view.SetSplit(true);
+        HoverAndDraw(Row(canvas, "        var written = document.Written;"));
+        var modified = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Modified);
+        HoverAndDraw(modified + 1);
+        view.SetSplit(false);
+        lit.Add((Lit(canvas), RunAround(canvas, modified + 1)));
+
+        await Assert.That(lit[0].Run.Count).IsEqualTo(8);
+        await Assert.That(lit[2].Run).IsEquivalentTo([written]);
+        await Assert.That(lit[3].Run).IsEmpty();
+        await Assert.That(lit[5].Run.Count).IsEqualTo(1);
+        await Assert.That(lit[6].Run.Count).IsEqualTo(7);
+        await Assert.That(lit[7].Run.Count).IsEqualTo(8);
+        foreach (var (rows, run) in lit)
+        {
+            await Assert.That(rows).IsEquivalentTo(run, CollectionOrdering.Matching);
+        }
+    }
+
+    // The rows whose strip is drawn lighter, as the run the pointer is over is.
+    static List<int> Lit(DiffCanvas canvas)
+    {
+        using var bitmap = new Bitmap(canvas.Width, canvas.Height);
+        canvas.DrawToBitmap(bitmap, new(0, 0, canvas.Width, canvas.Height));
+        var lit = new List<int>();
+        for (var row = canvas.TopRow; row < canvas.Rows.Count; row++)
+        {
+            var point = canvas.StripPointOf(row);
+            if (point.Y >= canvas.Height)
+            {
+                break;
+            }
+
+            if (bitmap.GetPixel(point.X, point.Y).ToArgb() == DiffStyle.PickedHover.ToArgb())
+            {
+                lit.Add(row);
+            }
+        }
+
+        return lit;
+    }
+
+    // The rows of the run of changes a row is in, up to the lines both sides have either side.
+    static List<int> RunAround(DiffCanvas canvas, int row)
+    {
+        bool IsChange(int index) =>
+            canvas.Rows[index].Kind is DiffRowKind.Added or DiffRowKind.Deleted or DiffRowKind.Modified;
+
+        if (!IsChange(row))
+        {
+            return [];
+        }
+
+        var first = row;
+        while (first > 0 &&
+               IsChange(first - 1))
+        {
+            first--;
+        }
+
+        var last = row;
+        while (last < canvas.Rows.Count - 1 &&
+               IsChange(last + 1))
+        {
+            last++;
+        }
+
+        return Enumerable.Range(first, last - first + 1).ToList();
+    }
+
     // A double-click selects the word under it; a third click, the line, with its newline.
     [Test]
     public async Task DoubleAndTripleClicks()
@@ -706,16 +805,17 @@ public class DiffViewTests
     static Point Numbers(DiffCanvas canvas, int row) =>
         new(4, canvas.PointOf(new(row, 0), right: false).Y);
 
-    // The button held for all but its letting go, as a drag has it.
-    static void Press(DiffCanvas canvas, int message, Point point)
+    // The button held for all but its letting go, as a drag has it, unless not held at all.
+    static void Press(DiffCanvas canvas, int message, Point point, bool held = true)
     {
-        var held = 0;
-        if (message != leftButtonUp)
+        var buttons = 0;
+        if (held &&
+            message != leftButtonUp)
         {
-            held = 1;
+            buttons = 1;
         }
 
-        NativeMethods.SendMessage(canvas.Handle, message, held, (point.Y << 16) | (point.X & 0xFFFF));
+        NativeMethods.SendMessage(canvas.Handle, message, buttons, (point.Y << 16) | (point.X & 0xFFFF));
     }
 
     // As GitHub Desktop says it of a diff with nothing in it.

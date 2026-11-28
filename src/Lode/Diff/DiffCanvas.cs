@@ -64,6 +64,13 @@ sealed class DiffCanvas : Control
     Part hoverPart;
     bool hoverRight;
 
+    // The run of changes the pointer is over, on the strip beside the numbers, which is drawn
+    // lighter: worked out once, for the rows it is of, and used again while the pointer is over a
+    // row of it, as a run is the same whichever of its rows it is found from. Every row drawn
+    // went through all of the run, and made a list of it, which beside a new file of 100,000
+    // lines, one run, was millions of steps every time the pointer moved.
+    (List<DiffRow>? Rows, int First, int Last) hoveredRun;
+
     // The text selected, for Ctrl+C: from where the drag started to where it is now, each a row
     // and a character of its line, nothing while they are the same place; and, side by side,
     // the side, which a drag stays on.
@@ -891,10 +898,14 @@ sealed class DiffCanvas : Control
             }
 
             if (hoverPart == Part.Handle &&
-                hoverRow >= 0 &&
-                RunOf(hoverRow).Contains(index))
+                hoverRow >= 0)
             {
-                colour = DiffStyle.PickedHover;
+                var (first, last) = HoveredRun();
+                if (index >= first &&
+                    index <= last)
+                {
+                    colour = DiffStyle.PickedHover;
+                }
             }
         }
 
@@ -1355,6 +1366,17 @@ sealed class DiffCanvas : Control
     }
 
     /// <summary>
+    /// Where in the control the strip beside a row's numbers is, which picks the row's run of
+    /// changes: in the middle of it. For tests and benchmarks.
+    /// </summary>
+    internal Point StripPointOf(int row)
+    {
+        var columns = Current;
+        var strip = split ? columns.RightNumberLeft : columns.TextLeft;
+        return new((columns.HandleLeft + strip) / 2, (row - vertical.Value) * rowHeight + rowHeight / 2);
+    }
+
+    /// <summary>
     /// The word a character of a line is in, as a double-click selects it, from its first
     /// character to after its last: a run of letters, digits and underscores, or of whitespace,
     /// or else the one character.
@@ -1512,16 +1534,16 @@ sealed class DiffCanvas : Control
         return row.Before;
     }
 
-    // The rows of the run of changes a row is in: those added and deleted together, up to the
-    // lines both sides have either side of them.
-    List<int> RunOf(int index)
+    // The first and last rows of the run of changes a row is in: those added and deleted
+    // together, up to the lines both sides have either side of them. None, the last before the
+    // first, for a row not in one.
+    (int First, int Last) RunAround(int index)
     {
-        var run = new List<int>();
         if (index < 0 ||
             index >= rows.Count ||
             !IsChangeRow(rows[index]))
         {
-            return run;
+            return (0, -1);
         }
 
         var first = index;
@@ -1538,12 +1560,21 @@ sealed class DiffCanvas : Control
             last++;
         }
 
-        for (var row = first; row <= last; row++)
+        return (first, last);
+    }
+
+    // The first and last rows of the run of changes the pointer is over, on the strip.
+    (int First, int Last) HoveredRun()
+    {
+        if (!ReferenceEquals(hoveredRun.Rows, rows) ||
+            hoverRow < hoveredRun.First ||
+            hoverRow > hoveredRun.Last)
         {
-            run.Add(row);
+            var (first, last) = RunAround(hoverRow);
+            hoveredRun = (rows, first, last);
         }
 
-        return run;
+        return (hoveredRun.First, hoveredRun.Last);
     }
 
     static bool IsChangeRow(DiffRow row) =>
@@ -1918,9 +1949,13 @@ sealed class DiffCanvas : Control
             return;
         }
 
-        var lines = RunOf(index)
-            .SelectMany(_ => ChangeIndexes(rows[_]))
-            .ToList();
+        var (first, last) = RunAround(index);
+        var lines = new List<int>();
+        for (var row = first; row <= last; row++)
+        {
+            lines.AddRange(ChangeIndexes(rows[row]));
+        }
+
         if (lines.Count == 0)
         {
             return;
