@@ -7,6 +7,14 @@
 sealed class GitConfig
 {
     readonly List<(string Key, string? Value, bool Local)> entries = [];
+    readonly List<string> files = [];
+
+    /// <summary>
+    /// Every file read, or looked for and not there, includes among them, and those read again
+    /// for the remotes' urls a hasconfig:remote.*.url: include is on, in the order read: what is
+    /// kept of the config is as it is while none of them has changed.
+    /// </summary>
+    public IReadOnlyList<string> Files => files;
 
     /// <summary>
     /// Whether the config may not be what git would have: an include was conditional on what
@@ -407,8 +415,9 @@ sealed class GitConfig
 
     // What the config is read for: the repository, for gitdir: and onbranch: includes, and the
     // environment git would be run with, which says which files are read, as a
-    // hasconfig:remote.*.url: include has them all read again first.
-    sealed record Context(string GitDir, string CommonDir, string? Branch, Func<string, string?> Environment);
+    // hasconfig:remote.*.url: include has them all read again first. No repository, for git run
+    // in none.
+    sealed record Context(string? GitDir, string? CommonDir, string? Branch, Func<string, string?> Environment);
 
     readonly Context context;
 
@@ -427,14 +436,15 @@ sealed class GitConfig
 
     /// <summary>
     /// The config for the repository whose git folder is <paramref name="gitDir"/>, its branch,
-    /// for onbranch: includes, <paramref name="branch"/>.
+    /// for onbranch: includes, <paramref name="branch"/>. Without a git folder, as for git run
+    /// in no repository, a clone say, the system's and the user's alone.
     /// </summary>
-    public static GitConfig Read(string gitDir, string commonDir, string? branch) =>
+    public static GitConfig Read(string? gitDir, string? commonDir, string? branch) =>
         Read(gitDir, commonDir, branch, Environment.GetEnvironmentVariable);
 
     /// <param name="environment">The environment git would be run with, which can say which
     /// files to read, or give keys of its own.</param>
-    internal static GitConfig Read(string gitDir, string commonDir, string? branch, Func<string, string?> environment)
+    internal static GitConfig Read(string? gitDir, string? commonDir, string? branch, Func<string, string?> environment)
     {
         var config = new GitConfig(new(gitDir, commonDir, branch, environment), false);
         config.ReadAll();
@@ -483,10 +493,17 @@ sealed class GitConfig
             Uncertain = true;
         }
 
-        ReadFile(Path.Combine(context.CommonDir, "config"), true, 0, false);
-        if (ParseBool(GetLocal("extensions.worktreeconfig")) == true)
+        if (context is
+            {
+                GitDir: { } gitDir,
+                CommonDir: { } commonDir
+            })
         {
-            ReadFile(Path.Combine(context.GitDir, "config.worktree"), true, 0, false);
+            ReadFile(Path.Combine(commonDir, "config"), true, 0, false);
+            if (ParseBool(GetLocal("extensions.worktreeconfig")) == true)
+            {
+                ReadFile(Path.Combine(gitDir, "config.worktree"), true, 0, false);
+            }
         }
 
         ReadEnvironment(environment);
@@ -541,6 +558,7 @@ sealed class GitConfig
     // conditional: the file is included by an includeIf, or by a file that is, however far down.
     void ReadFile(string path, bool local, int depth, bool conditional)
     {
+        files.Add(path);
         if (GitRepository.ReadSmall(path) is { } text)
         {
             Parse(text, path, local, depth, conditional);
@@ -886,14 +904,17 @@ sealed class GitConfig
 
     bool ConditionHolds(string condition, string from)
     {
+        // In no repository, there is no git folder to match.
         if (condition.StartsWith("gitdir:", StringComparison.Ordinal))
         {
-            return GitDirMatches(condition["gitdir:".Length..], from, context.GitDir, false);
+            return context.GitDir is { } gitDir &&
+                   GitDirMatches(condition["gitdir:".Length..], from, gitDir, false);
         }
 
         if (condition.StartsWith("gitdir/i:", StringComparison.Ordinal))
         {
-            return GitDirMatches(condition["gitdir/i:".Length..], from, context.GitDir, true);
+            return context.GitDir is { } gitDir &&
+                   GitDirMatches(condition["gitdir/i:".Length..], from, gitDir, true);
         }
 
         if (condition.StartsWith("onbranch:", StringComparison.Ordinal))
@@ -939,6 +960,7 @@ sealed class GitConfig
     {
         var all = new GitConfig(context, true);
         all.ReadAll();
+        files.AddRange(all.files);
         if (all.Uncertain)
         {
             Uncertain = true;

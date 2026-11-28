@@ -359,9 +359,9 @@ public class CodeCommandsTests
             cancel.Cancel();
     }
 
-    // Going to a remote, ssh is told not to ask, as nobody can answer in a hidden window: it
-    // fails rather than waits. Unless the user has an ssh command of their own, which may ask
-    // some other way.
+    // Every git is told ssh is not to ask, going to a remote or not, as nobody can answer in a
+    // hidden window: it fails rather than waits. Unless the user has an ssh command of their
+    // own, which may ask some other way, and is kept for every git.
     [Test]
     public async Task SshIsToldNotToAskUnlessTheUserHasTheirOwn()
     {
@@ -371,12 +371,74 @@ public class CodeCommandsTests
 
         var network = CodeCommands.Git(repo, Cancel.None, network: true, showSsh).Output;
         var local = CodeCommands.Git(repo, Cancel.None, network: false, showSsh).Output;
+        var toItsEnd = CodeCommands.GitToItsEnd(repo, Cancel.None, showSsh).Output;
+        var read = CodeCommands.GitOutput(repo, Cancel.None, showSsh).Output.Trim();
         Scratch.Git(repo, "config", "core.sshCommand", "ssh -i elsewhere");
         var theirOwn = CodeCommands.Git(repo, Cancel.None, network: true, showSsh).Output;
+        var theirOwnLocal = CodeCommands.Git(repo, Cancel.None, network: false, showSsh).Output;
 
         await Assert.That(network).IsEqualTo("[ssh -o BatchMode=yes]");
-        await Assert.That(local).IsEqualTo("[]");
+        await Assert.That(local).IsEqualTo("[ssh -o BatchMode=yes]");
+        await Assert.That(toItsEnd).IsEqualTo("[ssh -o BatchMode=yes]");
+        await Assert.That(read).IsEqualTo("[ssh -o BatchMode=yes]");
         await Assert.That(theirOwn).IsEqualTo("[]");
+        await Assert.That(theirOwnLocal).IsEqualTo("[]");
+    }
+
+    // An LFS repository cloned over ssh runs ssh from its smudge filter, for the files a switch,
+    // a reset, a merge or a rebase checks out, none of which goes to a remote itself: with no
+    // agent holding the key, ssh waited on its passphrase for ever, unseen and uncancellable. A
+    // filter of git's here says what ssh it would be given, as a switch checks out its file.
+    [Test]
+    public async Task AFilterGitRunsIsToldSshIsNotToAsk()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var seen = code.At("seen");
+        Scratch.Git(repo, "config", "filter.show.smudge", $"echo \"[$GIT_SSH_COMMAND]\" > '{ForShell(seen)}'; cat");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitattributes"), "*.lfs filter=show\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "file.lfs"), "content");
+        Scratch.Git(repo, "add", ".");
+        Scratch.Git(repo, "commit", "-m", "Filtered");
+        Scratch.Git(repo, "switch", "-c", "before", "HEAD~1");
+
+        var switched = CodeCommands.GitToItsEnd(repo, Cancel.None, "switch", "main");
+
+        await Assert.That(switched.Succeeded).IsTrue();
+        await Assert.That((await File.ReadAllTextAsync(seen)).Trim()).IsEqualTo("[ssh -o BatchMode=yes]");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "file.lfs"))).IsEqualTo("content");
+    }
+
+    // Whether the user has an ssh command of their own is read from the config once, not by a
+    // git of its own before every git, as it was before each going to a remote: again only once
+    // the config has changed, an include of it among it, or the branch has, which an include
+    // can be on the condition of.
+    [Test]
+    public async Task TheSshCommandIsReadOnceTillTheConfigChanges()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        string[] showSsh = ["-c", "alias.ssh=!echo \"[$GIT_SSH_COMMAND]\"", "ssh"];
+        var included = code.At("included.gitconfig");
+        await File.WriteAllTextAsync(included, "[core]\n");
+        Scratch.Git(repo, "config", "include.path", ForShell(included));
+
+        CodeCommands.Git(repo, Cancel.None, network: true, showSsh);
+        CodeCommands.Git(repo, Cancel.None, network: false, "status");
+        CodeCommands.GitOutput(repo, Cancel.None, ["log", "-1"]);
+        var once = CodeCommands.SshCommandReads(repo);
+        await File.WriteAllTextAsync(included, "[core]\n\tsshCommand = ssh -i included\n");
+        var fromInclude = CodeCommands.Git(repo, Cancel.None, network: false, showSsh).Output;
+        CodeCommands.Git(repo, Cancel.None, network: false, "status");
+        var onceChanged = CodeCommands.SshCommandReads(repo);
+        Scratch.Git(repo, "switch", "-c", "other");
+        CodeCommands.Git(repo, Cancel.None, network: false, "status");
+        var onceSwitched = CodeCommands.SshCommandReads(repo);
+
+        await Assert.That(once).IsEqualTo(1);
+        await Assert.That(fromInclude).IsEqualTo("[]");
+        await Assert.That(onceChanged).IsEqualTo(2);
+        await Assert.That(onceSwitched).IsEqualTo(3);
     }
 
     // Git words what it prints in English, whatever the user's language, since Purge reads its

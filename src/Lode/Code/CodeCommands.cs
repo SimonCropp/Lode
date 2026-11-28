@@ -1559,7 +1559,9 @@ static class CodeCommands
 
     /// <param name="cancel">Stops git, and whatever it started, ssh say, where it is: for one
     /// that changes the repository, <see cref="GitToItsEnd"/>.</param>
-    /// <param name="network">Whether git may go to a remote, over ssh perhaps.</param>
+    /// <param name="network">Whether git may go to a remote, over ssh perhaps, as the caller
+    /// says it of the command. It changes nothing of how git is run: every git, going to a remote
+    /// or not, is told not to wait on ssh, as what it runs, a smudge filter say, can go to one.</param>
     internal static RepoResult Git(string repo, Cancel cancel, bool network, params string[] arguments) =>
         Git(repo, cancel, network, null, arguments);
 
@@ -1598,7 +1600,7 @@ static class CodeCommands
 
         try
         {
-            var startInfo = StartInfo(repo, network, arguments, environment);
+            var startInfo = StartInfo(repo, arguments, environment);
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
             // Cancel.None, not the token: cancelled, git is stopped, which ends its output, and
@@ -1633,7 +1635,32 @@ static class CodeCommands
 
     // How every git is started: in a hidden window, its output read as UTF-8, as git writes file
     // names whatever the console's code page.
-    static ProcessStartInfo StartInfo(string repo, bool network, IEnumerable<string> arguments, IReadOnlyDictionary<string, string>? environment = null)
+    static ProcessStartInfo StartInfo(string repo, IEnumerable<string> arguments, IReadOnlyDictionary<string, string>? environment = null)
+    {
+        var startInfo = BareStartInfo(repo, arguments);
+
+        // Every git, not only one going to a remote: what git runs can go to one too, an LFS
+        // smudge filter fetching the files a switch, a reset, a merge or a rebase checks out,
+        // say, from a repository cloned over ssh, which waited on a passphrase nobody could
+        // answer, and couldn't be cancelled.
+        if (NoSshCommandSet(repo, startInfo))
+        {
+            startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
+        }
+
+        if (environment != null)
+        {
+            foreach (var (name, value) in environment)
+            {
+                startInfo.Environment[name] = value;
+            }
+        }
+
+        return startInfo;
+    }
+
+    // As every git is started, but for its ssh command, which is for StartInfo to decide.
+    static ProcessStartInfo BareStartInfo(string repo, IEnumerable<string> arguments)
     {
         var startInfo = new ProcessStartInfo("git")
         {
@@ -1666,20 +1693,6 @@ static class CodeCommands
         // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
         // File names still come as UTF-8.
         startInfo.Environment["LC_ALL"] = "C";
-        if (network &&
-            NoSshCommandSet(repo, startInfo))
-        {
-            startInfo.Environment["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes";
-        }
-
-        if (environment != null)
-        {
-            foreach (var (name, value) in environment)
-            {
-                startInfo.Environment[name] = value;
-            }
-        }
-
         return startInfo;
     }
 
@@ -1707,7 +1720,7 @@ static class CodeCommands
 
         try
         {
-            var startInfo = StartInfo(repo, network: false, arguments, environment);
+            var startInfo = StartInfo(repo, arguments, environment);
             if (input != null)
             {
                 startInfo.RedirectStandardInput = true;
@@ -1772,7 +1785,7 @@ static class CodeCommands
 
         try
         {
-            var startInfo = StartInfo(repo, network: false, arguments);
+            var startInfo = StartInfo(repo, arguments);
             using var process = Process.Start(startInfo)!;
             using var stopping = cancel.Register(() => Stop(process));
             var error = process.StandardError.ReadToEndAsync(Cancel.None);
@@ -1873,7 +1886,7 @@ static class CodeCommands
 
     // The user's own ssh, set in the environment Lode was started with or in git's config, is
     // left as it is: it may be one that asks some other way.
-    static bool NoSshCommandSet(string repo, ProcessStartInfo startInfo)
+    static bool NoSshCommandSet(string folder, ProcessStartInfo startInfo)
     {
         if (startInfo.Environment.ContainsKey("GIT_SSH_COMMAND") ||
             startInfo.Environment.ContainsKey("GIT_SSH"))
@@ -1881,9 +1894,162 @@ static class CodeCommands
             return false;
         }
 
-        var configured = Git(repo, "config", "--get", "core.sshCommand");
-        return !configured.Succeeded ||
-               configured.Output.Length == 0;
+        return string.IsNullOrEmpty(SshCommandOf(folder));
+    }
+
+    // What git run in a folder was last found to have for core.sshCommand, the files that said
+    // so as they were then, and how many times it has been read.
+    sealed record SshCommand(string? Command, IReadOnlyList<FileStamp> Files, int Reads);
+
+    // A file or folder as it was: whether it was there, and, for a file, when it was last
+    // written and how long it was.
+    readonly record struct FileStamp(string Path, bool Exists, DateTime Written, long Length)
+    {
+        public static FileStamp Of(string path)
+        {
+            var info = new FileInfo(path);
+            if (info.Exists)
+            {
+                return new(path, true, info.LastWriteTimeUtc, info.Length);
+            }
+
+            return new(path, Directory.Exists(path), default, -1);
+        }
+
+        public bool Unchanged =>
+            Of(Path) == this;
+    }
+
+    static Lock sshGate = new();
+    static Dictionary<string, SshCommand> sshCommands = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// core.sshCommand, as git run in <paramref name="folder"/> would read it: null where it isn't
+    /// set. Read in process, as Lode reads a repository's config for its state, rather than by
+    /// another git before every git, and kept until a file it was read from changes, an include
+    /// among them, or the branch checked out, which an include can be on the condition of. Where
+    /// it can't be read as git would read it, an include on a condition only git can tell say, it
+    /// is asked of git, and kept the same way.
+    /// </summary>
+    internal static string? SshCommandOf(string folder)
+    {
+        SshCommand? known;
+        lock (sshGate)
+        {
+            sshCommands.TryGetValue(folder, out known);
+        }
+
+        if (known is
+            {
+                Files.Count: > 0
+            } &&
+            known.Files.All(_ => _.Unchanged))
+        {
+            return known.Command;
+        }
+
+        var (command, files) = ReadSshCommand(folder);
+        lock (sshGate)
+        {
+            var reads = sshCommands.GetValueOrDefault(folder)?.Reads ?? 0;
+            sshCommands[folder] = new(command, files, reads + 1);
+        }
+
+        return command;
+    }
+
+    /// <summary>
+    /// How many times core.sshCommand has been read for git run in <paramref name="folder"/>:
+    /// once, however many gits are run there, until its config changes.
+    /// </summary>
+    internal static int SshCommandReads(string folder)
+    {
+        lock (sshGate)
+        {
+            return sshCommands.GetValueOrDefault(folder)?.Reads ?? 0;
+        }
+    }
+
+    // What core.sshCommand is, and the files that say, with HEAD, whose branch an include can
+    // be on the condition of, or, in no repository, where one would be made, by a clone say.
+    // None where the config can't be read at all, which git would refuse too: then it is asked
+    // of git every time.
+    static (string? Command, List<FileStamp> Files) ReadSshCommand(string folder)
+    {
+        List<string> watched = [];
+        try
+        {
+            string? git = null;
+            string? common = null;
+            string? branch = null;
+            if (RepoContaining(folder, Path.GetPathRoot(folder) ?? folder) is { } repo &&
+                GitDirectory(repo) is { } found)
+            {
+                git = found;
+                common = CommonDirectory(found);
+                var head = Path.Combine(found, "HEAD");
+                watched.Add(head);
+                const string local = "ref: refs/heads/";
+                var text = File.ReadAllText(head).Trim();
+                if (text.StartsWith(local, StringComparison.Ordinal))
+                {
+                    branch = text[local.Length..];
+                }
+            }
+            else
+            {
+                watched.Add(Path.Combine(folder, ".git"));
+            }
+
+            var config = GitConfig.Read(git, common, branch);
+            watched.AddRange(config.Files);
+            if (!config.Uncertain)
+            {
+                return (config.Get("core.sshcommand"), watched.Select(FileStamp.Of).ToList());
+            }
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    GitFilesException or
+                    IOException or
+                    UnauthorizedAccessException or
+                    ArgumentException)
+        {
+            watched.Clear();
+        }
+
+        return (AskSshCommand(folder), watched.Select(FileStamp.Of).ToList());
+    }
+
+    // Asked of git, started without asking what its own ssh command is, which is what is being
+    // found out.
+    static string? AskSshCommand(string folder)
+    {
+        try
+        {
+            var startInfo = BareStartInfo(folder, ["config", "--get", "core.sshCommand"]);
+            using var process = Process.Start(startInfo)!;
+            var error = process.StandardError.ReadToEndAsync(Cancel.None);
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            _ = error.Result;
+            if (process.ExitCode != 0)
+            {
+                return null;
+            }
+
+            return output.Trim();
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    Win32Exception or
+                    InvalidOperationException or
+                    IOException)
+        {
+            return null;
+        }
     }
 
     static void Stop(Process process)
