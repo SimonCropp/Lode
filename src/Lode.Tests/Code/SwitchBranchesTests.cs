@@ -139,6 +139,7 @@ public class SwitchBranchesTests
 
     // A button for each branch, newest first, under what is switched.
     [Test]
+    [WindowThread]
     public async Task Dialog()
     {
         GitBranches.Branch[] branches =

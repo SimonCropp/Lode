@@ -271,7 +271,7 @@ public class JumpListTests
     // off again. A section is refused only when Windows is set not to show recent items in
     // jump lists.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     public async Task WritesAListTheTaskbarTakes()
     {
         using var fixture = Fixture.Create();

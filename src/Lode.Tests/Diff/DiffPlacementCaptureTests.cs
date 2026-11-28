@@ -3,7 +3,7 @@
 /// A file's changes where each placement shows them, the Changes pane beside them. Debug only, as
 /// the other captures of the window are.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class DiffPlacementCaptureTests
 {

@@ -46,7 +46,7 @@ public class DropMenuTests
     // the source allows and can be done there, what a left drag would do in bold, and tells the
     // source nothing was moved, for it to delete.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     public async Task DroppingWithTheRightButtonAsks()
     {
         using var fixture = Fixture.Create();
@@ -69,7 +69,7 @@ public class DropMenuTests
     // Dragged with the right button over the folder it is in, where a left drag can't go, it
     // can be dropped, for a copy or shortcut there.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     public async Task RightDragCanDropWhereItIs()
     {
         using var fixture = Fixture.Create();
@@ -83,7 +83,7 @@ public class DropMenuTests
     // A folder can't be dropped into itself, nor into a folder inside it, which the shell would
     // refuse: nothing is offered, with either button.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     public async Task NotIntoAFolderInsideItself()
     {
         using var fixture = Fixture.Create();
@@ -97,7 +97,7 @@ public class DropMenuTests
 
     // What is picked from the menu is done: copied, or shortcuts made, there.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     public async Task WhatIsPickedIsDone()
     {
         using var fixture = Fixture.Create();

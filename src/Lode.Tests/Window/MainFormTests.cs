@@ -3,7 +3,7 @@
 /// The whole window, drawn. Pixels depend on the Windows version, theme and fonts of the
 /// machine that captured them, so these only run in Debug builds, on a developer's machine.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]

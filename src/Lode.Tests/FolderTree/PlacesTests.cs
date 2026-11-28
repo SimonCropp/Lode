@@ -2,7 +2,7 @@
 /// Quick access as remembered from the last start, and read again behind the window. What it
 /// reads here is made up, so these hold on any machine.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // The reading comes back through the UI thread's message queue, as a window's does.
 [NotInParallel("windows")]
 public class PlacesTests

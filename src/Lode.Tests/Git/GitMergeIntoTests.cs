@@ -198,7 +198,7 @@ public class GitMergeIntoTests
     // The dialog for several: the branches every one has, what each would come to, and whether
     // to push.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task SeveralDialog()
     {

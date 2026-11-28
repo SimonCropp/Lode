@@ -283,7 +283,7 @@ public class CodeMenuTests
     // the one picked, and can be pressed only where that can go ahead. Force push is asked only
     // where origin has commits a rebase rewrites.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task BranchDialogSaysWhatItWouldDo()
     {
@@ -314,7 +314,7 @@ public class CodeMenuTests
 
     // A branch right-clicked in the status bar's list is picked as the dialog opens.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task BranchDialogPicksTheBranchGiven()
     {
@@ -502,7 +502,7 @@ public class CodeMenuTests
 
     // Merge into current branch, a branch picked, saying how many commits it brings in.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public Task MergeDialog() =>
         CaptureBranchDialog(
@@ -513,7 +513,7 @@ public class CodeMenuTests
     // Rebase current branch, onto a branch origin's copy of the one checked out is behind:
     // force push offered.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public Task RebaseDialog() =>
         CaptureBranchDialog(

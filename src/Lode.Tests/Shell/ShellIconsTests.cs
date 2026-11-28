@@ -5,7 +5,7 @@
 // it was given the first time. It hands out none while another thread is setting up its icon
 // overlays, as asking for the shortcut's does, so these take turns with the tests that show
 // icons.
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class ShellIconsTests
 {

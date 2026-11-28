@@ -2,7 +2,7 @@
 /// The picture a drag carries, which the shell frames and moves with the pointer, as it does
 /// Explorer's.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // The shell has one drag helper for the process, which keeps the picture it was last given:
 // two given at once, one drag can get the other's. So these take turns with the window tests,
 // whose drags have pictures too.

@@ -2,7 +2,7 @@
 /// What is typed for a new branch or tag made a name git takes, as GitHub Desktop makes it: its
 /// sanitize-ref-name tests, and what New branch says of it.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class RefNameTests
 {

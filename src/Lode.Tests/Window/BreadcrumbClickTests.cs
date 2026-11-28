@@ -2,7 +2,7 @@
 /// The address bar's folders clicked with each button, sent to it as Windows sends clicks, and
 /// the menus its chevrons, its ellipsis and a right-click open, shown where they can't be seen.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class BreadcrumbClickTests
 {

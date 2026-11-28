@@ -2,7 +2,7 @@
 /// The Clone dialog, its sites answered for: what it lists, leaving out what is cloned, and what
 /// it clones where.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class CloneDialogTests
 {

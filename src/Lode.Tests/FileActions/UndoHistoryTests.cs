@@ -2,7 +2,7 @@
 /// Undo and redo: what each kind of change does to undo and redo it, against a made-up file
 /// system, and a rename and a move undone on disk.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 public class UndoHistoryTests
 {
     // Records what it was asked to do, and does it on paper.

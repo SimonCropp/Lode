@@ -2,7 +2,7 @@
 /// An extension that was being started when a menu's call into it was cancelled is refused
 /// from then on. A menu merely slow to build refuses nothing.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // Swaps how a call is cancelled, which a menu built meanwhile by another test would use.
 [NotInParallel("windows")]
 public class ShellExtensionGuardTests

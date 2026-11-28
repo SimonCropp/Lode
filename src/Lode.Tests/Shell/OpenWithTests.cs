@@ -1,4 +1,4 @@
-[STAThreadExecutor]
+[WindowThread]
 public class OpenWithTests
 {
     // Open with lists apps for one extension at a time, and none for programs or shortcuts.

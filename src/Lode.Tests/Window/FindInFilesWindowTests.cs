@@ -1,7 +1,7 @@
 /// <summary>
 /// Find in Files in a window: the strip, the Find Results tab, and Replace from it.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]

@@ -219,7 +219,7 @@ public class BackgroundFetchTests
     // those have ended, it is. The Actions panel is every window's, so this takes turns with the
     // window tests.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task NotWhileAGitActionRunsOnIt()
     {

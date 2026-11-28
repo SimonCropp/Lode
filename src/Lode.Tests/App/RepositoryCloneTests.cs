@@ -387,7 +387,7 @@ public class RepositoryCloneTests
     // Through the dialog: asked, cloned into the code folder, and the file the link names is the
     // one opened.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task OfferClonesThenOpensTheFile()
     {
@@ -423,7 +423,7 @@ public class RepositoryCloneTests
     // Through the dialog, a clone that fails says why, offers the app the link was for, and
     // opens nothing.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task OfferSaysWhyACloneFailed()
     {
@@ -473,7 +473,7 @@ public class RepositoryCloneTests
     // it asks before fetching the submodules, saying where each comes from, and fetched, they are
     // checked out, and the file the link names is opened.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task OfferAsksBeforeFetchingTheSubmodules()
     {
@@ -520,7 +520,7 @@ public class RepositoryCloneTests
     // Declined, the clone opens without them, their folder left empty, and nothing is fetched
     // from where they would have come.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task OfferLeavesTheSubmodulesOutWhenDeclined()
     {
@@ -560,7 +560,7 @@ public class RepositoryCloneTests
     // Through the dialog, a submodule that can't be fetched says why, and the clone, there all
     // the same, is opened.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task OfferSaysWhyTheSubmodulesCouldNotBeFetched()
     {

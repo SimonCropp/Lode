@@ -11,12 +11,10 @@ public static class ModuleInitializer
         // mostly flat background, so a loose threshold would let real changes through.
         VerifierSettings.UseSsimForPng(0.9999);
 
-        // An exception inside a window's message handler should fail the test that caused it,
-        // not put up WinForms' error dialog and leave the run waiting for someone to click.
-        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
-
-        // Likewise an error Lode would offer an issue for: a bug, which fails the test rather
-        // than asking, in a box nobody is there to answer.
+        // An exception inside a window's message handler fails the test that caused it, rather
+        // than putting up WinForms' error dialog: WindowThread sees to that, on each test's
+        // thread. Likewise an error Lode would offer an issue for: a bug, which fails the test
+        // rather than asking, in a box nobody is there to answer.
         IssueLauncher.Declined = text => throw new(text);
 
         // And settings a test could not save, which fail it too.

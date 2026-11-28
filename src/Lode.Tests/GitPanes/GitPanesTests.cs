@@ -2,7 +2,7 @@
 /// How the Changes and History panes follow the window: where they go for how wide it is, the tab
 /// chosen for each repository, sliding out and back, and the keys that do it.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class GitPanesTests
 {
@@ -1617,7 +1617,6 @@ public class GitPanesTests
     [Test]
     public async Task StashedChangesUnderTheFiles()
     {
-        using var errors = new RowListTests.WindowErrors();
         using var stubs = new PaneStubs();
         var stashes = new List<GitStashes.Stash>();
         ChangesPane.ReadStashes = (_, _) => stashes;
@@ -1666,7 +1665,6 @@ public class GitPanesTests
         await PaneStubs.Settled(form);
 
         await Assert.That(list.Visible).IsFalse();
-        await Assert.That(errors.Thrown).IsEmpty();
     }
 
     // Stash all changes from the files' menu, with the message asked for, and the stash restored
@@ -1675,7 +1673,6 @@ public class GitPanesTests
     [Test]
     public async Task StashesFromChanges()
     {
-        using var errors = new RowListTests.WindowErrors();
         using var stubs = new PaneStubs();
         ChangesPane.Read = GitChanges.ReadOrWhyNot;
         ChangesPane.ReadStashes = GitStashes.Read;
@@ -1732,7 +1729,6 @@ public class GitPanesTests
             await Assert.That(asked).IsEqualTo("Discard the stash discarded?\n\nIts changes are gone for good: this can't be undone.");
             await Assert.That(list.Stashes[0].Text).IsEqualTo("kept");
             await Assert.That(File.Exists(Path.Combine(repo, "new.txt"))).IsFalse();
-            await Assert.That(errors.Thrown).IsEmpty();
         }
         finally
         {

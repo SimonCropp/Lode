@@ -3,7 +3,7 @@
 /// software installed, so only the absences are checked. The text checks assume English
 /// Windows; elsewhere they pass without proving anything.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]
@@ -102,7 +102,7 @@ public class ShellContextMenuTests
     // Their properties are still shown, though: by the shell's properties for several items,
     // which takes them each named in full, in what a selection is handed over in.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     public async Task PropertiesTakeItemsFromDifferentFolders()
     {
         using var fixture = Fixture.Create();

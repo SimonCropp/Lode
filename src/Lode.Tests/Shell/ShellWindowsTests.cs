@@ -3,7 +3,7 @@
 /// Desktop's Show in Explorer, say) finds the one showing its folder. Against a list of the
 /// tests' own, rather than Explorer's.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class ShellWindowsTests
 {

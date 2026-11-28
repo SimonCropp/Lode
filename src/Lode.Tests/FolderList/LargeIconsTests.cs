@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 /// What the shell would make of an item is stood in for, so these hold on any machine, whatever
 /// its thumbnail cache has.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 // WinForms keeps one unlocked table of every window it creates, so windows made on two
 // threads at once can corrupt it. Every test that makes windows takes turns.
 [NotInParallel("windows")]

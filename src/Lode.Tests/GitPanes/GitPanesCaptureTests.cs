@@ -4,7 +4,7 @@
 /// out from the strip, beside it as tabs, and side by side. Debug only, as the other captures of
 /// the window are.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class GitPanesCaptureTests
 {

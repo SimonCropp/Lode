@@ -28,7 +28,7 @@ public class ExplorerStyleTests
     // on it, as a faint shade would be lost on a black background. Without, a shade, the text as
     // it was.
     [Test]
-    [STAThreadExecutor]
+    [WindowThread]
     [NotInParallel("windows")]
     public async Task HighlightsWithHighContrast()
     {

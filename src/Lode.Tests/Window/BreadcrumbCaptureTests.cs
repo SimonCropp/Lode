@@ -3,7 +3,7 @@
 /// The address bar, drawn. Pixels depend on the machine's fonts, so, as with
 /// <see cref="MenuTests"/>, these only run in Debug builds.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class BreadcrumbCaptureTests
 {

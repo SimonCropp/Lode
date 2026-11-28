@@ -1,4 +1,4 @@
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class DiffViewTests
 {

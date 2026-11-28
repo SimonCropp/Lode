@@ -2,7 +2,7 @@
 /// <summary>
 /// A file's diff drawn, as GitHub Desktop draws one. Debug only, as the other captures are.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class DiffViewCaptureTests
 {

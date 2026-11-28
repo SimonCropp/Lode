@@ -2,7 +2,7 @@
 /// Where a file picked in the Changes or History pane shows its changes, as Options says: the
 /// Diff tab, over the folder list, the diff window, or the text editor.
 /// </summary>
-[STAThreadExecutor]
+[WindowThread]
 [NotInParallel("windows")]
 public class DiffPlacementTests
 {
