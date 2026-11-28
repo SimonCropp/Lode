@@ -86,6 +86,7 @@ static class LodeActions
         new("compress", "Compress to ZIP file", Icons.Zip, 3, Button: true, Menu: true, Parent: file),
         new("extractAll", "Extract All", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
         new("extractHere", "Extract here", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
+        new("extractTo", "Extract to…", Icons.Zip, 3, Button: false, Menu: true, Parent: file),
         new("copyAsPath", "Copy as path", Icons.CopyAsPath, 3, Button: true, Menu: true, "Ctrl+Shift+C", Parent: clipboard),
         new("properties", "Properties", Icons.Properties, 3, Button: true, Menu: true, "Alt+Enter"),
         new("gitFetch", "Git fetch", Icons.Fetch, 4, Button: true, Menu: true, Parent: git, MenuNested: true, ButtonNested: true, NestedText: "Fetch"),

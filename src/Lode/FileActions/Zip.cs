@@ -618,11 +618,23 @@ static class Zip
 
     /// <summary>
     /// Extracts each zip, one after another, in the Actions panel: to a new folder beside it
-    /// named for it, or, with <paramref name="here"/>, into the folder it is in. Returns what each
-    /// put at the top of where it went, for selecting, those that failed or were cancelled having
-    /// left nothing.
+    /// named for it, or, with <paramref name="here"/>, into the folder it is in, the shell asking,
+    /// in a dialog <paramref name="owner"/> owns, what to do with each file there already.
+    /// Returns what each put at the top of where it went, for selecting, those that failed or were
+    /// cancelled having left nothing.
     /// </summary>
-    public static async Task<IReadOnlyList<string>> ExtractInBackground(IReadOnlyList<string> zips, bool here)
+    public static Task<IReadOnlyList<string>> ExtractInBackground(IReadOnlyList<string> zips, bool here, IntPtr owner = default) =>
+        ExtractEach(zips, null, here, owner);
+
+    /// <summary>
+    /// Extracts each zip, one after another, in the Actions panel, into <paramref name="folder"/>,
+    /// as Extract here does into the folder each is in: Extract to, the folder picked.
+    /// </summary>
+    public static Task<IReadOnlyList<string>> ExtractToInBackground(IReadOnlyList<string> zips, string folder, IntPtr owner = default) =>
+        ExtractEach(zips, folder, true, owner);
+
+    // Into the folder given, or, with none, the folder each is in.
+    static async Task<IReadOnlyList<string>> ExtractEach(IReadOnlyList<string> zips, string? into, bool here, IntPtr owner)
     {
         // In turn rather than all at once. Zips extracted together often share a folder, as the
         // parts of a Google Takeout all hold Takeout, and each looks for what is in its way
@@ -630,7 +642,7 @@ static class Zip
         var placed = new List<string>();
         foreach (var zip in zips)
         {
-            var folder = Path.GetDirectoryName(zip)!;
+            var folder = into ?? Path.GetDirectoryName(zip)!;
             IReadOnlyList<string> topLevel = [];
             await ActionLog.Run(
                 "Extract",
@@ -638,7 +650,7 @@ static class Zip
                 (progress, cancel) => Task.Run(
                     () =>
                     {
-                        var (outcome, extracted) = ExtractTo(zip, folder, here, progress, cancel);
+                        var (outcome, extracted) = ExtractTo(zip, folder, here, progress, cancel, owner);
                         topLevel = extracted;
                         return outcome;
                     },
@@ -646,16 +658,21 @@ static class Zip
             placed.AddRange(topLevel);
         }
 
-        return placed;
+        // A folder they share, merged into by each, once.
+        return placed
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
     /// Extracts <paramref name="zip"/>: to a new folder in <paramref name="folder"/> named for it,
-    /// or, with <paramref name="here"/>, into <paramref name="folder"/> itself. Returns how it
-    /// ended, and what it put at the top of where it went: the new folder, or, extracted here,
-    /// what the zip has at its top.
+    /// or, with <paramref name="here"/>, into <paramref name="folder"/> itself, through the
+    /// shell's move where anything is there already, which asks, in a dialog
+    /// <paramref name="owner"/> owns, what to do with each file. Returns how it ended, and what
+    /// it put at the top of where it went: the new folder, or, extracted here, what the zip has
+    /// at its top.
     /// </summary>
-    public static (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) ExtractTo(string zip, string folder, bool here, IProgress<string>? progress, Cancel cancel)
+    public static (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) ExtractTo(string zip, string folder, bool here, IProgress<string>? progress, Cancel cancel, IntPtr owner = default)
     {
         var name = Path.GetFileName(zip);
         if (here)
@@ -668,7 +685,7 @@ static class Zip
 
             if (extraction.Conflicts.Count > 0)
             {
-                return (ConflictOutcome(name, extraction.Conflicts), []);
+                return ExtractThroughTheShell(zip, folder, progress, cancel, owner);
             }
 
             if (extraction.TooLittleRoom is { } room)
@@ -717,11 +734,77 @@ static class Zip
         }
     }
 
-    static ActionLog.Outcome ConflictOutcome(string name, IReadOnlyList<string> conflicts)
+    // Into a folder holding something of the name of what the archive puts there: written in
+    // full to a hidden folder of its own in that folder, then moved into place by the shell,
+    // which asks of each file there already whether to replace it, skip it or compare the two,
+    // as Explorer's extract does, and merges a folder into one there. In the folder it goes to,
+    // rather than the temp folder, so the move is a rename, however much there is, the room for
+    // it is asked of the drive it goes to, and what is moved has the permissions of where it
+    // goes, which those of the temp folder, moved with it, would not be. What the move leaves
+    // there, skipped, goes with the folder. Undo takes away what was moved, and only that.
+    static (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) ExtractThroughTheShell(string zip, string folder, IProgress<string>? progress, Cancel cancel, IntPtr owner)
     {
-        var details = $"Nothing was extracted from {name}: these are there already.{Environment.NewLine}{string.Join(Environment.NewLine, conflicts)}";
-        return new(false, $"{Count(conflicts.Count, "item")} there already", details);
+        var name = Path.GetFileName(zip);
+        var staging = Path.Combine(folder, $".Lode extracting {Guid.NewGuid():N}");
+        CreateNewFolder(staging);
+        try
+        {
+            File.SetAttributes(staging, File.GetAttributes(staging) | FileAttributes.Hidden);
+            var extraction = Extract(zip, staging, progress, cancel);
+            if (extraction.Unreadable is { } unreadable)
+            {
+                return (UnreadableOutcome(unreadable), []);
+            }
+
+            if (extraction.TooLittleRoom is { } room)
+            {
+                return (RoomOutcome(name, room), []);
+            }
+
+            // Once the shell has begun, its own dialog is what stops it.
+            cancel.ThrowIfCancellationRequested();
+            var outcome = MoveIntoPlace(owner, extraction.TopLevel, folder);
+            var moved = outcome.Changes
+                .Where(_ => _.Result != null)
+                .Select(_ => _.Result!)
+                .ToList();
+            UndoHistory.Instance.RecordCreated("extract", moved);
+
+            // What is at the top for it: each item moved there, or merged into, once.
+            var tops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var topLevel = new List<string>();
+            foreach (var path in moved.Concat(outcome.Merged.Where(_ => _.Result != null).Select(_ => _.Result!)))
+            {
+                var top = TopOf(path, folder);
+                if (tops.Add(top))
+                {
+                    topLevel.Add(top);
+                }
+            }
+
+            var skipped = Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories)
+                .Select(_ => Path.GetRelativePath(staging, _).Replace(Path.DirectorySeparatorChar, '/'))
+                .ToList();
+            return (ExtractedOutcome(zip, folder, extraction, skipped, moved.Count > 0), topLevel);
+        }
+        finally
+        {
+            TryDelete(staging);
+        }
     }
+
+    /// <summary>
+    /// Moves <paramref name="sources"/>, what an extract wrote beside where it goes, into
+    /// <paramref name="destination"/> with the shell's IFileOperation, which asks, in a dialog
+    /// owned by the window given, whether to replace, skip or compare each file there already,
+    /// and merges a folder into one there. On a thread of its own, as the shell needs. Tests stand
+    /// in for it, to answer without a dialog.
+    /// </summary>
+    internal static Func<IntPtr, IReadOnlyList<string>, string, ShellFileOperation.Outcome> MoveIntoPlace { get; set; } =
+        (owner, sources, destination) =>
+            FileOperations.OnStaThread(() => ShellFileOperation.Run(owner, ShellFileOperation.Kind.Move, sources, destination, ShellFileOperation.AllowUndo))
+                .GetAwaiter()
+                .GetResult();
 
     static ActionLog.Outcome RoomOutcome(string name, Room room)
     {
@@ -734,7 +817,10 @@ static class Zip
     static ActionLog.Outcome UnreadableOutcome(string reason) =>
         new(false, "Can't be read", $"Nothing was extracted: {reason}");
 
-    static ActionLog.Outcome ExtractedOutcome(string archive, string destination, Extraction extraction)
+    // What was extracted, and left out, and why. Moved into place by the shell, what it skipped,
+    // as there was something of its name there already that was kept, or the move was cancelled,
+    // and whether it moved anything at all.
+    static ActionLog.Outcome ExtractedOutcome(string archive, string destination, Extraction extraction, IReadOnlyList<string>? skipped = null, bool anyMoved = true)
     {
         var name = Path.GetFileName(archive);
         var details = $"Extracted {name} to {destination}";
@@ -743,10 +829,26 @@ static class Zip
             details += $"{Environment.NewLine}{Environment.NewLine}Left out, {Saying(reason.Key, Noun(archive))}:{Environment.NewLine}{string.Join(Environment.NewLine, reason.Select(_ => _.Name))}";
         }
 
+        skipped ??= [];
+        if (skipped.Count > 0)
+        {
+            details += $"{Environment.NewLine}{Environment.NewLine}Skipped, something of its name being there already, or the move having been cancelled:{Environment.NewLine}{string.Join(Environment.NewLine, skipped)}";
+        }
+
         var summary = $"Extracted {name}";
+        if (!anyMoved)
+        {
+            summary = $"Nothing extracted from {name}";
+        }
+
         if (extraction.LeftOut.Count > 0)
         {
             summary += $", leaving out {Count(extraction.LeftOut.Count, "item")}";
+        }
+
+        if (skipped.Count > 0)
+        {
+            summary += $", skipping {Count(skipped.Count, "file")}";
         }
 
         return new(true, summary, details);

@@ -30,6 +30,11 @@ public static class ModuleInitializer
         MessageBoxes.ShowingDialog = (_, page, _) =>
             throw WindowThreadExecutor.Keep(new($"Lode put up a task dialog, which nobody in a test run is there to answer. {page.Caption}: {page.Heading} {page.Text}"));
 
+        // And the shell's dialog asking what to do with each file an extract finds there
+        // already. A test that extracts over something answers through a stand-in.
+        Zip.MoveIntoPlace = (_, _, destination) =>
+            throw new InvalidOperationException($"Lode moved what it extracted into {destination} through the shell, whose dialog nobody in a test run is there to answer.");
+
         // Unscaled, so captures describe the app rather than the display of whoever ran them.
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);
         Application.EnableVisualStyles();

@@ -304,20 +304,203 @@ public class ZipTests
                 """);
     }
 
-    // Extracted here, into a folder already holding something of the same name, nothing is
-    // written, and what is in the way is listed.
+    /// <summary>
+    /// The shell's move, done for real but with no dialog, for <see cref="Zip.MoveIntoPlace"/>:
+    /// each item moved where nothing of its name is, a folder merged into one of its name there,
+    /// item by item, then emptied and deleted, as Windows does, and each file there already
+    /// replaced, or skipped, as answered. What it was asked to move, and where, is kept, and
+    /// whether what it moved from was hidden.
+    /// </summary>
+    internal sealed class ShellMove(bool replace)
+    {
+        public List<(IReadOnlyList<string> Sources, string Destination, bool FromHidden)> Asked { get; } = [];
+
+        public ShellFileOperation.Outcome Move(IntPtr owner, IReadOnlyList<string> sources, string destination)
+        {
+            var from = Path.GetDirectoryName(sources[0])!;
+            Asked.Add((sources, destination, File.GetAttributes(from).HasFlag(FileAttributes.Hidden)));
+            var changes = new List<ShellFileOperation.Change>();
+            var merged = new List<ShellFileOperation.Change>();
+            foreach (var source in sources)
+            {
+                Into(source, destination);
+            }
+
+            return new(true, changes, merged, []);
+
+            void Into(string source, string folder)
+            {
+                var target = Path.Combine(folder, Path.GetFileName(source));
+                if (Directory.Exists(source))
+                {
+                    if (!Directory.Exists(target))
+                    {
+                        Directory.Move(source, target);
+                        changes.Add(new(source, target));
+                        return;
+                    }
+
+                    merged.Add(new(source, target));
+                    foreach (var inner in Directory.GetFileSystemEntries(source))
+                    {
+                        Into(inner, target);
+                    }
+
+                    if (!Directory.EnumerateFileSystemEntries(source).Any())
+                    {
+                        Directory.Delete(source);
+                    }
+
+                    return;
+                }
+
+                if (File.Exists(target) &&
+                    !replace)
+                {
+                    return;
+                }
+
+                File.Move(source, target, overwrite: true);
+                changes.Add(new(source, target));
+            }
+        }
+    }
+
+    // Extracted here into a folder holding something of the same name, all of the zip is
+    // written to a hidden folder of its own there, then moved into place by the shell, which asks
+    // what to do with each file there already: skipped, it is kept as it was, and said to have
+    // been, and replaced, it is the zip's. What is new goes in beside it, a folder there merged
+    // into, and nothing is left of the folder it was written to. Undo takes away what each move
+    // brought, and only that. Where nothing is in the way, the shell isn't asked.
     [Test]
-    public async Task ExtractHereStopsAtWhatIsThere()
+    public async Task ExtractHereMovesIntoPlaceThroughTheShellWhereSomethingIsThere()
     {
         using var fixture = Fixture.Create();
-        var zip = MakeZip(fixture, "Bundle.zip", ("fresh.txt", "fresh"), ("notes.aleph", "clash"));
+        var zip = MakeZip(fixture, "Bundle.zip", ("fresh.txt", "fresh"), ("notes.aleph", "from the zip"), ("Docs/more.txt", "more"));
+        var clear = MakeZip(fixture, "Clear.zip", ("clear.txt", "clear"));
+        var notes = await File.ReadAllTextAsync(fixture.At("notes.aleph"));
+        var skip = new ShellMove(replace: false);
+        var replace = new ShellMove(replace: true);
+        var real = Zip.MoveIntoPlace;
+        var recycling = new Recycling();
+        var history = UndoHistory.Instance;
+        UndoHistory.Instance = new(recycling);
+        (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) skipped;
+        (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) replaced;
+        string notesSkipped;
+        try
+        {
+            Zip.MoveIntoPlace = skip.Move;
+            Zip.ExtractTo(clear, fixture.Root, true, null, Cancel.None);
+            skipped = Zip.ExtractTo(zip, fixture.Root, true, null, Cancel.None);
+            notesSkipped = await File.ReadAllTextAsync(fixture.At("notes.aleph"));
+            Zip.MoveIntoPlace = replace.Move;
+            replaced = Zip.ExtractTo(zip, fixture.Root, true, null, Cancel.None);
 
-        var (outcome, topLevel) = Zip.ExtractTo(zip, fixture.Root, true, null, Cancel.None);
+            // Tests elsewhere may record in it meanwhile, and are undone on paper too.
+            while (UndoHistory.Instance.CanUndo)
+            {
+                await UndoHistory.Instance.Undo(IntPtr.Zero);
+            }
+        }
+        finally
+        {
+            Zip.MoveIntoPlace = real;
+            UndoHistory.Instance = history;
+        }
 
-        await Assert.That(outcome.Succeeded).IsFalse();
-        await Assert.That(outcome.Summary).IsEqualTo("1 item there already");
-        await Assert.That(topLevel).IsEmpty();
-        await Assert.That(File.Exists(fixture.At("fresh.txt"))).IsFalse();
+        var asked = skip.Asked.Single();
+        await Assert.That(asked.Sources.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["fresh.txt", "notes.aleph", "Docs"], CollectionOrdering.Matching);
+        await Assert.That(asked.Destination).IsEqualTo(fixture.Root);
+        await Assert.That(asked.FromHidden).IsTrue();
+        await Assert.That(Path.GetDirectoryName(Path.GetDirectoryName(asked.Sources[0]))).IsEqualTo(fixture.Root);
+        await Assert.That(replace.Asked.Count).IsEqualTo(1);
+        await Assert.That(notesSkipped).IsEqualTo(notes);
+        await Assert.That(await File.ReadAllTextAsync(fixture.At("notes.aleph"))).IsEqualTo("from the zip");
+        await Assert.That(Directory.GetDirectories(fixture.Root, ".Lode*")).IsEmpty();
+        await Verify(
+                new
+                {
+                    skipped = new
+                    {
+                        skipped.Outcome.Succeeded,
+                        skipped.Outcome.Summary,
+                        details = skipped.Outcome.Details.Split(Environment.NewLine).Skip(1),
+                        topLevel = skipped.TopLevel.Select(fixture.Relative)
+                    },
+                    replaced = new
+                    {
+                        replaced.Outcome.Succeeded,
+                        replaced.Outcome.Summary,
+                        topLevel = replaced.TopLevel.Select(fixture.Relative)
+                    },
+                    undone = recycling.Recycled
+                        .Where(_ => _.All(path => Locations.IsWithin(path, fixture.Root)))
+                        .Select(_ => _.Select(fixture.Relative)),
+                    tree = fixture.Tree()
+                })
+            .Snapshot(
+                """
+                {
+                  skipped: {
+                    Succeeded: true,
+                    Summary: Extracted Bundle.zip, skipping 1 file,
+                    details: [
+                      ,
+                      Skipped, something of its name being there already, or the move having been cancelled:,
+                      notes.aleph
+                    ],
+                    topLevel: [
+                      Projects/fresh.txt,
+                      Projects/Docs
+                    ]
+                  },
+                  replaced: {
+                    Succeeded: true,
+                    Summary: Extracted Bundle.zip,
+                    topLevel: [
+                      Projects/fresh.txt,
+                      Projects/notes.aleph,
+                      Projects/Docs
+                    ]
+                  },
+                  undone: [
+                    [
+                      Projects/fresh.txt,
+                      Projects/notes.aleph,
+                      Projects/Docs/more.txt
+                    ],
+                    [
+                      Projects/fresh.txt,
+                      Projects/Docs/more.txt
+                    ],
+                    [
+                      Projects/clear.txt
+                    ]
+                  ],
+                  tree: [
+                    Projects/Archive/,
+                    Projects/Bundle.zip (361 bytes),
+                    Projects/Cache/,
+                    Projects/Clear.zip (129 bytes),
+                    Projects/Docs/,
+                    Projects/Docs/guide.aleph (900 bytes),
+                    Projects/Docs/more.txt (4 bytes),
+                    Projects/Report1.beta (1,500,000 bytes),
+                    Projects/Source/,
+                    Projects/Source/Deep/,
+                    Projects/Source/Deep/leaf.aleph (40 bytes),
+                    Projects/Source/main.aleph (5,000 bytes),
+                    Projects/clear.txt (5 bytes),
+                    Projects/fresh.txt (5 bytes),
+                    Projects/hidden.aleph (64 bytes),
+                    Projects/notes.aleph (12 bytes),
+                    Projects/report10.beta (300,000 bytes),
+                    Projects/report2.beta (2,048 bytes),
+                    Projects/summary.gamma (0 bytes)
+                  ]
+                }
+                """);
     }
 
     // Extracted here, a folder that is there already is merged into, and undo takes away only
@@ -763,23 +946,35 @@ public class ZipTests
 
     // Zips extracted here together can share a folder, as the parts of a Google Takeout all hold
     // Takeout. Each is extracted in its turn, so the second finds what the first wrote in its
-    // way and writes nothing, and the first keeps all it wrote: the two at once, both found
-    // nothing in the way, and the one that then failed on what the other wrote took the other's
-    // files away with its own.
+    // way, and the shell asks what to do with it, here skipping it, and the first keeps all it
+    // wrote: the two at once, both found nothing in the way, and the one that then failed on
+    // what the other wrote took the other's files away with its own.
     [Test]
     public async Task ZipsExtractedTogetherTakeTurns()
     {
         using var fixture = Fixture.Create();
         var first = MakeZip(fixture, "takeout-001.zip", [.. Enumerable.Range(0, 200).Select(_ => ($"Takeout/one-{_}.txt", "one")), ("Takeout/same.txt", "first")]);
         var second = MakeZip(fixture, "takeout-002.zip", [.. Enumerable.Range(0, 200).Select(_ => ($"Takeout/two-{_}.txt", "two")), ("Takeout/same.txt", "second")]);
-
-        var placed = await Zip.ExtractInBackground([first, second], true);
+        var skip = new ShellMove(replace: false);
+        var real = Zip.MoveIntoPlace;
+        Zip.MoveIntoPlace = skip.Move;
+        IReadOnlyList<string> placed;
+        try
+        {
+            placed = await Zip.ExtractInBackground([first, second], true);
+        }
+        finally
+        {
+            Zip.MoveIntoPlace = real;
+        }
 
         await Assert.That(Directory.GetFiles(fixture.At("Takeout"), "one-*.txt").Length).IsEqualTo(200);
+        await Assert.That(Directory.GetFiles(fixture.At("Takeout"), "two-*.txt").Length).IsEqualTo(200);
         await Assert.That(await File.ReadAllTextAsync(fixture.At("Takeout", "same.txt"))).IsEqualTo("first");
-        await Assert.That(Directory.GetFiles(fixture.At("Takeout")).Length).IsEqualTo(201);
+        await Assert.That(Directory.GetFiles(fixture.At("Takeout")).Length).IsEqualTo(401);
+        await Assert.That(skip.Asked.Count).IsEqualTo(1);
         await Assert.That(ActionLog.Entries.Where(_ => _.Title == "Extract").Select(_ => $"{_.FolderName}: {_.Summary}"))
-            .IsEquivalentTo(["takeout-001.zip: Extracted takeout-001.zip", "takeout-002.zip: 1 item there already"], CollectionOrdering.Matching);
+            .IsEquivalentTo(["takeout-001.zip: Extracted takeout-001.zip", "takeout-002.zip: Extracted takeout-002.zip, skipping 1 file"], CollectionOrdering.Matching);
         await Assert.That(placed.Select(fixture.Relative)).IsEquivalentTo(["Projects/Takeout"]);
     }
 

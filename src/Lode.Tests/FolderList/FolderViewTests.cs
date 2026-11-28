@@ -3350,6 +3350,64 @@ public class FolderViewTests
         await Assert.That(Names(view)).IsEquivalentTo(["guide.aleph"]);
     }
 
+    // Extract to asks for a folder, starting in the zip's, and extracts into it as Extract here
+    // does into the zip's own, the shell asked what to do with what is there already, here
+    // skipping it, and the view staying where it is. Picking none extracts nothing. Inside a
+    // zip, it is offered too.
+    [Test]
+    public async Task ExtractToExtractsIntoAFolderPicked()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", "inside.txt", "Inner/deep.txt");
+        var target = Directory.CreateDirectory(fixture.At("Target")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(target, "inside.txt"), "there before");
+        using var view = await Open(fixture.Root);
+        view.Reveal(zip);
+        await Pump.Loaded(view);
+        var startedIn = new List<string>();
+        string? picked = null;
+        view.PickFolder = (_, start) =>
+        {
+            startedIn.Add(start);
+            return picked;
+        };
+        void ExtractTo() =>
+            view.ItemCommands(view.SelectedEntries()).First(_ => _?.Id == "extractTo")!.Action();
+        var skip = new ZipTests.ShellMove(replace: false);
+        var real = Zip.MoveIntoPlace;
+        Zip.MoveIntoPlace = skip.Move;
+        int extractedWithNonePicked;
+        List<string> summaries;
+        List<string?> inArchive;
+        try
+        {
+            ExtractTo();
+            await Pump.Loaded(view);
+            extractedWithNonePicked = ActionLog.Entries.Count;
+            picked = target;
+            ExtractTo();
+            await Pump.Loaded(view);
+            summaries = ActionLog.Entries.Select(_ => $"{_.Title}: {_.Summary}").ToList();
+            view.Navigate(zip);
+            await Pump.Loaded(view);
+            inArchive = view.BackgroundCommands(canPaste: false).Select(_ => _?.Id).ToList();
+        }
+        finally
+        {
+            Zip.MoveIntoPlace = real;
+            ActionLog.Reset();
+        }
+
+        await Assert.That(startedIn).IsEquivalentTo([fixture.Root, fixture.Root]);
+        await Assert.That(extractedWithNonePicked).IsEqualTo(0);
+        await Assert.That(summaries).IsEquivalentTo(["Extract: Extracted Bundle.zip, skipping 1 file"]);
+        await Assert.That(skip.Asked.Single().Destination).IsEqualTo(target);
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(target, "inside.txt"))).IsEqualTo("there before");
+        await Assert.That(File.Exists(Path.Combine(target, "Inner", "deep.txt"))).IsTrue();
+        await Assert.That(Directory.GetFileSystemEntries(target).Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Inner", "inside.txt"], CollectionOrdering.Matching);
+        await Assert.That(inArchive).Contains("extractTo");
+    }
+
     static void OpenSelected(FolderView view) =>
         view.ItemCommands(view.SelectedEntries()).First(_ => _?.Id == "open")!.Action();
 
@@ -3471,7 +3529,7 @@ public class FolderViewTests
         await Assert.That(view.IsReadOnly).IsTrue();
         await Assert.That(view.CanShowShellMenu).IsFalse();
         await Assert.That(itemCommands).IsEquivalentTo(["open", null, "copy", "copyAsPath"], CollectionOrdering.Matching);
-        await Assert.That(backgroundCommands).IsEquivalentTo(["sortBy", null, "undo", "redo", null, "extractAll", "copyAsPath"], CollectionOrdering.Matching);
+        await Assert.That(backgroundCommands).IsEquivalentTo(["sortBy", null, "undo", "redo", null, "extractAll", "extractTo", "copyAsPath"], CollectionOrdering.Matching);
         await Assert.That(deleted).IsEmpty();
         await Assert.That(Names(view)).IsEquivalentTo(["Docs", "readme.aleph", "tool.exe"], CollectionOrdering.Matching);
     }

@@ -5206,15 +5206,52 @@ sealed class FolderView : UserControl
 
     /// <summary>
     /// Extracts each zip: to a new folder beside it named for it, or, <paramref name="here"/>, into
-    /// the folder it is in. What it put there is selected once it is done.
+    /// the folder it is in, the shell asking what to do with each file there already. What it put
+    /// there is selected once it is done.
     /// </summary>
     internal void Extract(List<string> zips, bool here) =>
-        Loading = ExtractAndSelect(zips, here);
+        Loading = ExtractAndSelect(Zip.ExtractInBackground(zips, here, Owner));
 
-    async Task ExtractAndSelect(List<string> zips, bool here)
+    /// <summary>
+    /// Extract to: extracts each zip into a folder picked, as Extract here does into the folder
+    /// it is in. Nothing, when no folder is picked.
+    /// </summary>
+    internal void ExtractTo(List<string> zips)
+    {
+        if (PickFolder(this, Path.GetDirectoryName(zips[0])!) is not { } folder)
+        {
+            return;
+        }
+
+        Loading = ExtractAndSelect(Zip.ExtractToInBackground(zips, folder, Owner));
+    }
+
+    /// <summary>
+    /// Asks for a folder, starting in the one given: where Extract to extracts to. Null when none
+    /// is picked. Tests stand in for it, to pick one without the dialog.
+    /// </summary>
+    internal Func<IWin32Window, string, string?> PickFolder = (owner, start) =>
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "Where to extract to",
+            UseDescriptionForTitle = true,
+            InitialDirectory = start
+        };
+        if (dialog.ShowDialog(owner) != DialogResult.OK)
+        {
+            return null;
+        }
+
+        return dialog.SelectedPath;
+    };
+
+    // What was extracted is selected once it is there, where it is in the folder shown, unless
+    // the view has gone somewhere else meanwhile.
+    async Task ExtractAndSelect(Task<IReadOnlyList<string>> extracting)
     {
         var folder = CurrentPath;
-        var placed = await Zip.ExtractInBackground(zips, here);
+        var placed = await extracting;
         if (IsDisposed ||
             placed.Count == 0 ||
             !Locations.Same(folder, CurrentPath))
@@ -5622,6 +5659,7 @@ sealed class FolderView : UserControl
             {
                 commands.Add(LodeActions.Command("extractAll", () => Extract(paths, false)));
                 commands.Add(LodeActions.Command("extractHere", () => Extract(paths, true)));
+                commands.Add(LodeActions.Command("extractTo", () => ExtractTo(paths)));
             }
         }
 
@@ -5734,7 +5772,8 @@ sealed class FolderView : UserControl
     /// </summary>
     internal List<QuickMenu.Command?> BackgroundCommands(bool canPaste, IReadOnlyList<ShellNew.Entry>? newTypes = null)
     {
-        // In a zip nothing can be made or pasted, but all of it can be extracted.
+        // In a zip nothing can be made or pasted, but all of it can be extracted, beside it or to
+        // a folder picked.
         if (Archive is { } inArchive)
         {
             return
@@ -5744,6 +5783,7 @@ sealed class FolderView : UserControl
                 .. UndoCommands(),
                 null,
                 LodeActions.Command("extractAll", () => Extract([inArchive.Archive], false)),
+                LodeActions.Command("extractTo", () => ExtractTo([inArchive.Archive])),
                 LodeActions.Command("copyAsPath", () => CopyAsPath([CurrentPath]))
             ];
         }
