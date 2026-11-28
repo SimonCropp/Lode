@@ -2733,6 +2733,7 @@ public class WindowsTests
             "Menu | Menu",
             "Filter changed files | Filter the files by name",
             "Add a description | Add a description",
+            "Add co-authors | Add co-authors",
             "Copy the full SHA | Copy the full SHA",
             "Close | Close (Esc)"
         ]);
