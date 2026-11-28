@@ -1,7 +1,6 @@
 ﻿/// <summary>
 /// Where a file's changes show when picked in the Changes or History pane.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<DiffPlacement>))]
 enum DiffPlacement
 {
     // A tab of their own beside the folders' tabs, the panes staying beside it.

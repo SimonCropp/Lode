@@ -1,7 +1,6 @@
 /// <summary>
 /// The two panes on the window's right edge.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<GitPane>))]
 enum GitPane
 {
     Changes,
@@ -27,7 +26,6 @@ enum PaneLayout
 /// <summary>
 /// How the tabs on the strip down the window's right edge are labelled.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<StripLabels>))]
 enum StripLabels
 {
     // The pane's icon, and its name written down the strip, as Visual Studio has them.

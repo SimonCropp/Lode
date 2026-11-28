@@ -4,10 +4,19 @@ using System.Text.Json.Nodes;
 
 sealed class Settings
 {
+    // Every read and write of the settings goes through these: an enum is kept by its name, and
+    // one this Lode doesn't know, a newer Lode's, read as its default. See LenientEnums.
     static JsonSerializerOptions serializerOptions = new()
     {
-        WriteIndented = true
+        WriteIndented = true,
+        Converters =
+        {
+            new LenientEnums()
+        }
     };
+
+    static Settings? Read(string path) =>
+        JsonSerializer.Deserialize<Settings>(File.ReadAllText(path), serializerOptions);
 
     // Null for settings that live only in memory, which is what tests use.
     string? filePath;
@@ -606,7 +615,7 @@ sealed class Settings
         {
             if (File.Exists(path))
             {
-                settings = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path));
+                settings = Read(path);
             }
         }
         catch (Exception exception)
@@ -683,7 +692,7 @@ sealed class Settings
                 return this;
             }
 
-            own = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path));
+            own = Read(path);
         }
         catch (Exception exception)
             when (
@@ -708,7 +717,7 @@ sealed class Settings
             json[key] = ownJson[key]?.DeepClone();
         }
 
-        return json.Deserialize<Settings>()!;
+        return json.Deserialize<Settings>(serializerOptions)!;
     }
 
     internal static string UnreadablePath(string path) =>
@@ -739,7 +748,7 @@ sealed class Settings
                 return null;
             }
 
-            return JsonSerializer.Deserialize<Settings>(File.ReadAllText(backup));
+            return Read(backup);
         }
         catch (Exception)
         {
@@ -820,7 +829,7 @@ sealed class Settings
             var mine = AsJson();
             using (new Turn(filePath))
             {
-                var merged = Merged(mine, Saved(filePath)).Deserialize<Settings>();
+                var merged = Merged(mine, Saved(filePath)).Deserialize<Settings>(serializerOptions);
                 Write(filePath, JsonSerializer.Serialize(merged, serializerOptions));
                 if (windowPath != null)
                 {
@@ -895,7 +904,7 @@ sealed class Settings
     {
         try
         {
-            return JsonSerializer.Deserialize<Settings>(File.ReadAllText(path))?.AsJson();
+            return Read(path)?.AsJson();
         }
         catch (Exception exception)
             when (exception is FileNotFoundException or JsonException)

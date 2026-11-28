@@ -706,6 +706,103 @@ public class SettingsTests
                 """);
     }
 
+    // Settings saved by a newer Lode, with a place for diffs, a theme, labels for the strip and
+    // a pane this one doesn't know, as going back a version leaves them: those are their
+    // defaults, and everything else is read, rather than the whole file set aside over them.
+    [Test]
+    public async Task ValuesANewerLodeAddedAreTheirDefaults()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "Theme": "Sepia",
+              "StripLabels": "Upright",
+              "DiffPlacement": "Sidebar",
+              "PaneTabs": [
+                { "Repo": "D:\\Code\\Lode", "Tab": "History" },
+                { "Repo": "D:\\Code\\Other", "Tab": "Blame" }
+              ],
+              "CodeDirectory": "D:\\Code",
+              "PinnedFolders": [ "D:\\Code\\Lode" ],
+              "Actions": { "cut": { "Button": true, "Menu": false } },
+              "Tabs": [ "C:\\Work" ]
+            }
+            """);
+
+        var settings = Settings.Load(path);
+
+        await Assert.That(settings.LoadProblem).IsNull();
+        // As text, as Verify leaves out a value that is its type's default.
+        await Verify(
+            new
+            {
+                Theme = settings.Theme.ToString(),
+                StripLabels = settings.StripLabels.ToString(),
+                DiffPlacement = settings.DiffPlacement.ToString(),
+                PaneTabs = settings.PaneTabs.Select(_ => new
+                {
+                    _.Repo,
+                    Tab = _.Tab.ToString()
+                }),
+                settings.CodeDirectory,
+                settings.PinnedFolders,
+                cutIsAButton = settings.ShowsAsButton("cut"),
+                settings.Tabs
+            })
+            .Snapshot(
+                """
+                {
+                  Theme: System,
+                  StripLabels: Vertical,
+                  DiffPlacement: Tab,
+                  PaneTabs: [
+                    {
+                      Repo: D:\Code\Lode,
+                      Tab: History
+                    },
+                    {
+                      Repo: D:\Code\Other,
+                      Tab: Changes
+                    }
+                  ],
+                  CodeDirectory: D:\Code,
+                  PinnedFolders: [
+                    D:\Code\Lode
+                  ],
+                  cutIsAButton: true,
+                  Tabs: [
+                    C:\Work
+                  ]
+                }
+                """);
+    }
+
+    // An enum that may be null is null for a value it doesn't know, as for null; one in a list
+    // is its default, the rest of the list read, whatever stood in its place. Each is written
+    // by its name, as before.
+    [Test]
+    public async Task UnknownValuesInAListOrThatMayBeNull()
+    {
+        var options = new JsonSerializerOptions
+        {
+            Converters =
+            {
+                new LenientEnums()
+            }
+        };
+
+        await Assert.That(JsonSerializer.Deserialize<Theme?>("\"Sepia\"", options)).IsNull();
+        await Assert.That(JsonSerializer.Deserialize<Theme?>("null", options)).IsNull();
+        await Assert.That(JsonSerializer.Deserialize<Theme?>("\"Dark\"", options)).IsEqualTo(Theme.Dark);
+        await Assert.That(JsonSerializer.Deserialize<List<GitPane>>("""["History", "Blame", 7, "1", { "Tab": ["History"] }, "changes"]""", options))
+            .IsEquivalentTo([GitPane.History, GitPane.Changes, GitPane.Changes, GitPane.History, GitPane.Changes, GitPane.Changes], CollectionOrdering.Matching);
+        await Assert.That(JsonSerializer.Serialize<Theme?[]>([Theme.Dark, null], options)).IsEqualTo("""["Dark",null]""");
+        await Assert.That(JsonSerializer.Serialize(new PaneTab(@"D:\Code", GitPane.History), options)).IsEqualTo("""{"Repo":"D:\\Code","Tab":"History"}""");
+    }
+
     // NTFS logs a rename at once but writes a file's data when it gets round to it, so the
     // settings moved into place unflushed could be all zeros after the power went. Each save is
     // on the disk, whole, before it is put in place. Others' saves go through the flush too,
