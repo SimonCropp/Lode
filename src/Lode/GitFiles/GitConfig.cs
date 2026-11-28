@@ -163,13 +163,107 @@ sealed class GitConfig
         return true;
     }
 
-    static readonly Lazy<string?> systemDirectory = new(() => FindSystemDirectory(Environment.GetEnvironmentVariable("PATH") ?? ""));
+    // Asked of git once, as what it says doesn't change while Lode runs.
+    static readonly Lazy<(string? Config, string? Attributes)> systemFiles = new(() => FindSystemFiles(AskGit, Environment.GetEnvironmentVariable("PATH") ?? ""));
 
     /// <summary>
-    /// The etc folder of the git installed, with its own gitconfig and gitattributes, found from
-    /// the git on the path, as Lode runs that one. Null when there is none.
+    /// The gitconfig of the git installed, the one the git Lode runs, the first on the path,
+    /// reads where the environment names no other: GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM are
+    /// taken as git takes them where the config is read. Null when there is none.
     /// </summary>
-    public static string? SystemDirectory => systemDirectory.Value;
+    public static string? SystemConfig => systemFiles.Value.Config;
+
+    /// <summary>
+    /// The gitattributes of the git installed, as <see cref="SystemConfig"/> is found.
+    /// </summary>
+    public static string? SystemAttributes => systemFiles.Value.Attributes;
+
+    /// <summary>
+    /// The system's gitconfig and gitattributes where git var says git reads them, the first git
+    /// on the path being a shim, as Scoop's is, that runs a git installed elsewhere, with an etc
+    /// of its own. Where git can't say, the etc beside the git on <paramref name="path"/>.
+    /// </summary>
+    /// <param name="answer">What git var writes for a variable, GIT_CONFIG_SYSTEM say: null where
+    /// git couldn't be run or doesn't know it, as before 2.42.</param>
+    internal static (string? Config, string? Attributes) FindSystemFiles(Func<string, string?> answer, string path)
+    {
+        var config = Answered(answer("GIT_CONFIG_SYSTEM"));
+        var attributes = Answered(answer("GIT_ATTR_SYSTEM"));
+        if (config != null &&
+            attributes != null)
+        {
+            return (config, attributes);
+        }
+
+        if (FindSystemDirectory(path) is not { } etc)
+        {
+            return (config, attributes);
+        }
+
+        return (config ?? Path.Combine(etc, "gitconfig"), attributes ?? Path.Combine(etc, "gitattributes"));
+    }
+
+    // The path git var wrote, with forward slashes as Git for Windows writes it. Not one that
+    // names no drive, /etc/gitconfig from a git of MSYS2's or Cygwin's own, which is in a root
+    // only they know.
+    static string? Answered(string? output)
+    {
+        var text = output?.TrimEnd('\r', '\n');
+        if (string.IsNullOrEmpty(text) ||
+            text.AsSpan().IndexOfAny(Path.GetInvalidPathChars()) >= 0 ||
+            !Path.IsPathFullyQualified(text))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(text);
+    }
+
+    // What git var writes for a variable, from the git Lode runs, without the variables that
+    // would have it name another system config, or none: those are taken as git takes them
+    // where the files are read. Null where git can't be run, or doesn't know the variable. Two
+    // runs of git, some 30 ms each, once while Lode runs.
+    static string? AskGit(string variable)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo("git")
+            {
+                // Never in a repository, whose config git would read.
+                WorkingDirectory = Environment.SystemDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            startInfo.ArgumentList.Add("var");
+            startInfo.ArgumentList.Add(variable);
+            foreach (var name in (string[]) ["GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM"])
+            {
+                startInfo.Environment.Remove(name);
+            }
+
+            using var process = Process.Start(startInfo)!;
+            var error = process.StandardError.ReadToEndAsync();
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            _ = error.Result;
+            if (process.ExitCode != 0)
+            {
+                return null;
+            }
+
+            return output;
+        }
+        catch (Exception)
+        {
+            // Whatever stops git answering leaves the files to be found from the path, rather
+            // than the lazy answer holding the failure for every read after.
+            return null;
+        }
+    }
 
     /// <summary>
     /// The etc folder of the first git.exe on <paramref name="path"/>: in the folder its cmd or
@@ -284,9 +378,9 @@ sealed class GitConfig
                     config.ReadFile(Path.Combine(programData, "Git", "config"), false, context, 0);
                 }
 
-                if (SystemDirectory is { } etc)
+                if (SystemConfig is { } systemConfig)
                 {
-                    config.ReadFile(Path.Combine(etc, "gitconfig"), false, context, 0);
+                    config.ReadFile(systemConfig, false, context, 0);
                 }
             }
         }

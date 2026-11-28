@@ -372,8 +372,42 @@ public class GitConfigTests
         await Assert.That(GitConfig.FindSystemDirectory("")).IsNull();
     }
 
+    // The system's files where git var says the git on the path reads them, not the etc beside
+    // that git.exe, which for Scoop's is a shim in scoop\shims running the git in scoop\apps,
+    // whose etc has core.autocrlf, core.symlinks and the LFS filter. Where git can't say, not
+    // run or older than 2.42 or giving a path in its own MSYS2 root, /etc/gitconfig, the etc
+    // beside the git on the path, as Git for Windows lays it out.
+    [Test]
+    public async Task FindsTheSystemFilesWhereGitSays()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var shims = scratch.At("scoop", "shims");
+        var cmd = scratch.At("Git", "cmd");
+        foreach (var folder in new[] { shims, cmd })
+        {
+            Directory.CreateDirectory(folder);
+            await File.WriteAllTextAsync(Path.Combine(folder, "git.exe"), "");
+        }
+
+        Directory.CreateDirectory(scratch.At("Empty"));
+        var etc = scratch.At("scoop", "apps", "git", "current", "etc");
+        var answers = new Dictionary<string, string>
+        {
+            ["GIT_CONFIG_SYSTEM"] = Path.Combine(etc, "gitconfig").Replace('\\', '/') + "\n",
+            ["GIT_ATTR_SYSTEM"] = Path.Combine(etc, "gitattributes").Replace('\\', '/') + "\n"
+        };
+        var beside = (scratch.At("Git", "etc", "gitconfig"), scratch.At("Git", "etc", "gitattributes"));
+
+        await Assert.That(GitConfig.FindSystemFiles(answers.GetValueOrDefault, shims)).IsEqualTo((Path.Combine(etc, "gitconfig"), Path.Combine(etc, "gitattributes")));
+        await Assert.That(GitConfig.FindSystemFiles(_ => null, cmd)).IsEqualTo(beside);
+        await Assert.That(GitConfig.FindSystemFiles(_ => "/etc/gitconfig\n", cmd)).IsEqualTo(beside);
+        await Assert.That(GitConfig.FindSystemFiles(_ => "", cmd)).IsEqualTo(beside);
+        await Assert.That(GitConfig.FindSystemFiles(_ => null, scratch.At("Empty"))).IsEqualTo(((string?)null, (string?)null));
+    }
+
     // The system's config is the one the git on the path reads, as git config --system says,
-    // whichever of its folders the path has first.
+    // whichever of its folders the path has first, or a shim; its gitattributes beside it, as
+    // Git for Windows keeps them.
     [Test]
     public async Task FindsTheSystemConfigGitReads()
     {
@@ -384,9 +418,10 @@ public class GitConfigTests
             return;
         }
 
-        var file = origin["file:".Length..origin.IndexOf('\t')];
+        var file = Path.GetFullPath(origin["file:".Length..origin.IndexOf('\t')]);
 
-        await Assert.That(GitConfig.SystemDirectory).IsEqualTo(Path.GetDirectoryName(Path.GetFullPath(file)));
+        await Assert.That(GitConfig.SystemConfig).IsEqualTo(file);
+        await Assert.That(GitConfig.SystemAttributes).IsEqualTo(Path.Combine(Path.GetDirectoryName(file)!, "gitattributes"));
     }
 
     // ~ is the home folder, by itself or before a slash either way; nothing else is expanded.

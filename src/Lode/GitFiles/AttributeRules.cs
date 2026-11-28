@@ -33,9 +33,9 @@ sealed class AttributeRules
         ignoreCase = repository.Config.GetBool("core.ignorecase", false);
         system = [];
         if (Environment.GetEnvironmentVariable("GIT_ATTR_NOSYSTEM") is not { Length: > 0 } &&
-            GitConfig.SystemDirectory is { } etc)
+            GitConfig.SystemAttributes is { } systemAttributes)
         {
-            system = ReadFile(Path.Combine(etc, "gitattributes"), "", true);
+            system = ReadFile(systemAttributes, "", true);
         }
 
         var attributesFile = repository.Config.Get("core.attributesfile");
