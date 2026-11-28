@@ -186,7 +186,11 @@ static class Program
         {
             if (RepositoryLink.Parse(text) is not { } link)
             {
-                // Another of the app's links, GitHub Desktop's sign-in say: the app's to open.
+                // Another of the app's links, GitHub Desktop's sign-in say: the app's to open,
+                // without asking, as Windows would have handed it on. The browser asked before
+                // opening it, the app's sign-in waits on it, and a question from Lode would be
+                // one nobody could tell the answer to. It reaches the app as the one argument it
+                // was, whatever it holds, so it can't give the app arguments of its own.
                 var handler = RepositoryLinks.HandlerOf(text)!;
                 if (!new RepositoryLink(handler, text, "", null).Forward(repositoryLinks))
                 {

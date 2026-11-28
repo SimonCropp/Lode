@@ -121,7 +121,7 @@ public class RepositoryLinkTests
                   },
                   unquoted: {
                     Item1: C:\Apps\VSWebLauncher.exe,
-                    Item2: /openuri git-client://clone?repo=x
+                    Item2: /openuri "git-client://clone?repo=x"
                   },
                   noArgument: {
                     Item1: C:\Apps\Thing.exe,
@@ -129,6 +129,42 @@ public class RepositoryLinkTests
                   }
                 }
                 """);
+
+    // The link reaches the app as the one argument it reached Lode as, exactly, whatever it holds,
+    // as the app splits its command line: a link from a .url file or another program, rather than
+    // a browser, which escapes them, can hold quotes, which put back as they were would end the
+    // argument and start arguments of the link's own, and backslashes, which before a quote, the
+    // link's or the one closing it, escape it. Each way a command can take the link: in quotes of
+    // its own, bare, inside a longer argument, or left to go on the end.
+    [Test]
+    public async Task SplitKeepsTheLinkOneArgument()
+    {
+        string[] held =
+        [
+            """x-github-client://openRepo/https://github.com/a/b?branch=x" --evil "y""",
+            """x-github-client://openRepo/https://github.com/a/b?branch=x\" --evil \"y""",
+            """git-client://clone?repo=a\\\"b"c""",
+            """x-github-client://openRepo/https://github.com/a/b?filepath=src\""",
+            """x-github-client://openRepo/https://github.com/a/b?filepath=a b\\""",
+            "x-github-client://openRepo/https://github.com/a/b"
+        ];
+
+        foreach (var link in held)
+        {
+            await Assert.That(Arguments("\"C:\\Apps\\GitHubDesktop.exe\" --protocol-launcher \"%1\"", link))
+                .IsEquivalentTo(["--protocol-launcher", link], CollectionOrdering.Matching);
+            await Assert.That(Arguments(@"C:\Apps\VSWebLauncher.exe /openuri %1", link))
+                .IsEquivalentTo(["/openuri", link], CollectionOrdering.Matching);
+            await Assert.That(Arguments("\"C:\\Apps\\Thing.exe\" \"--uri=%1\" --new-window", link))
+                .IsEquivalentTo([$"--uri={link}", "--new-window"], CollectionOrdering.Matching);
+            await Assert.That(Arguments(@"C:\Apps\Thing.exe", link))
+                .IsEquivalentTo([link], CollectionOrdering.Matching);
+        }
+    }
+
+    // The arguments the app gets, as Windows splits its command line for it.
+    static string[] Arguments(string command, string link) =>
+        JumpListTests.CommandLineToArguments(RepositoryLink.Split(command, link)!.Value.Arguments);
 
     // The clone in the code folder is the one opened, a level down too, and the file a link names
     // is selected in it, unless it is outside the repository.

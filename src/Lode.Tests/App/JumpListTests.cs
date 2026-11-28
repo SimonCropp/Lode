@@ -302,7 +302,7 @@ public class JumpListTests
 
     const int accessDenied = unchecked((int)0x80070005);
 
-    static string[] CommandLineToArguments(string arguments)
+    internal static string[] CommandLineToArguments(string arguments)
     {
         // As a program sees its command line, after its own path.
         var pointer = CommandLineToArgvW($"lode.exe {arguments}", out var count);

@@ -213,9 +213,10 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
 
     /// <summary>
     /// The program and arguments that run <paramref name="command"/>, a registry command, for
-    /// <paramref name="link"/>: "%1" in it is the link, and with none the link goes on the end.
-    /// A Squirrel app's versioned copy (GitHub Desktop's app-3.6.11) that an update has since
-    /// removed is swapped for the stub above it, which starts whichever copy is current.
+    /// <paramref name="link"/>: "%1" in it is the link, and with none the link goes on the end,
+    /// either way as one argument, whatever it holds (see <see cref="WithLink"/>). A Squirrel
+    /// app's versioned copy (GitHub Desktop's app-3.6.11) that an update has since removed is
+    /// swapped for the stub above it, which starts whichever copy is current.
     /// </summary>
     internal static (string Program, string Arguments)? Split(string command, string link)
     {
@@ -243,11 +244,11 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
         program = Environment.ExpandEnvironmentVariables(program);
         if (arguments.Contains("%1", StringComparison.Ordinal))
         {
-            arguments = arguments.Replace("%1", link, StringComparison.Ordinal);
+            arguments = WithLink(arguments, link);
         }
         else
         {
-            arguments = $"{arguments} \"{link}\"".Trim();
+            arguments = $"{arguments} {Quoted(link)}".Trim();
         }
 
         if (!System.IO.File.Exists(program) &&
@@ -263,6 +264,94 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
         }
 
         return (program, arguments);
+    }
+
+    /// <summary>
+    /// The command's arguments with <paramref name="link"/> for each %1, as the one argument it
+    /// reached Lode as, exactly, as the app splits its command line (CommandLineToArgvW's rules,
+    /// which C and .NET programs share). A link from a .url file or another program, rather than
+    /// a browser, which escapes them, can hold quotes, which put in as they are would end the
+    /// argument early and start arguments of the link's own, and backslashes, which before a
+    /// quote escape it. Where %1 is in quotes already, as "%1" is, the link goes in them escaped;
+    /// where it is bare, in quotes of its own.
+    /// </summary>
+    static string WithLink(string arguments, string link)
+    {
+        var builder = new StringBuilder();
+        var quoted = false;
+        var backslashes = 0;
+        for (var i = 0; i < arguments.Length; i++)
+        {
+            var ch = arguments[i];
+            if (ch == '%' &&
+                i + 1 < arguments.Length &&
+                arguments[i + 1] == '1')
+            {
+                if (quoted)
+                {
+                    var beforeQuote = i + 2 < arguments.Length && arguments[i + 2] == '"';
+                    builder.Append(Escaped(link, beforeQuote));
+                }
+                else
+                {
+                    builder.Append(Quoted(link));
+                }
+
+                i++;
+                backslashes = 0;
+                continue;
+            }
+
+            // A quote opens or closes quotes unless an odd number of backslashes escape it.
+            if (ch == '"' &&
+                backslashes % 2 == 0)
+            {
+                quoted = !quoted;
+            }
+
+            backslashes = ch == '\\' ? backslashes + 1 : 0;
+            builder.Append(ch);
+        }
+
+        return builder.ToString();
+    }
+
+    // The text in quotes, as one argument, as JumpList.Argument puts a folder, which can hold no
+    // quotes.
+    static string Quoted(string text) =>
+        $"\"{Escaped(text, beforeQuote: true)}\"";
+
+    // The text as it goes inside quotes: each quote escaped by a backslash, and the backslashes
+    // before it doubled, as otherwise they would escape that one; those at the end doubled too
+    // where a quote follows, which they would otherwise escape. Backslashes before anything else
+    // are as they are.
+    static string Escaped(string text, bool beforeQuote)
+    {
+        var builder = new StringBuilder();
+        var backslashes = 0;
+        foreach (var ch in text)
+        {
+            if (ch == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                builder.Append('\\', backslashes * 2 + 1);
+            }
+            else
+            {
+                builder.Append('\\', backslashes);
+            }
+
+            builder.Append(ch);
+            backslashes = 0;
+        }
+
+        builder.Append('\\', beforeQuote ? backslashes * 2 : backslashes);
+        return builder.ToString();
     }
 
     /// <summary>

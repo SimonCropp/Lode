@@ -115,6 +115,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * The repository is found up to two levels into the code folder, by its origin, however its url is written.
  * One not in the code folder can be cloned into it, with the git you have installed, then opened. It goes in a folder named for the repository, or, with that taken, one in a folder named for its owner. A pull request's link checks out its branch, where the repository has it. One with submodules then asks before fetching them, saying where each comes from, as a link from a web page could point anywhere: fetched, they are checked out, as `git submodule update --init --recursive` does; left out, their folders stay empty. One that can't be fetched says why, and the clone opens all the same. Or the link can go to the app it was for.
+ * The app's other links, GitHub Desktop's sign-in say, go straight to it, as Windows would have handed them on. A link handed on reaches the app exactly as it came, as one argument, whatever it holds.
  * It writes only to `HKEY_CURRENT_USER\Software\Classes`, keeping what was there for Revert.
  * GitHub Desktop may take its links back when it updates: the **Links** page then says so.
 
