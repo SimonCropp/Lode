@@ -67,7 +67,7 @@ static class InProcessState
 
             return state with
             {
-                Tag = commits.Describe(headNode, TagNames(repository))
+                Tag = Tag(repository, commits, headNode)
             };
         }
         catch (Exception exception)
@@ -160,24 +160,98 @@ static class InProcessState
         return name;
     }
 
+    // The tag last found in each repository, by its folder, with what it was found from: the
+    // commit checked out, where a shallow clone's history stops, and the tags' files as they
+    // were before the tags were read. With what each tag whose ref doesn't say was of.
+    sealed record Described(
+        ObjectId Head,
+        HashSet<ObjectId>? Shallow,
+        List<(string Name, long Written, long Length)> TagFiles,
+        string? Tag,
+        Dictionary<ObjectId, ObjectId> Peeled);
+
+    static Lock describing = new();
+    static Dictionary<string, Described> described = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The tag, as <see cref="Commits.Describe"/> finds it from <paramref name="head"/>, the
+    /// commit checked out. As it was last found while that is still checked out, where a shallow
+    /// clone's history stops is as it was, and the tags' files are as they were: every read that
+    /// follows a save would otherwise walk the history again, all of it where no tag is reached,
+    /// and without a commit graph, as a fresh clone has none until gc writes one, each commit's
+    /// object inflated.
+    /// </summary>
+    internal static string? Tag(GitRepository repository, Commits commits, int head)
+    {
+        // Read before the tags are, so a tag changed meanwhile has them read again next time.
+        var tagFiles = repository.TagFiles();
+        var headId = commits.IdOf(head);
+        var shallow = repository.Shallow;
+        Described? last;
+        lock (describing)
+        {
+            described.TryGetValue(repository.WorkTree, out last);
+        }
+
+        if (last != null &&
+            last.Head == headId &&
+            SameShallow(last.Shallow, shallow) &&
+            last.TagFiles.SequenceEqual(tagFiles))
+        {
+            return last.Tag;
+        }
+
+        var peeled = new Dictionary<ObjectId, ObjectId>();
+        var tag = commits.Describe(head, TagNames(repository, last?.Peeled, peeled));
+        lock (describing)
+        {
+            described[repository.WorkTree] = new(headId, shallow, tagFiles, tag, peeled);
+        }
+
+        return tag;
+    }
+
+    static bool SameShallow(HashSet<ObjectId>? first, HashSet<ObjectId>? second)
+    {
+        if (first == null ||
+            second == null)
+        {
+            return first == second;
+        }
+
+        return first.SetEquals(second);
+    }
+
     /// <summary>
     /// The tags git describe --tags chooses from, by the commit each is of: of two on one
     /// commit, an annotated one over a light one, the one tagged later of two annotated, the first
-    /// by name of two light.
+    /// by name of two light. Each whose ref doesn't say what it is of, a loose one say, is peeled
+    /// as <paramref name="peeledBefore"/> has it where it is there, as what an object is of never
+    /// changes, and is given in <paramref name="peeled"/>.
     /// </summary>
-    internal static Dictionary<ObjectId, (string Name, bool Annotated)> TagNames(GitRepository repository)
+    internal static Dictionary<ObjectId, (string Name, bool Annotated)> TagNames(
+        GitRepository repository,
+        IReadOnlyDictionary<ObjectId, ObjectId>? peeledBefore,
+        Dictionary<ObjectId, ObjectId> peeled)
     {
         var names = new Dictionary<ObjectId, (string Name, bool Annotated, ObjectId Tag)>();
-        foreach (var (name, id, peeled, peelKnown) in repository.Tags())
+        foreach (var (name, id, packedPeel, peelKnown) in repository.Tags())
         {
             var target = id;
-            if (peeled is { } known)
+            if (packedPeel is { } known)
             {
                 target = known;
             }
             else if (!peelKnown)
             {
-                target = repository.Peel(id).Id;
+                // Peeled before, by a read of the tags as they were, its object isn't read again.
+                if (peeledBefore == null ||
+                    !peeledBefore.TryGetValue(id, out target))
+                {
+                    target = repository.Peel(id).Id;
+                }
+
+                peeled[id] = target;
             }
 
             var annotated = target != id;

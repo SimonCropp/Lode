@@ -29,6 +29,21 @@ public class CommitsTests
         GitRun.Output(repo, "update-ref", "refs/heads/main", parent);
     }
 
+    // So many commits for Chain, each a second after the last.
+    static IEnumerable<string> Dated(int count, long from) =>
+        Enumerable.Range(0, count)
+            .Select(_ => $"author A <a@example.com> {from + _} +0000\ncommitter C <c@example.com> {from + _} +0000\n\nCommit {_}\n");
+
+    // The tag as each read finds it, and how many commits it read finding it, as a new read
+    // reads them, the commit checked out read before the tag is looked for.
+    static (string? Tag, int Read) Described(string repo)
+    {
+        using var repository = GitRepository.Open(repo)!;
+        var commits = new Commits(repository);
+        var tag = InProcessState.Tag(repository, commits, commits.Node(repository.Head!.Value));
+        return (tag, commits.Count);
+    }
+
     // Authors without an email, without its closing bracket, with spaces before it, without a
     // date or with one that isn't a number; or no author at all, or no committer, or a header
     // before the author's or between it and the committer's, or no header but the tree and
@@ -170,6 +185,149 @@ public class CommitsTests
 
         await Assert.That(loose.Tag).IsEqualTo(packed.Tag);
         await Assert.That(Lines(InProcessHistory.Read(repo, 0, 10, Cancel.None))).IsEquivalentTo(Lines(GitHistory.Read(repo, 0, 10, Cancel.None)), CollectionOrdering.Matching);
+    }
+
+    // With no tags there is none to find, so nothing is walked, as git describe gives up at
+    // once. Walked, a long history without a commit graph, as a fresh clone has until gc writes
+    // one, had every commit's object inflated, back to the first, on every read.
+    [Test]
+    public async Task DescribesNothingWithoutWalkingWhereThereAreNoTags()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Chain(repo, Dated(50, 1_600_000_000));
+
+        var (tag, read) = Described(repo);
+
+        await Assert.That(tag).IsNull();
+        await Assert.That(read).IsEqualTo(1);
+        await Assert.That((await GitRun.Agree(repo)).Tag).IsNull();
+    }
+
+    // Tags only on a branch not merged, none the commit checked out reaches, are found to be so
+    // only by walking all of its history. Walked once, it isn't again while that commit is
+    // checked out and the tags are as they were, as for each read after a save.
+    [Test]
+    public async Task DescribesAgainWithoutWalkingWhileWhatItIsFoundFromIsTheSame()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "switch", "-q", "-c", "side");
+        await File.WriteAllTextAsync(Path.Combine(repo, "side.txt"), "side");
+        CodeCommandsTests.Scratch.Git(repo, "add", "side.txt");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-q", "-m", "Side");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "side-light");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "-a", "side-annotated", "-m", "Side");
+        CodeCommandsTests.Scratch.Git(repo, "switch", "-q", "main");
+        Chain(repo, Dated(20, 1_600_000_000));
+
+        var first = Described(repo);
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "saved");
+        var second = Described(repo);
+
+        await Assert.That(first.Tag).IsNull();
+        await Assert.That(first.Read).IsEqualTo(21);
+        await Assert.That(second).IsEqualTo((null, 1));
+        await Assert.That((await GitRun.Agree(repo)).Tag).IsNull();
+    }
+
+    // Found again as git describe finds it whenever what it is found from changes: a tag made,
+    // light or annotated, deleted, packed, made beside those packed, deleted once packed, moved,
+    // and a commit made, the side branch merged, whose tag it then reaches.
+    [Test]
+    public async Task DescribesAsGitDoesAsTagsAndCommitsChange()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var initial = GitRun.Output(repo, "rev-parse", "HEAD");
+
+        // A hundred seconds apart, so which is walked first is as each was made.
+        var time = 2_000_000_000L;
+        void Run(params string[] arguments)
+        {
+            time += 100;
+            var environment = new Dictionary<string, string>
+            {
+                ["GIT_AUTHOR_DATE"] = $"{time} +0000",
+                ["GIT_COMMITTER_DATE"] = $"{time} +0000"
+            };
+            var result = GitRun.Run(repo, environment, null, arguments);
+            if (!result.Succeeded)
+            {
+                throw new(result.Error);
+            }
+        }
+
+        void Commit(string file)
+        {
+            File.WriteAllText(Path.Combine(repo, file), file);
+            CodeCommandsTests.Scratch.Git(repo, "add", file);
+            Run("commit", "-q", "-m", file);
+        }
+
+        Commit("main1.txt");
+        Commit("main2.txt");
+        Commit("main3.txt");
+        Run("switch", "-q", "-c", "side", initial);
+        Commit("side.txt");
+        Run("tag", "side-light");
+        Run("switch", "-q", "main");
+
+        var found = new List<string?>();
+        async Task Agree() =>
+            found.Add((await GitRun.Agree(repo)).Tag);
+
+        await Agree();
+        await Agree();
+        Run("tag", "older", "HEAD~2");
+        await Agree();
+        Run("tag", "-a", "newer", "-m", "Newer", "HEAD~1");
+        await Agree();
+        Run("tag", "-d", "newer");
+        await Agree();
+        Run("pack-refs", "--all");
+        await Agree();
+        Run("tag", "-a", "beside", "-m", "Beside", "HEAD~1");
+        await Agree();
+        Run("tag", "-d", "beside");
+        await Agree();
+        Run("tag", "-d", "older");
+        await Agree();
+        Run("tag", "-a", "moved", "-m", "Moved", "HEAD~2");
+        Run("tag", "near", "HEAD~1");
+        await Agree();
+        Run("tag", "-f", "near", initial);
+        await Agree();
+        Commit("main4.txt");
+        await Agree();
+        Run("merge", "-q", "--no-ff", "-m", "Merge", "side");
+        await Agree();
+
+        await Assert.That(found)
+            .IsEquivalentTo(
+                [null, null, "older", "newer", "older", "older", "beside", "older", null, "near", "moved", "moved", "side-light"],
+                CollectionOrdering.Matching);
+    }
+
+    // What a loose annotated tag is of is read once, not again on each read after: with a commit
+    // made since, the tag is found again without its object, gone here, as git never could.
+    [Test]
+    public async Task PeelsALooseTagOnce()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "tag", "-a", "annotated", "-m", "Annotated");
+        var before = (await GitRun.Agree(repo)).Tag;
+        var tag = GitRun.Output(repo, "rev-parse", "refs/tags/annotated");
+        var file = Path.Combine(repo, ".git", "objects", tag[..2], tag[2..]);
+        File.SetAttributes(file, FileAttributes.Normal);
+        File.Delete(file);
+        Chain(repo, Dated(1, 1_600_000_000));
+
+        var after = InProcessState.FromFiles(repo, Cancel.None)?.Tag;
+
+        await Assert.That(before).IsEqualTo("annotated");
+        await Assert.That(after).IsEqualTo("annotated");
     }
 
     // A tag that is corrupt, of an object not there, or of tags thirty-three deep, past where they

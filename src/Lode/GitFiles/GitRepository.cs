@@ -458,6 +458,39 @@ sealed class GitRepository : IDisposable
     }
 
     /// <summary>
+    /// The files the tags are read from as they are now, as their folder lists them: packed-refs,
+    /// and each loose tag's by its name, each with when it was last written and how long it is.
+    /// While these are as they were, so are the tags: git writes a ref, packed-refs too, as a new
+    /// file renamed over the one it replaces, so written later than that was.
+    /// </summary>
+    public List<(string Name, long Written, long Length)> TagFiles()
+    {
+        var files = new List<(string Name, long Written, long Length)>();
+        var packedRefs = new FileInfo(Path.Combine(CommonDir, "packed-refs"));
+        if (packedRefs.Exists)
+        {
+            files.Add(("packed-refs", packedRefs.LastWriteTimeUtc.Ticks, packedRefs.Length));
+        }
+
+        var folder = new DirectoryInfo(Path.Combine(CommonDir, "refs", "tags"));
+        if (!folder.Exists)
+        {
+            return files;
+        }
+
+        foreach (var file in folder.EnumerateFiles("*", SearchOption.AllDirectories))
+        {
+            var name = "refs/tags/" + Path.GetRelativePath(folder.FullName, file.FullName).Replace('\\', '/');
+            if (!name.EndsWith(".lock", StringComparison.Ordinal))
+            {
+                files.Add((name, file.LastWriteTimeUtc.Ticks, file.Length));
+            }
+        }
+
+        return files;
+    }
+
+    /// <summary>
     /// What the remotes' branches are at, refs/remotes/origin/main say, packed or loose, each
     /// commit once, origin/HEAD followed to the branch it names.
     /// </summary>

@@ -312,6 +312,13 @@ sealed class Commits
     public long DateOf(int node) =>
         nodes[node].Date;
 
+    /// <summary>
+    /// How many commits have been read, from the commit graph or their objects: how far back
+    /// the walks have gone, for a test to tell that one wasn't needed.
+    /// </summary>
+    public int Count =>
+        count;
+
     public ref uint Flags(int node) =>
         ref nodes[node].Flags;
 
@@ -640,12 +647,21 @@ sealed class Commits
     /// <summary>
     /// As git describe --tags --abbrev=0 finds it: the commit's own tag, otherwise, of the first
     /// ten tags found walking back by date, the one fewest commits back that it doesn't have in
-    /// its history, the first found of those as far. Null where none is reached.
+    /// its history, the first found of those as far. Null where none is reached, or there are
+    /// none to reach.
     /// </summary>
     public string? Describe(int start, IReadOnlyDictionary<ObjectId, (string Name, bool Annotated)> names)
     {
         const uint seen = 1;
         const int maxCandidates = 10;
+
+        // With none to find, nothing is walked, as git describe gives up at once. The walk
+        // stops only once it has found ten, so without any it went back to the first commit.
+        if (names.Count == 0)
+        {
+            return null;
+        }
+
         if (names.TryGetValue(IdOf(start), out var own))
         {
             return own.Name;

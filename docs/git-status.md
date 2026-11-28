@@ -104,10 +104,10 @@ Without `upstream/HEAD` recorded, an upstream added by hand say, it counts as 0.
 
 The most recent tag is found by each reader its own way too:
 
-- **In process**: as `git describe --tags` finds it, walking back by date until ten tags are found, in the same pass. With the commit graph a walk of the whole history takes a few milliseconds even for a long one.
+- **In process**: as `git describe --tags` finds it, walking back by date until ten tags are found, in the same pass. With the commit graph a walk of the whole history takes a few milliseconds even for a long one; without it, as a fresh clone has until gc writes one, each commit's object is inflated. So nothing is walked where there are no tags, and what is found is kept for the repository, with the commit checked out, where a shallow clone's history stops, and when each of `packed-refs` and the files in `refs/tags` was last written and how long it is: while all of those are as they were, as for every read after a save, the tag is as it was, and nothing is walked. What each loose annotated tag is of is kept too, by its id, so it isn't read again once a commit has been made.
 - **`git status`**: one more run, `git describe --tags --abbrev=0`, some 55 ms however long the history, most of it git starting.
 
-A repository with no tags, or none its commit reaches, has no tag. A new tag, or one fetched, changes `.git/refs/tags` or `packed-refs`, which makes the repository stale like any other change.
+A repository with no tags, or none its commit reaches, has no tag. A new tag, or one fetched, changes `.git/refs/tags` or `packed-refs`, which makes the repository stale like any other change, and has the tag found again.
 
 A view reads its repositories in parallel on background threads, in the order they are listed, and shows each as it arrives.
 
