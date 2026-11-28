@@ -96,7 +96,16 @@ public class FindInFilesWindowTests
             return true;
         };
 
-        await form.FindHost.Replace();
+        try
+        {
+            await form.FindHost.Replace();
+        }
+        finally
+        {
+            // Replace runs in the Actions panel: cleared, so windows captured after this in the
+            // same run don't show its entry.
+            ActionLog.Reset();
+        }
 
         await Verify(
             new
