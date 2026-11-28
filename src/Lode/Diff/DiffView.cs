@@ -402,19 +402,20 @@ sealed class DiffView : UserControl
         }
     }
 
-    // A tick clicked in the Changes pane: the file's lines all picked, or none.
-    void OnDraftPicked(string repo, string path)
+    // A tick clicked in the Changes pane, of this file among others perhaps: the file's lines
+    // all picked, or none.
+    void OnDraftPicked(string repo, IReadOnlySet<string> paths)
     {
         if (source is not { IsUncommitted: true } file ||
             shown is not TextDiff diff ||
             canvas.Picks == null ||
             !Locations.Same(repo, file.Repo) ||
-            path != file.File.Path)
+            !paths.Contains(file.File.Path))
         {
             return;
         }
 
-        canvas.SetPicks(CommitDrafts.PicksOf(repo, path, diff));
+        canvas.SetPicks(CommitDrafts.PicksOf(repo, file.File.Path, diff));
     }
 
     // One at a time: another, of the diff before the first's lines went, would find it changed.

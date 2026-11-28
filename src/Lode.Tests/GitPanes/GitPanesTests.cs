@@ -730,6 +730,74 @@ public class GitPanesTests
         pane.SummaryBox.Text = "";
     }
 
+    // Every file ticked or unticked from the tick above them, or the rows selected from the tick
+    // of one, is told to what shows them once, not once a file: with 20,000 files listed, an
+    // un-ignored node_modules say, each telling counted the ticked files and looked for
+    // conflicts among all of them again, hundreds of millions of lookups for one click. The ticks
+    // and the commit button end as they did.
+    [Test]
+    public async Task TicksChangedTogetherAreToldOnce()
+    {
+        using var stubs = new PaneStubs();
+        var files = Enumerable.Range(0, 3000)
+            .Select(_ => new Change($"node_modules/package{_:0000}/index.js", null, GitChange.Untracked))
+            .ToList();
+        ChangesPane.Read = (_, _) => new("main", true, false, files);
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var repo = form.GitPanes.Repo!;
+        pane.SummaryBox.Text = "Summary";
+        var told = 0;
+        var toldOf = 0;
+
+        // Each telling, and how many files it was of, for the diff showing one of them to follow.
+        void Count(string changedIn, IReadOnlySet<string> paths)
+        {
+            if (ChangesPane.SameRepo(changedIn, repo))
+            {
+                told++;
+                toldOf = paths.Count;
+            }
+        }
+
+        int Ticked() =>
+            files.Count(_ => pane.TickOf(_) == true);
+
+        CommitDrafts.PicksChanged += Count;
+        try
+        {
+            pane.TickAll();
+            await Assert.That((told, toldOf, Ticked())).IsEqualTo((1, 3000, 0));
+            await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Commit to ", false));
+
+            pane.TickAll();
+            await Assert.That((told, toldOf, Ticked())).IsEqualTo((2, 3000, 3000));
+            await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Commit 3,000 files to ", true));
+
+            pane.Toggle([0, 1, 2]);
+            await Assert.That((told, toldOf, Ticked())).IsEqualTo((3, 3, 2997));
+            await Assert.That((pane.TickOf(files[0]), pane.TickOf(files[2]), pane.TickOf(files[3]))).IsEqualTo(((bool?) false, (bool?) false, (bool?) true));
+            await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Commit 2,997 files to ", true));
+
+            // All as the first becomes: the first was unticked, so both are ticked.
+            pane.Toggle([1, 5]);
+            await Assert.That((told, toldOf, Ticked())).IsEqualTo((4, 2, 2998));
+            await Assert.That((pane.TickOf(files[1]), pane.TickOf(files[5]))).IsEqualTo(((bool?) true, (bool?) true));
+            await Assert.That(pane.CommitButton.Text).IsEqualTo("Commit 2,998 files to ");
+        }
+        finally
+        {
+            CommitDrafts.PicksChanged -= Count;
+            pane.SummaryBox.Text = "";
+        }
+    }
+
     // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,
     // nothing.
     [Test]

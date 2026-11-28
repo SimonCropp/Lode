@@ -95,10 +95,20 @@ static class CommitDrafts
     }
 
     /// <summary>
-    /// The lines picked of a file changed, by its repository and path, for whatever shows its tick
-    /// or its lines to draw them again.
+    /// The lines picked of files changed, by their repository and paths, for whatever shows their
+    /// ticks or their lines to draw them again: told once for the files ticked or unticked
+    /// together. Told once a file, each telling had the Changes pane count the ticked files
+    /// again, which, for 20,000, was hundreds of millions of lookups.
     /// </summary>
-    public static event Action<string, string>? PicksChanged;
+    public static event Action<string, IReadOnlySet<string>>? PicksChanged;
+
+    static void Raise(string repo, string path) =>
+        PicksChanged?.Invoke(
+            repo,
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                path
+            });
 
     /// <summary>
     /// The lines picked of the file at <paramref name="path"/>, whose diff is
@@ -118,7 +128,7 @@ static class CommitDrafts
             }
 
             draft.Picks.Remove(path);
-            PicksChanged?.Invoke(repo, path);
+            Raise(repo, path);
         }
 
         if (draft.Unticked.Contains(path))
@@ -135,7 +145,7 @@ static class CommitDrafts
     public static void SetPicks(string repo, string path, LinePicks picks)
     {
         KeepPicks(repo, path, picks);
-        PicksChanged?.Invoke(repo, path);
+        Raise(repo, path);
     }
 
     /// <summary>
@@ -163,10 +173,24 @@ static class CommitDrafts
     }
 
     /// <summary>
-    /// Tells what shows the file that its tick changed: ticked whole, or not at all.
+    /// Ticks the files at <paramref name="paths"/> whole, or leaves them out, forgetting any
+    /// lines picked of them, and tells what shows them, once.
     /// </summary>
-    public static void Notify(string repo, string path) =>
-        PicksChanged?.Invoke(repo, path);
+    public static void SetTicks(string repo, IEnumerable<string> paths, bool tick)
+    {
+        var draft = Of(repo);
+        var changed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var path in paths)
+        {
+            draft.SetTick(path, tick);
+            changed.Add(path);
+        }
+
+        if (changed.Count > 0)
+        {
+            PicksChanged?.Invoke(repo, changed);
+        }
+    }
 
     /// <summary>
     /// Ticks the file whole again, its lines picked lost: its diff changed after they were picked.
@@ -175,7 +199,7 @@ static class CommitDrafts
     {
         if (Of(repo).Picks.Remove(path))
         {
-            PicksChanged?.Invoke(repo, path);
+            Raise(repo, path);
         }
     }
 }

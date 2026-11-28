@@ -40,7 +40,7 @@ public class DiffViewTests
         await Assert.That(canvas.Picks!.PickedCount).IsEqualTo(9);
     }
 
-    // The file's tick clicked in Changes: the lines shown follow.
+    // The file's tick clicked in Changes, or every file's at once with it: the lines shown follow.
     [Test]
     public async Task FollowsTheTick()
     {
@@ -52,6 +52,12 @@ public class DiffViewTests
         draft.SetTick(DiffSample.File.Path, false);
         CommitDrafts.SetPicks(repo, DiffSample.File.Path, CommitDrafts.PicksOf(repo, DiffSample.File.Path, DiffSample.Diff));
 
+        await Assert.That(view.Canvas.Picks!.PickedCount).IsEqualTo(0);
+
+        CommitDrafts.SetTicks(repo, ["other.aleph", DiffSample.File.Path], true);
+        await Assert.That(view.Canvas.Picks!.PickedCount).IsEqualTo(9);
+
+        CommitDrafts.SetTicks(repo, [DiffSample.File.Path, "other.aleph"], false);
         await Assert.That(view.Canvas.Picks!.PickedCount).IsEqualTo(0);
     }
 

@@ -568,8 +568,9 @@ sealed class ChangesPane : UserControl
     static CommitDrafts.Draft DraftOf(string? repo) =>
         CommitDrafts.Of(repo);
 
-    // Lines picked in the diff: the file's tick, and how many the commit takes, follow.
-    void OnPicksChanged(string pickedIn, string path)
+    // Lines picked in the diff, or files ticked here: their ticks, and how many the commit
+    // takes, follow, counted once however many changed.
+    void OnPicksChanged(string pickedIn, IReadOnlySet<string> paths)
     {
         if (!SameRepo(repo, pickedIn))
         {
@@ -979,7 +980,7 @@ sealed class ChangesPane : UserControl
 
     // Ticks every file showing, or, with every one ticked, none. Not the files read last, hidden
     // while git can't read them.
-    void TickAll()
+    internal void TickAll()
     {
         if (changes.Merging ||
             failure != null)
@@ -987,28 +988,20 @@ sealed class ChangesPane : UserControl
             return;
         }
 
-        var tick = AllTicked() != true;
-        foreach (var change in shown)
-        {
-            SetTick(change, tick);
-        }
-
-        list.Invalidate();
-        tickRow.Invalidate();
-        ShowCommitButton();
+        SetTicks(shown, AllTicked() != true);
     }
 
-    // Ticked whole, or not at all, the lines picked of it forgotten, the diff showing it told.
-    void SetTick(Change change, bool tick)
+    // Ticked whole, or not at all, the lines picked of them forgotten, and what shows them told
+    // once, the pane itself and the diff showing one of them, rather than once a file.
+    void SetTicks(IEnumerable<Change> setting, bool tick)
     {
-        draft.SetTick(change.Path, tick);
         if (repo != null)
         {
-            CommitDrafts.Notify(repo, change.Path);
+            CommitDrafts.SetTicks(repo, setting.Select(_ => _.Path), tick);
         }
     }
 
-    void Toggle(IReadOnlyList<int> rows)
+    internal void Toggle(IReadOnlyList<int> rows)
     {
         if (changes.Merging ||
             rows.Count == 0)
@@ -1019,14 +1012,7 @@ sealed class ChangesPane : UserControl
         // As a list of checkboxes does with several selected: all as the first becomes. One only
         // partly ticked becomes ticked whole, as GitHub Desktop's does.
         var tick = TickOf(shown[rows[0]]) != true;
-        foreach (var row in rows)
-        {
-            SetTick(shown[row], tick);
-        }
-
-        list.Invalidate();
-        tickRow.Invalidate();
-        ShowCommitButton();
+        SetTicks(rows.Select(_ => shown[_]), tick);
     }
 
     void ShowCommitButton()
