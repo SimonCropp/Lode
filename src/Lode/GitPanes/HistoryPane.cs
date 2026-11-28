@@ -359,6 +359,10 @@ sealed class HistoryPane : UserControl
         apart = null;
         compareBar.Visible = false;
         version++;
+
+        // The files of a commit of the repository before, still being read, aren't shown under
+        // this one.
+        filesVersion++;
         loaded = [];
         unpushed = [];
         neverPushed = false;
@@ -471,13 +475,16 @@ sealed class HistoryPane : UserControl
         finally
         {
             this.reading = false;
-        }
 
-        if (readAgain &&
-            !IsDisposed)
-        {
-            readAgain = false;
-            Reload();
+            // Asked for again while this was read, a commit made or another repository bound, it
+            // is read again, whether what was read was kept or not: read for the repository
+            // before, it wasn't, and the one bound since would otherwise go unread.
+            if (readAgain &&
+                !IsDisposed)
+            {
+                readAgain = false;
+                Reload();
+            }
         }
     }
 

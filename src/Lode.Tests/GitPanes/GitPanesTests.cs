@@ -956,6 +956,127 @@ public class GitPanesTests
         await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(PaneStubs.CommitFiles.Count);
     }
 
+    // Another repository gone to while the one before is still read, as it is after every save,
+    // is read once that read ends, in Changes and History both: its files and its commits
+    // listed, rather than none until something in it changes. The read of the one before is
+    // held until the window is in the other, so it ends after, as it would where git is slow.
+    [Test]
+    public async Task ReadOnceTheRepoBeforeIs()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var docs = fixture.At("Docs");
+        var source = fixture.At("Source");
+        using var held = new ManualResetEventSlim();
+        var started = 0;
+        ChangesPane.Read = (repo, _) =>
+        {
+            if (!ChangesPane.SameRepo(repo, docs))
+            {
+                return new("main", true, false, PaneStubs.Files.Take(2).ToList());
+            }
+
+            Interlocked.Increment(ref started);
+            held.Wait(TimeSpan.FromSeconds(30));
+            return new("main", true, false, PaneStubs.Files);
+        };
+        HistoryPane.ReadCommits = (repo, skip, count, _) =>
+        {
+            if (!ChangesPane.SameRepo(repo, docs))
+            {
+                return PaneStubs.History.Take(2).ToList();
+            }
+
+            Interlocked.Increment(ref started);
+            held.Wait(TimeSpan.FromSeconds(30));
+            return PaneStubs.History.Skip(skip).Take(count).ToList();
+        };
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        try
+        {
+            using var form = await Show(docs, settings, wide);
+            var panes = form.GitPanes;
+            await Pump.Until(() => Volatile.Read(ref started) == 2);
+
+            form.ActiveView!.Navigate(source);
+            await Pump.Until(() => panes.Repo == source);
+            held.Set();
+            await PaneStubs.Settled(form);
+
+            await Assert.That(panes.Describe()).IsEqualTo("Source: wide, Changes beside, History beside, strip hidden");
+            await Assert.That(panes.ChangesPane.Changes.Files.Count).IsEqualTo(2);
+            await Assert.That(panes.ChangesPane.List.VirtualListSize).IsEqualTo(2);
+            await Assert.That(panes.HistoryPane.Commits.Count).IsEqualTo(2);
+        }
+        finally
+        {
+            held.Set();
+        }
+    }
+
+    // The files of a commit of the repository before, still being read once another is gone to,
+    // aren't shown under it: here one with no commits, so none is picked whose files would be
+    // read in their place.
+    [Test]
+    public async Task FilesOfTheRepoBeforeNotShown()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var docs = fixture.At("Docs");
+        var source = fixture.At("Source");
+        using var held = new ManualResetEventSlim();
+        var started = 0;
+        HistoryPane.ReadCommits = (repo, skip, count, _) =>
+        {
+            if (!ChangesPane.SameRepo(repo, docs))
+            {
+                return [];
+            }
+
+            return PaneStubs.History.Skip(skip).Take(count).ToList();
+        };
+        HistoryPane.ReadFiles = (repo, _, _) =>
+        {
+            if (ChangesPane.SameRepo(repo, docs))
+            {
+                Interlocked.Increment(ref started);
+                held.Wait(TimeSpan.FromSeconds(30));
+            }
+
+            return PaneStubs.CommitFiles;
+        };
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPaneTab(docs, GitPane.History);
+        settings.SetPaneTab(source, GitPane.History);
+        try
+        {
+            using var form = await Show(docs, settings);
+            var panes = form.GitPanes;
+            var pane = panes.HistoryPane;
+            await Pump.Until(() => Volatile.Read(ref started) == 1);
+
+            form.ActiveView!.Navigate(source);
+            await Pump.Until(() => panes.Repo == source);
+            await Pump.Until(() => pane.Reading.IsCompleted);
+            held.Set();
+            await PaneStubs.Settled(form);
+
+            await Assert.That(panes.Describe()).IsEqualTo("Source: medium, Changes hidden, History showing, strip hidden");
+            await Assert.That(pane.Commits.Count).IsEqualTo(0);
+            await Assert.That(pane.FileList.VirtualListSize).IsEqualTo(0);
+        }
+        finally
+        {
+            held.Set();
+        }
+    }
+
     // The files a commit changed, scrolled down when the commit is clicked again to pick none,
     // show from their top once it is picked again.
     [Test]

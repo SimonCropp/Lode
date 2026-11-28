@@ -682,13 +682,16 @@ sealed class ChangesPane : UserControl
         finally
         {
             this.reading = false;
-        }
 
-        if (readAgain &&
-            !IsDisposed)
-        {
-            readAgain = false;
-            Reload();
+            // Asked for again while this was read, something in the repository changed or another
+            // bound, it is read again, whether what was read was kept or not: read for the
+            // repository before, it wasn't, and the one bound since would otherwise go unread.
+            if (readAgain &&
+                !IsDisposed)
+            {
+                readAgain = false;
+                Reload();
+            }
         }
     }
 
