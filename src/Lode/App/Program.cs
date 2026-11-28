@@ -101,7 +101,10 @@ static class Program
         Environment.CurrentDirectory = Environment.SystemDirectory;
         ShellNew.Warm();
         Settings.SeedFromInstalled();
-        var settings = Settings.Load(Settings.DefaultPath);
+
+        // Run as administrator, Lode is a copy of its own beside the one that isn't, with
+        // windows of its own, whose place and tabs it keeps apart.
+        var settings = Settings.Load(Settings.DefaultPath, administrator: Environment.IsPrivilegedProcess);
 
         // Before the first window, so starting with the defaults is not mistaken for tabs and
         // options lost.

@@ -145,7 +145,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    ![Command palette](src/Lode.Tests/Menus/MenuTests.CommandPalette.verified.png)
 
  * **The tray**: closing the last window hides it there. Click the tray icon, or launch Lode, to bring it back; Shift+click for a new window. **Exit** quits, asking first while anything is running.
- * **One copy per account**: launching Lode again hands its folders to the running copy, in a new tab, or the tab already showing the folder. Lode run as administrator is a copy of its own, beside the one that isn't.
+ * **One copy per account**: launching Lode again hands its folders to the running copy, in a new tab, or the tab already showing the folder. Lode run as administrator is a copy of its own, beside the one that isn't, with its own window size and tabs, and the same options: what either changes the other has the next time it starts.
  * **Jump list**: right-click Lode on the taskbar for the folders pinned to Quick access, and those used often.
  * **Folder tree**: **Pinned** (Quick access, as in Explorer), **Recent**, This PC with the drives, and **Network**, with the machines of folders pinned or gone to, each listing what it shares. Drives come and go as they are plugged in or mapped. The tree follows the tab to the open folder, unless **Expand the folder tree to the open folder** is off on the **View** page. To pin a folder, drag it or its tab into **Pinned**, or right-click it; drag a pin, or press Alt+Shift+Up and Down, to reorder. Folders in the tree have the list's right-click menu and keys. **This PC**'s menu is Explorer's: Manage, Map network drive and the rest.
 
@@ -303,7 +303,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * **The list refreshes itself** when the folder changes on disk. Lode lets go of a drive while Windows removes it, so it never blocks **Safely remove**.
  * **A shell extension that stops answering** is cut off after 3 seconds, and skipped for the session.
- * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options, which of Changes and History shows for each repository, how the strip labels them, where diffs show and how, and the Azure DevOps organizations added in Clone. The tabs are saved as they change, those of the window used last, so they come back after a crash too. A Debug build keeps its own, and runs beside the installed Lode.
+ * **Settings** are kept in `%AppData%\Lode\settings.json`: window size, tabs and options, which of Changes and History shows for each repository, how the strip labels them, where diffs show and how, and the Azure DevOps organizations added in Clone. The tabs are saved as they change, those of the window used last, so they come back after a crash too. Each save writes only what that copy of Lode has changed, so one run as administrator and one that isn't keep each other's changes; the one run as administrator keeps its window size and tabs in `settings.administrator.json`, starting from the other's. A Debug build keeps its own, and runs beside the installed Lode.
 
 
 ## Keyboard

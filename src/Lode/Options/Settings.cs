@@ -1,3 +1,7 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Text.Json.Nodes;
+
 sealed class Settings
 {
     static JsonSerializerOptions serializerOptions = new()
@@ -7,6 +11,14 @@ sealed class Settings
 
     // Null for settings that live only in memory, which is what tests use.
     string? filePath;
+
+    // For the copy run as administrator, the file its window's place and tabs are kept in, apart
+    // from the other copy's. Null for the copy that isn't.
+    string? windowPath;
+
+    // The settings as this copy last read or wrote them, as it writes them: what differs from
+    // them now is what it has changed since, which is all it saves over what another copy saved.
+    JsonObject? known;
 
     public bool ShowHidden { get; set; } = true;
 
@@ -459,6 +471,29 @@ sealed class Settings
     public List<DateTimeOffset> TabsLastShown { get; set; } = [];
     public int ActiveTab { get; set; }
 
+    // The window's place and its tabs, which the copy run as administrator keeps apart from the
+    // other: each has windows of its own, and either opening with the other's tabs next time,
+    // whichever saved last, would be a surprise.
+    static string[] windowState =
+    [
+        nameof(Left),
+        nameof(Top),
+        nameof(Width),
+        nameof(Height),
+        nameof(Maximized),
+        nameof(SplitterDistance),
+        nameof(Tabs),
+        nameof(TabsLastShown),
+        nameof(ActiveTab)
+    ];
+
+    /// <summary>
+    /// Where the copy run as administrator keeps its window's place and tabs: beside the
+    /// settings, settings.administrator.json for settings.json.
+    /// </summary>
+    internal static string WindowPath(string path) =>
+        Path.Combine(Path.GetDirectoryName(path)!, $"{Path.GetFileNameWithoutExtension(path)}.administrator{Path.GetExtension(path)}");
+
     internal static string Folder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lode");
 
@@ -516,7 +551,10 @@ sealed class Settings
     /// moved aside and the settings saved afresh. One that could not be opened, locked or not
     /// permitted, is left as it is and not saved over while Lode runs.
     /// </summary>
-    public static Settings Load(string path)
+    /// <param name="administrator">For the copy run as administrator, which keeps its window's
+    /// place and tabs apart, in <see cref="WindowPath"/>, starting from the other copy's until it
+    /// has saved its own.</param>
+    public static Settings Load(string path, bool administrator = false)
     {
         Settings? settings = null;
         string? problem = null;
@@ -557,15 +595,71 @@ sealed class Settings
         }
 
         settings ??= new();
+        if (administrator)
+        {
+            settings = settings.WithOwnWindow(WindowPath(path));
+        }
+
         if (savable)
         {
             settings.filePath = path;
+            if (administrator)
+            {
+                settings.windowPath = WindowPath(path);
+            }
         }
 
         settings.LoadProblem = problem;
         settings.LoadBug = bug;
+
+        // Before what is carried over from older settings, which is then saved as changed.
+        settings.known = settings.AsJson();
         settings.SplitGit();
         return settings;
+    }
+
+    JsonObject AsJson() =>
+        JsonSerializer.SerializeToNode(this, serializerOptions)!.AsObject();
+
+    // The copy run as administrator's own window's place and tabs, where it has saved any, in
+    // place of the other copy's. Should that file be unreadable, the other's are a start, and
+    // the next save writes them afresh.
+    Settings WithOwnWindow(string path)
+    {
+        Settings? own;
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return this;
+            }
+
+            own = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path));
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException or
+                    JsonException)
+        {
+            return this;
+        }
+
+        if (own == null)
+        {
+            return this;
+        }
+
+        var json = AsJson();
+        var ownJson = own.AsJson();
+        foreach (var key in windowState)
+        {
+            json[key] = ownJson[key]?.DeepClone();
+        }
+
+        return json.Deserialize<Settings>()!;
     }
 
     internal static string UnreadablePath(string path) =>
@@ -619,6 +713,14 @@ sealed class Settings
             MessageBoxButtons.OK,
             MessageBoxIcon.Warning);
 
+    /// <summary>
+    /// Saves what this copy of Lode has changed since it read or last wrote the file, keeping
+    /// what another has saved meanwhile of the rest: the copy run as administrator is a process
+    /// of its own, on the same file, and with each saving all of its settings, what one changed
+    /// was lost at the other's next save of its tabs. Each setting is as it was changed last, by
+    /// whichever copy. Copies take turns, so neither writes between the other reading the file
+    /// and writing it.
+    /// </summary>
     public void Save()
     {
         if (filePath == null)
@@ -629,13 +731,24 @@ sealed class Settings
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+            var mine = AsJson();
+            using (new Turn(filePath))
+            {
+                var merged = Merged(mine, Saved(filePath)).Deserialize<Settings>();
+                Write(filePath, JsonSerializer.Serialize(merged, serializerOptions));
+                if (windowPath != null)
+                {
+                    var window = new JsonObject();
+                    foreach (var key in windowState)
+                    {
+                        window[key] = mine[key]?.DeepClone();
+                    }
 
-            // Written beside the file, then put in its place. Written over the file where it
-            // is, a save cut short, by the power going or Lode being ended, left it empty or
-            // half written, and the next start with no settings at all.
-            var writing = $"{filePath}.writing";
-            File.WriteAllText(writing, JsonSerializer.Serialize(this, serializerOptions));
-            File.Move(writing, filePath, overwrite: true);
+                    Write(windowPath, window.ToJsonString(serializerOptions));
+                }
+            }
+
+            known = mine;
         }
         catch (Exception exception)
             when (
@@ -657,6 +770,125 @@ sealed class Settings
             // stop them being saved from then on. Reported rather than thrown, as a save is
             // often the last thing a window does as it closes.
             IssueLauncher.LaunchForException("Failed to save settings", exception);
+        }
+    }
+
+    // This copy's settings, but for each it hasn't changed since it read or last wrote the file,
+    // the one saved there, which another copy may have changed meanwhile. The window's place and
+    // tabs of the copy run as administrator are its own, kept apart, so are always the other's.
+    JsonObject Merged(JsonObject mine, JsonObject? saved)
+    {
+        var merged = new JsonObject();
+        foreach (var (key, value) in mine)
+        {
+            var changed = !JsonNode.DeepEquals(value, known?[key]);
+            if (windowPath != null &&
+                windowState.Contains(key))
+            {
+                changed = false;
+            }
+
+            if (!changed &&
+                saved != null &&
+                saved.TryGetPropertyValue(key, out var savedValue))
+            {
+                merged[key] = savedValue?.DeepClone();
+            }
+            else
+            {
+                merged[key] = value?.DeepClone();
+            }
+        }
+
+        return merged;
+    }
+
+    // The settings as saved now, as this copy writes them, to compare with its own. Null where
+    // there are none, or none that can be read as settings, which this copy's then replace.
+    static JsonObject? Saved(string path)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Settings>(File.ReadAllText(path))?.AsJson();
+        }
+        catch (Exception exception)
+            when (exception is FileNotFoundException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    // Written beside the file, then put in its place. Written over the file where it is, a save
+    // cut short, by the power going or Lode being ended, left it empty or half written, and the
+    // next start with no settings at all. Beside it under a name of this process's own, so a
+    // save of another copy's could never write into this one's.
+    static void Write(string path, string text)
+    {
+        var writing = $"{path}.{Environment.ProcessId}.writing";
+        File.WriteAllText(writing, text);
+        File.Move(writing, path, overwrite: true);
+    }
+
+    /// <summary>
+    /// A save's turn at the file, across every copy of Lode, the one run as administrator too,
+    /// and every thread: held from reading what is saved till the file is written. A mutex
+    /// named for the file, in the session's namespace, which both copies are in. Whichever copy
+    /// makes it lets the user in, as by default one made by the copy run as administrator would
+    /// let in only administrators, and so not the other copy. Should it not be had, the save
+    /// goes ahead without it, rather than not at all.
+    /// </summary>
+    sealed class Turn : IDisposable
+    {
+        Mutex? mutex;
+        bool held;
+
+        public Turn(string path)
+        {
+            try
+            {
+                using var identity = WindowsIdentity.GetCurrent();
+                var security = new MutexSecurity();
+                security.AddAccessRule(new(identity.User!, MutexRights.FullControl, AccessControlType.Allow));
+                mutex = MutexAcl.Create(false, Name(path), out _, security);
+            }
+            catch (Exception exception)
+                when (
+                    exception is
+                        UnauthorizedAccessException or
+                        IOException or
+                        WaitHandleCannotBeOpenedException)
+            {
+                return;
+            }
+
+            try
+            {
+                // Held only while a file is read and written, so a wait this long is a copy
+                // stuck, which this one doesn't wait on for ever.
+                held = mutex.WaitOne(TimeSpan.FromSeconds(10));
+            }
+            catch (AbandonedMutexException)
+            {
+                // A copy ended while it saved: the turn is this one's now.
+                held = true;
+            }
+        }
+
+        // The file's full path, hashed, as a mutex's name can't have a backslash.
+        static string Name(string path)
+        {
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(path).ToUpperInvariant()));
+            return $@"Local\Lode-Settings-{Convert.ToHexString(hash)[..32]}";
+        }
+
+        public void Dispose()
+        {
+            if (held)
+            {
+                mutex!.ReleaseMutex();
+            }
+
+            mutex?.Dispose();
         }
     }
 }

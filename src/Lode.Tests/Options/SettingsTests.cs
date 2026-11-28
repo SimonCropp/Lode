@@ -426,6 +426,184 @@ public class SettingsTests
         await Assert.That(settings.LoadBug).IsNull();
     }
 
+    // Two copies of Lode on one file, as the one run as administrator and the one that isn't
+    // are: each saves only what it has changed since it read or last wrote the file, so a theme
+    // changed in one, and a code folder and pins in the other, survive each other's saves, and
+    // the tabs saved after both, which change on their own every few seconds.
+    [Test]
+    public async Task TwoCopiesKeepEachOthersChanges()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        var first = Settings.Load(path);
+        first.TextEditor = @"C:\Tools\editor.exe";
+        first.Save();
+        var one = Settings.Load(path);
+        var other = Settings.Load(path);
+
+        one.Theme = Theme.Dark;
+        one.Save();
+        other.CodeDirectory = @"D:\Code";
+        other.PinnedFolders = [@"D:\Code\Lode"];
+        other.Save();
+        one.Tabs = [@"C:\Work"];
+        one.Save();
+        other.ShowSystem = true;
+        other.Save();
+
+        var saved = Settings.Load(path);
+        await Verify(
+            new
+            {
+                saved.Theme,
+                saved.TextEditor,
+                saved.CodeDirectory,
+                saved.PinnedFolders,
+                saved.Tabs,
+                saved.ShowSystem
+            })
+            .Snapshot(
+                """
+                {
+                  Theme: Dark,
+                  TextEditor: C:\Tools\editor.exe,
+                  CodeDirectory: D:\Code,
+                  PinnedFolders: [
+                    D:\Code\Lode
+                  ],
+                  Tabs: [
+                    C:\Work
+                  ],
+                  ShowSystem: true
+                }
+                """);
+    }
+
+    // Copies saving at once take turns, so none fails on another's half written file, and what
+    // each changed is there once all have saved.
+    [Test]
+    public async Task SavesAtOnceAllGetThrough()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        Settings.Load(path).Save();
+        var copies = Enumerable.Range(0, 6).Select(_ => Settings.Load(path)).ToList();
+        using var start = new Barrier(copies.Count);
+
+        await Task.WhenAll(
+            copies.Select(
+                (copy, index) => Task.Run(
+                    () =>
+                    {
+                        start.SignalAndWait();
+                        for (var save = 1; save <= 20; save++)
+                        {
+                            Change(copy, index, save);
+                            copy.Save();
+                        }
+                    })));
+
+        var saved = Settings.Load(path);
+        await Assert.That(new[] { saved.PaneWidth, saved.FindContextLines, saved.UnusedTabHours, saved.Width, saved.Height, saved.SplitterDistance })
+            .IsEquivalentTo([20, 20, 20, 20, 20, 20], CollectionOrdering.Matching);
+        await Assert.That(Directory.EnumerateFiles(fixture.Root, "*.writing")).IsEmpty();
+
+        // Each copy a setting of its own.
+        static void Change(Settings copy, int index, int value)
+        {
+            switch (index)
+            {
+                case 0:
+                    copy.PaneWidth = value;
+                    break;
+                case 1:
+                    copy.FindContextLines = value;
+                    break;
+                case 2:
+                    copy.UnusedTabHours = value;
+                    break;
+                case 3:
+                    copy.Width = value;
+                    break;
+                case 4:
+                    copy.Height = value;
+                    break;
+                default:
+                    copy.SplitterDistance = value;
+                    break;
+            }
+        }
+    }
+
+    // The copy run as administrator keeps its window's place and tabs apart, starting from the
+    // other's, so neither opens with the other's tabs next time, whichever saved last. Its
+    // options are the other's, and what either changes of them the other has the next time it
+    // starts.
+    [Test]
+    public async Task TheAdministratorsWindowIsItsOwn()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        var normal = Settings.Load(path);
+        normal.Tabs = [@"C:\Work"];
+        normal.Width = 1200;
+        normal.Save();
+
+        var administrator = Settings.Load(path, administrator: true);
+        var startedWith = administrator.Tabs.ToList();
+        administrator.Tabs = [@"C:\Windows\System32"];
+        administrator.Width = 900;
+        administrator.Theme = Theme.Dark;
+        administrator.Save();
+        normal.Tabs = [@"C:\Work", @"D:\Code"];
+        normal.Save();
+
+        var normalAgain = Settings.Load(path);
+        var administratorAgain = Settings.Load(path, administrator: true);
+        await Verify(
+            new
+            {
+                startedWith,
+                normal = new
+                {
+                    normalAgain.Tabs,
+                    normalAgain.Width,
+                    normalAgain.Theme
+                },
+                administrator = new
+                {
+                    administratorAgain.Tabs,
+                    administratorAgain.Width,
+                    administratorAgain.Theme
+                },
+                kept = Path.GetFileName(Settings.WindowPath(path))
+            })
+            .Snapshot(
+                """
+                {
+                  startedWith: [
+                    C:\Work
+                  ],
+                  normal: {
+                    Tabs: [
+                      C:\Work,
+                      D:\Code
+                    ],
+                    Width: 1200,
+                    Theme: Dark
+                  },
+                  administrator: {
+                    Tabs: [
+                      C:\Windows\System32
+                    ],
+                    Width: 900,
+                    Theme: Dark
+                  },
+                  kept: settings.administrator.json
+                }
+                """);
+    }
+
     /// <summary>
     /// Locked by another program, say, and quite possibly fine: not saved over with the defaults.
     /// </summary>
