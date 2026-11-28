@@ -693,7 +693,11 @@ sealed class Commands
 
     // Its submodules too, without asking, as the repository was picked or typed here, not handed
     // over by a link from a web page, which RepositoryClone.Offer asks about. One that can't be
-    // fetched fails the entry, saying so, but the clone stays, and opens all the same.
+    // fetched fails the entry, saying so, but the clone stays, and opens all the same. So does
+    // one cancelled once it is cloned, as a fork's upstream is set up or the submodules come:
+    // the clone is there, and cloning it again would only say so. What came after it is left
+    // undone, upstream for the next fetch or Sync fork, the submodules for git submodule
+    // update, and the entry says Cancelled, with what was done.
     async void Clone(string remote, string destination)
     {
         var cloned = false;
@@ -706,7 +710,11 @@ sealed class Commands
                 if (result.Succeeded)
                 {
                     cloned = true;
-                    result = await Task.Run(() => RepositoryClone.WithSubmodules(result, progress.Report, cancel), cancel);
+
+                    // Cancel.None, not the token: the submodules watch the token themselves, and
+                    // given it, a Cancel as upstream was set up would have the await throw instead,
+                    // and the entry say nothing of the clone.
+                    result = await Task.Run(() => RepositoryClone.WithSubmodules(result, progress.Report, cancel), Cancel.None);
                 }
 
                 return CodeCommands.GitOutcome([result]);

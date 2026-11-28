@@ -134,6 +134,51 @@ public class ActionsPanelTests
         await Assert.That(ActionLog.Entries[^1].CanCancel).IsFalse();
     }
 
+    // Cancel clicked as the work ends, once it has ended on its thread but before its outcome is
+    // taken here, comes too late to stop anything: the work did all it was to, an extract with
+    // its undo recorded say, so it stands as it went, rather than as Cancelled, and there is
+    // nothing left to cancel.
+    [Test]
+    public async Task CancelOnceTheWorkHasEndedLeavesItsOutcome()
+    {
+        var finish = new TaskCompletionSource<ActionLog.Outcome>();
+        var run = ActionLog.Run("Extract", [@"C:\Zips\Photos.zip"], (_, _) => finish.Task);
+        var entry = ActionLog.Entries.Single();
+
+        // Ended on a thread of its own, its outcome posted here, where it waits, this thread
+        // being busy till Cancel is clicked.
+        Task.Run(() => finish.SetResult(new(true, "Extracted Photos.zip", @"Extracted Photos.zip to C:\Zips\Photos"))).Wait();
+        var couldCancel = entry.CanCancel;
+        entry.Cancel();
+        var summary = entry.Summary;
+        await run;
+
+        await Assert.That(entry.State).IsEqualTo(ActionLog.State.Succeeded);
+        await Assert.That(entry.Summary).IsEqualTo("Extracted Photos.zip");
+        await Assert.That(entry.Details).IsEqualTo(@"Extracted Photos.zip to C:\Zips\Photos");
+        await Assert.That(couldCancel).IsFalse();
+        await Assert.That(summary).IsEqualTo("Running…");
+    }
+
+    // Work that stops when cancelled by throwing, and throws OperationCanceledException for
+    // something else first, a request that timed out say, fails as that, not as cancelled, though
+    // Cancel was clicked before its outcome was taken.
+    [Test]
+    public async Task ATimeoutOnceTheWorkHasEndedIsNotCancelled()
+    {
+        var finish = new TaskCompletionSource<ActionLog.Outcome>();
+        var run = ActionLog.Run("Git clone", [@"C:\Code\Lode"], (_, _) => finish.Task);
+        var entry = ActionLog.Entries.Single();
+
+        Task.Run(() => finish.SetException(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing."))).Wait();
+        entry.Cancel();
+        await run;
+
+        await Assert.That(entry.State).IsEqualTo(ActionLog.State.Failed);
+        await Assert.That(entry.Summary).IsEqualTo("Failed");
+        await Assert.That(entry.Details).StartsWith("The request was canceled due to");
+    }
+
     // What Exit says of the entries still running, which exiting would stop part way. Not of
     // those finished.
     [Test]

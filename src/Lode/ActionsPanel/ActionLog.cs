@@ -47,30 +47,53 @@ static class ActionLog
         // Set for work that can be stopped.
         internal CancelSource? Cancellation { get; init; }
 
+        // Whether the work is still going, has ended, or was asked to stop first. The entry is
+        // Running till this thread takes the outcome, which waits its turn here once the work has
+        // ended on its own thread: a Cancel clicked between came too late to stop anything, and
+        // counted against work done, an extract with its undo recorded said Cancelled. Whichever
+        // of the work ending and Cancel comes first is how it ended.
+        int stopping;
+        const int going = 0;
+        const int ended = 1;
+        const int cancelled = 2;
+
         /// <summary>
         /// Whether it is running and can be stopped, which <see cref="Cancel"/> does.
         /// </summary>
         public bool CanCancel =>
             State == State.Running &&
-            Cancellation is
-            {
-                IsCancellationRequested: false
-            };
+            Cancellation != null &&
+            Volatile.Read(ref stopping) == going;
 
         /// <summary>
         /// Asks the work to stop. It ends as failed, "Cancelled", with what it did till then.
+        /// Nothing once the work has ended, though its outcome is still to be taken.
         /// </summary>
         public void Cancel()
         {
-            if (!CanCancel)
+            if (State != State.Running ||
+                Cancellation == null ||
+                Interlocked.CompareExchange(ref stopping, cancelled, going) != going)
             {
                 return;
             }
 
-            Cancellation!.Cancel();
+            Cancellation.Cancel();
             Summary = "Cancelling…";
             Progressed?.Invoke(this);
         }
+
+        /// <summary>
+        /// The work has ended, on whichever thread it ended on.
+        /// </summary>
+        internal void End() =>
+            Interlocked.CompareExchange(ref stopping, ended, going);
+
+        /// <summary>
+        /// Whether it was asked to stop while the work went on.
+        /// </summary>
+        internal bool CancelledWhileGoing =>
+            Volatile.Read(ref stopping) == cancelled;
 
         /// <summary>
         /// The folder's own name, or the whole path for a drive root. Of several, both names,
@@ -179,9 +202,9 @@ static class ActionLog
         Outcome outcome;
         try
         {
-            outcome = await work(new EntryProgress(entry), cancel);
+            outcome = await Ending(entry, () => work(new EntryProgress(entry), cancel));
         }
-        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+        catch (OperationCanceledException) when (entry.CancelledWhileGoing)
         {
             outcome = new(false, "Cancelled", "");
         }
@@ -190,8 +213,9 @@ static class ActionLog
             outcome = new(false, "Failed", exception.Message);
         }
 
-        // What it did before it stopped is in the details.
-        var cancelled = cancel.IsCancellationRequested;
+        // Asked to stop while it went on, what it did before it stopped is in the details. Asked
+        // once it had ended, it had done all it was to, and its outcome stands.
+        var cancelled = entry.CancelledWhileGoing;
         if (cancelled)
         {
             outcome = outcome with
@@ -216,6 +240,21 @@ static class ActionLog
 
         Changed?.Invoke();
         return entry;
+    }
+
+    // The work, noting it has ended as it ends, on the thread it ends on, rather than once this
+    // thread takes the outcome, which waits its turn here. Started here, so what it reports
+    // through posts back here.
+    static async Task<Outcome> Ending(Entry entry, Func<Task<Outcome>> start)
+    {
+        try
+        {
+            return await start().ConfigureAwait(false);
+        }
+        finally
+        {
+            entry.End();
+        }
     }
 
     /// <summary>

@@ -2548,6 +2548,84 @@ public class WindowsTests
         }
     }
 
+    // A fork cancelled once it is cloned, as its upstream is set up, opens all the same, as it
+    // is there: cloning it again would only say so. What is done stops there, so the Actions
+    // panel says Cancelled, and what was done, the clone, and what wasn't, upstream, which the
+    // next fetch or Sync fork sets up. GitHub is answered for, and only for this clone's origin.
+    [Test]
+    [NotInParallel(new[] { "windows", "forkParent" })]
+    public async Task AForkCancelledOnceItIsClonedStillOpens()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateFork("Repo");
+        var parent = code.Origin("RepoUpstream");
+        using var fixture = Fixture.Create();
+        var destination = code.At("Cloned");
+        var list = HostedRepos.ListGitHub;
+        HostedRepos.ListGitHub = _ => Task.FromResult(
+            new HostedListing(
+                [new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Repo", code.Origin("Repo"), "https://github.com/octo/Repo", false, true)],
+                []));
+        var parentOf = HostedRepos.ParentOf;
+        using var askedForParent = new ManualResetEventSlim();
+        HostedRepos.ParentOf = (remote, cancel) =>
+        {
+            if (remote != code.Origin("Repo"))
+            {
+                return parentOf(remote, cancel);
+            }
+
+            // Cloned by now: held here till Cancel is clicked.
+            askedForParent.Set();
+            cancel.WaitHandle.WaitOne(TimeSpan.FromSeconds(20));
+            return new(parent, "main");
+        };
+        CloneDialog.Forget();
+        ActionLog.Reset();
+        try
+        {
+            using var form = await Show(fixture, new Settings { CodeDirectory = fixture.Root }, fixture.Root);
+            form.Commands.ShowCloneDialog = dialog =>
+            {
+                dialog.ShowInTaskbar = false;
+                dialog.StartPosition = FormStartPosition.Manual;
+                dialog.Location = new(-20000, -20000);
+                dialog.Show();
+                var waited = Stopwatch.StartNew();
+                while (!(dialog.Rows.Count > 1 && dialog.Loaded.IsCompleted) &&
+                       waited.Elapsed < TimeSpan.FromSeconds(20))
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(10);
+                }
+
+                dialog.List.SelectedIndex = 1;
+                dialog.PathBox.Text = destination;
+                dialog.CloneButton.PerformClick();
+                return dialog.DialogResult;
+            };
+
+            form.Commands.ShowClone();
+            await Pump.Until(() => askedForParent.IsSet);
+            var entry = ActionLog.Entries.Single(_ => _.Title == "Git clone");
+            entry.Cancel();
+            await Pump.Until(() => entry.State != ActionLog.State.Running);
+            await Pump.Until(() => form.Views.Count() == 2);
+
+            await Assert.That(entry.Summary).IsEqualTo("Cancelled");
+            await Assert.That(entry.Details).Contains("Cloning into");
+            await Assert.That(entry.Details).Contains($"Couldn't add {parent} as upstream");
+            await Assert.That(File.Exists(Path.Combine(destination, "tracked.txt"))).IsTrue();
+            await Assert.That(form.ActiveView!.CurrentPath).IsEqualTo(destination);
+        }
+        finally
+        {
+            HostedRepos.ListGitHub = list;
+            HostedRepos.ParentOf = parentOf;
+            ActionLog.Reset();
+        }
+    }
+
     // The status bar has the most recent tag right after the branch, a dot between, and the
     // commits ahead after it. A repository with no tag has none, nor its dot.
     [Test]
