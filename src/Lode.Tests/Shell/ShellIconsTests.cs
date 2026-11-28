@@ -306,6 +306,58 @@ public class ShellIconsTests
         await Assert.That(ShellIcons.GetIcon(fixture.At("Docs"), true)).IsEqualTo(ShellIcons.FolderIcon);
     }
 
+    // A drive still being described, one mapped to a share that is offline say, which holds a
+    // thread of the pool for as long as the network takes to give up, is left to finish when
+    // drives are forgotten, for F5 or drives coming and going, rather than described again
+    // alongside, which every F5 would do again. One described already is described again, and
+    // shows as it was meanwhile.
+    [Test]
+    public async Task ADriveStillBeingDescribedIsNotDescribedAgain()
+    {
+        using var fixture = Fixture.Create();
+        var drive = fixture.Root;
+        var reads = 0;
+        var describing = new TaskCompletionSource<(string DisplayName, string TypeName, int Icon)>();
+        var describe = ShellIcons.DescribeOffUiThread;
+
+        // Only this test's drive waits: those of tests running alongside are described as ever.
+        ShellIcons.DescribeOffUiThread = _ =>
+        {
+            if (Locations.Same(_, drive))
+            {
+                reads++;
+                return describing.Task;
+            }
+
+            return describe(_);
+        };
+        try
+        {
+            ShellIcons.DescribeDrive(drive, null);
+            ShellIcons.ForgetDrives();
+            ShellIcons.DescribeDrive(drive, null);
+            ShellIcons.ForgetDrives();
+            ShellIcons.DescribeDrive(drive, null);
+            var whileDescribing = reads;
+            describing.SetResult(("Backup", "Local Disk", ShellIcons.DriveIcon));
+            await Pump.Until(() => ShellIcons.DescribeDrive(drive, null).DisplayName == "Backup");
+
+            describing = new();
+            ShellIcons.ForgetDrives();
+            var describedAgain = ShellIcons.DescribeDrive(drive, null).DisplayName;
+            describing.SetResult(("Archive", "Local Disk", ShellIcons.DriveIcon));
+            await Pump.Until(() => ShellIcons.DescribeDrive(drive, null).DisplayName == "Archive");
+
+            await Assert.That(whileDescribing).IsEqualTo(1);
+            await Assert.That(reads).IsEqualTo(2);
+            await Assert.That(describedAgain).IsEqualTo("Backup");
+        }
+        finally
+        {
+            ShellIcons.DescribeOffUiThread = describe;
+        }
+    }
+
     /// <summary>
     /// Where the user's Downloads is.
     /// </summary>

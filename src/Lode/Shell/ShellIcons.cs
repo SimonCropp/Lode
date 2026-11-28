@@ -872,8 +872,21 @@ static class ShellIcons
     /// <summary>
     /// Describes drives again when next asked, for Refresh and when drives come and go: another
     /// disk can be plugged in under a letter, a drive renamed, or mapped to another share. Each
-    /// is shown as it was last described until it has been.
+    /// is shown as it was last described until it has been. One still being described is left
+    /// to finish rather than described again alongside: a drive mapped to a share that is
+    /// offline holds a thread of the pool for as long as the network takes to give up, and every
+    /// F5 or burst of drives coming and going would hold another, which the tree's and the
+    /// list's own reads then wait behind.
     /// </summary>
-    public static void ForgetDrives() =>
-        drives.Clear();
+    public static void ForgetDrives()
+    {
+        foreach (var drive in drives)
+        {
+            if (drive.Value.IsCompleted)
+            {
+                // Only the one that has finished: not one started since, on another thread.
+                drives.TryRemove(drive);
+            }
+        }
+    }
 }
