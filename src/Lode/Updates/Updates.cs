@@ -2,7 +2,8 @@
 /// Whether a newer Lode is on NuGet, asked once a day, and the update to it. The update is
 /// <see cref="ToolUpdate"/>, as DiffEngineTray's and BuildMonitor's are: a hidden
 /// PowerShell waits for Lode to exit, runs <c>dotnet tool update</c> by the tool path Lode is in,
-/// and starts Lode again, which reopens the tabs it had. How that went is written to
+/// and starts Lode again, which reopens every window it had, with its tabs (see
+/// <see cref="Settings.RestartWindows"/>). How that went is written to
 /// <see cref="OutcomePath"/>, for the Lode it starts to say (<see cref="Report"/>).
 /// <para>
 /// Only a copy installed as a dotnet tool asks or updates. A build's output has nothing to update,

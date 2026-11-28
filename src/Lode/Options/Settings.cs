@@ -520,6 +520,31 @@ sealed class Settings
     public List<DateTimeOffset> TabsLastShown { get; set; } = [];
     public int ActiveTab { get; set; }
 
+    /// <summary>
+    /// The window a start opens with no folders given it: the place and tabs of the window that
+    /// closed last, or saved its tabs last.
+    /// </summary>
+    internal SavedWindow LastWindow() =>
+        new()
+        {
+            Left = Left,
+            Top = Top,
+            Width = Width,
+            Height = Height,
+            Maximized = Maximized,
+            SplitterDistance = SplitterDistance,
+            Tabs = Tabs,
+            TabsLastShown = TabsLastShown,
+            ActiveTab = ActiveTab
+        };
+
+    // Every window Lode had as it closed for an update, the one used last last, for the Lode the
+    // update starts to open each again, in its place with its tabs: each window closing wrote
+    // its tabs over the last one's, so only the last to close came back. Empty on every other
+    // start, which opens the one window above. See WindowContext.SaveForRestart and
+    // MainForm.ForStart.
+    public List<SavedWindow> RestartWindows { get; set; } = [];
+
     // The window's place and its tabs, which the copy run as administrator keeps apart from the
     // other: each has windows of its own, and either opening with the other's tabs next time,
     // whichever saved last, would be a surprise.
@@ -533,7 +558,8 @@ sealed class Settings
         nameof(SplitterDistance),
         nameof(Tabs),
         nameof(TabsLastShown),
-        nameof(ActiveTab)
+        nameof(ActiveTab),
+        nameof(RestartWindows)
     ];
 
     /// <summary>

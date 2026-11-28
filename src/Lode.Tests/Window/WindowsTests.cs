@@ -181,6 +181,96 @@ public class WindowsTests
         await Assert.That(settings.Tabs.Select(_ => Path.GetFileName(_))).IsEquivalentTo(["Projects", "Source"], CollectionOrdering.Matching);
     }
 
+    // Update and restart closes every window, each writing its tabs over the last one's, so with
+    // two open Lode came back with only the last's. Each window showing is saved for the
+    // restart, in its place with its tabs, and the Lode the update starts opens each again, the
+    // one used last last, so it is in front, then forgets them, so the start after opens one
+    // window, as every start but the one after an update does. A window in the tray, which
+    // would have closed as another did, isn't among them.
+    [Test]
+    public async Task AnUpdateBringsBackEveryWindowWithItsTabs()
+    {
+        using var fixture = Fixture.Create();
+        var path = Path.Combine(Path.GetDirectoryName(fixture.Root)!, "settings.json");
+        var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
+        var settings = Settings.Load(path);
+        var first = await Show(places, settings, fixture.At("Docs"), fixture.At("Source"));
+        var inTray = await Show(places, settings, fixture.At("Cache"));
+        var second = await Show(places, settings, fixture.Root, fixture.At("Archive"));
+        first.Tabs.SelectedIndex = 0;
+        second.Location = new(-20000, -19000);
+        inTray.Hide();
+        var bounds = new[] { first.Bounds, second.Bounds };
+
+        // As Update and restart does, with the window used last first, then closing them.
+        WindowContext.SaveForRestart([second, inTray, first], settings);
+        foreach (var window in new[] { first, inTray, second })
+        {
+            window.Close();
+        }
+
+        var restarted = Settings.Load(path);
+        var saved = restarted.RestartWindows
+            .Select(_ => new Rectangle(_.Left, _.Top, _.Width, _.Height))
+            .ToList();
+        var windows = MainForm.ForStart([], restarted, places);
+        var opened = windows
+            .Select(_ => new
+            {
+                tabs = _.Views.Select(view => fixture.Relative(view.CurrentPath)).ToList(),
+                active = fixture.Relative(_.ActiveView!.CurrentPath)
+            })
+            .ToList();
+        foreach (var window in windows)
+        {
+            window.Dispose();
+        }
+
+        var nextStart = MainForm.ForStart([], Settings.Load(path), places);
+        var openedNext = nextStart.Select(_ => _.Views.Select(view => fixture.Relative(view.CurrentPath)).ToList()).ToList();
+        foreach (var window in nextStart)
+        {
+            window.Dispose();
+        }
+
+        await Assert.That(saved).IsEquivalentTo(bounds, CollectionOrdering.Matching);
+        await Verify(
+            new
+            {
+                opened,
+                forgotten = restarted.RestartWindows.Count == 0,
+                openedNext
+            })
+            .Snapshot(
+                """
+                {
+                  opened: [
+                    {
+                      tabs: [
+                        Projects/Docs,
+                        Projects/Source
+                      ],
+                      active: Projects/Docs
+                    },
+                    {
+                      tabs: [
+                        Projects,
+                        Projects/Archive
+                      ],
+                      active: Projects/Archive
+                    }
+                  ],
+                  forgotten: true,
+                  openedNext: [
+                    [
+                      Projects,
+                      Projects/Archive
+                    ]
+                  ]
+                }
+                """);
+    }
+
     [Test]
     public async Task MoveTabToNewWindow()
     {

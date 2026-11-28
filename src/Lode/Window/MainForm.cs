@@ -116,7 +116,46 @@ class MainForm : Form
 
     public MainForm(string[] arguments, Settings settings, Places places) :
         this(settings, places) =>
-        OpenInitialTabs(arguments);
+        OpenInitialTabs(arguments, settings.LastWindow());
+
+    // A window as Lode had it when it closed for an update: in its place, with its tabs.
+    MainForm(SavedWindow saved, Settings settings, Places places) :
+        this(settings, places)
+    {
+        restored = saved;
+        OpenInitialTabs([], saved);
+    }
+
+    // The place it opens in, for a window as Lode had it when it closed for an update. Null for
+    // every other, which opens where the window that closed last was.
+    SavedWindow? restored;
+
+    /// <summary>
+    /// The windows a start opens: one, with the folders and files the launch gave it, or, with
+    /// none, the tabs of the window that closed last. Started by an update, with none given,
+    /// every window Lode had as it closed for it, each in its place with its tabs, the one used
+    /// last last, so it opens in front. The settings then forget them, whichever this start
+    /// was, so the start after opens one window again.
+    /// </summary>
+    internal static List<MainForm> ForStart(string[] arguments, Settings settings, Places places)
+    {
+        var restart = settings.RestartWindows;
+        if (restart.Count > 0)
+        {
+            settings.RestartWindows = [];
+            settings.Save();
+        }
+
+        if (restart.Count == 0 ||
+            Openable(arguments).Count > 0)
+        {
+            return [new(arguments, settings, places)];
+        }
+
+        return restart
+            .Select(_ => new MainForm(_, settings, places))
+            .ToList();
+    }
 
     // A window with no tabs yet.
     MainForm(Settings settings, Places places)
@@ -317,7 +356,8 @@ class MainForm : Form
                         Zip.IsArchivePath(_))
             .ToList();
 
-    void OpenInitialTabs(string[] arguments)
+    // With no folders or files given it, the window opens with the tabs saved for it.
+    void OpenInitialTabs(string[] arguments, SavedWindow window)
     {
         var paths = Openable(arguments);
         var active = paths.Count - 1;
@@ -330,15 +370,15 @@ class MainForm : Form
         var lastShown = new List<DateTimeOffset>();
         if (paths.Count == 0)
         {
-            var saved = settings.TabsLastShown.Count == settings.Tabs.Count;
+            var saved = window.TabsLastShown.Count == window.Tabs.Count;
             var now = Time.GetUtcNow();
 
             // The tab that was active is as many along as there are tabs before it still to
             // open: one whose folder has gone since leaves those after it a place earlier.
             active = 0;
-            for (var index = 0; index < settings.Tabs.Count; index++)
+            for (var index = 0; index < window.Tabs.Count; index++)
             {
-                var path = settings.Tabs[index];
+                var path = window.Tabs[index];
                 if (!Locations.IsThisPC(path) &&
                     !Locations.IsRemote(path) &&
                     !Directory.Exists(path) &&
@@ -347,7 +387,7 @@ class MainForm : Form
                     continue;
                 }
 
-                if (index < settings.ActiveTab)
+                if (index < window.ActiveTab)
                 {
                     active++;
                 }
@@ -357,9 +397,9 @@ class MainForm : Form
                 // Not after now, which a clock put back would leave: the tab would stay until
                 // the clock caught up.
                 if (saved &&
-                    settings.TabsLastShown[index] < now)
+                    window.TabsLastShown[index] < now)
                 {
-                    lastShown.Add(settings.TabsLastShown[index]);
+                    lastShown.Add(window.TabsLastShown[index]);
                 }
                 else
                 {
@@ -403,22 +443,23 @@ class MainForm : Form
     protected override void OnLoad(EventArgs args)
     {
         base.OnLoad(args);
+        var place = restored ?? settings.LastWindow();
         if (restoreBounds)
         {
-            var saved = new Rectangle(settings.Left, settings.Top, settings.Width, settings.Height);
+            var saved = new Rectangle(place.Left, place.Top, place.Width, place.Height);
             var onScreen = Screen.AllScreens.Any(_ => _.WorkingArea.IntersectsWith(saved));
             if (saved is { Width: > 0, Height: > 0 } && onScreen)
             {
                 Bounds = saved;
             }
 
-            if (settings.Maximized)
+            if (place.Maximized)
             {
                 WindowState = FormWindowState.Maximized;
             }
         }
 
-        var distance = settings.SplitterDistance > 0 ? settings.SplitterDistance : LogicalToDeviceUnits(250);
+        var distance = place.SplitterDistance > 0 ? place.SplitterDistance : LogicalToDeviceUnits(250);
         split.SplitterDistance = Math.Clamp(distance, split.Panel1MinSize, Math.Max(split.Panel1MinSize, split.Width / 2));
     }
 
@@ -481,7 +522,7 @@ class MainForm : Form
             }
         }
 
-        var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        var bounds = NormalBounds;
         settings.Left = bounds.Left;
         settings.Top = bounds.Top;
         settings.Width = bounds.Width;
@@ -499,19 +540,37 @@ class MainForm : Form
         }
     }
 
+    // Where the window is, as it is to open again: as it was before it was maximized or
+    // minimized.
+    Rectangle NormalBounds =>
+        WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+
     // Puts the window's tabs in the settings, for the next start to open. Not those of a window
     // with no folder left in it, its last tab dragged to another window, which closes for
     // that: none would be saved, in place of the tabs last saved, until the other closed.
     internal void RememberTabs()
     {
-        if (!Views.Any())
+        if (Saved() is not { } saved)
         {
             return;
         }
 
-        settings.Tabs = Views
-            .Select(_ => _.CurrentPath)
-            .ToList();
+        settings.Tabs = saved.Tabs;
+        settings.TabsLastShown = saved.TabsLastShown;
+        settings.ActiveTab = saved.ActiveTab;
+    }
+
+    /// <summary>
+    /// The window's place and its tabs, as it is to open again. Null for a window with no folder
+    /// left in it, its last tab dragged to another window, which closes for that.
+    /// </summary>
+    internal SavedWindow? Saved()
+    {
+        if (!Views.Any())
+        {
+            return null;
+        }
+
         // The tab showing is looked at until now.
         var now = Time.GetUtcNow();
         foreach (var view in Views.Where(_ => _.Showing))
@@ -519,12 +578,25 @@ class MainForm : Form
             view.LastShown = now;
         }
 
-        settings.TabsLastShown = Views
-            .Select(_ => _.LastShown)
-            .ToList();
-        // Among the folders' tabs, which are all that open again: with Find Results showing, the
-        // one before it.
-        settings.ActiveTab = Math.Max(0, TabPages.Take(Tabs.SelectedIndex + 1).Count(HoldsFolder) - 1);
+        var bounds = NormalBounds;
+        return new()
+        {
+            Left = bounds.Left,
+            Top = bounds.Top,
+            Width = bounds.Width,
+            Height = bounds.Height,
+            Maximized = WasMaximized,
+            SplitterDistance = split.SplitterDistance,
+            Tabs = Views
+                .Select(_ => _.CurrentPath)
+                .ToList(),
+            TabsLastShown = Views
+                .Select(_ => _.LastShown)
+                .ToList(),
+            // Among the folders' tabs, which are all that open again: with Find Results showing,
+            // the one before it.
+            ActiveTab = Math.Max(0, TabPages.Take(Tabs.SelectedIndex + 1).Count(HoldsFolder) - 1)
+        };
     }
 
     // The window used last: the one whose tabs are saved while Lode runs, as it is the one

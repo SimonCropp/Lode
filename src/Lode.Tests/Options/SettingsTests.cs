@@ -88,6 +88,20 @@ public class SettingsTests
         settings.Tabs = [@"C:\Code", "This PC"];
         settings.TabsLastShown = [new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero), new(2026, 11, 19, 17, 30, 0, TimeSpan.Zero)];
         settings.ActiveTab = 1;
+        settings.RestartWindows =
+        [
+            new()
+            {
+                Left = 30,
+                Top = 40,
+                Width = 1000,
+                Height = 700,
+                Maximized = true,
+                SplitterDistance = 200,
+                Tabs = [@"D:\Work"],
+                TabsLastShown = [new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero)]
+            }
+        ];
         settings.ColumnWidths["Name"] = 420;
         settings.SetSort(@"C:\Code", "Date", ascending: false);
         settings.SetLargeIcons(@"C:\Code\Pictures", true);
@@ -175,7 +189,24 @@ public class SettingsTests
                     "2026-11-19T09:00:00+00:00",
                     "2026-11-19T17:30:00+00:00"
                   ],
-                  "ActiveTab": 1
+                  "ActiveTab": 1,
+                  "RestartWindows": [
+                    {
+                      "Left": 30,
+                      "Top": 40,
+                      "Width": 1000,
+                      "Height": 700,
+                      "Maximized": true,
+                      "SplitterDistance": 200,
+                      "Tabs": [
+                        "D:\\Work"
+                      ],
+                      "TabsLastShown": [
+                        "2026-11-19T12:00:00+00:00"
+                      ],
+                      "ActiveTab": 0
+                    }
+                  ]
                 }
                 """);
     }
@@ -188,6 +219,16 @@ public class SettingsTests
         var settings = Settings.Load(path);
         settings.Maximized = true;
         settings.Tabs = [@"D:\Work"];
+        settings.RestartWindows =
+        [
+            new()
+            {
+                Width = 1000,
+                Height = 700,
+                Tabs = [@"C:\Code", "This PC"],
+                ActiveTab = 1
+            }
+        ];
         settings.ColumnWidths["Type"] = 140;
         settings.SetSort(@"D:\Work", "Size", ascending: true);
         settings.Save();
@@ -237,6 +278,18 @@ public class SettingsTests
                   Maximized: true,
                   Tabs: [
                     D:\Work
+                  ],
+                  RestartWindows: [
+                    {
+                      Width: 1000,
+                      Height: 700,
+                      Maximized: false,
+                      Tabs: [
+                        C:\Code,
+                        This PC
+                      ],
+                      ActiveTab: 1
+                    }
                   ]
                 }
                 """);
@@ -638,9 +691,9 @@ public class SettingsTests
     }
 
     // The copy run as administrator keeps its window's place and tabs apart, starting from the
-    // other's, so neither opens with the other's tabs next time, whichever saved last. Its
-    // options are the other's, and what either changes of them the other has the next time it
-    // starts.
+    // other's, so neither opens with the other's tabs next time, whichever saved last, and so
+    // are the windows it closed for an update with. Its options are the other's, and what
+    // either changes of them the other has the next time it starts.
     [Test]
     public async Task TheAdministratorsWindowIsItsOwn()
     {
@@ -656,6 +709,7 @@ public class SettingsTests
         administrator.Tabs = [@"C:\Windows\System32"];
         administrator.Width = 900;
         administrator.Theme = Theme.Dark;
+        administrator.RestartWindows = [new() { Tabs = [@"C:\Windows"] }];
         administrator.Save();
         normal.Tabs = [@"C:\Work", @"D:\Code"];
         normal.Save();
@@ -670,13 +724,15 @@ public class SettingsTests
                 {
                     normalAgain.Tabs,
                     normalAgain.Width,
-                    normalAgain.Theme
+                    normalAgain.Theme,
+                    restart = normalAgain.RestartWindows.Select(_ => _.Tabs)
                 },
                 administrator = new
                 {
                     administratorAgain.Tabs,
                     administratorAgain.Width,
-                    administratorAgain.Theme
+                    administratorAgain.Theme,
+                    restart = administratorAgain.RestartWindows.Select(_ => _.Tabs)
                 },
                 kept = Path.GetFileName(Settings.WindowPath(path))
             })
@@ -692,14 +748,20 @@ public class SettingsTests
                       D:\Code
                     ],
                     Width: 1200,
-                    Theme: Dark
+                    Theme: Dark,
+                    restart: []
                   },
                   administrator: {
                     Tabs: [
                       C:\Windows\System32
                     ],
                     Width: 900,
-                    Theme: Dark
+                    Theme: Dark,
+                    restart: [
+                      [
+                        C:\Windows
+                      ]
+                    ]
                   },
                   kept: settings.administrator.json
                 }

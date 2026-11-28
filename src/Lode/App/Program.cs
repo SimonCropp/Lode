@@ -168,7 +168,7 @@ static class Program
         _ = Task.Run(ReplaceInFiles.ClearOldTemp);
 
         JumpList.Follow(places, settings);
-        Application.Run(new WindowContext(new(paths.ToArray(), settings, places), settings, places, instance));
+        Application.Run(new WindowContext(MainForm.ForStart(paths.ToArray(), settings, places), settings, places, instance));
         return 0;
     }
 

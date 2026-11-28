@@ -24,7 +24,9 @@ sealed class WindowContext : ApplicationContext
         "";
 #endif
 
-    public WindowContext(MainForm first, Settings settings, Places places, SingleInstance instance)
+    /// <param name="starting">The windows the start opens, the one used last last: one, but for the
+    /// start after an update. See MainForm.ForStart.</param>
+    public WindowContext(IReadOnlyList<MainForm> starting, Settings settings, Places places, SingleInstance instance)
     {
         this.settings = settings;
         this.places = places;
@@ -74,8 +76,14 @@ sealed class WindowContext : ApplicationContext
         ShellWindows.Enabled = true;
         global::MainForm.WindowOpened += Track;
         global::MainForm.ExitRequested += Exit;
-        Track(first);
-        first.Show();
+
+        // Each shown in turn, so the last ends up in front.
+        foreach (var window in starting)
+        {
+            Track(window);
+            window.Show();
+        }
+
         instance.HandTo(OnLaunched);
         ReportUpdate();
         Updates.Instance.Start();
@@ -330,6 +338,7 @@ sealed class WindowContext : ApplicationContext
             return;
         }
 
+        SaveForRestart(windows, settings);
         CloseAll();
     }
 
@@ -352,13 +361,38 @@ sealed class WindowContext : ApplicationContext
         return answer == DialogResult.Yes;
     }
 
+    /// <summary>
+    /// Saves each window, its place and its tabs, for the Lode the update starts to open again,
+    /// as it closes them all: those showing, or with none showing, the one in the tray, which a
+    /// start would have opened. The one used last last, so it opens in front.
+    /// </summary>
+    /// <param name="windows">The one used most recently first.</param>
+    internal static void SaveForRestart(IReadOnlyList<MainForm> windows, Settings settings)
+    {
+        var saving = windows
+            .Where(_ => _.Visible)
+            .ToList();
+        if (saving.Count == 0)
+        {
+            saving = windows.ToList();
+        }
+
+        settings.RestartWindows = saving
+            .AsEnumerable()
+            .Reverse()
+            .Select(_ => _.Saved())
+            .OfType<SavedWindow>()
+            .ToList();
+        settings.Save();
+    }
+
     void CloseAll()
     {
         global::MainForm.HideLastWindowOnClose = false;
         tray.Visible = false;
         // Each window writes its tabs and bounds to the settings as it closes, and the last to
-        // write is what the next start restores. So the one used least recently first, and the
-        // one used last, last.
+        // write is what the next start restores, but for the start after an update, which has
+        // every window's. So the one used least recently first, and the one used last, last.
         foreach (var window in windows.AsEnumerable().Reverse().ToList())
         {
             window.Close();
