@@ -87,7 +87,8 @@ It leaves to git a repository with:
 - a split or sparse index
 - SHA-256 objects, reftable refs, or a partial clone's objects left on the server
 - objects replaced, or grafts
-- `core.fileMode` on, or `status.renames` set to copies
+- `core.fileMode` on, or not set, which git takes as on: git for Windows' `git init` sets it off, but a repository made otherwise may leave it out
+- `status.renames` set to copies
 - a config include on a condition other than `gitdir:` and `onbranch:`
 - a folder it can't list, in use or denied by its ACL, where git, unless its `core.fscache` lists the folder too, opens each file by its path and finds it there, or a file deleted between being listed and being hashed
 

@@ -361,6 +361,22 @@ public class WorkingTreeTests
         await GitRun.Agree(repo);
     }
 
+    // core.fileMode not set, as a repository made other than by git for Windows' git init can
+    // have it, which git takes as on: a file staged as one that runs, against its file, which on
+    // Windows can't say whether it does, is a change of mode to git, and isn't staged alone, so
+    // the repository is left to it, rather than read as with core.fileMode off.
+    [Test]
+    public async Task TakesFileModeNotSetAsOn()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "config", "--unset", "core.filemode");
+        Git(repo, "update-index", "--chmod=+x", "tracked.txt");
+
+        await GitRun.LeftToGit(repo);
+        await Assert.That(GitState.FromGit(repo, Cancel.None)!.Files).IsEquivalentTo([new GitFile("tracked.txt", GitChange.Modified)]);
+    }
+
     // An index git splits, or one sparse checkout leaves sparse, isn't read here; one of version
     // 4 is, its paths each only what differs from the one before, however much that is.
     [Test]

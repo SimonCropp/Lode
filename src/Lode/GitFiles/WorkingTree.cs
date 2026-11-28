@@ -46,7 +46,11 @@ sealed class WorkingTree
         this.workTree = workTree;
         this.cancel = cancel;
         var config = repository.Config;
-        if (config.GetBool("core.filemode", false))
+
+        // On unless it is set off, as git has it: git for Windows' git init sets it off, as
+        // Windows can't say whether a file runs, but a repository made otherwise may not have it
+        // set, and there git takes every file staged as one that runs as changed.
+        if (config.GetBool("core.filemode", true))
         {
             throw new GitFilesException("core.fileMode needs git");
         }
