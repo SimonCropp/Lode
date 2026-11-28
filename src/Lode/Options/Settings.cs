@@ -463,6 +463,13 @@ sealed class Settings
         }
     }
 
+    /// <summary>
+    /// The tabs closed while Lode runs, in any window, for each window's Reopen closed tab to
+    /// reach. Kept here, as every window shares the settings, but never saved: see
+    /// <see cref="global::ClosedTabs"/>.
+    /// </summary>
+    internal ClosedTabs ClosedTabs { get; } = new();
+
     // Tabs nobody has looked at for UnusedTabHours are closed, as other apps opening folders in
     // Lode leave a tab for each. Off unless chosen in Options. See MainForm.CloseUnusedTabs.
     public bool CloseUnusedTabs { get; set; }

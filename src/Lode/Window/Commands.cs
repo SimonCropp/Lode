@@ -60,6 +60,11 @@ sealed class Commands
                 Glyph = Icons.Reopen,
                 Shortcut = "Ctrl+Shift+T"
             },
+            QuickMenu.Submenu("Recently closed", window.RecentlyClosed()) with
+            {
+                Enabled = window.CanReopenClosedTab,
+                Glyph = Icons.History
+            },
             new("Command palette", ShowPalette)
             {
                 Glyph = Icons.CommandPalette,

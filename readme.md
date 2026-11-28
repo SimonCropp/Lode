@@ -137,7 +137,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![The Button actions page of Options](src/Lode.Tests/Options/OptionsFormTests.ButtonActionsPage.verified.png)
 
- * <a id="tabs"></a>**Tabs**, each with its own history: right-click **Back** or **Forward** for where it goes, to go several steps at once, and a folder deleted since is passed over. Right-click one to duplicate, pin or close it, or the others. **Reopen closed tab** (Ctrl+Shift+T) brings back the last closed. A tab follows its folder when it is renamed or moved, and goes up when it is deleted. Drag a tab along the row to reorder it, off the row for a window of its own, or onto another window to move it there. **Close tabs not looked at for**, on the **General** page of Options, closes tabs unused for the hours given.
+ * <a id="tabs"></a>**Tabs**, each with its own history: right-click **Back** or **Forward** for where it goes, to go several steps at once, and a folder deleted since is passed over. Right-click one to duplicate, pin or close it, or the others. **Reopen closed tab** (Ctrl+Shift+T) brings back the last closed, in whichever window it was closed, a window's own tabs among them once it is closed; **Recently closed**, in the ⋯ menu and a tab's right-click menu, lists them, the most recent first, to bring back any one. They are kept while Lode runs, not from one start to the next. A tab follows its folder when it is renamed or moved, and goes up when it is deleted. Drag a tab along the row to reorder it, off the row for a window of its own, or onto another window to move it there. **Close tabs not looked at for**, on the **General** page of Options, closes tabs unused for the hours given.
 
    ![Tabs](src/Lode.Tests/Window/MainFormTests.Tabs.verified.png)
 

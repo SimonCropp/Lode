@@ -734,6 +734,108 @@ public class WindowsTests
         await Assert.That(form.CanReopenClosedTab).IsFalse();
     }
 
+    // The tabs closed are one list for every window: Ctrl+Shift+T in either brings back the one
+    // closed most recently, whichever window it was closed in, into the window it is pressed in.
+    [Test]
+    public async Task ClosedTabsReopenInAnyWindow()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        using var first = (QuietForm) await Show(fixture, settings, fixture.Root, fixture.At("Docs"));
+        using var second = (QuietForm) await Show(fixture, settings, fixture.Root, fixture.At("Source"));
+        first.CloseTab((TabPage) first.Views.Last().Parent!);
+        second.CloseTab((TabPage) second.Views.Last().Parent!);
+
+        first.Press(Keys.Control | Keys.Shift | Keys.T);
+        await Pump.Loaded(first.ActiveView!);
+        second.Press(Keys.Control | Keys.Shift | Keys.T);
+        await Pump.Loaded(second.ActiveView!);
+
+        await Assert.That(Titles(first)).IsEquivalentTo(["Projects", "Source"], CollectionOrdering.Matching);
+        await Assert.That(Titles(second)).IsEquivalentTo(["Projects", "Docs"], CollectionOrdering.Matching);
+        await Assert.That(first.CanReopenClosedTab).IsFalse();
+    }
+
+    // Recently closed, in the ⋯ menu and a tab's, lists the tabs closed in any window, the most
+    // recent first, each with its folder's icon. One picked opens again in the window whose menu
+    // it is, and leaves the list, wherever it was in it.
+    [Test]
+    public async Task RecentlyClosedListsTheTabsClosedNewestFirst()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        using var first = await Show(fixture, settings, fixture.Root, fixture.At("Docs"), fixture.At("Archive"));
+        using var second = await Show(fixture, settings, fixture.Root, fixture.At("Source"));
+        first.CloseTab(PageShowing(first, "Docs"));
+        second.CloseTab(PageShowing(second, "Source"));
+        first.CloseTab(PageShowing(first, "Archive"));
+
+        var inMenu = RecentlyClosedIn(first);
+        List<string> inTabMenu;
+        bool withIcons;
+        using (var tabMenu = second.TabMenu(second.Tabs.TabPages[0]))
+        {
+            var submenu = tabMenu.Items.OfType<ToolStripMenuItem>().Single(_ => _.Text == "Recently closed");
+            inTabMenu = submenu.DropDownItems.Cast<ToolStripItem>().Select(_ => _.Text!).ToList();
+            withIcons = submenu.DropDownItems.Cast<ToolStripItem>().All(_ => _.Image != null);
+        }
+
+        first.Commands.Menu()
+            .Single(_ => _?.Text == "Recently closed")!
+            .Children!
+            .Single(_ => _?.Text == "Source")!
+            .Action();
+        await Pump.Loaded(first.ActiveView!);
+
+        await Assert.That(inMenu).IsEquivalentTo(["Archive", "Source", "Docs"], CollectionOrdering.Matching);
+        await Assert.That(inTabMenu).IsEquivalentTo(["Archive", "Source", "Docs"], CollectionOrdering.Matching);
+        await Assert.That(withIcons).IsTrue();
+        await Assert.That(Titles(first)).IsEquivalentTo(["Projects", "Source"], CollectionOrdering.Matching);
+        await Assert.That(RecentlyClosedIn(second)).IsEquivalentTo(["Archive", "Docs"], CollectionOrdering.Matching);
+    }
+
+    // A window closed keeps its tabs as closed, in their order, so another window can bring them
+    // back, as does one closed by closing its last tab. Not one hidden in the tray, which keeps
+    // them, to come back with.
+    [Test]
+    public async Task ClosingAWindowKeepsItsTabsAsClosed()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings();
+        using var staying = await Show(fixture, settings, fixture.Root);
+        var closing = await Show(fixture, settings, fixture.At("Docs"), fixture.At("Source"));
+        var lastTabClosing = await Show(fixture, settings, fixture.At("Archive"));
+
+        closing.Close();
+        lastTabClosing.CloseTab(lastTabClosing.Tabs.TabPages[0]);
+        Application.DoEvents();
+        var kept = RecentlyClosedIn(staying);
+        MainForm.HideLastWindowOnClose = true;
+        try
+        {
+            staying.Close();
+        }
+        finally
+        {
+            MainForm.HideLastWindowOnClose = false;
+        }
+
+        await Assert.That(kept).IsEquivalentTo(["Archive", "Source", "Docs"], CollectionOrdering.Matching);
+        await Assert.That(lastTabClosing.IsDisposed).IsTrue();
+        await Assert.That(staying.Visible).IsFalse();
+        await Assert.That(RecentlyClosedIn(staying)).IsEquivalentTo(["Archive", "Source", "Docs"], CollectionOrdering.Matching);
+    }
+
+    static TabPage PageShowing(MainForm form, string name) =>
+        (TabPage) form.Views.Single(_ => Path.GetFileName(_.CurrentPath) == name).Parent!;
+
+    static List<string> RecentlyClosedIn(MainForm form) =>
+        form.Commands.Menu()
+            .Single(_ => _?.Text == "Recently closed")!
+            .Children!
+            .Select(_ => _!.Text)
+            .ToList();
+
     // With closing unused tabs on, a tab not looked at for the hours given closes, the one looked
     // at longest ago first, so Reopen closed tab brings back the other first. The tab the window
     // shows stays however long it has shown, and one opened in the background has the hours from
@@ -2123,6 +2225,7 @@ public class WindowsTests
                   New tab,
                   New window,
                   Reopen closed tab (disabled),
+                  Recently closed (disabled),
                   Command palette,
                   Find in files,
                   Clone a repository…,
@@ -2247,7 +2350,8 @@ public class WindowsTests
                     Close tabs to the right,
                     Close all tabs,
                     ----,
-                    Reopen closed tab (disabled)
+                    Reopen closed tab (disabled),
+                    Recently closed (disabled)
                   ],
                   notPinned: [
                     Duplicate tab,
@@ -2259,7 +2363,8 @@ public class WindowsTests
                     Close tabs to the right (disabled),
                     Close all tabs,
                     ----,
-                    Reopen closed tab (disabled)
+                    Reopen closed tab (disabled),
+                    Recently closed (disabled)
                   ]
                 }
                 """);

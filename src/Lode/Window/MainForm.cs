@@ -51,10 +51,6 @@ class MainForm : Form
     // one when the window closes.
     Updates updates = Updates.Instance;
 
-    // Folders of tabs closed in this window, most recent last, for Ctrl+Shift+T.
-    List<string> closedTabs = [];
-    const int maximumClosedTabs = 20;
-
     // False for a window opened from another: it is placed beside that one rather than where
     // the last window to close was.
     bool restoreBounds = true;
@@ -847,6 +843,8 @@ class MainForm : Form
         }
     }
 
+    // Kept for every window's Reopen closed tab, not this one's alone. Find Results and the Diff
+    // tab have no folder to open again.
     void RememberClosed(TabPage page)
     {
         if (page.Controls.OfType<FolderView>().FirstOrDefault() is not { } view)
@@ -854,30 +852,51 @@ class MainForm : Form
             return;
         }
 
-        closedTabs.Add(view.CurrentPath);
-        if (closedTabs.Count > maximumClosedTabs)
+        settings.ClosedTabs.Add(view.CurrentPath);
+    }
+
+    // Closed for good, rather than hidden in the tray, from where it comes back as it was: its
+    // tabs are kept as closed, in their order, the last the most recent, as Close all tabs keeps
+    // them, so Ctrl+Shift+T in another window brings them back. None for a window whose last tab
+    // was dragged to another, which has none left.
+    protected override void OnFormClosed(FormClosedEventArgs args)
+    {
+        base.OnFormClosed(args);
+        foreach (var page in TabPages)
         {
-            closedTabs.RemoveAt(0);
+            RememberClosed(page);
         }
     }
 
-    internal bool CanReopenClosedTab => closedTabs.Count > 0;
+    internal bool CanReopenClosedTab => settings.ClosedTabs.Any;
 
     /// <summary>
-    /// Opens the most recently closed tab again, at the folder it was showing, or, where that
-    /// has gone since, the nearest folder above it still there, as a tab whose folder is
-    /// deleted goes to. Somewhere on the network is taken on trust, as asking after it could
-    /// keep the window waiting.
+    /// Opens the tab closed most recently, in any window, again in this one: see
+    /// <see cref="ReopenClosedTab(ClosedTab)"/>.
     /// </summary>
     internal void ReopenClosedTab()
     {
-        if (closedTabs.Count == 0)
+        if (settings.ClosedTabs.TakeLast() is { } last)
         {
-            return;
+            Reopen(last);
         }
+    }
 
-        var path = closedTabs[^1];
-        closedTabs.RemoveAt(closedTabs.Count - 1);
+    /// <summary>
+    /// Opens <paramref name="tab"/> again in this window, picked from Recently closed, at the
+    /// folder it was showing, or, where that has gone since, the nearest folder above it still
+    /// there, as a tab whose folder is deleted goes to. Somewhere on the network is taken on
+    /// trust, as asking after it could keep the window waiting.
+    /// </summary>
+    internal void ReopenClosedTab(ClosedTab tab)
+    {
+        settings.ClosedTabs.Take(tab);
+        Reopen(tab);
+    }
+
+    void Reopen(ClosedTab tab)
+    {
+        var path = tab.Folder;
         if (!Locations.IsRemote(path) &&
             FolderView.NearestFolder(path) is { } nearest)
         {
@@ -885,6 +904,23 @@ class MainForm : Form
         }
 
         AddTab(path, true, intoZip: true);
+    }
+
+    /// <summary>
+    /// What Recently closed lists, in the ⋯ menu and a tab's: the tabs closed in any window, the
+    /// most recent first, each named as its tab was, told apart from another of the same name,
+    /// with its folder's icon, and opening it again here.
+    /// </summary>
+    internal List<QuickMenu.Command?> RecentlyClosed()
+    {
+        var closed = settings.ClosedTabs.NewestFirst();
+        var labels = Locations.Labels(closed.Select(_ => _.Folder));
+        return closed
+            .Select(_ => (QuickMenu.Command?) new QuickMenu.Command(labels[_.Folder], () => ReopenClosedTab(_))
+            {
+                ShellIcon = TabIcon(_.Folder)
+            })
+            .ToList();
     }
 
     static MainForm? WindowOf(Control? control) =>
@@ -1673,7 +1709,28 @@ class MainForm : Form
         menu.Items.Add("Close all tabs", null, (_, _) => CloseAllTabs());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Reopen closed tab", null, (_, _) => ReopenClosedTab()) { Enabled = CanReopenClosedTab, ShortcutKeyDisplayString = "Ctrl+Shift+T" });
+        menu.Items.Add(RecentlyClosedItem(menu));
         return menu;
+    }
+
+    // Recently closed as a submenu of a menu built from items, as the tab's is, run as clicked
+    // as its other items are, the icons drawn for it let go of with the menu.
+    ToolStripMenuItem RecentlyClosedItem(ToolStripDropDown menu)
+    {
+        var item = new ToolStripMenuItem("Recently closed");
+        var images = new List<Image>();
+        var iconSize = menu.LogicalToDeviceUnits(16);
+        item.DropDown.ImageScalingSize = new(iconSize, iconSize);
+        QuickMenu.AddItems(item.DropDownItems, RecentlyClosed(), _ => _(), iconSize, images);
+        item.Enabled = item.DropDownItems.Count > 0;
+        menu.Disposed += (_, _) =>
+        {
+            foreach (var image in images)
+            {
+                image.Dispose();
+            }
+        };
+        return item;
     }
 
     // As Find Results shows: what was found so far in the status bar, and none of what is a
