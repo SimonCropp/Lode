@@ -153,11 +153,68 @@ sealed record RemoteSite(string Name, string Url)
     }
 
     /// <summary>
-    /// The site and page for a remote's url, as https, ssh, or git's user@host:path. GitHub,
-    /// GitLab, Bitbucket and Azure DevOps, under its dev.azure.com name and its older
-    /// visualstudio.com one.
+    /// The GitHub Enterprise servers, by host, in lower case, from
+    /// <see cref="Settings.GitHubEnterpriseHosts"/>: put in as Lode starts, and again as Options
+    /// changes them. Each is GitHub, its pages laid out as github.com's are.
     /// </summary>
-    internal static RemoteSite? For(string remote)
+    internal static IReadOnlySet<string> GitHubEnterprise { get; private set; } = new HashSet<string>();
+
+    /// <summary>
+    /// Makes the servers <paramref name="hosts"/> name GitHub Enterprise, each a host, or a url
+    /// of one, as it might be pasted from the browser.
+    /// </summary>
+    internal static void UseGitHubEnterprise(IEnumerable<string> hosts) =>
+        GitHubEnterprise = EnterpriseHosts(hosts).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The hosts of the GitHub Enterprise servers <paramref name="typed"/> names, each once, in
+    /// the order typed, leaving out what names none.
+    /// </summary>
+    internal static List<string> EnterpriseHosts(IEnumerable<string> typed) =>
+        typed
+            .Select(EnterpriseHost)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// The host of a GitHub Enterprise server, in lower case, from its host, or a url of one:
+    /// github.example.com, https://github.example.com/ or a repository's page there. Null for
+    /// nothing a host, or github.com, which needs no adding.
+    /// </summary>
+    internal static string? EnterpriseHost(string typed)
+    {
+        typed = typed.Trim();
+        if (!typed.Contains("://", StringComparison.Ordinal))
+        {
+            typed = $"https://{typed}";
+        }
+
+        if (!Uri.TryCreate(typed, UriKind.Absolute, out var uri) ||
+            uri.HostNameType is not (UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6))
+        {
+            return null;
+        }
+
+        var host = uri.Host.ToLowerInvariant();
+        if (host == "github.com")
+        {
+            return null;
+        }
+
+        return host;
+    }
+
+    /// <summary>
+    /// The site and page for a remote's url, as https, ssh, or git's user@host:path. GitHub,
+    /// GitHub Enterprise's servers in <see cref="GitHubEnterprise"/>, GitLab, Bitbucket and Azure
+    /// DevOps, under its dev.azure.com name and its older visualstudio.com one.
+    /// </summary>
+    internal static RemoteSite? For(string remote) =>
+        For(remote, GitHubEnterprise);
+
+    /// <param name="gitHubEnterprise">The GitHub Enterprise servers, by host, in lower case.</param>
+    internal static RemoteSite? For(string remote, IReadOnlySet<string> gitHubEnterprise)
     {
         if (HostAndPath(remote.Trim()) is not var (host, path))
         {
@@ -172,6 +229,14 @@ sealed record RemoteSite(string Name, string Url)
         path = path.Trim('/');
         var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         host = host.ToLowerInvariant();
+
+        // As github.com: the owner and name, whatever page of the repository it is.
+        if (parts.Length >= 2 &&
+            gitHubEnterprise.Contains(host))
+        {
+            return new("GitHub", $"https://{host}/{parts[0]}/{parts[1]}");
+        }
+
         switch (host)
         {
             case "github.com" when parts.Length >= 2:

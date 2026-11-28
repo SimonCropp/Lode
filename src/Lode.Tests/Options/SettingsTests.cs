@@ -105,6 +105,7 @@ public class SettingsTests
         settings.ColumnWidths["Name"] = 420;
         settings.SetSort(@"C:\Code", "Date", ascending: false);
         settings.SetLargeIcons(@"C:\Code\Pictures", true);
+        settings.GitHubEnterpriseHosts = ["github.contoso.com"];
 
         settings.Save();
 
@@ -141,6 +142,9 @@ public class SettingsTests
                   "DiffSplit": false,
                   "DiffHideWhitespace": false,
                   "AzureDevOpsOrganizations": [],
+                  "GitHubEnterpriseHosts": [
+                    "github.contoso.com"
+                  ],
                   "CollapsedSections": [],
                   "PinnedFolders": [],
                   "RecentFolders": [],
@@ -231,6 +235,7 @@ public class SettingsTests
         ];
         settings.ColumnWidths["Type"] = 140;
         settings.SetSort(@"D:\Work", "Size", ascending: true);
+        settings.GitHubEnterpriseHosts = ["github.contoso.com"];
         settings.Save();
 
         await Verify(Settings.Load(path))
@@ -254,6 +259,9 @@ public class SettingsTests
                   ],
                   DiffSplit: false,
                   DiffHideWhitespace: false,
+                  GitHubEnterpriseHosts: [
+                    github.contoso.com
+                  ],
                   PurgePermanently: false,
                   PurgeKeeps: [
                     .env,
@@ -952,7 +960,7 @@ public class SettingsTests
 
         await File.WriteAllTextAsync(path, "{ not json");
 
-        var codeFolder = Program.CodeFolderForLinks(path);
+        var codeFolder = Settings.ReadQuietly(path)?.CodeDirectory;
         string? leftAsItWas = null;
         if (File.Exists(path))
         {

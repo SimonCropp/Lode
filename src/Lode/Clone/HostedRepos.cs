@@ -20,9 +20,9 @@ sealed record HostedListing(IReadOnlyList<HostedRepo> Repos, IReadOnlyList<strin
 }
 
 /// <summary>
-/// Lists the repositories the user can clone from GitHub and Azure DevOps, signed in with git's
-/// own credentials (see <see cref="GitCredentials"/>), and which of them are already in the code
-/// folder, for Clone to leave out.
+/// Lists the repositories the user can clone from GitHub, its Enterprise servers too, and Azure
+/// DevOps, signed in with git's own credentials (see <see cref="GitCredentials"/>), and which of
+/// them are already in the code folder, for Clone to leave out.
 /// </summary>
 static class HostedRepos
 {
@@ -45,9 +45,10 @@ static class HostedRepos
     };
 
     /// <summary>
-    /// Lists the GitHub repositories. Tests answer for GitHub.
+    /// Lists the GitHub repositories, github.com's and those of the GitHub Enterprise servers
+    /// given, by host. Tests answer for GitHub.
     /// </summary>
-    internal static Func<Cancel, Task<HostedListing>> ListGitHub { get; set; } = ReadGitHub;
+    internal static Func<IReadOnlyList<string>, Cancel, Task<HostedListing>> ListGitHub { get; set; } = ReadGitHub;
 
     /// <summary>
     /// Lists the Azure DevOps repositories of the organizations given, and of any others the
@@ -55,35 +56,78 @@ static class HostedRepos
     /// </summary>
     internal static Func<IReadOnlyList<string>, Cancel, Task<HostedListing>> ListAzureDevOps { get; set; } = ReadAzureDevOps;
 
-    internal static async Task<HostedListing> ReadGitHub(Cancel cancel)
+    /// <summary>
+    /// github.com's repositories, then each GitHub Enterprise server's, one after another, as a
+    /// sign in to each may show a window of its own.
+    /// </summary>
+    internal static async Task<HostedListing> ReadGitHub(IReadOnlyList<string> enterprise, Cancel cancel)
     {
-        var credential = await Task.Run(() => GitCredentials.Fill("github.com", null, cancel), cancel);
+        var repos = new List<HostedRepo>();
+        var problems = new List<string>();
+        foreach (var host in (string[]) ["github.com", .. enterprise])
+        {
+            var listing = await ReadGitHubAt(host, cancel);
+            repos.AddRange(listing.Repos);
+            problems.AddRange(listing.Problems);
+        }
+
+        return new(repos, problems);
+    }
+
+    /// <summary>
+    /// The API of the GitHub at <paramref name="host"/>: github.com's on a host of its own,
+    /// GitHub Enterprise's under /api/v3 on the server's.
+    /// </summary>
+    internal static string GitHubApi(string host)
+    {
+        if (host == "github.com")
+        {
+            return "https://api.github.com";
+        }
+
+        return $"https://{host}/api/v3";
+    }
+
+    /// <summary>
+    /// The repositories of the GitHub at <paramref name="host"/>, github.com or a GitHub
+    /// Enterprise server, signed in with git's credential for that host. An Enterprise server's
+    /// are under headings of its own, its host before each.
+    /// </summary>
+    internal static async Task<HostedListing> ReadGitHubAt(string host, Cancel cancel)
+    {
+        var enterprise = host != "github.com";
+        var name = enterprise ? host : GitHub;
+        var credential = await Task.Run(() => GitCredentials.Fill(host, null, cancel), cancel);
         if (credential == null)
         {
-            return HostedListing.Failed("Couldn't sign in to GitHub: git has no credential for it. Sign in with gh auth login, or clone a repository from GitHub once with git.");
+            var signIn = enterprise
+                ? $"Sign in with gh auth login --hostname {host}, or clone a repository from it once with git."
+                : "Sign in with gh auth login, or clone a repository from GitHub once with git.";
+            return HostedListing.Failed($"Couldn't sign in to {name}: git has no credential for it. {signIn}");
         }
 
         try
         {
-            using var user = await Get("https://api.github.com/user", credential, cancel);
-            await Tell("github.com", null, credential, user, cancel);
+            var api = GitHubApi(host);
+            using var user = await Get($"{api}/user", credential, cancel);
+            await Tell(host, null, credential, user, cancel);
             if (!user.IsSuccessStatusCode)
             {
-                return HostedListing.Failed($"Couldn't sign in to GitHub: {Describe(user)}.");
+                return HostedListing.Failed($"Couldn't sign in to {name}: {Describe(user)}.");
             }
 
             var login = ParseLogin(await user.Content.ReadAsStringAsync(cancel));
             var repos = new List<HostedRepo>();
-            var url = "https://api.github.com/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member";
+            var url = $"{api}/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member";
             while (url != null)
             {
                 using var page = await Get(url, credential, cancel);
                 if (!page.IsSuccessStatusCode)
                 {
-                    return new(repos, [$"Couldn't list all of GitHub's repositories: {Describe(page)}."]);
+                    return new(repos, [$"Couldn't list all of {name}'s repositories: {Describe(page)}."]);
                 }
 
-                repos.AddRange(ParseGitHub(await page.Content.ReadAsStringAsync(cancel), login));
+                repos.AddRange(ParseGitHub(await page.Content.ReadAsStringAsync(cancel), login, enterprise ? host : null));
                 url = NextLink(page.Headers.TryGetValues("Link", out var links) ? string.Join(", ", links) : null);
             }
 
@@ -96,7 +140,7 @@ static class HostedRepos
                     TaskCanceledException or
                     JsonException)
         {
-            return HostedListing.Failed($"Couldn't list GitHub's repositories: {exception.Message}");
+            return HostedListing.Failed($"Couldn't list {name}'s repositories: {exception.Message}");
         }
     }
 
@@ -112,19 +156,20 @@ static class HostedRepos
     // one: anonymously otherwise, which a public one needs no more than. Git isn't told how it
     // went, as the listings tell it: one kept already needs no keeping, and this is asked unasked,
     // once a clone ends, where dropping one would be a sign in nobody looked for.
+    // On github.com or a GitHub Enterprise server, each asked by its own API.
     static async Task<ForkParent?> ReadParent(string remote, Cancel cancel)
     {
-        const string prefix = "https://github.com/";
-        if (RemoteSite.For(remote) is not { Name: "GitHub" } site ||
-            !site.Url.StartsWith(prefix, StringComparison.Ordinal))
+        if (RemoteSite.For(remote) is not { Name: "GitHub" } site)
         {
             return null;
         }
 
         try
         {
-            var credential = await Task.Run(() => GitCredentials.FillQuietly("github.com", cancel), cancel);
-            using var response = await Get($"https://api.github.com/repos/{site.Url[prefix.Length..]}", credential, cancel);
+            var page = new Uri(site.Url);
+            var host = page.Host;
+            var credential = await Task.Run(() => GitCredentials.FillQuietly(host, cancel), cancel);
+            using var response = await Get($"{GitHubApi(host)}/repos{page.AbsolutePath}", credential, cancel);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
@@ -230,7 +275,9 @@ static class HostedRepos
     /// A page of GitHub's /user/repos: those owned by <paramref name="login"/> under Your
     /// repositories, the rest under their owner.
     /// </summary>
-    internal static List<HostedRepo> ParseGitHub(string json, string login)
+    /// <param name="enterprise">The GitHub Enterprise server's host, which goes before each
+    /// heading, so its repositories are apart from github.com's; null for github.com.</param>
+    internal static List<HostedRepo> ParseGitHub(string json, string login, string? enterprise = null)
     {
         using var document = JsonDocument.Parse(json);
         var repos = new List<HostedRepo>();
@@ -246,6 +293,11 @@ static class HostedRepos
             if (owner.Equals(login, StringComparison.OrdinalIgnoreCase))
             {
                 group = YourRepositories;
+            }
+
+            if (enterprise != null)
+            {
+                group = $"{enterprise} / {group}";
             }
 
             repos.Add(

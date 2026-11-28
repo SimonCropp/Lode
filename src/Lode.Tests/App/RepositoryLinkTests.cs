@@ -166,6 +166,50 @@ public class RepositoryLinkTests
     static string[] Arguments(string command, string link) =>
         JumpListTests.CommandLineToArguments(RepositoryLink.Split(command, link)!.Value.Arguments);
 
+    // An Open with GitHub Desktop link from a GitHub Enterprise server chosen in Options is
+    // GitHub's: read as github.com's are, named, and its clone found in the code folder however
+    // origin's url is written, the file it names in it, and not a clone of the same owner and
+    // name from github.com. Not chosen, Lode can't tell which repository it is for, and hands it
+    // to GitHub Desktop, as it did every such link before.
+    [Test]
+    [NotInParallel("GitHubEnterprise")]
+    public async Task AGitHubEnterpriseLinkIsFoundAsGitHubs()
+    {
+        const string text = "x-github-client://openRepo/https://github.contoso.com/octo/Lode?branch=main&filepath=src%2FProgram.cs";
+        var unknown = RepositoryLink.Parse(text);
+        var temp = Directory.CreateTempSubdirectory("LodeTests.Links.").FullName;
+        var previous = RemoteSite.GitHubEnterprise;
+        RemoteSite.UseGitHubEnterprise(["GitHub.Contoso.com"]);
+        try
+        {
+            var clone = Path.Combine(temp, "Lode");
+            var fromGitHub = Path.Combine(temp, "Public", "Lode");
+            Directory.CreateDirectory(Path.Combine(clone, ".git"));
+            Directory.CreateDirectory(Path.Combine(clone, "src"));
+            Directory.CreateDirectory(Path.Combine(fromGitHub, ".git"));
+            Directory.CreateDirectory(Path.Combine(fromGitHub, "src"));
+            await File.WriteAllTextAsync(Path.Combine(clone, "src", "Program.cs"), "");
+            await File.WriteAllTextAsync(Path.Combine(fromGitHub, "src", "Program.cs"), "");
+            await File.WriteAllTextAsync(Path.Combine(fromGitHub, ".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/octo/Lode.git\n");
+            await File.WriteAllTextAsync(Path.Combine(clone, ".git", "config"), "[remote \"origin\"]\n\turl = git@github.contoso.com:octo/Lode.git\n");
+
+            var link = RepositoryLink.Parse(text)!;
+
+            await Assert.That(link.Remote).IsEqualTo("https://github.contoso.com/octo/Lode");
+            await Assert.That(link.Name).IsEqualTo("octo/Lode");
+            await Assert.That(link.Branch).IsEqualTo("main");
+            await Assert.That(RepositoryLink.Canonical(link.Remote)).IsEqualTo("https://github.contoso.com/octo/lode");
+            await Assert.That(link.Find(temp)).IsEqualTo(Path.Combine(clone, "src", "Program.cs"));
+        }
+        finally
+        {
+            RemoteSite.UseGitHubEnterprise(previous);
+            Directory.Delete(temp, recursive: true);
+        }
+
+        await Assert.That(unknown).IsNull();
+    }
+
     // The clone in the code folder is the one opened, a level down too, and the file a link names
     // is selected in it, unless it is outside the repository.
     [Test]

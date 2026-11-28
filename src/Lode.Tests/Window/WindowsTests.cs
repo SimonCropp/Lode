@@ -2537,7 +2537,7 @@ public class WindowsTests
         // In the scratch folder, which takes git's read-only objects away, as the fixture can't.
         var destination = code.At("Cloned");
         var list = HostedRepos.ListGitHub;
-        HostedRepos.ListGitHub = _ => Task.FromResult(
+        HostedRepos.ListGitHub = (_, _) => Task.FromResult(
             new HostedListing(
                 [new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Repo", code.Origin("Repo"), "https://github.com/octo/Repo", false, false)],
                 []));
@@ -2594,7 +2594,7 @@ public class WindowsTests
         using var fixture = Fixture.Create();
         var destination = code.At("Cloned");
         var list = HostedRepos.ListGitHub;
-        HostedRepos.ListGitHub = _ => Task.FromResult(
+        HostedRepos.ListGitHub = (_, _) => Task.FromResult(
             new HostedListing(
                 [new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Repo", code.Origin("Repo"), "https://github.com/octo/Repo", false, false)],
                 []));
@@ -2654,7 +2654,7 @@ public class WindowsTests
         using var fixture = Fixture.Create();
         var destination = code.At("Cloned");
         var list = HostedRepos.ListGitHub;
-        HostedRepos.ListGitHub = _ => Task.FromResult(
+        HostedRepos.ListGitHub = (_, _) => Task.FromResult(
             new HostedListing(
                 [new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Repo", code.Origin("Repo"), "https://github.com/octo/Repo", false, true)],
                 []));

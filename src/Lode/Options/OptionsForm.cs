@@ -182,6 +182,22 @@ class OptionsForm : Form
         AutoSize = true
     };
 
+    Label gitHubEnterpriseLabel = new()
+    {
+        Text = "Servers",
+        AutoSize = true
+    };
+
+    // Hosts with a space between them, on one line, as Git purge's patterns are. See
+    // GitHubEnterpriseHosts.
+    TextBox gitHubEnterprise = new()
+    {
+        Name = "gitHubEnterprise",
+        AccessibleName = "GitHub Enterprise servers, by host",
+        PlaceholderText = "github.example.com",
+        Width = 300
+    };
+
     CheckBox fetchInBackground = new()
     {
         Name = "fetchInBackground",
@@ -531,6 +547,12 @@ class OptionsForm : Form
         purgePermanently.CheckedChanged += (_, _) => settings.PurgePermanently = purgePermanently.Checked;
         purgeKeeps.Text = string.Join(' ', settings.PurgeKeeps);
         purgeKeeps.TextChanged += (_, _) => settings.PurgeKeeps = [.. purgeKeeps.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        gitHubEnterprise.Text = string.Join(' ', settings.GitHubEnterpriseHosts);
+        gitHubEnterprise.TextChanged += (_, _) =>
+        {
+            settings.GitHubEnterpriseHosts = RemoteSite.EnterpriseHosts(gitHubEnterprise.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            RemoteSite.UseGitHubEnterprise(settings.GitHubEnterpriseHosts);
+        };
         fetchInBackground.Checked = settings.FetchInBackground;
         fetchMinutes.Value = Math.Clamp(settings.FetchMinutes, (int) fetchMinutes.Minimum, (int) fetchMinutes.Maximum);
         fetchMinutes.Enabled = settings.FetchInBackground;
@@ -940,7 +962,14 @@ class OptionsForm : Form
             "them down. Excluding the folder stops that, as Rider suggests, and removes the " +
             "exclusions under it, which it makes redundant. Windows asks for administrator " +
             "permission.",
-            Row(excludeFromDefender))
+            Row(excludeFromDefender)),
+        .. Section(
+            "GitHub Enterprise",
+            "Each server, by host, a space between them, is GitHub to Lode: Clone's GitHub tab " +
+            "lists its repositories, signed in as git signs in to it, its Open with GitHub " +
+            "Desktop links are found or cloned in the code folder, and View on and Create pull " +
+            "request go to its pages.",
+            Row(gitHubEnterpriseLabel, gitHubEnterprise))
     ];
 
     Control[] BuildPromotedFilesPage() =>

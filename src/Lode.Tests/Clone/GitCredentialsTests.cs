@@ -28,7 +28,7 @@ public class GitCredentialsTests
                 "/user/repos" => (HttpStatusCode.OK, """[{"full_name": "octo/lode", "owner": {"login": "octo"}, "clone_url": "https://github.com/octo/lode.git"}]"""),
                 _ => (HttpStatusCode.NotFound, "")
             },
-            () => HostedRepos.ReadGitHub(Cancel.None));
+            () => HostedRepos.ReadGitHub([], Cancel.None));
 
         await Assert.That(listing.Problems).IsEmpty();
         await Assert.That(listing.Repos.Select(_ => _.Name)).IsEquivalentTo(["octo/lode"]);
@@ -49,7 +49,7 @@ public class GitCredentialsTests
         var listing = await Listing(
             scratch,
             _ => (HttpStatusCode.Unauthorized, """{"message": "Bad credentials"}"""),
-            () => HostedRepos.ReadGitHub(Cancel.None));
+            () => HostedRepos.ReadGitHub([], Cancel.None));
 
         await Assert.That(listing.Repos).IsEmpty();
         await Assert.That(listing.Problems.Single()).Contains("401");
@@ -92,12 +92,71 @@ public class GitCredentialsTests
             CollectionOrdering.Matching);
     }
 
+    // github.com, and a GitHub Enterprise server chosen in Options, each asked by its own API, the
+    // server's under /api/v3, and signed in with git's credential for its own host, which is told
+    // back to git for that host: kept for each that took it, and dropped for one that refused it.
+    // The server's repositories are under headings of its own, its host before each.
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task GitHubEnterpriseListedBesideGitHub(bool taken)
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var listing = await ListingByUrl(
+            scratch,
+            _ => (_.Host, _.AbsolutePath) switch
+            {
+                ("api.github.com", "/user") => (HttpStatusCode.OK, """{"login": "octo"}"""),
+                ("api.github.com", "/user/repos") => (HttpStatusCode.OK, """[{"full_name": "octo/site", "owner": {"login": "octo"}, "clone_url": "https://github.com/octo/site.git"}]"""),
+                ("github.contoso.com", "/api/v3/user") when taken => (HttpStatusCode.OK, """{"login": "octo"}"""),
+                ("github.contoso.com", "/api/v3/user") => (HttpStatusCode.Unauthorized, """{"message": "Bad credentials"}"""),
+                ("github.contoso.com", "/api/v3/user/repos") => (HttpStatusCode.OK, """[{"full_name": "octo/lode", "owner": {"login": "octo"}, "clone_url": "https://github.contoso.com/octo/lode.git"}, {"full_name": "contoso/tools", "owner": {"login": "contoso"}, "clone_url": "https://github.contoso.com/contoso/tools.git", "private": true}]"""),
+                _ => (HttpStatusCode.NotFound, "")
+            },
+            () => HostedRepos.ReadGitHub(["github.contoso.com"], Cancel.None));
+
+        var enterprise = "store";
+        if (taken)
+        {
+            await Assert.That(listing.Problems).IsEmpty();
+            await Assert.That(listing.Repos.Select(_ => $"{_.Group}: {_.Name} {_.CloneUrl}")).IsEquivalentTo(
+                [
+                    "Your repositories: octo/site https://github.com/octo/site.git",
+                    "github.contoso.com / Your repositories: octo/lode https://github.contoso.com/octo/lode.git",
+                    "github.contoso.com / contoso: contoso/tools https://github.contoso.com/contoso/tools.git"
+                ],
+                CollectionOrdering.Matching);
+        }
+        else
+        {
+            enterprise = "erase";
+            await Assert.That(listing.Repos.Select(_ => _.Name)).IsEquivalentTo(["octo/site"]);
+            await Assert.That(listing.Problems.Single()).IsEqualTo("Couldn't sign in to github.contoso.com: 401 Unauthorized.");
+        }
+
+        await Assert.That(Told(scratch)).IsEquivalentTo(
+            [
+                "get host=github.com",
+                "store host=github.com username=octo password=token",
+                "get host=github.contoso.com",
+                $"{enterprise} host=github.contoso.com username=octo password=token"
+            ],
+            CollectionOrdering.Matching);
+    }
+
     // The listing read with git given a config of the scratch folder's own, whose one credential
     // helper writes down what it is told and gives octo's token, and the sites answered by answer,
     // by the path of what is asked.
-    static async Task<HostedListing> Listing(
+    static Task<HostedListing> Listing(
         CodeCommandsTests.Scratch scratch,
         Func<string, (HttpStatusCode Status, string Body)> answer,
+        Func<Task<HostedListing>> read) =>
+        ListingByUrl(scratch, _ => answer(_.AbsolutePath), read);
+
+    // As above, the sites answered by the whole url asked, each by its host as well as its path.
+    static async Task<HostedListing> ListingByUrl(
+        CodeCommandsTests.Scratch scratch,
+        Func<Uri, (HttpStatusCode Status, string Body)> answer,
         Func<Task<HostedListing>> read)
     {
         var config = scratch.At("gitconfig");
@@ -173,11 +232,11 @@ public class GitCredentialsTests
         path.Replace('\\', '/');
 
     // Answers each request by its path, without a socket: nothing leaves the process.
-    sealed class StandInSite(Func<string, (HttpStatusCode Status, string Body)> answer) : HttpMessageHandler
+    sealed class StandInSite(Func<Uri, (HttpStatusCode Status, string Body)> answer) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, Cancel cancel)
         {
-            var (status, body) = answer(request.RequestUri!.AbsolutePath);
+            var (status, body) = answer(request.RequestUri!);
             return Task.FromResult(
                 new HttpResponseMessage(status)
                 {

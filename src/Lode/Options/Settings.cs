@@ -369,6 +369,11 @@ sealed class Settings
     // the organizations the code folder has clones from.
     public List<string> AzureDevOpsOrganizations { get; set; } = [];
 
+    // The GitHub Enterprise servers, by host, chosen on the Code page of Options: each is GitHub
+    // to Lode, its repositories listed in Clone's GitHub tab, its links found or cloned in the
+    // code folder, and its pages linked to. See RemoteSite.GitHubEnterprise.
+    public List<string> GitHubEnterpriseHosts { get; set; } = [];
+
     // The tree's headings (Pinned, Recent, This PC, Network) the user collapsed, so they stay that
     // way.
     public List<string> CollapsedSections { get; set; } = [];
@@ -704,14 +709,14 @@ sealed class Settings
     }
 
     /// <summary>
-    /// The code folder, as <see cref="Load"/> would find it, from the file or, should that be
-    /// corrupt, the settings saved before it, but with nothing set aside and nothing said, which
-    /// is the start's to do. For a launch that needs no more before it knows whether it is the
-    /// start or hands its folders to the Lode running: a load of its own set a corrupt file
-    /// aside without a word, and the start then found none, and began on the defaults. Null
-    /// where there is none, or the file can't be opened.
+    /// The settings, as <see cref="Load"/> would find them, from the file or, should that be
+    /// corrupt, those saved before it, but with nothing set aside and nothing said, which is the
+    /// start's to do, and never to be saved. For a launch that needs the code folder and the
+    /// sites before it knows whether it is the start or hands its folders to the Lode running:
+    /// a load of its own set a corrupt file aside without a word, and the start then found none,
+    /// and began on the defaults. Null where there are none, or the file can't be opened.
     /// </summary>
-    internal static string? CodeDirectoryAt(string path)
+    internal static Settings? ReadQuietly(string path)
     {
         try
         {
@@ -720,7 +725,7 @@ sealed class Settings
                 return null;
             }
 
-            return Read(path)?.CodeDirectory;
+            return Read(path);
         }
         catch (Exception exception)
             when (
@@ -734,7 +739,7 @@ sealed class Settings
         catch (Exception)
         {
             // Corrupt, or something of Lode's own, which the start's load says.
-            return Backup(path)?.CodeDirectory;
+            return Backup(path);
         }
     }
 

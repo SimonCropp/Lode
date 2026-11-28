@@ -58,7 +58,7 @@ public class CloneDialogTests
         using var fixture = Fixture.Create();
         var asked = 0;
         var list = HostedRepos.ListGitHub;
-        HostedRepos.ListGitHub = _ =>
+        HostedRepos.ListGitHub = (_, _) =>
         {
             asked++;
             if (asked == 1)
@@ -112,7 +112,7 @@ public class CloneDialogTests
         var azureDevOpsAsked = 0;
         var listGitHub = HostedRepos.ListGitHub;
         var listAzureDevOps = HostedRepos.ListAzureDevOps;
-        HostedRepos.ListGitHub = _ =>
+        HostedRepos.ListGitHub = (_, _) =>
         {
             gitHubAsked++;
             return gitHub.Task;
@@ -164,6 +164,63 @@ public class CloneDialogTests
         }
     }
 
+    // The GitHub tab lists the GitHub Enterprise servers chosen in Options too, by host however
+    // typed, each after github.com's under headings of its own, Your repositories first, and
+    // leaves out what the code folder has a clone of from one, as from github.com.
+    [Test]
+    [NotInParallel(["windows", "GitHubEnterprise"])]
+    public async Task ListsGitHubEnterpriseServersToo()
+    {
+        using var fixture = Fixture.Create();
+        Cloned(fixture, "tools", "git@github.contoso.com:contoso/tools.git");
+        IReadOnlyList<string>? askedFor = null;
+        var list = HostedRepos.ListGitHub;
+        var previous = RemoteSite.GitHubEnterprise;
+        HostedRepos.ListGitHub = (hosts, _) =>
+        {
+            askedFor = hosts;
+            return Task.FromResult(
+                new HostedListing(
+                    [
+                        new(HostedRepos.GitHub, "github.contoso.com / contoso", "contoso/tools", "https://github.contoso.com/contoso/tools.git", "https://github.contoso.com/contoso/tools", false, true),
+                        new(HostedRepos.GitHub, "github.contoso.com / contoso", "contoso/site", "https://github.contoso.com/contoso/site.git", "https://github.contoso.com/contoso/site", false, true),
+                        new(HostedRepos.GitHub, "github.contoso.com / Your repositories", "octo/notes", "https://github.contoso.com/octo/notes.git", "https://github.contoso.com/octo/notes", false, false),
+                        new(HostedRepos.GitHub, "dotnet", "dotnet/runtime", "https://github.com/dotnet/runtime.git", "https://github.com/dotnet/runtime", false, false),
+                        new(HostedRepos.GitHub, HostedRepos.YourRepositories, "octo/Lode", "https://github.com/octo/Lode.git", "https://github.com/octo/Lode", false, false)
+                    ],
+                    []));
+        };
+        RemoteSite.UseGitHubEnterprise(["github.contoso.com"]);
+        CloneDialog.Forget();
+        try
+        {
+            using var dialog = new CloneDialog(
+                new()
+                {
+                    CodeDirectory = fixture.Root,
+                    GitHubEnterpriseHosts = ["https://GitHub.Contoso.com/"]
+                },
+                fixture.Root)
+            {
+                ShowInTaskbar = false,
+                StartPosition = FormStartPosition.Manual,
+                Location = new(-20000, -20000)
+            };
+            dialog.Show();
+            await Pump.Until(() => dialog.Rows.Count > 1 && dialog.Loaded.IsCompleted);
+
+            await Assert.That(askedFor).IsEquivalentTo(["github.contoso.com"]);
+            await Assert.That(Texts(dialog)).IsEquivalentTo(
+                ["Your repositories", "octo/Lode", "dotnet", "dotnet/runtime", "github.contoso.com / Your repositories", "octo/notes", "github.contoso.com / contoso", "contoso/site"],
+                CollectionOrdering.Matching);
+        }
+        finally
+        {
+            HostedRepos.ListGitHub = list;
+            RemoteSite.UseGitHubEnterprise(previous);
+        }
+    }
+
     const string finding = "Finding repositories…";
 
     static List<string> Texts(CloneDialog dialog) =>
@@ -187,7 +244,7 @@ public class CloneDialogTests
     static async Task<CloneDialog> Open(Fixture fixture)
     {
         var list = HostedRepos.ListGitHub;
-        HostedRepos.ListGitHub = _ => Task.FromResult(listing);
+        HostedRepos.ListGitHub = (_, _) => Task.FromResult(listing);
         CloneDialog.Forget();
         var dialog = Create(fixture);
         try

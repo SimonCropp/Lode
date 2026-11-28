@@ -828,6 +828,43 @@ public class OptionsFormTests
         await Assert.That(settings.PurgeKeeps).IsEmpty();
     }
 
+    // The GitHub Enterprise servers show as set, a space between hosts, and change as each key
+    // is typed, each by its host however it was typed, a url pasted from the browser say, and
+    // github.com left out, as needing no adding: from then each is GitHub to Lode. Emptied,
+    // there are none.
+    [Test]
+    [NotInParallel(["windows", "GitHubEnterprise"])]
+    public async Task TypingGitHubEnterpriseServersChangesTheSetting()
+    {
+        using var scratch = new RegistryScratch();
+        var settings = new Settings
+        {
+            GitHubEnterpriseHosts = ["github.contoso.com"]
+        };
+        var previous = RemoteSite.GitHubEnterprise;
+        using var form = Show(scratch.Replacement(), settings);
+        try
+        {
+            var box = (TextBox) form.Controls.Find("gitHubEnterprise", true)[0];
+            var shown = box.Text;
+
+            box.Text = " https://GitHub.Contoso.com/octo/repo   git.fabrikam.com github.com ";
+            var typed = settings.GitHubEnterpriseHosts.ToList();
+            var site = RemoteSite.For("git@git.fabrikam.com:octo/repo.git")?.Url;
+            box.Text = "";
+
+            await Assert.That(shown).IsEqualTo("github.contoso.com");
+            await Assert.That(typed).IsEquivalentTo(["github.contoso.com", "git.fabrikam.com"], CollectionOrdering.Matching);
+            await Assert.That(site).IsEqualTo("https://git.fabrikam.com/octo/repo");
+            await Assert.That(settings.GitHubEnterpriseHosts).IsEmpty();
+            await Assert.That(RemoteSite.For("git@git.fabrikam.com:octo/repo.git")).IsNull();
+        }
+        finally
+        {
+            RemoteSite.UseGitHubEnterprise(previous);
+        }
+    }
+
     // Off by default, with the hours greyed out until it is ticked.
     [Test]
     public async Task TickingCloseUnusedTabsChangesTheSetting()

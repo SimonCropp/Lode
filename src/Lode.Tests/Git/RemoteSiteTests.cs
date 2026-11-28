@@ -91,6 +91,49 @@ public class RemoteSiteTests
         await Assert.That(RemoteSite.For("https://dev.azure.com/org/Project/_git/repo")!.PullRequestName).IsEqualTo("pull request");
     }
 
+    // A GitHub Enterprise server chosen in Options is GitHub, from origin however it is written,
+    // a page of the repository's pasted from the browser too, with each page where github.com
+    // has it: a commit's, a branch's, a tag's, and the compare that creates a pull request. Not
+    // chosen, the server is no site Lode knows.
+    [Test]
+    public async Task GitHubEnterprise()
+    {
+        IReadOnlySet<string> enterprise = new HashSet<string>(["github.contoso.com"]);
+
+        string? Site(string remote)
+        {
+            if (RemoteSite.For(remote, enterprise) is not { } site)
+            {
+                return null;
+            }
+
+            return $"{site.Name} {site.Url}";
+        }
+
+        await Assert.That(Site("https://github.contoso.com/octo/repo.git")).IsEqualTo("GitHub https://github.contoso.com/octo/repo");
+        await Assert.That(Site("https://GitHub.Contoso.com/octo/repo/")).IsEqualTo("GitHub https://github.contoso.com/octo/repo");
+        await Assert.That(Site("git@github.contoso.com:octo/repo.git")).IsEqualTo("GitHub https://github.contoso.com/octo/repo");
+        await Assert.That(Site("ssh://git@github.contoso.com:2222/octo/repo.git")).IsEqualTo("GitHub https://github.contoso.com/octo/repo");
+        await Assert.That(Site("https://github.contoso.com/octo/repo/tree/main/src")).IsEqualTo("GitHub https://github.contoso.com/octo/repo");
+        await Assert.That(Site("https://github.com/octo/repo.git")).IsEqualTo("GitHub https://github.com/octo/repo");
+        await Assert.That(Site("https://github.contoso.com/octo")).IsNull();
+        await Assert.That(RemoteSite.For("https://github.contoso.com/octo/repo.git", new HashSet<string>())).IsNull();
+
+        var site = RemoteSite.For("git@github.contoso.com:octo/repo.git", enterprise)!;
+        await Assert.That(site.CommitUrl("abc")).IsEqualTo("https://github.contoso.com/octo/repo/commit/abc");
+        await Assert.That(site.BranchUrl("feature/a#1")).IsEqualTo("https://github.contoso.com/octo/repo/tree/feature/a%231");
+        await Assert.That(site.TagUrl("0.37.0")).IsEqualTo("https://github.contoso.com/octo/repo/releases/tag/0.37.0");
+        await Assert.That(site.PullRequestUrl("feature/a")).IsEqualTo("https://github.contoso.com/octo/repo/compare/feature/a?expand=1");
+        await Assert.That(site.PullRequestName).IsEqualTo("pull request");
+    }
+
+    // A server as typed in Options: its host, or a url of it, a repository's page say, in any
+    // case. github.com needs no adding, and what names no host is left out.
+    [Test]
+    public async Task EnterpriseHosts() =>
+        await Assert.That(RemoteSite.EnterpriseHosts(["GitHub.Contoso.com", "https://github.contoso.com/", "https://git.fabrikam.com/octo/repo", "github.com", "https://", "not a host!"]))
+            .IsEquivalentTo(["github.contoso.com", "git.fabrikam.com"], CollectionOrdering.Matching);
+
     // Origins on no site Lode knows, or none at all, a folder say, have no page.
     [Test]
     public async Task NoSite()

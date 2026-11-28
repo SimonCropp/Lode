@@ -168,6 +168,9 @@ static class Program
         // Before the first window, which takes its colours from it.
         ExplorerStyle.Use(settings.Theme);
 
+        // Before anything reads a repository's site, which may be on one of them.
+        RemoteSite.UseGitHubEnterprise(settings.GitHubEnterpriseHosts);
+
         // Before the first window, which shows a pending update from the start.
         Updates.Instance = Updates.ForThisCopy(settings);
         var places = Places.ForThisMachine(settings);
@@ -212,7 +215,13 @@ static class Program
     static List<string> RepositoriesOf(IReadOnlyList<string> links)
     {
         Settings.SeedFromInstalled();
-        var codeFolder = CodeFolderForLinks(Settings.DefaultPath);
+
+        // Read without setting a corrupt file aside or saying so, which is left to the start's
+        // load, should this launch be the start, for the user to be told, once, as at any start.
+        // The GitHub Enterprise servers too, whose links are as github.com's.
+        var known = Settings.ReadQuietly(Settings.DefaultPath);
+        RemoteSite.UseGitHubEnterprise(known?.GitHubEnterpriseHosts ?? []);
+        var codeFolder = known?.CodeDirectory;
         var repositoryLinks = RepositoryLinks.ForCurrentUser();
         var found = new List<string>();
         foreach (var text in links)
@@ -252,11 +261,6 @@ static class Program
 
         return found;
     }
-
-    // Read without setting a corrupt file aside or saying so, which is left to the start's load,
-    // should this launch be the start, for the user to be told, once, as at any start.
-    internal static string? CodeFolderForLinks(string settingsPath) =>
-        Settings.CodeDirectoryAt(settingsPath);
 
     // Cloned into the code folder, or handed to the app the link was for, which can clone it
     // elsewhere. The clone, or the file in it the link names, once cloned.

@@ -1,8 +1,9 @@
 /// <summary>
 /// Clone a repository, as GitHub Desktop's dialog does: from GitHub, from Azure DevOps, or from
-/// any url. GitHub and Azure DevOps list the repositories the user can clone, signed in as git
-/// signs in, leaving out those already in the code folder, and a filter narrows them. The clone
-/// goes in a folder named for the repository in the code folder, which can be changed.
+/// any url. GitHub, with the GitHub Enterprise servers chosen in Options, and Azure DevOps list
+/// the repositories the user can clone, signed in as git signs in, leaving out those already in
+/// the code folder, and a filter narrows them. The clone goes in a folder named for the
+/// repository in the code folder, which can be changed.
 /// </summary>
 sealed class CloneDialog : Form
 {
@@ -402,7 +403,7 @@ sealed class CloneDialog : Form
     {
         if (from == Source.GitHub)
         {
-            return await HostedRepos.ListGitHub(Cancel.None);
+            return await HostedRepos.ListGitHub(RemoteSite.EnterpriseHosts(settings.GitHubEnterpriseHosts), Cancel.None);
         }
 
         var organizations = settings.AzureDevOpsOrganizations
@@ -475,12 +476,15 @@ sealed class CloneDialog : Form
         OnPicked();
     }
 
+    // github.com's first, then each GitHub Enterprise server's, whose headings start with its
+    // host, each with Your repositories first.
     internal static List<Row> RowsFor(IReadOnlyList<HostedRepo> repos)
     {
         var rows = new List<Row>();
         var groups = repos
             .GroupBy(_ => _.Group)
-            .OrderBy(_ => _.Key != HostedRepos.YourRepositories)
+            .OrderBy(_ => Server(_.Key), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(_ => !_.Key.EndsWith(HostedRepos.YourRepositories, StringComparison.Ordinal))
             .ThenBy(_ => _.Key, StringComparer.OrdinalIgnoreCase);
         foreach (var group in groups)
         {
@@ -492,6 +496,19 @@ sealed class CloneDialog : Form
         }
 
         return rows;
+    }
+
+    // What a heading is under: the server, or Azure DevOps' organization, before " / ", and
+    // nothing for a heading of github.com's, which has none. A GitHub name can hold no space.
+    static string Server(string group)
+    {
+        var slash = group.IndexOf(" / ", StringComparison.Ordinal);
+        if (slash < 0)
+        {
+            return "";
+        }
+
+        return group[..slash];
     }
 
     // What would be cloned, from the repository picked or the url typed, with the folder it would
