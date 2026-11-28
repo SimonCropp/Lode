@@ -302,7 +302,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
  * <a id="find-in-files"></a>**Find in Files** (Ctrl+Shift+F) searches what files hold, reading every file, so nothing needs indexing. In its strip along the bottom:
    * **Find**: text, or a regular expression (**.\***), case (**Aa**) and whole word (**ab**) as wanted.
-   * **Where**: folders and files, `<open folders>`, and patterns: `*.cs` to include, `-*.min.js` or `-node_modules\` to exclude. A folder with a comma in its name goes in quotes.
+   * **Where**: folders and files, `<open folders>`, and patterns: `*.cs` to include, `-*.min.js` or `-node_modules\` to exclude, `**\` for any number of folders, none among them (`src\**\*.cs`), and braces for alternatives (`*.{ts,tsx}`). A folder with a comma in its name goes in quotes.
    * In a repository only what git doesn't ignore is searched, unless **Git-ignored** is on. `.git` never is, nor binary files.
    * **Find Results** opens in a tab: each file's matching lines, with context. Enter opens the file in the editor at the line; F4 and Shift+F4 go through the matches.
    * **Replace** replaces in every file found, asking first, keeping each file's encoding and line endings, and can be undone.

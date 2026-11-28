@@ -467,6 +467,7 @@ public class ContentSearchTests
         using var scratch = new CodeCommandsTests.Scratch();
         Directory.CreateDirectory(scratch.At("Source"));
         Directory.CreateDirectory(scratch.At("Docs"));
+        Directory.CreateDirectory(scratch.At("{One,Two}"));
 
         object Parsed(string text)
         {
@@ -492,11 +493,37 @@ public class ContentSearchTests
                 ["full folder and patterns"] = Parsed($"{scratch.At("Docs")}, *.cs, -*.min.js, -node_modules/, -*\\obj\\"),
                 ["open folders"] = Parsed("<open folders>, *.md"),
                 ["missing"] = Parsed("Nowhere"),
-                ["the same folder twice"] = Parsed("Source, source")
+                ["the same folder twice"] = Parsed("Source, source"),
+                ["braces"] = Parsed("{Source,Docs}, *.{ts,tsx}, -{bin,obj}/, src/{App,Lib{,s}}/*.cs"),
+                ["braces in quotes"] = Parsed("\"{One,Two}\"")
             })
             .Snapshot(
                 """
                 {
+                  braces: {
+                    roots: [
+                      {root}\Source,
+                      {root}\Docs
+                    ],
+                    includes: [
+                      *.ts,
+                      *.tsx,
+                      src\App\*.cs,
+                      src\Lib\*.cs,
+                      src\Libs\*.cs
+                    ],
+                    excludes: [
+                      bin\,
+                      obj\
+                    ]
+                  },
+                  braces in quotes: {
+                    roots: [
+                      {root}\{One,Two}
+                    ],
+                    includes: [],
+                    excludes: []
+                  },
                   empty: {
                     roots: [
                       {root}
@@ -555,14 +582,16 @@ public class ContentSearchTests
             {
                 SearchWhere.WithFolder(@"C:\Code, *.cs, -bin\", @"D:\Other"),
                 SearchWhere.WithFolder("", @"D:\Other"),
-                SearchWhere.WithFolder("<open folders>, *.cs", @"D:\Other")
+                SearchWhere.WithFolder("<open folders>, *.cs", @"D:\Other"),
+                SearchWhere.WithFolder(@"{C:\Code,C:\Docs}, *.{ts,tsx}, -{bin,obj}\", @"D:\Other")
             })
             .Snapshot(
                 """
                 [
                   D:\Other, *.cs, -bin\,
                   D:\Other,
-                  <open folders>, *.cs
+                  <open folders>, *.cs,
+                  D:\Other, *.{ts,tsx}, -{bin,obj}\
                 ]
                 """);
 
@@ -627,6 +656,57 @@ public class ContentSearchTests
         await Assert.That(Paths(named, scratch.Root)).IsEquivalentTo([@"src\App.cs"]);
         await Assert.That(Paths(notSourceObj, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"tests\App.cs", @"tests\obj\Gen.cs"]);
         await Assert.That(Paths(notAnyGen, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"tests\App.cs"]);
+    }
+
+    // ** as a part of its own, a slash after it, is any number of folders, none among them, as
+    // in VS Code and .gitignore: src/**/*.cs takes the files in src itself, and -**/node_modules
+    // leaves out the one at the top as well as those further down.
+    [Test]
+    public async Task AnyFoldersCanBeNone()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, "Top.cs", "alpha");
+        Write(scratch.Root, @"src\App.cs", "alpha");
+        Write(scratch.Root, @"src\obj\Gen.cs", "alpha");
+        Write(scratch.Root, @"src\deep\obj\Deep.cs", "alpha");
+        Write(scratch.Root, @"node_modules\lib.js", "alpha");
+        Write(scratch.Root, @"src\node_modules\lib.js", "alpha");
+
+        var inSource = await Find(new("alpha", "src/**/*.cs"), scratch.Root);
+        var anywhere = await Find(new("alpha", @"**\*.cs"), scratch.Root);
+        var inObj = await Find(new("alpha", "src/**/obj/*.cs"), scratch.Root);
+        var noModules = await Find(new("alpha", "-**/node_modules"), scratch.Root);
+
+        await Assert.That(Paths(inSource, scratch.Root)).IsEquivalentTo([@"src\App.cs", @"src\obj\Gen.cs", @"src\deep\obj\Deep.cs"]);
+        await Assert.That(Paths(anywhere, scratch.Root)).IsEquivalentTo(["Top.cs", @"src\App.cs", @"src\obj\Gen.cs", @"src\deep\obj\Deep.cs"]);
+        await Assert.That(Paths(inObj, scratch.Root)).IsEquivalentTo([@"src\obj\Gen.cs", @"src\deep\obj\Deep.cs"]);
+        await Assert.That(Paths(noModules, scratch.Root)).IsEquivalentTo(["Top.cs", @"src\App.cs", @"src\obj\Gen.cs", @"src\deep\obj\Deep.cs"]);
+    }
+
+    // Braces are alternatives, as in VS Code's files to include, the commas between them not
+    // ending the entry: *.{ts,tsx} is *.ts and *.tsx, rather than *.{ts and a folder tsx} that
+    // isn't there. Braces in braces too, and in a folder's part of a pattern.
+    [Test]
+    public async Task BracesAreAlternatives()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, @"src\App.ts", "alpha");
+        Write(scratch.Root, @"src\View.tsx", "alpha");
+        Write(scratch.Root, @"src\Old.js", "alpha");
+        Write(scratch.Root, @"src\Old.jsx", "alpha");
+        Write(scratch.Root, @"tests\App.ts", "alpha");
+        Write(scratch.Root, @"docs\App.ts", "alpha");
+        Write(scratch.Root, @"bin\App.ts", "alpha");
+
+        var typeScript = await Find(new("alpha", "*.{ts,tsx}"), scratch.Root);
+        var nested = await Find(new("alpha", "*.{ts,js{,x}}"), scratch.Root);
+        var inFolders = await Find(new("alpha", "{src,tests}/*.ts"), scratch.Root);
+        var notInFolders = await Find(new("alpha", "-{bin,docs}/, *.ts"), scratch.Root);
+
+        await Assert.That(Paths(typeScript, scratch.Root)).IsEquivalentTo([@"bin\App.ts", @"docs\App.ts", @"src\App.ts", @"src\View.tsx", @"tests\App.ts"]);
+        await Assert.That(Paths(nested, scratch.Root)).IsEquivalentTo([@"bin\App.ts", @"docs\App.ts", @"src\App.ts", @"src\Old.js", @"src\Old.jsx", @"tests\App.ts"]);
+        await Assert.That(Paths(inFolders, scratch.Root)).IsEquivalentTo([@"src\App.ts", @"tests\App.ts"]);
+        await Assert.That(Paths(notInFolders, scratch.Root)).IsEquivalentTo([@"src\App.ts", @"tests\App.ts"]);
     }
 
     // A folder's name can have a comma in it, which otherwise ends an entry: in quotes it is the

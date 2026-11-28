@@ -4,8 +4,10 @@
 /// must match (<c>*.cs</c>), or, after a minus, one it, or a folder it is in, mustn't
 /// (<c>-*.min.js</c>, <c>-node_modules\</c>). <c>&lt;open folders&gt;</c> is the folders the
 /// window's tabs show. A pattern with a slash in it is matched against the path from the folder
-/// looked in, its * going across slashes, and one ending in a slash only against folders; any
-/// other against names. With no folder given, the folder open.
+/// looked in, its * going across slashes, and its **\ any number of folders, none among them
+/// (<c>src\**\*.cs</c>), and one ending in a slash only against folders; any other against
+/// names. Braces are alternatives, as in VS Code's files to include: <c>*.{ts,tsx}</c> is
+/// <c>*.ts</c> and <c>*.tsx</c>. With no folder given, the folder open.
 /// </summary>
 sealed class SearchWhere
 {
@@ -46,7 +48,8 @@ sealed class SearchWhere
         // Not MatchesSimpleExpression, to which a backslash is no separator: it says the
         // character after it is meant as itself, so src\*.cs matched nothing, and bin\Debug
         // only a name with no slash in it. Here * is any run of characters, slashes among them,
-        // ? any one, and anything else itself, in either case.
+        // ? any one, **\ as a part of its own any number of folders, none among them, and
+        // anything else itself, in either case.
         static bool MatchesPath(CharSpan pattern, CharSpan path)
         {
             var at = 0;
@@ -60,6 +63,16 @@ sealed class SearchWhere
                 if (at < pattern.Length &&
                     pattern[at] == '*')
                 {
+                    // As in VS Code and .gitignore, src\**\*.cs takes the files in src itself,
+                    // and **\node_modules the folder at the top, which a run of characters
+                    // ending in a slash, as **\ is otherwise, left out. Tried first as no
+                    // folders; then as that run, which any number of folders is.
+                    if (IsAnyFolders(pattern, at) &&
+                        MatchesPath(pattern[(at + 3)..], path[position..]))
+                    {
+                        return true;
+                    }
+
                     star = at;
                     taken = position;
                     at++;
@@ -88,6 +101,14 @@ sealed class SearchWhere
 
             return pattern[at..].TrimStart('*').IsEmpty;
         }
+
+        // Whether the pattern has **\ at a place, as a part of its own: at its start or after a
+        // slash. Elsewhere, as in a**\, the stars are any run of characters, as any other.
+        static bool IsAnyFolders(CharSpan pattern, int at) =>
+            at + 2 < pattern.Length &&
+            pattern[at + 1] == '*' &&
+            pattern[at + 2] == '\\' &&
+            (at == 0 || pattern[at - 1] == '\\');
 
         public override string ToString()
         {
@@ -137,9 +158,9 @@ sealed class SearchWhere
             }
         }
 
-        foreach (var entry in Entries(text))
+        foreach (var entry in Entries(text).SelectMany(_ => _.Alternatives))
         {
-            if (entry.Equals(OpenFolders, StringComparison.OrdinalIgnoreCase))
+            if (IsOpenFolders(entry))
             {
                 foreach (var open in openFolders)
                 {
@@ -160,7 +181,7 @@ sealed class SearchWhere
                 continue;
             }
 
-            if (entry.AsSpan().IndexOfAny('*', '?') >= 0)
+            if (IsPattern(entry))
             {
                 includes.Add(Pattern.Parse(entry));
                 continue;
@@ -275,59 +296,217 @@ sealed class SearchWhere
     public static string WithFolder(string text, string folder)
     {
         var entries = Entries(text);
-        if (entries.Any(_ => _.Equals(OpenFolders, StringComparison.OrdinalIgnoreCase)))
+        if (entries.Any(_ => _.Alternatives.Any(IsOpenFolders)))
         {
-            return string.Join(", ", entries.Select(Quote));
+            return string.Join(", ", entries.Select(_ => _.Text));
         }
 
-        var kept = entries.Where(_ => _[0] == '-' ||
-                                      _.AsSpan().IndexOfAny('*', '?') >= 0);
-        return string.Join(", ", [Quote(folder), .. kept.Select(Quote)]);
+        var kept = entries
+            .Where(_ => _.Alternatives.All(IsPattern))
+            .Select(_ => _.Text);
+        return string.Join(", ", [Quote(folder), .. kept]);
     }
 
-    // The entries Where's text holds, between its commas, none of them empty. A folder's name
-    // can have a comma in it, though, so what is in quotes is one entry, commas and all, as
-    // Copy as path gives a path: taken without the quotes, which no name has in it.
-    static List<string> Entries(string text)
+    static bool IsOpenFolders(string entry) =>
+        entry.Equals(OpenFolders, StringComparison.OrdinalIgnoreCase);
+
+    // A pattern to include or, after a minus, to leave out, rather than a folder or file.
+    static bool IsPattern(string entry) =>
+        entry[0] == '-' ||
+        entry.AsSpan().IndexOfAny('*', '?') >= 0;
+
+    /// <summary>
+    /// An entry of Where's text: as typed, quotes and braces and all, and what it stands for,
+    /// each of the alternatives its braces give, without the quotes.
+    /// </summary>
+    readonly record struct Entry(string Text, List<string> Alternatives);
+
+    // The entries Where's text holds, between its commas, none of them standing for nothing. A
+    // folder's name can have a comma in it, though, so what is in quotes is one entry, commas
+    // and all, as Copy as path gives a path: taken without the quotes, which no name has in it.
+    // And the commas in braces are between alternatives, as in VS Code's files to include, so
+    // *.{ts,tsx} is one entry, rather than *.{ts and a folder tsx} that isn't there.
+    static List<Entry> Entries(string text)
     {
-        var entries = new List<string>();
-        var entry = new StringBuilder();
+        var pairs = BracePairs(text);
+        var entries = new List<Entry>();
         var quoted = false;
-        foreach (var character in text)
+        var depth = 0;
+        var start = 0;
+        for (var index = 0; index < text.Length; index++)
         {
-            if (character == '"')
+            if (text[index] == '"')
             {
                 quoted = !quoted;
-                continue;
             }
-
-            if (character == ',' &&
-                !quoted)
+            else if (pairs[index] >= 0)
             {
-                Add();
-                continue;
+                depth += pairs[index] > index ? 1 : -1;
             }
-
-            entry.Append(character);
+            else if (text[index] == ',' &&
+                     !quoted &&
+                     depth == 0)
+            {
+                Add(start, index);
+                start = index + 1;
+            }
         }
 
-        Add();
+        Add(start, text.Length);
         return entries;
 
-        void Add()
+        void Add(int from, int to)
         {
-            var trimmed = entry.ToString().Trim();
-            entry.Clear();
-            if (trimmed.Length > 0)
+            var entry = text[from..to].Trim();
+            var alternatives = Alternatives(entry);
+            if (alternatives.Count > 0)
             {
-                entries.Add(trimmed);
+                entries.Add(new(entry, alternatives));
             }
         }
+    }
+
+    // For each brace of text that is one of a pair, outside quotes, where the other is; -1 for
+    // every other character. A brace with no other is taken as itself, as a folder's name can
+    // have one, which is then no reason to keep the entries after it together.
+    static int[] BracePairs(string text)
+    {
+        var pairs = new int[text.Length];
+        Array.Fill(pairs, -1);
+        var opened = new Stack<int>();
+        var quoted = false;
+        for (var index = 0; index < text.Length; index++)
+        {
+            switch (text[index])
+            {
+                case '"':
+                    quoted = !quoted;
+                    break;
+                case '{' when !quoted:
+                    opened.Push(index);
+                    break;
+                case '}' when !quoted && opened.Count > 0:
+                    var opening = opened.Pop();
+                    pairs[opening] = index;
+                    pairs[index] = opening;
+                    break;
+            }
+        }
+
+        return pairs;
+    }
+
+    // What an entry stands for: each pair of braces with commas in them any one of what is
+    // between the commas, braces in braces too, and the rest of the entry around it, without its
+    // quotes, and what is in quotes as itself; those that come to nothing left out.
+    static List<string> Alternatives(string entry)
+    {
+        var alternatives = new List<string>();
+        foreach (var alternative in Expanded(entry, BracePairs(entry), 0, entry.Length))
+        {
+            var trimmed = alternative.Trim();
+            if (trimmed.Length > 0)
+            {
+                alternatives.Add(trimmed);
+            }
+        }
+
+        return alternatives;
+    }
+
+    // What the entry's characters from start to before end stand for.
+    static List<string> Expanded(string entry, int[] pairs, int start, int end)
+    {
+        List<string> expanded = [""];
+        var plain = new StringBuilder();
+        for (var index = start; index < end; index++)
+        {
+            if (entry[index] == '"')
+            {
+                continue;
+            }
+
+            var close = pairs[index];
+            if (close <= index)
+            {
+                plain.Append(entry[index]);
+                continue;
+            }
+
+            var between = plain.ToString();
+            plain.Clear();
+            var options = Options(entry, pairs, index + 1, close);
+            var combined = new List<string>(expanded.Count * options.Count);
+            foreach (var before in expanded)
+            {
+                foreach (var option in options)
+                {
+                    combined.Add(before + between + option);
+                }
+            }
+
+            expanded = combined;
+            index = close;
+        }
+
+        var after = plain.ToString();
+        for (var index = 0; index < expanded.Count; index++)
+        {
+            expanded[index] += after;
+        }
+
+        return expanded;
+    }
+
+    // What the braces around the entry's characters from start to before end stand for: each of
+    // what is between their commas, outside quotes and braces in them; with no commas, as bash
+    // has it, the braces themselves around what is in them.
+    static List<string> Options(string entry, int[] pairs, int start, int end)
+    {
+        var parts = new List<(int Start, int End)>();
+        var quoted = false;
+        var from = start;
+        for (var index = start; index < end; index++)
+        {
+            if (entry[index] == '"')
+            {
+                quoted = !quoted;
+            }
+            else if (pairs[index] > index)
+            {
+                index = pairs[index];
+            }
+            else if (entry[index] == ',' &&
+                     !quoted)
+            {
+                parts.Add((from, index));
+                from = index + 1;
+            }
+        }
+
+        parts.Add((from, end));
+        var options = new List<string>();
+        if (parts.Count == 1)
+        {
+            foreach (var inside in Expanded(entry, pairs, start, end))
+            {
+                options.Add($"{{{inside}}}");
+            }
+
+            return options;
+        }
+
+        foreach (var (partStart, partEnd) in parts)
+        {
+            options.AddRange(Expanded(entry, pairs, partStart, partEnd));
+        }
+
+        return options;
     }
 
     /// <summary>
     /// An entry as Where's text holds it: in quotes when it has a comma in it, as a folder's
-    /// name can, which would otherwise end it there.
+    /// name can, which would otherwise end it there, or, in braces, make alternatives of it.
     /// </summary>
     public static string Quote(string entry)
     {
