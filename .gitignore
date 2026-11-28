@@ -8,3 +8,4 @@ TestResults/
 *.received.*
 nugets/
 BenchmarkDotNet.Artifacts/
+.claude/worktrees/
