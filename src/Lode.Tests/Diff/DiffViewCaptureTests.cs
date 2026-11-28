@@ -72,6 +72,77 @@ public class DiffViewCaptureTests
             new(DiffSample.Repo, DiffSample.File, Commit()),
             diff: new FailedDiff("fatal: unable to read tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904: the object file is empty or corrupt, as an interrupted fetch can leave it. Run git fsck to find which objects are damaged, then fetch them again from the remote."));
 
+    // C# in GitHub's colours: keywords, constants, comments, a block comment over two lines, an
+    // interpolated string, a character, and a verbatim string over two lines, under the parts
+    // that changed.
+    [Test]
+    public Task Coloured()
+    {
+        string[] lines =
+        [
+            "using System.Text;",
+            "",
+            "/// <summary>",
+            "/// Says hello, as many times as asked.",
+            "/// </summary>",
+            "sealed class Greeter(string name)",
+            "{",
+            "    const int times = 3;",
+            "",
+            "    /* The greeting, its name quoted:",
+            "       \"Ada\" says hello. */",
+            "    public string Greet()",
+            "    {",
+            "        var builder = new StringBuilder();",
+            "        for (var index = 0; index < times; index++)",
+            "        {",
+            "            builder.Append($\"\\\"{name}\\\" says hello\\t#{index + 1}\\n\");",
+            "        }",
+            "",
+            "        return builder.ToString();",
+            "    }",
+            "",
+            "    public static readonly string Path = @\"C:\\Greetings\\",
+            "hello.txt\";",
+            "",
+            "    public bool IsQuiet => name.Length == 0 || name == null;",
+            "}"
+        ];
+        // As git writes it, the old file's lines and the new's, a blank line both have a space.
+        string[] hunk =
+        [
+            "@@ -1,22 +1,27 @@",
+            " " + lines[0],
+            " ",
+            .. lines[2..7].Select(_ => " " + _),
+            "-    const int times = 2;",
+            "+" + lines[7],
+            " ",
+            "+" + lines[9],
+            "+" + lines[10],
+            .. lines[11..16].Select(_ => " " + _),
+            "-            builder.Append(\"hello \" + name + '!');",
+            "+" + lines[16],
+            " " + lines[17],
+            " ",
+            " " + lines[19],
+            " " + lines[20],
+            " ",
+            "+" + lines[22],
+            "+" + lines[23],
+            "+",
+            "-    public bool IsQuiet => name.Length == 0;",
+            "+" + lines[25],
+            " " + lines[26]
+        ];
+        var patch = string.Join('\n', ["diff --git a/src/Greeter.cs b/src/Greeter.cs", "--- a/src/Greeter.cs", "+++ b/src/Greeter.cs", .. hunk, ""]);
+        return Capture(
+            new(DiffSample.Repo, new("src/Greeter.cs", null, GitChange.Modified), Commit()),
+            diff: DiffParser.Parse(patch),
+            newLines: lines,
+            height: 760);
+    }
+
     static GitCommit Commit() =>
         new("abc", ["def"], "Ada Lovelace", DateTimeOffset.UnixEpoch, [], "Improve the scripts");
 
@@ -90,9 +161,9 @@ public class DiffViewCaptureTests
         return stream.ToArray();
     }
 
-    static async Task Capture(DiffSource source, bool split = false, Action<DiffView>? arrange = null, FileDiff? diff = null)
+    static async Task Capture(DiffSource source, bool split = false, Action<DiffView>? arrange = null, FileDiff? diff = null, IReadOnlyList<string>? newLines = null, int height = 420)
     {
-        using var stub = DiffSample.Stub(diff);
+        using var stub = DiffSample.Stub(diff, newLines);
         var settings = new Settings
         {
             DiffSplit = split
@@ -101,7 +172,7 @@ public class DiffViewCaptureTests
         form.ShowInTaskbar = false;
         form.StartPosition = FormStartPosition.Manual;
         form.Location = new(-20000, -20000);
-        form.ClientSize = new(1000, 420);
+        form.ClientSize = new(1000, height);
         using var view = new DiffView(settings);
         view.Dock = DockStyle.Fill;
         form.Controls.Add(view);

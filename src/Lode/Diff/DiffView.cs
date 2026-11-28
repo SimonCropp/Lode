@@ -74,6 +74,12 @@ sealed class DiffView : UserControl
     internal static Func<TextDiff, IReadOnlyList<string>?, bool, DiffLayout> LayOut { get; set; } = DiffLayout.Of;
 
     /// <summary>
+    /// Works out where the colours of a diff's code start, from its path, its hunks and the
+    /// file's lines, off the UI thread, as it is laid out. Tests watch where.
+    /// </summary>
+    internal static Func<string, IReadOnlyList<DiffHunk>, IReadOnlyList<string>?, DiffSyntax?> Colour { get; set; } = DiffSyntax.Of;
+
+    /// <summary>
     /// A diff read, ready to show: a text diff laid out.
     /// </summary>
     readonly record struct Prepared(FileDiff Diff, DiffLayout? Layout);
@@ -187,8 +193,9 @@ sealed class DiffView : UserControl
     // Reads the diff, or, given largePatch, the patch of a diff too big to show straight away,
     // asked to be shown anyway, parses it, rather than reading it again. Everything that takes
     // as long as the diff is big is done off the UI thread: reading it, parsing it, laying it
-    // out, and, for lines to be picked, hashing it. What a later read asked for shows, whichever
-    // ends first. A preview of a replace is read from the file as it is, its lines with it.
+    // out, going through the file for its code's colours, and, for lines to be picked, hashing
+    // it. What a later read asked for shows, whichever ends first. A preview of a replace is read
+    // from the file as it is, its lines with it.
     async Task ReadAsync(DiffSource file, bool keepPlace, bool evenIfLarge, string? largePatch = null)
     {
         var asked = ++version;
@@ -227,7 +234,13 @@ sealed class DiffView : UserControl
                 lines = ReadNewLines(file);
             }
 
-            return new Prepared(diff, LayOut(text, lines, split));
+            var layout = LayOut(text, lines, split);
+            return new Prepared(
+                diff,
+                layout with
+                {
+                    Syntax = Colour(file.File.Path, layout.Hunks, layout.Lines)
+                });
         });
         if (asked != version ||
             IsDisposed)

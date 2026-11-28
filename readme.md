@@ -261,6 +261,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    * <a id="diff"></a>**Diff**: pick a file in Changes or History for its changes, drawn as GitHub Desktop draws them, from git's own diff. They show in a **Diff** tab beside the folders' tabs, the panes staying beside it, or, as **Changes** on the **General** page of **Options** says, over the folder list (Esc or the × puts it away), in a window of their own with the files changed down its left, or in the text editor as before. Double-click a file, or press Enter, for the text editor, or for the window where changes show in one.
      * One above the other, the old and new line numbers side by side, or the old file beside the new, and **Hide whitespace changes**, from the button along its top, kept for every diff. Where a run of changes deletes as many lines as it adds, the part of each line that changed is darker, as on github.com.
+     * Code is coloured as github.com colours it, keywords, strings, comments, numbers, and in markup tags and attributes, in its light or dark colours as Lode's theme is, for C#, JavaScript and TypeScript, JSON, XML, HTML, XAML and the project files, CSS, SCSS and Less, Python, PowerShell and YAML, by the file's extension. What goes on over lines, a block comment, a verbatim or raw string, a tag's attributes, is followed through the file, given its lines, and through each hunk; for a file too big to expand, where a hunk starts is a guess, in a comment where its lines close one before opening one.
      * The arrows in a hunk's heading show 20 more lines of the file above or below it, or all of a short gap at once. Right-click for **Expand whole file** or **Collapse expanded lines**.
      * A picture shows as it was beside as it is. A binary file, an empty one, one only renamed, and a diff too big to show straight away say so, the last with **Show diff**.
      * <a id="pick-lines"></a>**Pick lines to commit**: in an uncommitted change, click a line's numbers, or drag down them, to leave it out of the commit or put it back; the strip beside the numbers does a run of changes at once. The file's tick shows a dash while only some of its lines go in, and Commit takes only those: the rest stay changed, and whatever else was staged stays staged. Lines aren't picked with whitespace hidden, part way through a merge, or in a renamed file, which goes in whole. Should the file change after its lines were picked, nothing is committed, and it is ticked whole again.
@@ -274,6 +275,10 @@ Each has **Open in Lode**, and **Revert** to give the links back.
      The old file beside the new:
 
      ![Split](src/Lode.Tests/Diff/DiffViewCaptureTests.Split.verified.png)
+
+     Code in github.com's colours:
+
+     ![Coloured](src/Lode.Tests/Diff/DiffViewCaptureTests.Coloured.verified.png)
 
      A commit's changes in a window of their own:
 

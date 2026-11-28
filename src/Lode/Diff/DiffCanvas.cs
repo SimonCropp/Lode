@@ -46,7 +46,12 @@ sealed class DiffCanvas : Control
     int rowHeight;
     int charWidth;
 
+    // Whether the code font draws every printable ASCII character a character's width, as a
+    // monospaced font does, so a run of them is as wide as it is long, unmeasured.
+    bool asciiMonospaced;
+
     TextDiff? diff;
+    DiffSyntax? syntax;
     IReadOnlyList<DiffHunk> hunks = [];
     IReadOnlyList<DiffHunk> unexpanded = [];
     List<DiffRow> rows = [];
@@ -182,6 +187,8 @@ sealed class DiffCanvas : Control
     {
         rowHeight = codeFont.Height + LogicalToDeviceUnits(rowPadding);
         charWidth = Math.Max(1, TextRenderer.MeasureText(new('0', 20), codeFont, Size.Empty, TextFormatFlags.NoPadding).Width / 20);
+        var printable = string.Concat(Enumerable.Range(0x20, 0x7F - 0x20).Select(_ => (char) _));
+        asciiMonospaced = TextRenderer.MeasureText(printable, codeFont, Size.Empty, flags).Width == printable.Length * charWidth;
     }
 
     protected override void OnFontChanged(EventArgs args)
@@ -204,6 +211,11 @@ sealed class DiffCanvas : Control
     internal IReadOnlyList<DiffHunk> Hunks => hunks;
 
     internal LinePicks? Picks => picks;
+
+    /// <summary>
+    /// The colours of the code shown. For tests.
+    /// </summary>
+    internal DiffSyntax? Syntax => syntax;
 
     /// <summary>
     /// Whether lines are being picked by dragging down their numbers, the drag not yet let go.
@@ -321,6 +333,7 @@ sealed class DiffCanvas : Control
         var shownBefore = hunks;
         var expandedBefore = IsExpanded;
         diff = shown;
+        syntax = layout.Syntax;
         newLines = lines;
         split = sideBySide;
         picks = linePicks;
@@ -775,7 +788,7 @@ sealed class DiffCanvas : Control
             var (background, gutterColour, inner) = Colours(line.Kind);
             DrawGutter(graphics, index, line, gutter, gutterColour, false, row.Before?.OldNumber, row.After?.NewNumber, columns.NumberWidth);
             DrawHandle(graphics, index, line, Rectangle.FromLTRB(columns.HandleLeft, bounds.Top, columns.TextLeft, bounds.Bottom), background);
-            DrawText(graphics, line, changed, Rectangle.FromLTRB(columns.TextLeft, bounds.Top, columns.TextRight, bounds.Bottom), background, inner, SelectedOn(index, false));
+            DrawText(graphics, index, line, false, changed, Rectangle.FromLTRB(columns.TextLeft, bounds.Top, columns.TextRight, bounds.Bottom), background, inner, SelectedOn(index, false));
             return;
         }
 
@@ -815,7 +828,7 @@ sealed class DiffCanvas : Control
         }
 
         DrawGutter(graphics, index, line, gutter, gutterColour, right, number, null, numberWidth);
-        DrawText(graphics, line, changed, Rectangle.FromLTRB(gutter.Right, bounds.Top, bounds.Right, bounds.Bottom), background, inner, SelectedOn(index, right));
+        DrawText(graphics, index, line, right, changed, Rectangle.FromLTRB(gutter.Right, bounds.Top, bounds.Right, bounds.Bottom), background, inner, SelectedOn(index, right));
     }
 
     static (Color Background, Color Gutter, Color Inner) Colours(DiffLineKind kind) =>
@@ -914,8 +927,8 @@ sealed class DiffCanvas : Control
     }
 
     // A line's text, the part that changed darker, and what of it is selected in the selection's
-    // blue over that, its newline as a space after it.
-    void DrawText(Graphics graphics, DiffLine line, ChangedRange? changed, Rectangle bounds, Color background, Color inner, Selected? selected)
+    // blue over that, its newline as a space after it; the text over them in its code's colours.
+    void DrawText(Graphics graphics, int index, DiffLine line, bool rightSide, ChangedRange? changed, Rectangle bounds, Color background, Color inner, Selected? selected)
     {
         if (bounds.Width <= 0)
         {
@@ -976,31 +989,139 @@ sealed class DiffCanvas : Control
             graphics.FillRectangle(selection, left, bounds.Top, Math.Max(1, right - left), bounds.Height);
         }
 
-        var partLeft = textLeft + part.Column * charWidth;
-        if (changedAt is { } at)
-        {
-            // What of the part is before the change, in it, and after it. Of a long line, the
-            // change may start or end outside the part, what is drawn of it then starting where
-            // the part does.
-            var start = Math.Clamp(at.Start, part.First, part.Last);
-            var end = Math.Clamp(at.End, part.First, part.Last);
-            var startOffset = part.Offsets[start - part.First];
-            var endOffset = part.Offsets[end - part.First];
-            DrawCharacters(graphics, part.Text.AsSpan(0, startOffset), partLeft, y, ink);
-            DrawCharacters(graphics, part.Text.AsSpan(startOffset, endOffset - startOffset), start == at.Start ? at.Left : partLeft, y, DiffStyle.InnerText(ink));
-            DrawCharacters(graphics, part.Text.AsSpan(endOffset), end == at.End ? at.Right : partLeft, y, ink);
-        }
-        else
-        {
-            DrawCharacters(graphics, part.Text, partLeft, y, ink);
-        }
-
+        DrawRuns(graphics, content, part, textLeft + part.Column * charWidth, y, ink, changedAt, RunsOf(index, line, rightSide));
         if (line.NoTrailingNewline)
         {
             DrawNoNewline(graphics, textLeft + Across(content, part, content.Length, graphics) + charWidth, bounds);
         }
 
         graphics.Restore(state);
+    }
+
+    // The runs of a line's code, as drawn on a side: a deleted line as the old file has it, and,
+    // side by side, a line both have on the left; otherwise as the new file has it. None for a
+    // file of a language without colours.
+    SyntaxRun[] RunsOf(int index, DiffLine line, bool right)
+    {
+        if (syntax == null)
+        {
+            return [];
+        }
+
+        var old = line.Kind == DiffLineKind.Delete ||
+                  (split && !right && line.Kind == DiffLineKind.Context);
+        return syntax.RunsOf(hunks[rows[index].HunkIndex], line, old);
+    }
+
+    // What shows of a line, the part of it drawn from partLeft, a run at a time, each in the
+    // colour of what it is, under which the highlight and the selection were drawn, as GitHub
+    // Desktop draws them; in the part that changed, with high contrast on, the highlight's text.
+    // Each run starts where the one before ended, as wide as it was measured, but at the start
+    // and end of the part that changed, which are where its highlight is; runs end only where
+    // what draws as one character does, so none is drawn in two halves.
+    void DrawRuns(Graphics graphics, string content, LinePart part, int partLeft, int top, Color ink, (int Start, int End, int Left, int Right)? changedAt, SyntaxRun[] runs)
+    {
+        var position = part.First;
+        var left = partLeft;
+        var runIndex = FirstRunEndingAfter(runs, position);
+        while (position < part.Last)
+        {
+            while (runIndex < runs.Length &&
+                   runs[runIndex].End <= position)
+            {
+                runIndex++;
+            }
+
+            var end = part.Last;
+            var kind = SyntaxKind.Plain;
+            if (runIndex < runs.Length)
+            {
+                var run = runs[runIndex];
+                if (run.Start <= position)
+                {
+                    kind = run.Kind;
+                    end = Math.Min(end, run.End);
+                }
+                else
+                {
+                    end = Math.Min(end, run.Start);
+                }
+            }
+
+            var changing = false;
+            if (changedAt is { } at)
+            {
+                if (position == at.Start)
+                {
+                    left = at.Left;
+                }
+                else if (position == at.End)
+                {
+                    left = at.Right;
+                }
+
+                if (position < at.Start)
+                {
+                    end = Math.Min(end, at.Start);
+                }
+                else if (position < at.End)
+                {
+                    changing = true;
+                    end = Math.Min(end, at.End);
+                }
+            }
+
+            end = Math.Min(part.Last, DiffRows.SplitAtOrAfter(content, end));
+            var from = part.Offsets[position - part.First];
+            var text = part.Text.AsSpan(from, part.Offsets[end - part.First] - from);
+            var colour = DiffStyle.Syntax(kind, ink);
+            if (changing)
+            {
+                colour = DiffStyle.InnerText(colour);
+            }
+
+            if (!text.IsWhiteSpace())
+            {
+                DrawCharacters(graphics, text, left, top, colour);
+            }
+
+            left += WidthOf(graphics, text);
+            position = end;
+        }
+    }
+
+    // The first of a line's runs that ends after a character, by halves, as a long line has many.
+    static int FirstRunEndingAfter(SyntaxRun[] runs, int character)
+    {
+        var low = 0;
+        var high = runs.Length;
+        while (low < high)
+        {
+            var middle = (low + high) / 2;
+            if (runs[middle].End <= character)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+
+        return low;
+    }
+
+    // How wide characters are drawn: as many characters' widths as there are, for printable
+    // ASCII in a monospaced font, as code mostly is; otherwise measured.
+    int WidthOf(Graphics graphics, CharSpan text)
+    {
+        if (asciiMonospaced &&
+            !text.ContainsAnyExceptInRange(' ', '~'))
+        {
+            return text.Length * charWidth;
+        }
+
+        return Measured(graphics, text);
     }
 
     void DrawCharacters(Graphics graphics, CharSpan text, int left, int top, Color colour)

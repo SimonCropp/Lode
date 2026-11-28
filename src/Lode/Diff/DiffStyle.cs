@@ -77,6 +77,25 @@ static class DiffStyle
     /// </summary>
     public static Color Selected => Pick(Rgb(0x0366D6), Rgb(0x2188FF), SystemColors.Highlight);
 
+    /// <summary>
+    /// Code's colours, as github.com draws it, Primer's pl- colours light and dark, as GitHub
+    /// Desktop's diff has them: keywords red, strings navy, comments grey, constants blue, tags
+    /// green, attributes purple, variables orange. Plain, and with high contrast on, the
+    /// line's own <paramref name="text"/>.
+    /// </summary>
+    public static Color Syntax(SyntaxKind kind, Color text) =>
+        kind switch
+        {
+            SyntaxKind.Keyword => Pick(Rgb(0xD73A49), Rgb(0xF97583), text),
+            SyntaxKind.String => Pick(Rgb(0x032F62), Rgb(0x9ECBFF), text),
+            SyntaxKind.Comment => Pick(Rgb(0x6A737D), Rgb(0x959DA5), text),
+            SyntaxKind.Constant => Pick(Rgb(0x005CC5), Rgb(0x79B8FF), text),
+            SyntaxKind.Tag => Pick(Rgb(0x22863A), Rgb(0x85E89D), text),
+            SyntaxKind.Attribute => Pick(Rgb(0x6F42C1), Rgb(0xB392F0), text),
+            SyntaxKind.Variable => Pick(Rgb(0xE36209), Rgb(0xFFAB70), text),
+            _ => text
+        };
+
     public static Color AddedCount => DesktopStyle.StatusColor(GitChange.Added);
 
     public static Color DeletedCount => DesktopStyle.StatusColor(GitChange.Deleted);

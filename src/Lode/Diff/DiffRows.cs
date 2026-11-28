@@ -227,8 +227,11 @@ static class DiffRows
         }
     }
 
-    // The first place at or after index a line can be split, likewise.
-    static int SplitAtOrAfter(CharSpan line, int index)
+    /// <summary>
+    /// The first place at or after <paramref name="index"/> a line can be split without
+    /// splitting what draws as one character, likewise: where a run of a colour can end.
+    /// </summary>
+    internal static int SplitAtOrAfter(CharSpan line, int index)
     {
         if (SplitsPlainly(line, index))
         {
@@ -304,9 +307,10 @@ static class DiffRows
 /// A text diff laid out to draw, which takes as long as the diff is big, so is done as it is
 /// read, off the UI thread: its hunks, with the one below the last for the rest of the file
 /// given the file's <paramref name="Lines"/>, the rows they make, one above the other or side
-/// by side, and how many columns the widest line takes.
+/// by side, and how many columns the widest line takes; and, for a file of a language Lode has
+/// colours for, where its code's colours start, which takes as long as the file is big.
 /// </summary>
-sealed record DiffLayout(TextDiff Diff, IReadOnlyList<string>? Lines, bool Split, IReadOnlyList<DiffHunk> Hunks, List<DiffRow> Rows, int Widest)
+sealed record DiffLayout(TextDiff Diff, IReadOnlyList<string>? Lines, bool Split, IReadOnlyList<DiffHunk> Hunks, List<DiffRow> Rows, int Widest, DiffSyntax? Syntax = null)
 {
     public static DiffLayout Of(TextDiff diff, IReadOnlyList<string>? lines, bool split)
     {

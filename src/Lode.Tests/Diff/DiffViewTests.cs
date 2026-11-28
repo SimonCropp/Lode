@@ -613,6 +613,41 @@ public class DiffViewTests
         }
     }
 
+    // The file gone through for its code's colours off the UI thread too, as it is laid out,
+    // which takes as long as the file is big: the colours drawn are those worked out there. A
+    // file of a language without colours has none.
+    [Test]
+    public async Task ColouredOffTheUIThread()
+    {
+        var uiThread = Environment.CurrentManagedThreadId;
+        using var stub = DiffSample.Stub();
+        var coloured = new ConcurrentQueue<(int Thread, DiffSyntax? Syntax)>();
+        var colour = DiffView.Colour;
+        DiffView.Colour = (path, hunks, lines) =>
+        {
+            var syntax = colour(path, hunks, lines);
+            coloured.Enqueue((Environment.CurrentManagedThreadId, syntax));
+            return syntax;
+        };
+        try
+        {
+            using var view = await Shown(new(Unique(), DiffSample.File));
+
+            var (thread, syntax) = coloured.Single();
+            await Assert.That(thread).IsNotEqualTo(uiThread);
+            await Assert.That(syntax!.Language.Name).IsEqualTo("C#");
+            await Assert.That(view.Canvas.Syntax).IsSameReferenceAs(syntax);
+
+            view.Show(new(Unique(), new("notes.txt", null, GitChange.Modified)));
+            await Read(view);
+            await Assert.That(view.Canvas.Syntax).IsNull();
+        }
+        finally
+        {
+            DiffView.Colour = colour;
+        }
+    }
+
     // Shown anyway, a diff too big to show straight away is parsed and laid out off the UI
     // thread, what it says staying until it is, rather than the window not answering.
     [Test]
