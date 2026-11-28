@@ -926,6 +926,86 @@ public class FolderViewTests
                 """);
     }
 
+    // What a search found is not watched, so what Lode renames or moves among it is followed
+    // there: a folder renamed in the list takes what was found inside it along, and goes itself,
+    // its name no longer matching; a file moved to another subfolder shows there; and one moved
+    // out from beneath the subfolders, out of the folder or into it, is no longer among what was
+    // found, the folder's own shown once.
+    [Test]
+    public async Task WhatASearchFoundFollowsARenameOrAMove()
+    {
+        using var fixture = Fixture.Create();
+        Directory.CreateDirectory(fixture.At("Docs", "Plans"));
+        await File.WriteAllBytesAsync(fixture.At("Docs", "Plans", "plans.aleph"), new byte[7]);
+        await File.WriteAllBytesAsync(fixture.At("Source", "plan.beta"), new byte[3]);
+        await File.WriteAllBytesAsync(fixture.At("Source", "Deep", "planned.aleph"), new byte[5]);
+        using var view = await Open(fixture.Root);
+        view.Filter = "plan";
+        await Pump.Loaded(view);
+        List<string> Rows() =>
+            view.Entries.Select(_ => Row(_, view.CurrentPath)).ToList();
+        var searched = Rows();
+
+        var index = Names(view).IndexOf("Plans");
+        view.OnBeforeLabelEdit(null, new(index));
+        view.OnAfterLabelEdit(null, new(index, "Drafts"));
+        await Pump.Until(() => Rows().Contains(@"file    plans.aleph  7 bytes  in Docs\Drafts") &&
+                               !Names(view).Contains("Drafts"));
+        var renamed = Rows();
+
+        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("Source", "plan.beta")], fixture.At("Archive"), move: true);
+        await Pump.Until(() => Rows().Contains("file    plan.beta  3 bytes  in Archive"));
+        var movedToAnotherSubfolder = Rows();
+
+        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("Source", "Deep", "planned.aleph")], Path.GetDirectoryName(fixture.Root)!, move: true);
+        await Pump.Until(() => !Names(view).Contains("planned.aleph"));
+        var movedOut = Rows();
+
+        await FileOperations.Transfer(IntPtr.Zero, [fixture.At("Archive", "plan.beta")], fixture.Root, move: true);
+        await Pump.Until(() => Rows().Contains("file    plan.beta  3 bytes") &&
+                               !Rows().Contains("file    plan.beta  3 bytes  in Archive"));
+        var movedIntoTheFolder = Rows();
+
+        await Verify(
+            new
+            {
+                searched,
+                renamed,
+                movedToAnotherSubfolder,
+                movedOut,
+                movedIntoTheFolder
+            })
+            .Snapshot(
+                """
+                {
+                  searched: [
+                    folder  Plans  in Docs,
+                    file    plan.beta  3 bytes  in Source,
+                    file    planned.aleph  5 bytes  in Source\Deep,
+                    file    plans.aleph  7 bytes  in Docs\Plans
+                  ],
+                  renamed: [
+                    file    plan.beta  3 bytes  in Source,
+                    file    planned.aleph  5 bytes  in Source\Deep,
+                    file    plans.aleph  7 bytes  in Docs\Drafts
+                  ],
+                  movedToAnotherSubfolder: [
+                    file    plan.beta  3 bytes  in Archive,
+                    file    planned.aleph  5 bytes  in Source\Deep,
+                    file    plans.aleph  7 bytes  in Docs\Drafts
+                  ],
+                  movedOut: [
+                    file    plan.beta  3 bytes  in Archive,
+                    file    plans.aleph  7 bytes  in Docs\Drafts
+                  ],
+                  movedIntoTheFolder: [
+                    file    plan.beta  3 bytes,
+                    file    plans.aleph  7 bytes  in Docs\Drafts
+                  ]
+                }
+                """);
+    }
+
     // On This PC the box narrows the drives, rather than searching every one of them.
     [Test]
     public async Task FilterOnThisPCDoesNotSearch()

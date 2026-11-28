@@ -5361,10 +5361,15 @@ sealed class FolderView : UserControl
         var foundPosition = found.IndexOf(entry);
         if (foundPosition >= 0)
         {
-            // By its new name it may belong elsewhere. A new list, not the one a merge may be
-            // reading.
+            // By its new name it may belong elsewhere, or, the filter no longer matching it, not
+            // among what was found at all. What was found inside a folder renamed is taken along
+            // as the rename is heard (see Follow). A new list, not the one a merge may be reading.
             found = [.. found];
-            if (foundSort == (sortColumn, sortAscending))
+            if (!Matches(filter, newName))
+            {
+                found.RemoveAt(foundPosition);
+            }
+            else if (foundSort == (sortColumn, sortAscending))
             {
                 // Put where it belongs now, rather than everything found sorted again for the
                 // one of them.
@@ -6465,6 +6470,8 @@ sealed class FolderView : UserControl
         if (ListsPlaces ||
             string.Equals(target, CurrentPath, StringComparison.Ordinal))
         {
+            // The view stays where it is, but what its search found may have moved.
+            MoveFound(moved);
             return;
         }
 
@@ -6477,6 +6484,66 @@ sealed class FolderView : UserControl
 
         history[historyIndex] = target;
         Open(target, historyIndex, kept);
+    }
+
+    // What a search found is not watched, as the folder's own items are. So what Lode moved or
+    // renamed among it, or a folder it is in, is taken to where it is now, as what is deleted
+    // is taken out (see DropDeletedFound). It leaves what was found where it no longer belongs
+    // there: renamed to a name the filter doesn't match, or moved out from beneath the folder's
+    // subfolders, into the folder itself, whose own items it is then among, or out of it.
+    void MoveFound(IReadOnlyList<(string From, string To)> moved)
+    {
+        if (found.Count == 0)
+        {
+            return;
+        }
+
+        // A new list, not the one a merge may be reading.
+        var kept = new List<FileEntry>(found.Count);
+        var movedEntries = new List<FileEntry>();
+        foreach (var entry in found)
+        {
+            var path = MovedTo(entry.FullPath, moved);
+            if (string.Equals(path, entry.FullPath, StringComparison.Ordinal))
+            {
+                kept.Add(entry);
+                continue;
+            }
+
+            var name = Path.GetFileName(path);
+            if (Matches(filter, name) &&
+                Path.GetDirectoryName(path) is { } folder &&
+                !Locations.Same(folder, CurrentPath) &&
+                Locations.IsWithin(folder, CurrentPath))
+            {
+                movedEntries.Add(entry with
+                {
+                    Name = name,
+                    FullPath = path
+                });
+            }
+        }
+
+        if (kept.Count == found.Count)
+        {
+            return;
+        }
+
+        if (movedEntries.Count > 0 &&
+            foundSort == (sortColumn, sortAscending))
+        {
+            // Put where they belong now, rather than everything found sorted again for them.
+            SortEntries(movedEntries, sortColumn, sortAscending, gitCells);
+            kept = Merge(kept, movedEntries, Order(sortColumn, sortAscending, gitCells));
+        }
+        else
+        {
+            // Sorted when next shown, as it was to be anyway.
+            kept.AddRange(movedEntries);
+        }
+
+        found = kept;
+        ShowFound();
     }
 
     // Where a path is now, after each move in turn.
