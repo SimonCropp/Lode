@@ -438,6 +438,62 @@ public class GitBranchesTests
         await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("changed");
     }
 
+    // History's Create branch from commit: the branch is made at the commit picked, not the one
+    // checked out, and switched to, what is uncommitted coming along where git can bring it.
+    // Where it can't, a file the commit has otherwise changed, nothing is made.
+    [Test]
+    public async Task CreateMakesABranchAtTheCommitPicked()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var picked = Scratch.Git(repo, "rev-parse", "HEAD");
+        Write(repo, "later.txt", "later");
+        Scratch.Git(repo, "add", "later.txt");
+        Scratch.Git(repo, "commit", "-m", "Later");
+        Write(repo, "tracked.txt", "changed");
+
+        var result = GitBranches.Create(repo, "from-commit", Cancel.None, at: picked);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Branch(repo)).IsEqualTo("from-commit");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(picked);
+        await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("changed");
+        await Assert.That(File.Exists(Path.Combine(repo, "later.txt"))).IsFalse();
+
+        Scratch.Git(repo, "switch", "-q", "main");
+        Scratch.Git(repo, "checkout", "--", "tracked.txt");
+        Write(repo, "later.txt", "uncommitted");
+        var refused = GitBranches.Create(repo, "overwriting", Cancel.None, at: picked);
+
+        await Assert.That(refused.Succeeded).IsFalse();
+        await Assert.That(Branch(repo)).IsEqualTo("main");
+        await Assert.That(Branches(repo)).DoesNotContain("overwriting");
+        await Assert.That(Read(repo, "later.txt")).IsEqualTo("uncommitted");
+    }
+
+    // History's Checkout commit: the commit picked checked out on no branch, the branch left
+    // where it was, what is uncommitted coming along, as git brings it.
+    [Test]
+    public async Task CheckoutCommitDetachesAtTheCommitPicked()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var picked = Scratch.Git(repo, "rev-parse", "HEAD");
+        Write(repo, "later.txt", "later");
+        Scratch.Git(repo, "add", "later.txt");
+        Scratch.Git(repo, "commit", "-m", "Later");
+        var later = Scratch.Git(repo, "rev-parse", "HEAD");
+        Write(repo, "tracked.txt", "changed");
+
+        var result = GitBranches.CheckoutCommit(repo, picked, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(picked);
+        await Assert.That(Scratch.Git(repo, "branch", "--show-current")).IsEqualTo("");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "main")).IsEqualTo(later);
+        await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("changed");
+    }
+
     [Test]
     public async Task CreateRefusesANameGitWont()
     {

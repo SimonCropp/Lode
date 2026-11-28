@@ -143,6 +143,20 @@ sealed class HistoryPane : UserControl
 
     public PaneHeader Header => header;
 
+    /// <summary>
+    /// The branch checked out, as the repository's state was last read, for Cherry-pick to go
+    /// onto. Null when detached.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? Branch { get; set; }
+
+    /// <summary>
+    /// The commit checked out, as the repository's state was last read, which Checkout commit
+    /// isn't offered for. Null before the first.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? CheckedOut { get; set; }
+
     public bool MenuOpen { get; private set; }
 
     /// <summary>
@@ -783,8 +797,9 @@ sealed class HistoryPane : UserControl
 
     /// <summary>
     /// A commit's right-click menu: copy its SHA or message; amend or undo it, the last commit
-    /// where it isn't pushed yet; revert it; tag it, or delete one of its tags, those it has
-    /// offered; and view it on the repository's site.
+    /// where it isn't pushed yet; revert it; make a branch at it; check it out, one not checked
+    /// out; cherry-pick it onto the branch checked out, one that branch hasn't got; tag it, or
+    /// delete one of its tags, those it has offered; and view it on the repository's site.
     /// </summary>
     internal List<QuickMenu.Command?> CommitCommands(string menuRepo, GitCommit commit)
     {
@@ -816,6 +831,25 @@ sealed class HistoryPane : UserControl
             {
                 Glyph = Icons.Undo
             });
+        menu.Add(
+            new("Create branch from commit…", () => CodeMenu.NewBranch(this, menuRepo, "", commit))
+            {
+                Glyph = Icons.Branch
+            });
+        if (commit.Sha != CheckedOut)
+        {
+            menu.Add(
+                new("Checkout commit…", () => CodeMenu.CheckoutCommit(this, menuRepo, commit))
+                {
+                    Glyph = Icons.SwitchBranch
+                });
+        }
+
+        if (CherryPickOnto() is { } onto)
+        {
+            menu.Add(new($"Cherry-pick onto {onto}…", () => CodeMenu.CherryPick(this, menuRepo, commit, onto)));
+        }
+
         menu.Add(
             new("Tag…", () => CodeMenu.TagCommit(this, menuRepo, commit))
             {
@@ -852,6 +886,21 @@ sealed class HistoryPane : UserControl
         loaded.Count > 0 &&
         loaded[0].Sha == commit.Sha &&
         (unpushed.Contains(commit.Sha) || neverPushed);
+
+    // The branch a commit listed can be cherry-picked onto, the one checked out, or null: only
+    // comparing, for one behind, which the other branch has and this hasn't. The rest listed are
+    // in its history already, and git would find nothing to pick. Not detached, where the commit
+    // made would be on no branch.
+    string? CherryPickOnto()
+    {
+        if (compareTo == null ||
+            showAhead)
+        {
+            return null;
+        }
+
+        return Branch;
+    }
 
     // Amend commit: its whole message, for Changes to put in the summary and description.
     async void Amend(string amendRepo, GitCommit commit)

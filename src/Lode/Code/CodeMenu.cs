@@ -1048,13 +1048,14 @@ static class CodeMenu
 
     /// <summary>
     /// Asks for the name of a new branch, starting from <paramref name="name"/>, then makes it at
-    /// the commit checked out and switches to it. What is uncommitted comes along.
+    /// the commit checked out, or, for History's Create branch from commit, at
+    /// <paramref name="at"/>, and switches to it. What is uncommitted comes along.
     /// </summary>
-    public static async void NewBranch(Control owner, string repo, string name)
+    public static async void NewBranch(Control owner, string repo, string name, GitCommit? at = null)
     {
         using var form = new GitTextForm(
             "New branch",
-            $"Make a branch in {Path.GetFileName(repo)} at the commit checked out, and switch to it. Uncommitted changes come along.",
+            NewBranchQuestion(repo, at),
             "Name:",
             name,
             "Create branch",
@@ -1066,7 +1067,22 @@ static class CodeMenu
         }
 
         var branch = form.Value;
-        _ = RunOnBranch($"Git new branch {branch}", repo, cancel => GitBranches.Create(repo, branch, cancel));
+        _ = RunOnBranch($"Git new branch {branch}", repo, cancel => GitBranches.Create(repo, branch, cancel, at?.Sha));
+    }
+
+    /// <summary>
+    /// What New branch asks: where the branch is made, the commit checked out or the one History
+    /// picked, its short SHA and subject, and what becomes of what is uncommitted.
+    /// </summary>
+    internal static string NewBranchQuestion(string repo, GitCommit? at)
+    {
+        var name = Path.GetFileName(repo);
+        if (at == null)
+        {
+            return $"Make a branch in {name} at the commit checked out, and switch to it. Uncommitted changes come along.";
+        }
+
+        return $"Make a branch in {name} at this commit, and switch to it:\n{at.ShortSha} {at.Subject}\n\nUncommitted changes come along, unless git would have to overwrite them, when nothing is made.";
     }
 
     /// <summary>
@@ -1676,6 +1692,70 @@ static class CodeMenu
                 return CodeCommands.GitOutcome(results);
             });
     }
+
+    /// <summary>
+    /// History's Checkout commit: asks, then checks the commit picked out on no branch, as GitHub
+    /// Desktop's does, and reads the repository again.
+    /// </summary>
+    internal static void CheckoutCommit(Control owner, string repo, GitCommit commit)
+    {
+        var answer = MessageBox.Show(
+            owner,
+            CheckoutCommitQuestion(repo, commit),
+            "Git checkout commit",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.OK)
+        {
+            return;
+        }
+
+        _ = RunOnBranch($"Git checkout {commit.ShortSha}", repo, cancel => GitBranches.CheckoutCommit(repo, commit.Sha, cancel));
+    }
+
+    /// <summary>
+    /// What History's Checkout commit asks: which commit, by its short SHA and subject, what
+    /// becomes of what is uncommitted, and of a commit made there.
+    /// </summary>
+    internal static string CheckoutCommitQuestion(string repo, GitCommit commit) =>
+        $"Check out {commit.ShortSha} \"{commit.Subject}\" in {Path.GetFileName(repo)}, on no branch?\n\nUncommitted changes come along, unless git would have to overwrite them, when nothing is checked out. A commit made there is on no branch until one is made at it, with Create branch from commit.";
+
+    /// <summary>
+    /// History's Cherry-pick: asks, then makes the commit picked, of another branch, again on
+    /// <paramref name="branch"/>, the branch checked out, without pushing it, and reads the
+    /// repository again, for History to show it. Stopped by conflicts, it is left part way, and
+    /// Changes shows it, to settle them and continue it, or abort it.
+    /// </summary>
+    internal static void CherryPick(Control owner, string repo, GitCommit commit, string branch)
+    {
+        var answer = MessageBox.Show(
+            owner,
+            CherryPickQuestion(repo, commit, branch),
+            "Git cherry-pick",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.OK)
+        {
+            return;
+        }
+
+        _ = ActionLog.Run(
+            "Git cherry-pick",
+            [repo],
+            async (_, cancel) =>
+            {
+                var result = await Task.Run(() => GitMerging.CherryPick(repo, commit, cancel), cancel);
+                GitCache.MarkStale([repo]);
+                return CodeCommands.GitOutcome([result]);
+            });
+    }
+
+    /// <summary>
+    /// What History's Cherry-pick asks: which commit, by its short SHA and subject, goes onto
+    /// which branch, and what happens should it conflict.
+    /// </summary>
+    internal static string CherryPickQuestion(string repo, GitCommit commit, string branch) =>
+        $"Cherry-pick {commit.ShortSha} \"{commit.Subject}\" onto {branch} in {Path.GetFileName(repo)}?\n\nA new commit on {branch} makes its changes, with its message and author. It isn't pushed. Should it conflict, it is left part way, for the conflicts to be settled in Changes, where it can be continued or aborted.";
 
     /// <summary>
     /// History's Undo commit: asks, then takes the last commit off the branch, its changes left

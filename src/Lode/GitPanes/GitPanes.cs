@@ -289,13 +289,15 @@ sealed class GitPanes : IDisposable
     }
 
     // How many files have changed, on the strip's Changes tab and on History's, where it has one,
-    // Changes' own saying how many it read; and, for Changes with nothing uncommitted, what to do
-    // next.
+    // Changes' own saying how many it read; the branch and commit checked out, for what History's
+    // commits offer; and, for Changes with nothing uncommitted, what to do next.
     void ShowState(GitState? state)
     {
         var count = state?.Changes ?? 0;
         Strip.Changes = count;
         history.Header.ChangesCount = count;
+        history.Branch = state?.Branch;
+        history.CheckedOut = state?.Commit;
         changes.ShowState(state);
     }
 

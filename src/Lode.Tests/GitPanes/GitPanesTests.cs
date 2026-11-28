@@ -445,8 +445,9 @@ public class GitPanesTests
         box.Text = "";
     }
 
-    // A commit's menu offers to revert it and to tag it, and, for one with tags, to delete one of
-    // them. The last, not pushed yet, can be amended or undone too.
+    // A commit's menu offers to revert it, make a branch at it and tag it, and, for one with tags,
+    // to delete one of them. The last, not pushed yet, can be amended or undone too. Any but the
+    // one checked out can be checked out, on no branch.
     [Test]
     public async Task CommitMenuTags()
     {
@@ -464,8 +465,52 @@ public class GitPanesTests
         string Entries(int index) =>
             string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[index]).Select(_ => _?.Text ?? "----"));
 
-        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Amend commit…, Undo commit…, Revert commit…, Tag…");
-        await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…, Delete tag…");
+        await Assert.That(Entries(0)).IsEqualTo("Copy SHA, Copy message, ----, Amend commit…, Undo commit…, Revert commit…, Create branch from commit…, Tag…");
+        await Assert.That(Entries(1)).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Create branch from commit…, Checkout commit…, Tag…, Delete tag…");
+    }
+
+    // Cherry-pick, onto the branch checked out, is offered only for a commit it hasn't got:
+    // comparing, one behind, the other branch's, not one ahead, nor one of its own history. Nor
+    // with no branch checked out, as git would leave the commit on none. Any commit can have a
+    // branch made at it, and be checked out.
+    [Test]
+    public async Task CommitMenuCherryPicksOnlyWhatTheBranchHasNot()
+    {
+        using var stubs = new PaneStubs();
+        HistoryPane.ReadRange = (_, _, skip, count, _) => PaneStubs.History.Skip(skip).Take(count).ToList();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        var repo = fixture.At("Docs");
+        settings.SetPaneTab(repo, GitPane.History);
+        using var form = await Show(repo, settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+
+        string Entries() =>
+            string.Join(", ", pane.CommitCommands(repo, PaneStubs.History[2]).Select(_ => _?.Text ?? "----"));
+
+        var own = Entries();
+        pane.Compare("feature");
+        await Pump.Until(() => pane.Reading.IsCompleted && pane.Commits.Count > 0);
+        var behind = Entries();
+        pane.ShowAhead(true);
+        await Pump.Until(() => pane.Reading.IsCompleted && pane.Commits.Count > 0);
+        var ahead = Entries();
+        pane.ShowAhead(false);
+        await Pump.Until(() => pane.Reading.IsCompleted && pane.Commits.Count > 0);
+        form.GitPanes.ShowRepo(repo, form.GitPanes.State! with
+        {
+            Branch = null
+        });
+        var detached = Entries();
+
+        await Assert.That(own).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Create branch from commit…, Checkout commit…, Tag…");
+        await Assert.That(behind).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Create branch from commit…, Checkout commit…, Cherry-pick onto main…, Tag…");
+        await Assert.That(ahead).IsEqualTo(own);
+        await Assert.That(detached).IsEqualTo(own);
     }
 
     // The last commit pushed is neither amended nor undone, as changing it would mean pushing with
@@ -489,20 +534,20 @@ public class GitPanesTests
         string Entries() =>
             string.Join(", ", pane.CommitCommands(fixture.At("Docs"), PaneStubs.History[0]).Select(_ => _?.Text ?? "----"));
 
-        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…");
+        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Create branch from commit…, Tag…");
 
         HistoryPane.ReadNeverPushed = (_, _) => true;
         pane.Reload();
         await Pump.Until(() => pane.Reading.IsCompleted);
 
-        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Amend commit…, Undo commit…, Revert commit…, Tag…");
+        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Amend commit…, Undo commit…, Revert commit…, Create branch from commit…, Tag…");
 
         HistoryPane.ReadUnpushed = (_, _) => [PaneStubs.History[0].Sha];
         HistoryPane.ReadRange = (_, _, skip, count, _) => PaneStubs.History.Skip(skip).Take(count).ToList();
         pane.Compare("feature");
         await Pump.Until(() => pane.Reading.IsCompleted && pane.Commits.Count > 0);
 
-        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Tag…");
+        await Assert.That(Entries()).IsEqualTo("Copy SHA, Copy message, ----, Revert commit…, Create branch from commit…, Cherry-pick onto main…, Tag…");
     }
 
     // Amend commit carries on in Changes, as GitHub Desktop's does: the commit's message in the
@@ -1417,6 +1462,65 @@ public class GitPanesTests
 
         await Assert.That(pane.MergeText).IsEqualTo("Rebasing feature onto origin/main: no conflicts left. Continue the rebase.");
         await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled, pane.ContinueButton.Enabled)).IsEqualTo(("Continue rebase", true, true));
+    }
+
+    // Part way through a cherry-pick stopped by conflicts, History's or a terminal's: the bar
+    // over the files says which commit goes onto which branch, with Continue cherry-pick and
+    // Abort cherry-pick, and git's sides are the branch checked out and the commit. Commit is
+    // Continue cherry-pick, held back until no conflicts are left, but needing no summary, as the
+    // commit keeps its own message. A file git doesn't track isn't ticked, as it stays out of it.
+    [Test]
+    public async Task ChangesSettleACherryPicksConflicts()
+    {
+        using var stubs = new PaneStubs();
+        var conflicted = new Change("Source/main.aleph", null, GitChange.Conflicted, new(2, false));
+        var untracked = new Change("notes.aleph", null, GitChange.Untracked);
+        var read = new GitChanges("main", true, true, [conflicted, untracked], CherryPicking: new("1a2b3c4"));
+        ChangesPane.Read = (_, _) => read;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var entries = string.Join(", ", pane.ConflictCommands([conflicted]).Select(_ => _?.Text ?? "----"));
+
+        await Assert.That(pane.MergeText).IsEqualTo("Cherry-picking 1a2b3c4 onto main: 1 conflicted file left. Right-click one to pick a side, or settle its markers in the editor.");
+        await Assert.That((pane.AbortButton.Text, pane.ContinueButton.Text, pane.ContinueButton.Visible, pane.ContinueButton.Enabled)).IsEqualTo(("Abort cherry-pick", "Continue cherry-pick", true, false));
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Continue cherry-pick", false));
+        await Assert.That(pane.SummaryBox.Text).IsEqualTo("");
+        await Assert.That(entries).IsEqualTo("Use the file from main, Use the file from 1a2b3c4, Mark as resolved, ----");
+        await Assert.That((pane.TickOf(conflicted), pane.TickOf(untracked))).IsEqualTo(((bool?) true, (bool?) false));
+
+        string? asked = null;
+        var ask = ChangesPane.AskAbort;
+        ChangesPane.AskAbort = (_, what) =>
+        {
+            asked = what;
+            return DialogResult.Cancel;
+        };
+        try
+        {
+            pane.AbortButton.PerformClick();
+        }
+        finally
+        {
+            ChangesPane.AskAbort = ask;
+        }
+
+        await Assert.That(asked).IsEqualTo("cherry-pick");
+
+        read = read with
+        {
+            Files = [conflicted with { Conflict = new(0, false) }, untracked]
+        };
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That(pane.MergeText).IsEqualTo("Cherry-picking 1a2b3c4 onto main: no conflicts left. Continue the cherry-pick.");
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled, pane.ContinueButton.Enabled)).IsEqualTo(("Continue cherry-pick", true, true));
     }
 
     // Compare to branch, as GitHub Desktop's: the commits the branch has that the one checked

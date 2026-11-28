@@ -433,6 +433,21 @@ public class CodeMenuTests
         await Assert.That(question.GetPositionFromCharIndex(question.TextLength - 1).Y).IsLessThan(question.ClientSize.Height);
     }
 
+    // History's Create branch from commit asks as New branch does, saying which commit, its SHA
+    // and subject, and what becomes of what is uncommitted; its Cherry-pick, which commit goes
+    // onto which branch, and what happens should it conflict.
+    [Test]
+    public async Task HistorysBranchAndCherryPickQuestions()
+    {
+        var repo = @"C:\Code\Lode";
+        var commit = new GitCommit("eaae4361234", [], "Ada", DateTimeOffset.UnixEpoch, [], "refs or cleanup");
+
+        await Assert.That(CodeMenu.NewBranchQuestion(repo, null)).IsEqualTo("Make a branch in Lode at the commit checked out, and switch to it. Uncommitted changes come along.");
+        await Assert.That(CodeMenu.NewBranchQuestion(repo, commit)).IsEqualTo("Make a branch in Lode at this commit, and switch to it:\neaae436 refs or cleanup\n\nUncommitted changes come along, unless git would have to overwrite them, when nothing is made.");
+        await Assert.That(CodeMenu.CherryPickQuestion(repo, commit, "main")).IsEqualTo("Cherry-pick eaae436 \"refs or cleanup\" onto main in Lode?\n\nA new commit on main makes its changes, with its message and author. It isn't pushed. Should it conflict, it is left part way, for the conflicts to be settled in Changes, where it can be continued or aborted.");
+        await Assert.That(CodeMenu.CheckoutCommitQuestion(repo, commit)).IsEqualTo("Check out eaae436 \"refs or cleanup\" in Lode, on no branch?\n\nUncommitted changes come along, unless git would have to overwrite them, when nothing is checked out. A commit made there is on no branch until one is made at it, with Create branch from commit.");
+    }
+
     // History's Tag says what goes with the tag, as Tag does: the commit, and those before it,
     // where origin's branch hasn't got them, a branch origin hasn't got, or a branch diverged,
     // left till pulled. One on origin's already says nothing more.

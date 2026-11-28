@@ -123,6 +123,97 @@ public class GitMergingTests
         await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
     }
 
+    // The newest commit on the branch checked out, as History lists it.
+    static GitCommit Newest(string repo) =>
+        GitHistory.Read(repo, 0, 1, Cancel.None)![0];
+
+    // History's Cherry-pick, comparing with another branch: the commit picked, of a branch the
+    // one checked out hasn't merged, made again on top of it, by its author and with its whole
+    // message, and none of that branch's other commits. Not with uncommitted changes, which
+    // settling its conflicts would take into it, but for files git doesn't track.
+    [Test]
+    public async Task CherryPickMakesTheCommitAgainOnTheBranch()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        Git(repo, "switch", "-c", "feature");
+        await Commit(repo, "first.txt", "first");
+        await File.WriteAllTextAsync(Path.Combine(repo, "picked.txt"), "picked");
+        Git(repo, "add", "picked.txt");
+        Git(repo, "-c", "user.name=Ada Lovelace", "-c", "user.email=ada@example.com", "commit", "-m", "Picked", "-m", "Its body.");
+        var picked = Newest(repo);
+        Git(repo, "switch", "main");
+        await Commit(repo, "main.txt", "main");
+        var head = Git(repo, "rev-parse", "HEAD");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+
+        var refused = GitMerging.CherryPick(repo, picked, Cancel.None);
+        var headOnceRefused = Git(repo, "rev-parse", "HEAD");
+        Git(repo, "checkout", "--", "tracked.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "new");
+        var result = GitMerging.CherryPick(repo, picked, Cancel.None);
+
+        await Assert.That(refused.Succeeded).IsFalse();
+        await Assert.That(refused.Output).StartsWith("There are uncommitted changes, so nothing was cherry-picked: commit or stash them first.");
+        await Assert.That(headOnceRefused).IsEqualTo(head);
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "rev-parse", "HEAD^")).IsEqualTo(head);
+        await Assert.That(Git(repo, "log", "-1", "--format=%an <%ae>%n%B")).IsEqualTo("Ada Lovelace <ada@example.com>\nPicked\n\nIts body.");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "picked.txt"))).IsEqualTo("picked");
+        await Assert.That(File.Exists(Path.Combine(repo, "first.txt"))).IsFalse();
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("?? untracked.txt");
+    }
+
+    // One that conflicts is left part way, for the conflicts to be settled in Changes, which has
+    // it as the commit cherry-picked onto the branch, git's sides the branch checked out and the
+    // commit. Aborted, the branch and its files are as they were. Settled and continued, the files
+    // go in the commit, with its own message, no editor waited for, and nothing else does: a
+    // change to another file, made meanwhile, stays uncommitted.
+    [Test]
+    public async Task ACherryPickThatConflictsIsLeftToSettle()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        await Commit(repo, "other.txt", "other");
+        Git(repo, "switch", "-c", "feature");
+        await Commit(repo, "tracked.txt", "feature");
+        var picked = Newest(repo);
+        Git(repo, "switch", "main");
+        await Commit(repo, "tracked.txt", "main");
+        var head = Git(repo, "rev-parse", "HEAD");
+
+        var result = GitMerging.CherryPick(repo, picked, Cancel.None);
+        var changes = GitChanges.Read(repo, Cancel.None)!;
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).StartsWith($"Cherry-picking {picked.ShortSha} left 1 conflicted file, to settle in Changes");
+        await Assert.That((changes.Merging, changes.CherryPicking, changes.MergeSummary, changes.ConflictsLeft)).IsEqualTo((true, new CherryPick(picked.ShortSha), (string?) null, 1));
+        await Assert.That(ChangesPane.MergeBarText(changes)).IsEqualTo($"Cherry-picking {picked.ShortSha} onto main: 1 conflicted file left. Right-click one to pick a side, or settle its markers in the editor.");
+        await Assert.That(ChangesPane.SideNames(changes)).IsEqualTo(("main", picked.ShortSha));
+
+        var aborted = GitChanges.Abort(repo, Cancel.None);
+
+        await Assert.That(aborted.Succeeded).IsTrue();
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Merging).IsFalse();
+        await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(head);
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("main");
+
+        GitMerging.CherryPick(repo, picked, Cancel.None);
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "settled");
+        await File.WriteAllTextAsync(Path.Combine(repo, "other.txt"), "changed meanwhile");
+        var settled = GitChanges.Read(repo, Cancel.None)!;
+        var continued = GitChanges.Commit(repo, settled.Files, settled.Merging, "Not this", Cancel.None);
+
+        await Assert.That(settled.Conflicted).IsFalse();
+        await Assert.That(continued.Succeeded).IsTrue();
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Merging).IsFalse();
+        await Assert.That(Git(repo, "rev-parse", "HEAD^")).IsEqualTo(head);
+        await Assert.That(Git(repo, "log", "-1", "--format=%B")).IsEqualTo("tracked.txt feature");
+        await Assert.That(Git(repo, "show", "HEAD:tracked.txt")).IsEqualTo("settled");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("M other.txt");
+    }
+
     // Undoing a merge that conflicted could take an uncommitted change with it, so there must
     // be none, but for files git doesn't track.
     [Test]

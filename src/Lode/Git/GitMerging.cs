@@ -525,6 +525,57 @@ static class GitMerging
         };
     }
 
+    /// <summary>
+    /// History's Cherry-pick: <paramref name="commit"/>, of another branch, made again on the
+    /// branch checked out, with its message and author, as GitHub Desktop cherry-picks it; a
+    /// merge's against its first parent, as Revert has it. Stopped by conflicts, it is left part
+    /// way, for them to be settled in Changes, and continued or aborted there. Stopped otherwise,
+    /// as by a commit with nothing in it, the branch having its changes already, it is given up,
+    /// as nothing then would show it part way.
+    /// </summary>
+    public static CodeCommands.RepoResult CherryPick(string repo, GitCommit commit, Cancel cancel)
+    {
+        if (WhyNot(repo, "nothing was cherry-picked") is { } why)
+        {
+            return new(repo, false, why);
+        }
+
+        List<string> arguments = ["cherry-pick"];
+        if (commit.Parents.Count > 1)
+        {
+            arguments.AddRange(["-m", "1"]);
+        }
+
+        arguments.Add(commit.Sha);
+        var picked = CodeCommands.GitToItsEnd(repo, cancel, arguments.ToArray());
+        if (picked.Succeeded)
+        {
+            return picked;
+        }
+
+        var conflicted = CodeCommands.ConflictedFiles(repo);
+        if (conflicted.Length > 0)
+        {
+            var count = conflicted.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+            return picked with
+            {
+                Output = $"Cherry-picking {commit.ShortSha} left {GitState.CountOf(count, "conflicted file")}, to settle in Changes: pick a side for each, or settle its markers in the editor, then continue the cherry-pick. Abort cherry-pick there puts the branch back.\nIn conflict:\n{conflicted}"
+            };
+        }
+
+        // Not cancellable: a cherry-pick left part way would be in the way of everything after.
+        if (CodeCommands.Unfinished(repo) == "cherry-pick")
+        {
+            CodeCommands.GitToItsEnd(repo, Cancel.None, "cherry-pick", "--abort");
+            return picked with
+            {
+                Output = $"{picked.Output}\nThe cherry-pick stopped part way, so it was given up, and nothing was committed.".Trim()
+            };
+        }
+
+        return picked;
+    }
+
     // A squash that failed, by a conflict or a commit git couldn't make, is put back as it was:
     // nothing was changed but what it staged, as nothing tracked was changed before it.
     static CodeCommands.RepoResult Unsquash(string repo, string branch, CodeCommands.RepoResult failed)

@@ -67,6 +67,12 @@ sealed record Conflict(int Markers, bool Manual, bool OursDeleted = false, bool 
 sealed record Rebase(string? Branch, string? Onto);
 
 /// <summary>
+/// A cherry-pick git is part way through, stopped by conflicts say: the commit being picked, by
+/// its short sha, git's theirs, onto the branch checked out, git's ours.
+/// </summary>
+sealed record CherryPick(string Commit);
+
+/// <summary>
 /// A file only some of whose changed lines are to be committed, with the patch of those lines
 /// against the last commit, as <see cref="LinePatch"/> writes it from the diff
 /// <see cref="GitFileDiff.ReadToCommit"/> reads: a character a byte, as Latin-1 reads them.
@@ -88,7 +94,9 @@ sealed record PartialChange(Change File, string Patch);
 /// else read; null where it could.</param>
 /// <param name="Rebasing">Part way through a rebase, which it is; <paramref name="Merging"/> too
 /// then, as going on with it takes every file git tracks.</param>
-sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null, Rebase? Rebasing = null)
+/// <param name="CherryPicking">Part way through a cherry-pick, which commit;
+/// <paramref name="Merging"/> too then, as going on with it commits what it changed whole.</param>
+sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null, Rebase? Rebasing = null, CherryPick? CherryPicking = null)
 {
     public static GitChanges Empty { get; } = new(null, true, false, []);
 
@@ -164,22 +172,53 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
         }
 
         var rebasing = RebaseOf(repo, cancel);
+        CherryPick? cherryPicking = null;
+        if (rebasing == null)
+        {
+            cherryPicking = CherryPickOf(repo);
+        }
+
         var merging = rebasing != null || IsMerging(repo);
         var parsed = Parse(result.Output, merging);
         var files = parsed.Files
             .Select(_ => WithMarkers(repo, _))
             .ToList();
 
-        // Part way through a rebase, git's message is the commit being replayed's, which going
-        // on with it keeps, so the summary doesn't start as it.
-        var (from, summary) = MergeMessage(repo, merging && rebasing == null);
+        // Part way through a rebase or a cherry-pick, git's message is the commit being replayed
+        // or picked's, which going on with it keeps, so the summary doesn't start as it.
+        var (from, summary) = MergeMessage(repo, merging && rebasing == null && cherryPicking == null);
         return parsed with
         {
             Files = files,
             MergingFrom = from,
             MergeSummary = summary,
-            Rebasing = rebasing
+            Rebasing = rebasing,
+            CherryPicking = cherryPicking
         };
+    }
+
+    // The cherry-pick git is part way through in the repository, from the commit it keeps while
+    // it is, or null where it is part way through none.
+    static CherryPick? CherryPickOf(string repo)
+    {
+        try
+        {
+            if (CodeCommands.GitDirectory(repo) is not { } git ||
+                FirstLine(Path.Combine(git, "CHERRY_PICK_HEAD")) is not { Length: > 0 } commit)
+            {
+                return null;
+            }
+
+            return new(commit[..Math.Min(7, commit.Length)]);
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     // The rebase git is part way through in the repository, from the folder it keeps while it
@@ -584,8 +623,9 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// Commits <paramref name="ticked"/>, and only them, with <paramref name="message"/>, leaving
     /// whatever else is staged staged. Part way through a merge git commits everything or
     /// nothing, so then it is everything; part way through a rebase, it goes on with the rebase,
-    /// as <see cref="ContinueRebase"/> does, rather than commit. Each step is let finish once
-    /// started, as one stopped part way leaves the index locked.
+    /// as <see cref="ContinueRebase"/> does, rather than commit, and part way through a
+    /// cherry-pick, with that, as <see cref="ContinueCherryPick"/> does. Each step is let finish
+    /// once started, as one stopped part way leaves the index locked.
     /// </summary>
     /// <param name="partial">Files only some of whose lines go in, each with the patch of those
     /// lines against the last commit.</param>
@@ -601,6 +641,14 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             RebaseFolder(repo) != null)
         {
             return ContinueRebase(repo, cancel);
+        }
+
+        // Committed as a merge is, with the summary typed, the commit picked would lose its own
+        // message, and every change to a file git tracks would go in with it.
+        if (merging &&
+            CherryPickOf(repo) != null)
+        {
+            return ContinueCherryPick(repo, cancel);
         }
 
         var folder = Path.Combine(Path.GetTempPath(), "Lode", "Commits", Guid.NewGuid().ToString("N"));
@@ -941,6 +989,40 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             ["GIT_EDITOR"] = ":"
         };
         return CodeCommands.GitToItsEnd(repo, cancel, environment, "rebase", "--continue");
+    }
+
+    /// <summary>
+    /// Goes on with the cherry-pick part way, as Continue rebase goes on with a rebase: the files
+    /// that were in conflict staged as they are, settled, then the commit made, with the
+    /// picked one's own message and author. Those it changed cleanly are staged already, and any
+    /// other change, to a file it didn't change, stays uncommitted, as git's own cherry-pick
+    /// --continue leaves it. Stopped again, a hook refusing the commit say, it is left part way.
+    /// </summary>
+    public static CodeCommands.RepoResult ContinueCherryPick(string repo, Cancel cancel)
+    {
+        var unmerged = CodeCommands.GitOutput(repo, cancel, ["diff", "--name-only", "-z", "--diff-filter=U"]);
+        if (!unmerged.Succeeded)
+        {
+            return new(repo, false, unmerged.Error);
+        }
+
+        var paths = unmerged.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+        if (paths.Length > 0)
+        {
+            var added = CodeCommands.GitToItsEnd(repo, cancel, ["--literal-pathspecs", "add", "--all", "--", .. paths]);
+            if (!added.Succeeded)
+            {
+                return added;
+            }
+        }
+
+        // As for a rebase: git opens an editor for the message of a commit whose conflicts were
+        // settled, and ":" is none at all to it.
+        var environment = new Dictionary<string, string>
+        {
+            ["GIT_EDITOR"] = ":"
+        };
+        return CodeCommands.GitToItsEnd(repo, cancel, environment, "cherry-pick", "--continue");
     }
 
     /// <summary>

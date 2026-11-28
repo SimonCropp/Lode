@@ -471,10 +471,27 @@ static class GitBranches
 
     /// <summary>
     /// Makes a branch called <paramref name="name"/> at the commit checked out, and switches to
-    /// it. What is uncommitted comes along: it is the same commit.
+    /// it. What is uncommitted comes along: it is the same commit. Or, for History's Create
+    /// branch from commit, at <paramref name="at"/>, a commit's sha: what is uncommitted comes
+    /// along unless git would have to overwrite it, when nothing is made.
     /// </summary>
-    public static CodeCommands.RepoResult Create(string repo, string name, Cancel cancel) =>
-        CodeCommands.GitToItsEnd(repo, cancel, "switch", "-c", name);
+    public static CodeCommands.RepoResult Create(string repo, string name, Cancel cancel, string? at = null)
+    {
+        if (at == null)
+        {
+            return CodeCommands.GitToItsEnd(repo, cancel, "switch", "-c", name);
+        }
+
+        return CodeCommands.GitToItsEnd(repo, cancel, "switch", "-c", name, at);
+    }
+
+    /// <summary>
+    /// History's Checkout commit: <paramref name="sha"/> checked out on no branch, the branch
+    /// left where it was. What is uncommitted comes along unless git would have to overwrite it,
+    /// when nothing is checked out.
+    /// </summary>
+    public static CodeCommands.RepoResult CheckoutCommit(string repo, string sha, Cancel cancel) =>
+        CodeCommands.GitToItsEnd(repo, cancel, "switch", "--detach", sha);
 
     /// <summary>
     /// Renames the local branch <paramref name="name"/> to <paramref name="newName"/>. The branch
