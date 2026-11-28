@@ -55,22 +55,35 @@ sealed class CloneDialog : Form
     Source source = Source.GitHub;
     Task<HashSet<string>> cloned;
     List<Row> rows = [];
-    bool loading;
     bool pathEdited;
     bool settingPath;
 
-    // What each site listed, while Lode runs: opening Clone again lists them at once, and
-    // Refresh asks again.
-    static HostedListing? gitHub;
-    static HostedListing? azureDevOps;
+    // Each site's listing while Lode runs, the one being read or the one it ended with: opening
+    // Clone again shows it at once, going back to a site still listing waits for that listing
+    // rather than starting another, each site saying it is finding repositories till its own has
+    // ended, and Refresh asks again.
+    static Dictionary<Source, Task<HostedListing>> listings = [];
 
     /// <summary>
     /// Forgets what the sites listed. For tests.
     /// </summary>
-    internal static void Forget()
+    internal static void Forget() =>
+        listings.Clear();
+
+    // A listing that found nothing, only why, as one made offline or before signing in does, or
+    // one that failed outright, is read again when Clone next opens, rather than shown each time
+    // till Refresh. One that listed some is kept, whatever it couldn't list.
+    static void ForgetFailed()
     {
-        gitHub = null;
-        azureDevOps = null;
+        foreach (var (from, listing) in listings.ToList())
+        {
+            if (listing.IsFaulted ||
+                listing.IsCanceled ||
+                listing is { IsCompletedSuccessfully: true, Result: { Repos.Count: 0, Problems.Count: > 0 } })
+            {
+                listings.Remove(from);
+            }
+        }
     }
 
     /// <summary>
@@ -111,6 +124,7 @@ sealed class CloneDialog : Form
         this.parent = parent;
         var codeFolder = settings.CodeDirectory;
         cloned = Task.Run(() => HostedRepos.Cloned(codeFolder));
+        ForgetFailed();
         bold = new(Font, FontStyle.Bold);
 
         Text = "Clone a repository";
@@ -331,7 +345,10 @@ sealed class CloneDialog : Form
         Pick(source);
     }
 
-    void Pick(Source picked)
+    /// <summary>
+    /// Shows a site's list, or the url to type, as a click on its tab does. Tests pick the tabs.
+    /// </summary>
+    internal void Pick(Source picked)
     {
         source = picked;
         sourceTabs.Selected = picked;
@@ -352,44 +369,28 @@ sealed class CloneDialog : Form
         OnPicked();
     }
 
-    // Lists the site's repositories, unless they were listed already this run.
+    // Lists the site's repositories, unless they were listed already this run, or are being.
     void ListRepos(bool refresh) =>
         Loaded = LoadAsync(source, refresh);
 
     async Task LoadAsync(Source loadingFrom, bool refresh)
     {
-        var known = Listing(loadingFrom);
-        if (known != null &&
-            !refresh)
+        if (refresh ||
+            !listings.TryGetValue(loadingFrom, out var listing))
         {
-            await cloned;
+            listing = ListFrom(loadingFrom);
+            listings[loadingFrom] = listing;
+        }
+
+        // One still being read says so meanwhile. One read already is shown once the clones it
+        // leaves out are known, rather than for a moment with them in it.
+        if (!listing.IsCompleted)
+        {
             Refill();
-            return;
         }
 
-        loading = true;
-        Refill();
-        try
-        {
-            var alreadyCloned = await cloned;
-            if (loadingFrom == Source.GitHub)
-            {
-                gitHub = await HostedRepos.ListGitHub(Cancel.None);
-            }
-            else
-            {
-                var organizations = settings.AzureDevOpsOrganizations
-                    .Concat(HostedRepos.OrganizationsCloned(alreadyCloned))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-                azureDevOps = await HostedRepos.ListAzureDevOps(organizations, Cancel.None);
-            }
-        }
-        finally
-        {
-            loading = false;
-        }
-
+        await listing;
+        await cloned;
         if (!IsDisposed &&
             source == loadingFrom)
         {
@@ -397,20 +398,33 @@ sealed class CloneDialog : Form
         }
     }
 
-    static HostedListing? Listing(Source from) =>
-        from switch
+    async Task<HostedListing> ListFrom(Source from)
+    {
+        if (from == Source.GitHub)
         {
-            Source.GitHub => gitHub,
-            Source.AzureDevOps => azureDevOps,
-            _ => null
-        };
+            return await HostedRepos.ListGitHub(Cancel.None);
+        }
+
+        var organizations = settings.AzureDevOpsOrganizations
+            .Concat(HostedRepos.OrganizationsCloned(await cloned))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return await HostedRepos.ListAzureDevOps(organizations, Cancel.None);
+    }
 
     // The rows for what is listed and what the filter matches, those cloned already left out,
     // under their headings: Your repositories first, then each owner or project.
     void Refill()
     {
         var keep = (list.SelectedItem as Row)?.Repo?.CloneUrl;
-        var listing = Listing(source);
+        var showing = listings.GetValueOrDefault(source);
+        HostedListing? listing = null;
+        if (showing is { IsCompletedSuccessfully: true })
+        {
+            listing = showing.Result;
+        }
+
+        var loading = showing is { IsCompleted: false };
         rows = [];
         var hiddenCount = 0;
         if (loading)
