@@ -242,8 +242,9 @@ public class GitChangesTests
     }
 
     // A merge left part way by conflicts, as Changes reads it: each file in conflict with how
-    // many conflicts are marked in it, the branch merged in, and git's message for the merge;
-    // one a side deleted has a side to pick.
+    // many conflicts are marked in it, the branch merged in, and git's message for the merge,
+    // with no description, the conflicts it lists being commented out; one a side deleted has a
+    // side to pick.
     [Test]
     public async Task ReadsConflicts()
     {
@@ -252,7 +253,8 @@ public class GitChangesTests
 
         var changes = GitChanges.Read(repo, Cancel.None)!;
 
-        await Assert.That((changes.Merging, changes.MergingFrom, changes.MergeSummary, changes.ConflictsLeft)).IsEqualTo((true, "feature", "Merge branch 'feature'", 2));
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, ".git", "MERGE_MSG"))).Contains("# Conflicts:");
+        await Assert.That((changes.Merging, changes.MergingFrom, changes.MergeSummary, changes.MergeDescription, changes.ConflictsLeft)).IsEqualTo((true, "feature", "Merge branch 'feature'", (string?) null, 2));
         await Assert.That(changes.Files.Select(_ => $"{_.Path}: {_.Conflict?.Note}"))
             .IsEquivalentTo(["gone.txt: Pick a side", "tracked.txt: 2 conflicts"]);
         await Assert.That(ChangesPane.MergeBarText(changes)).IsEqualTo("Merging feature into main: 2 conflicted files left. Right-click one to pick a side, or settle its markers in the editor.");

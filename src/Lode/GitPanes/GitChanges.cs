@@ -89,6 +89,9 @@ sealed record PartialChange(Change File, string Patch);
 /// as git's message for the merge names it; null where it can't be told.</param>
 /// <param name="MergeSummary">Part way through a merge, the first line of git's message for it,
 /// to start the summary with.</param>
+/// <param name="MergeDescription">Part way through a merge, the rest of git's message for it, to
+/// start the description with: a revert's This reverts commit, or the commits merged in, as
+/// merge.log lists them. Null where there is none.</param>
 /// <param name="Head">The commit checked out, null before the first, or where it wasn't read.</param>
 /// <param name="Failure">Where git couldn't read what is uncommitted, what it said, with nothing
 /// else read; null where it could.</param>
@@ -96,7 +99,7 @@ sealed record PartialChange(Change File, string Patch);
 /// then, as going on with it takes every file git tracks.</param>
 /// <param name="CherryPicking">Part way through a cherry-pick, which commit;
 /// <paramref name="Merging"/> too then, as going on with it commits what it changed whole.</param>
-sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null, Rebase? Rebasing = null, CherryPick? CherryPicking = null)
+sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null, Rebase? Rebasing = null, CherryPick? CherryPicking = null, string? MergeDescription = null)
 {
     public static GitChanges Empty { get; } = new(null, true, false, []);
 
@@ -185,13 +188,15 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             .ToList();
 
         // Part way through a rebase or a cherry-pick, git's message is the commit being replayed
-        // or picked's, which going on with it keeps, so the summary doesn't start as it.
-        var (from, summary) = MergeMessage(repo, merging && rebasing == null && cherryPicking == null);
+        // or picked's, which going on with it keeps, so neither the summary nor the description
+        // starts as it.
+        var (from, summary, description) = MergeMessage(repo, merging && rebasing == null && cherryPicking == null, parsed.Branch);
         return parsed with
         {
             Files = files,
             MergingFrom = from,
             MergeSummary = summary,
+            MergeDescription = description,
             Rebasing = rebasing,
             CherryPicking = cherryPicking
         };
@@ -399,15 +404,18 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
         return count;
     }
 
-    // The branch being merged in and the first line of git's message for the merge, from the
-    // message git keeps while it is part way: "Merge branch 'feature'", "Merge branch 'feature'
-    // of https://...", or "Merge remote-tracking branch 'origin/main'".
-    static (string? From, string? Summary) MergeMessage(string repo, bool merging)
+    // The branch being merged in, and git's message for the merge, from the message git keeps
+    // while it is part way: its first line, "Merge branch 'feature'", "Merge branch 'feature'
+    // of https://...", "Merge remote-tracking branch 'origin/main'", or a revert's, and the rest,
+    // a revert's This reverts commit, or the commits merged in, as merge.log lists them. The
+    // lines git comments out, the conflicts it lists say, are left out, as the commit, its
+    // message given whole, would keep them.
+    static (string? From, string? Summary, string? Description) MergeMessage(string repo, bool merging, string? branch)
     {
         if (!merging ||
             CodeCommands.GitDirectory(repo) is not { } git)
         {
-            return (null, null);
+            return (null, null, null);
         }
 
         try
@@ -415,11 +423,25 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             var path = Path.Combine(git, "MERGE_MSG");
             if (!File.Exists(path))
             {
-                return (null, null);
+                return (null, null, null);
             }
 
-            var first = File.ReadLines(path).FirstOrDefault()?.Trim();
-            return (MergedBranch(first), first);
+            var lines = File.ReadAllText(path).ReplaceLineEndings("\n").Split('\n');
+            var first = lines[0].Trim();
+            string? description = null;
+
+            // Only a message with more than its first line has the config read.
+            if (lines.Skip(1).Any(_ => !string.IsNullOrWhiteSpace(_)))
+            {
+                var comment = CommentPrefix(git, branch);
+                var rest = string.Join('\n', lines.Skip(1).Where(_ => !_.StartsWith(comment, StringComparison.Ordinal))).Trim();
+                if (rest.Length > 0)
+                {
+                    description = rest;
+                }
+            }
+
+            return (MergedBranch(first), first, description);
         }
         catch (Exception exception)
             when (
@@ -427,8 +449,43 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
                     IOException or
                     UnauthorizedAccessException)
         {
-            return (null, null);
+            return (null, null, null);
         }
+    }
+
+    // What starts a line git comments out of a message: core.commentChar, or core.commentString,
+    // whichever the config sets last, as git takes it, otherwise #. Auto has git pick a
+    // character the message doesn't start a line with as it opens an editor; until then, and so
+    // for the message it keeps for a merge, it is #.
+    static string CommentPrefix(string git, string? branch)
+    {
+        string? prefix = null;
+        try
+        {
+            foreach (var (key, value) in GitConfig.Read(git, CodeCommands.CommonDirectory(git), branch).List())
+            {
+                if (key is "core.commentchar" or "core.commentstring")
+                {
+                    prefix = value;
+                }
+            }
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    GitFilesException or
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+        }
+
+        if (prefix is not { Length: > 0 } ||
+            prefix == "auto")
+        {
+            return "#";
+        }
+
+        return prefix;
     }
 
     /// <summary>

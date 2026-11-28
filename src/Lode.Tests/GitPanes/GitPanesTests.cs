@@ -1591,6 +1591,98 @@ public class GitPanesTests
         await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled, pane.ContinueButton.Enabled)).IsEqualTo(("Continue cherry-pick", true, true));
     }
 
+    // A revert stopped by a conflict, as git revert in a terminal leaves one, settled, then
+    // committed from Changes, for real: the summary starts as the first line of git's message
+    // for it and the description as the rest, so the commit keeps This reverts commit, which
+    // it lost, the description left empty. The conflicts git lists in the message, commented
+    // out, stay out of it.
+    [Test]
+    public async Task ARevertCommittedInChangesKeepsItsWholeMessage()
+    {
+        using var stubs = new PaneStubs();
+        ChangesPane.Read = GitChanges.ReadOrWhyNot;
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "feature\n");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-qam", "Feature");
+        var feature = CodeCommandsTests.Scratch.Git(repo, "rev-parse", "HEAD");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "later\n");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-qam", "Later");
+        var revert = CodeCommands.Git(repo, "revert", "--no-edit", feature);
+        await Assert.That(revert.Succeeded).IsFalse();
+        await Assert.That(File.ReadAllText(Path.Combine(repo, ".git", "MERGE_MSG"))).Contains("# Conflicts:");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "settled\n");
+
+        var (summary, description, message) = await CommittedInChanges(repo, code);
+
+        await Assert.That(summary).IsEqualTo("Revert \"Feature\"");
+        await Assert.That(description).IsEqualTo($"This reverts commit {feature}.");
+        await Assert.That(message).IsEqualTo($"Revert \"Feature\"\n\nThis reverts commit {feature}.");
+        await Assert.That(CodeCommandsTests.Scratch.Git(repo, "show", "HEAD:tracked.txt")).IsEqualTo("settled");
+    }
+
+    // A merge with merge.log, stopped by a conflict and settled, committed from Changes: the
+    // description starts as git's list of the commits merged in, which the commit keeps, rather
+    // than the summary alone. Git comments out the conflicts it lists with the comment character
+    // the repository's config sets, which stay out of it, as a line starting # does not.
+    [Test]
+    public async Task AMergeWithItsLogCommittedInChangesKeepsTheList()
+    {
+        using var stubs = new PaneStubs();
+        ChangesPane.Read = GitChanges.ReadOrWhyNot;
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = code.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "config", "core.commentChar", ";");
+        CodeCommandsTests.Scratch.Git(repo, "switch", "-q", "-c", "feature");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "feature\n");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-qam", "Feature one");
+        File.WriteAllText(Path.Combine(repo, "feature.txt"), "feature\n");
+        CodeCommandsTests.Scratch.Git(repo, "add", ".");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-qm", "Feature two");
+        CodeCommandsTests.Scratch.Git(repo, "switch", "-q", "main");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "main\n");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-qam", "Main");
+        var merge = CodeCommands.Git(repo, "merge", "--log", "--no-edit", "feature");
+        await Assert.That(merge.Succeeded).IsFalse();
+        await Assert.That(File.ReadAllText(Path.Combine(repo, ".git", "MERGE_MSG"))).Contains("; Conflicts:");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "settled\n");
+
+        var (summary, description, message) = await CommittedInChanges(repo, code);
+
+        await Assert.That(summary).IsEqualTo("Merge branch 'feature'");
+        await Assert.That(description).IsEqualTo("* feature:\n  Feature two\n  Feature one");
+        await Assert.That(message).IsEqualTo("Merge branch 'feature'\n\n* feature:\n  Feature two\n  Feature one");
+        await Assert.That(CodeCommandsTests.Scratch.Git(repo, "rev-list", "--parents", "-n", "1", "HEAD").Split(' ').Length).IsEqualTo(3);
+    }
+
+    // The repository, part way through a merge or revert with its conflicts settled, shown in
+    // Changes, and committed from there as the summary and description start: what they started
+    // as, and the message of the commit made.
+    static async Task<(string Summary, string Description, string Message)> CommittedInChanges(string repo, CodeCommandsTests.Scratch code)
+    {
+        var settings = new Settings
+        {
+            CodeDirectory = code.Root
+        };
+        using var form = await Show(repo, settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        await Assert.That((pane.Changes.Merging, pane.Changes.Conflicted, pane.CommitButton.Enabled)).IsEqualTo((true, false, true));
+        var summary = pane.SummaryBox.Text;
+        var description = pane.DescriptionBox.Text.ReplaceLineEndings("\n");
+        try
+        {
+            pane.Commit();
+            await Pump.Until(() => pane is { Reading.IsCompleted: true, Changes.Merging: false });
+        }
+        finally
+        {
+            ActionLog.Reset();
+        }
+
+        return (summary, description, CodeCommandsTests.Scratch.Git(repo, "log", "-1", "--format=%B"));
+    }
+
     static string MenuText(IEnumerable<QuickMenu.Command?> commands) =>
         string.Join(
             ", ",

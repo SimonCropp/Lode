@@ -742,11 +742,19 @@ sealed class ChangesPane : UserControl
             }
 
             // Part way through a merge, the summary starts as git's message for it, as GitHub
-            // Desktop's does, unless something is typed already.
+            // Desktop's does, unless something is typed already, and the description as the
+            // rest of it, a revert's This reverts commit say, which the commit would otherwise
+            // lose. Only as the summary starts, so a description cleared isn't put back.
             if (changes is { Merging: true, MergeSummary: { } summary } &&
                 summaryFrame.Box.TextLength == 0)
             {
                 summaryFrame.Box.Text = summary;
+                if (changes.MergeDescription is { } description &&
+                    descriptionFrame.Box.TextLength == 0)
+                {
+                    // The box breaks lines only at CRLF.
+                    descriptionFrame.Box.Text = description.ReplaceLineEndings("\r\n");
+                }
             }
 
             // Unticked files no longer changed are forgotten: changed again, they start ticked.
