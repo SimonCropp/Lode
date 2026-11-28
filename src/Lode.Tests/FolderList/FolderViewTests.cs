@@ -2632,6 +2632,62 @@ public class FolderViewTests
         await Assert.That(Selected(view)).IsEquivalentTo(["Report1.beta"]);
     }
 
+    // F2 selects the name but not its extension, so typing keeps the file's type, and a folder's
+    // whole name. A name that is all extension, a dotfile's such as .gitignore, is selected
+    // whole, as Explorer selects it: nothing was, so typing foo gave foo.gitignore. A dotfile
+    // with an extension of its own has what comes before it selected, .env of .env.local.
+    [Test]
+    public async Task RenamingSelectsTheNameButNotTheExtension()
+    {
+        const int editGetSelection = 0x00B0;
+        const int keyDown = 0x0100;
+        const int virtualKeyEscape = 0x1B;
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At(".gitignore"), "");
+        await File.WriteAllTextAsync(fixture.At(".env.local"), "");
+        using var form = Host();
+        var view = await OpenIn(form, fixture.Root);
+        var list = view.List;
+        IntPtr Edit() =>
+            NativeMethods.SendMessage(list.Handle, NativeMethods.ListViewGetEditControl, IntPtr.Zero, IntPtr.Zero);
+
+        // What F2 on the item selects of its name, the edit then cancelled.
+        async Task<string> Selects(string name)
+        {
+            var index = Names(view).IndexOf(name);
+            for (var attempt = 0; ; attempt++)
+            {
+                list.SelectedIndices.Clear();
+                list.SelectedIndices.Add(index);
+                list.FocusedItem = list.Items[index];
+                view.HandleKey(Keys.F2);
+
+                // The part to select is selected once the edit has begun, by a callback posted
+                // as it began, which the pump runs as it ends.
+                await Pump.Until(() => Edit() != IntPtr.Zero);
+                var edit = Edit();
+                var selection = (int) NativeMethods.SendMessage(edit, editGetSelection, IntPtr.Zero, IntPtr.Zero);
+
+                // Another window taking the focus, as another test run's may, ends the edit,
+                // perhaps before its selection was read: then it is begun again.
+                var stillEditing = edit != IntPtr.Zero &&
+                                   Edit() == edit;
+                NativeMethods.SendMessage(edit, keyDown, virtualKeyEscape, IntPtr.Zero);
+                await Pump.Until(() => Edit() == IntPtr.Zero);
+                if (stillEditing ||
+                    attempt == 10)
+                {
+                    return name[(selection & 0xFFFF)..(selection >> 16)];
+                }
+            }
+        }
+
+        await Assert.That(await Selects("notes.aleph")).IsEqualTo("notes");
+        await Assert.That(await Selects("Docs")).IsEqualTo("Docs");
+        await Assert.That(await Selects(".gitignore")).IsEqualTo(".gitignore");
+        await Assert.That(await Selects(".env.local")).IsEqualTo(".env");
+    }
+
     // The list asks for a renamed row again the moment the edit ends. It has the new name by
     // then, not only once the folder has been read again.
     [Test]

@@ -5209,8 +5209,13 @@ sealed class FolderView : UserControl
         edited = entry;
         if (!entry.IsDirectory)
         {
-            // Preselect the name but not the extension, so typing keeps the file type.
-            list.SelectEditText(Path.GetFileNameWithoutExtension(DisplayName(entry).AsSpan()).Length);
+            // Preselect the name but not the extension, so typing keeps the file type. A name
+            // that is all extension, a dotfile's such as .gitignore, is selected whole, as
+            // Explorer selects it: there is nothing before the extension, and typing over
+            // nothing kept it, giving foo.gitignore.
+            var name = DisplayName(entry);
+            var stem = Path.GetFileNameWithoutExtension(name.AsSpan()).Length;
+            list.SelectEditText(stem == 0 ? name.Length : stem);
         }
     }
 
