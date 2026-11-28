@@ -9,22 +9,36 @@ sealed class Fixture : IDisposable
 
     string container;
 
+    // This run's, till the fixture is disposed: another run at the same time builds the same
+    // folder, and waits.
+    FolderTurn turn;
+
     public string Root { get; }
 
     Fixture(string container)
     {
         this.container = container;
         Root = Path.Combine(container, "Projects");
-        if (Directory.Exists(container))
+        turn = new(container);
+        try
         {
-            Directory.Delete(container, true);
-        }
+            if (Directory.Exists(container))
+            {
+                Directory.Delete(container, true);
+            }
 
-        Build();
+            Build();
+        }
+        catch
+        {
+            turn.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
-    /// A fixture in the temp folder, one per test so tests can run side by side.
+    /// A fixture in the temp folder, one per test so tests can run side by side. Another test
+    /// run at the same time, which would build it at the same path, waits for it.
     /// </summary>
     public static Fixture Create([CallerFilePath] string file = "", [CallerMemberName] string member = "")
     {
@@ -35,7 +49,7 @@ sealed class Fixture : IDisposable
     /// <summary>
     /// A fixture at a path that is the same on every Windows machine, for captures: the
     /// address bar shows the full path, so a per-user temp folder would end up in the image.
-    /// Only one of these can exist at a time.
+    /// Only one of these can exist at a time: another, in this run or another, waits for it.
     /// </summary>
     public static Fixture CreateAtFixedPath()
     {
@@ -114,6 +128,10 @@ sealed class Fixture : IDisposable
         catch (IOException)
         {
             // Something still has a handle open; the next run clears it.
+        }
+        finally
+        {
+            turn.Dispose();
         }
     }
 }
