@@ -1260,11 +1260,7 @@ sealed class ChangesPane : UserControl
             return;
         }
 
-        var onDisk = discarding
-            .Where(_ => _.Kind != GitChange.Deleted)
-            .Select(_ => FullPath(discardingIn, _.Path))
-            .Where(File.Exists)
-            .ToList();
+        var onDisk = GitChanges.OnDisk(discardingIn, discarding);
         if (!await FileOperations.Delete(Handle, onDisk, permanent: false))
         {
             return;

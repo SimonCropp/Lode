@@ -361,6 +361,58 @@ public class GitChangesTests
             .IsEquivalentTo(["?? untracked.txt"]);
     }
 
+    // A file taken out of the index alone, by git rm --cached, is Deleted, and listed again as
+    // not tracked, but still on disk, edited since: putting it back as committed writes over it,
+    // so it goes to the Recycle Bin first, once for the two rows. Deleting stands in for that.
+    [Test]
+    public async Task DiscardRecyclesAFileRemovedFromTheIndexOnly()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var tracked = Path.Combine(repo, "tracked.txt");
+        Git(repo, "rm", "--quiet", "--cached", "tracked.txt");
+        await File.WriteAllTextAsync(tracked, "edited");
+        var files = GitChanges.Read(repo, Cancel.None)!.Files;
+        var deleted = files.Where(_ => _.Kind == GitChange.Deleted).ToList();
+
+        var onDisk = GitChanges.OnDisk(repo, deleted);
+        var bothRows = GitChanges.OnDisk(repo, files);
+        File.Delete(tracked);
+        var result = GitChanges.Restore(repo, deleted, hasCommits: true, Cancel.None);
+
+        await Assert.That(files.Select(_ => (_.Path, _.Kind))).IsEquivalentTo([("tracked.txt", GitChange.Deleted), ("tracked.txt", GitChange.Untracked)]);
+        await Assert.That(onDisk).IsEquivalentTo([tracked]);
+        await Assert.That(bothRows).IsEquivalentTo([tracked]);
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(await File.ReadAllTextAsync(tracked)).IsEqualTo("original");
+    }
+
+    // Where a rename was from can hold a new file, which putting the rename back writes over.
+    [Test]
+    public async Task DiscardRecyclesANewFileWhereARenameWasFrom()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var tracked = Path.Combine(repo, "tracked.txt");
+        var renamedTo = Path.Combine(repo, "renamed.txt");
+        Git(repo, "mv", "tracked.txt", "renamed.txt");
+        await File.WriteAllTextAsync(tracked, "new");
+        var renamed = GitChanges.Read(repo, Cancel.None)!.Files.Single(_ => _.Kind == GitChange.Renamed);
+
+        var onDisk = GitChanges.OnDisk(repo, [renamed]);
+        foreach (var file in onDisk)
+        {
+            File.Delete(file);
+        }
+
+        var result = GitChanges.Restore(repo, [renamed], hasCommits: true, Cancel.None);
+
+        await Assert.That(onDisk).IsEquivalentTo([renamedTo, tracked]);
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(await File.ReadAllTextAsync(tracked)).IsEqualTo("original");
+        await Assert.That(File.Exists(renamedTo)).IsFalse();
+    }
+
     [Test]
     public async Task Ignore()
     {

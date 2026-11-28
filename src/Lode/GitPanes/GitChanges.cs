@@ -676,6 +676,20 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     }
 
     /// <summary>
+    /// The files on disk that discarding <paramref name="changes"/> writes over or takes away,
+    /// for the Recycle Bin to have first, whatever their kind: a file whose change is Deleted
+    /// can still be there, taken out of the index alone by git rm --cached, and where a rename
+    /// was from can hold a new file. Each once, as two rows can share a path.
+    /// </summary>
+    public static List<string> OnDisk(string repo, IReadOnlyList<Change> changes) =>
+        changes
+            .SelectMany(_ => _.Paths())
+            .Select(_ => Path.Combine(repo, _.Replace('/', '\\')))
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>
     /// Puts <paramref name="changes"/> back as the last commit has them, and takes files git
     /// doesn't track away. The files as they were go to the Recycle Bin first, by the caller,
     /// so nothing is lost. Before the first commit, there is nothing to put back: what is staged
