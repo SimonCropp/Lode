@@ -2,7 +2,7 @@
 /// What Changes shows in place of its files when nothing is uncommitted, as GitHub Desktop's No
 /// local changes does: saying so, and, where there is something to do next, suggesting it, the
 /// commits to pull, those not pushed, or, in a fork, those to sync, with a button that asks about
-/// them as the status bar's part does.
+/// them as the status bar's part does. Where git couldn't read what is uncommitted, what git said.
 /// </summary>
 sealed class NoChanges : Panel
 {
@@ -11,18 +11,21 @@ sealed class NoChanges : Panel
     const int cardInset = 12;
     const int buttonHeight = 28;
 
+    const string noneHeading = "No local changes";
+    const string noneText = "Nothing in the repository is uncommitted.";
+
     Label heading = new()
     {
         AutoSize = true,
         UseMnemonic = false,
-        Text = "No local changes"
+        Text = noneHeading
     };
 
     Label text = new()
     {
         AutoSize = true,
         UseMnemonic = false,
-        Text = "Nothing in the repository is uncommitted."
+        Text = noneText
     };
 
     // The suggestion, in a box with rounded corners, the button under what it says.
@@ -40,6 +43,7 @@ sealed class NoChanges : Panel
     AccentButton button = new();
     Font headingFont;
     Suggestion? suggestion;
+    string? failure;
     bool laying;
 
     /// <summary>
@@ -98,6 +102,35 @@ sealed class NoChanges : Panel
     internal Button SuggestionButton => button;
 
     /// <summary>
+    /// What the heading and the text under it say. For tests.
+    /// </summary>
+    internal (string Heading, string Text) Said => (heading.Text, text.Text);
+
+    /// <summary>
+    /// What git said where it couldn't read what is uncommitted, in place of saying nothing is,
+    /// and with no suggestion, as what is uncommitted isn't known; null to say nothing is again.
+    /// </summary>
+    public void ShowFailure(string? why)
+    {
+        if (why == failure)
+        {
+            return;
+        }
+
+        failure = why;
+        heading.Text = noneHeading;
+        text.Text = noneText;
+        if (why != null)
+        {
+            heading.Text = "Git couldn't read the changes";
+            text.Text = why;
+        }
+
+        card.Visible = suggestion != null && why == null;
+        PerformLayout();
+    }
+
+    /// <summary>
     /// Suggests what to do next for the repository's state as last read.
     /// </summary>
     public void ShowState(GitState? state)
@@ -109,7 +142,7 @@ sealed class NoChanges : Panel
         }
 
         suggestion = next;
-        card.Visible = next != null;
+        card.Visible = next != null && failure == null;
         if (next != null)
         {
             suggestionText.Text = next.Text;

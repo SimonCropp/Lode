@@ -100,6 +100,10 @@ sealed class ChangesPane : UserControl
     // Whether what is uncommitted has been read for the repository, so it isn't said to be
     // nothing while it is read.
     bool readYet;
+
+    // What git said when it last couldn't read the repository, shown in place of the files, or
+    // null once it could.
+    string? failure;
     bool noneShown;
     bool showing;
     bool stale = true;
@@ -114,9 +118,9 @@ sealed class ChangesPane : UserControl
     CommitDrafts.Draft draft = new();
 
     /// <summary>
-    /// Reads what is uncommitted. Tests answer for git.
+    /// Reads what is uncommitted, or what git said where it couldn't. Tests answer for git.
     /// </summary>
-    internal static Func<string, Cancel, GitChanges?> Read { get; set; } = GitChanges.Read;
+    internal static Func<string, Cancel, GitChanges> Read { get; set; } = GitChanges.ReadOrWhyNot;
 
     public event Action<string>? ShowInFolderRequested;
     public event Action? EscapePressed;
@@ -143,7 +147,8 @@ sealed class ChangesPane : UserControl
     public event Action<GitState.PartKind>? ActRequested;
 
     /// <summary>
-    /// Whether it says nothing is uncommitted, in place of the files. For tests.
+    /// Whether it says nothing is uncommitted, or what git said where it couldn't read it, in
+    /// place of the files. For tests.
     /// </summary>
     internal bool NoneShown => noneShown;
 
@@ -517,6 +522,7 @@ sealed class ChangesPane : UserControl
         this.repo = repo;
         version++;
         readYet = false;
+        failure = null;
         changes = GitChanges.Empty;
         draft = DraftOf(repo);
         loadingDraft = true;
@@ -580,11 +586,12 @@ sealed class ChangesPane : UserControl
 
     /// <summary>
     /// Puts the focus in the list of files, on the first when none is picked, or in the summary
-    /// when nothing has changed.
+    /// when nothing has changed, or git couldn't read the files.
     /// </summary>
     public void FocusContent()
     {
-        if (shown.Count == 0)
+        if (shown.Count == 0 ||
+            failure != null)
         {
             summaryFrame.Box.Focus();
             return;
@@ -653,7 +660,18 @@ sealed class ChangesPane : UserControl
                 return;
             }
 
-            changes = read ?? GitChanges.Empty;
+            // Git couldn't read it, refusing a repository owned by another user say: what was read
+            // last stays, and the draft with it, rather than taken for nothing changed, which
+            // would forget every file left unticked and line picked, and what git said shows in
+            // place of the files.
+            failure = read.Failure;
+            if (failure != null)
+            {
+                ShowRows();
+                return;
+            }
+
+            changes = read;
             readYet = true;
 
             // The commit being amended isn't the last any more, committed on or undone since, so
@@ -736,14 +754,17 @@ sealed class ChangesPane : UserControl
         ShowNone();
     }
 
-    // Nothing uncommitted, once read, says so in place of the files. Part way through a merge,
-    // the merge is what there is to commit, with or without files.
+    // Nothing uncommitted, once read, says so in place of the files, and git failing to read it
+    // says what git said there instead. Part way through a merge, the merge is what there is to
+    // commit, with or without files.
     void ShowNone()
     {
-        var none = readYet &&
-                   repo != null &&
-                   changes.Files.Count == 0 &&
-                   !changes.Merging;
+        noChanges.ShowFailure(failure);
+        var none = repo != null &&
+                   (failure != null ||
+                    (readYet &&
+                     changes.Files.Count == 0 &&
+                     !changes.Merging));
         if (none == noneShown)
         {
             return;
@@ -846,10 +867,12 @@ sealed class ChangesPane : UserControl
         return null;
     }
 
-    // Ticks every file showing, or, with every one ticked, none.
+    // Ticks every file showing, or, with every one ticked, none. Not the files read last, hidden
+    // while git can't read them.
     void TickAll()
     {
-        if (changes.Merging)
+        if (changes.Merging ||
+            failure != null)
         {
             return;
         }
@@ -938,10 +961,12 @@ sealed class ChangesPane : UserControl
         commitButton.Invalidate();
     }
 
-    // Amending, the summary alone can be changed, with no file ticked.
+    // Amending, the summary alone can be changed, with no file ticked. Nothing is, where git
+    // couldn't read the files, which are hidden then.
     bool CanCommit =>
         repo != null &&
         !committing &&
+        failure == null &&
         summaryFrame.Box.Text.Trim().Length > 0 &&
         !changes.Conflicted &&
         (Amending || changes.Files.Any(IsTicked));
@@ -1730,7 +1755,8 @@ sealed class ChangesPane : UserControl
             var tickSize = LogicalToDeviceUnits(Ticks.Size);
             var left = LogicalToDeviceUnits(inset);
             var box = new Rectangle(left, (Height - tickSize) / 2, tickSize, tickSize);
-            if (pane.shown.Count > 0)
+            if (pane.shown.Count > 0 &&
+                pane.failure == null)
             {
                 Ticks.Draw(graphics, this, box, pane.AllTicked(), !pane.changes.Merging);
             }

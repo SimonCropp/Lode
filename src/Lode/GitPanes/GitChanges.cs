@@ -76,9 +76,20 @@ sealed record PartialChange(Change File, string Patch);
 /// <param name="MergeSummary">Part way through a merge, the first line of git's message for it,
 /// to start the summary with.</param>
 /// <param name="Head">The commit checked out, null before the first, or where it wasn't read.</param>
-sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null)
+/// <param name="Failure">Where git couldn't read what is uncommitted, what it said, with nothing
+/// else read; null where it could.</param>
+sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnlyList<Change> Files, string? MergingFrom = null, string? MergeSummary = null, string? Head = null, string? Failure = null)
 {
     public static GitChanges Empty { get; } = new(null, true, false, []);
+
+    /// <summary>
+    /// Git couldn't read what is uncommitted, and said <paramref name="why"/>.
+    /// </summary>
+    public static GitChanges Failed(string why) =>
+        Empty with
+        {
+            Failure = why
+        };
 
     /// <summary>
     /// Whether a file is left to resolve, which git won't commit until it is: one in conflict
@@ -101,6 +112,22 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// </summary>
     public static GitChanges? Read(string repo, Cancel cancel)
     {
+        var read = ReadOrWhyNot(repo, cancel);
+        if (read.Failure != null)
+        {
+            return null;
+        }
+
+        return read;
+    }
+
+    /// <summary>
+    /// Reads what is uncommitted, or, where git can't, what it said, as <see cref="Failure"/>,
+    /// for the Changes pane to show: no git installed, say, or a repository git refuses as owned
+    /// by another user, as it does one on exFAT or a share until it is a safe.directory.
+    /// </summary>
+    public static GitChanges ReadOrWhyNot(string repo, Cancel cancel)
+    {
         // Without --no-optional-locks status writes the index back, and the watch on the code
         // folder hears the index change, has the pane read again, which writes it again.
         var result = CodeCommands.GitOutput(
@@ -117,7 +144,13 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             ]);
         if (!result.Succeeded)
         {
-            return null;
+            var why = result.Error;
+            if (why.Length == 0)
+            {
+                why = $"git status failed, ending with {result.ExitCode}.";
+            }
+
+            return Failed(why);
         }
 
         var merging = IsMerging(repo);

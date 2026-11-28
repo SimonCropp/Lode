@@ -8,7 +8,7 @@ sealed class PaneStubs : IDisposable
     public static DateTimeOffset Now { get; } = new(2025, 4, 1, 12, 0, 0, TimeSpan.Zero);
 
     GitState.Reader readGit = FolderView.ReadGit;
-    Func<string, Cancel, GitChanges?> readChanges = ChangesPane.Read;
+    Func<string, Cancel, GitChanges> readChanges = ChangesPane.Read;
     Func<string, int, int, Cancel, List<GitCommit>?> readCommits = HistoryPane.ReadCommits;
     Func<string, GitCommit, Cancel, List<Change>?> readFiles = HistoryPane.ReadFiles;
     Func<string, Cancel, HashSet<string>> readUnpushed = HistoryPane.ReadUnpushed;

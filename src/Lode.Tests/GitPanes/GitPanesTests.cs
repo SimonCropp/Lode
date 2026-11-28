@@ -638,6 +638,53 @@ public class GitPanesTests
         await Assert.That(pane.List.Visible).IsTrue();
     }
 
+    // Git failing to read what is uncommitted, refusing a repository owned by another user say,
+    // as it does one on exFAT or a share, says what git said in place of the files, with nothing
+    // to commit, rather than that nothing is uncommitted, which forgot every file left unticked:
+    // what was read last is kept, and the ticks with it, for once git reads it again.
+    [Test]
+    public async Task GitFailingSaysWhatGitSaid()
+    {
+        using var stubs = new PaneStubs();
+        var read = new GitChanges("main", true, false, PaneStubs.Files);
+        ChangesPane.Read = (_, _) => read;
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var draft = CommitDrafts.Of(form.GitPanes.Repo);
+        draft.SetTick("notes.aleph", false);
+        pane.SummaryBox.Text = "Summary";
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Commit 5 files to ", true));
+
+        const string said = "fatal: detected dubious ownership in repository at 'D:/Docs'";
+        read = GitChanges.Failed(said);
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That(pane.NoneShown).IsTrue();
+        await Assert.That(pane.List.Visible).IsFalse();
+        await Assert.That(pane.NoChanges.Said).IsEqualTo(("Git couldn't read the changes", said));
+        await Assert.That(pane.NoChanges.SuggestionButton.Visible).IsFalse();
+        await Assert.That(pane.CommitButton.Enabled).IsFalse();
+        await Assert.That(pane.Changes.Files.Count).IsEqualTo(PaneStubs.Files.Count);
+        await Assert.That(draft.Unticked).IsEquivalentTo(["notes.aleph"]);
+
+        read = new("main", true, false, PaneStubs.Files);
+        pane.Reload();
+        await PaneStubs.Settled(form);
+
+        await Assert.That(pane.NoneShown).IsFalse();
+        await Assert.That(pane.List.Visible).IsTrue();
+        await Assert.That((pane.CommitButton.Text, pane.CommitButton.Enabled)).IsEqualTo(("Commit 5 files to ", true));
+        await Assert.That(draft.Unticked).IsEquivalentTo(["notes.aleph"]);
+        pane.SummaryBox.Text = "";
+    }
+
     // Over the arrow of a commit not pushed, and over a tag, what each is; elsewhere on the row,
     // nothing.
     [Test]

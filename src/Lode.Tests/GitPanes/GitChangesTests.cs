@@ -60,6 +60,24 @@ public class GitChangesTests
         await Assert.That(changes.Branch).IsNull();
     }
 
+    // Where git can't read what is uncommitted, what it said, for Changes to show in place of the
+    // files, with nothing else read; Read, for the rest, has nothing.
+    [Test]
+    public async Task ReadSaysWhatGitSaidWhereItCouldNot()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.At("Broken");
+        Directory.CreateDirectory(repo);
+        await File.WriteAllTextAsync(Path.Combine(repo, ".git"), "gitdir: nowhere\n");
+
+        var read = GitChanges.ReadOrWhyNot(repo, Cancel.None);
+
+        await Assert.That(read.Failure).StartsWith("fatal: not a git repository");
+        await Assert.That(read.Files).IsEmpty();
+        await Assert.That(GitChanges.Read(repo, Cancel.None)).IsNull();
+        await Assert.That(GitChanges.ReadOrWhyNot(scratch.CreateRepo("Repo"), Cancel.None).Failure).IsNull();
+    }
+
     [Test]
     public async Task Message()
     {
