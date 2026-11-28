@@ -288,17 +288,139 @@ public class GitConfigTests
         await Assert.That(Listed(Read(repo, environment, "feature/one"))).IsEquivalentTo(GitList(repo, environment), CollectionOrdering.Matching);
     }
 
-    // A condition git knows and this doesn't, on what the config has, can't be told here, so
-    // the repository is left to git.
+    // A condition this doesn't know, one a git newer than this may, on another key of the config
+    // say, can't be told here, so the repository is left to git.
     [Test]
-    public async Task LeavesConditionsItCantTellToGit()
+    [Arguments("hasconfig:user.name:Lode")]
+    [Arguments("newer:anything")]
+    public async Task LeavesConditionsItCantTellToGit(string condition)
     {
         using var scratch = new CodeCommandsTests.Scratch();
         var repo = scratch.CreateRepo("Repo");
-        await File.AppendAllTextAsync(Path.Combine(repo, ".git", "config"), "[includeIf \"hasconfig:remote.*.url:**/*\"]\n\tpath = remote.config\n");
+        await File.AppendAllTextAsync(Path.Combine(repo, ".git", "config"), $"[includeIf \"{condition}\"]\n\tpath = remote.config\n");
 
         await Assert.That(Read(repo, Environment(scratch.At("none.config"))).Uncertain).IsTrue();
         await GitRun.LeftToGit(repo);
+    }
+
+    // Included on the remotes' urls, as git includes them: each pattern globbed as git globs a
+    // path, ** across slashes and * not, whatever the case not, against the url of every remote
+    // the config has, wherever it is, the repository's where the include is the user's, one a
+    // plain include gives and one the environment gives, after the include as much as before;
+    // a pushurl isn't one. What git includes, and only that, as git config --get says too. Such
+    // an include in the repository's own config, it is read here, as git status reads it.
+    [Test]
+    public async Task IncludesOnRemoteUrlsAsGitDoes()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "remote", "add", "work", "https://github.com/work/repo.git");
+        CodeCommandsTests.Scratch.Git(repo, "remote", "add", "ssh", "git@github.com:team/tool.git");
+        CodeCommandsTests.Scratch.Git(repo, "config", "remote.ssh.pushurl", "https://push.example.com/team/tool.git");
+        var global = scratch.At("global.config");
+        var remotes = scratch.At("remotes.config").Replace('\\', '/');
+        await File.WriteAllTextAsync(remotes, "[remote \"included\"]\n\turl = https://included.example.com/a/b/c.git\n");
+        var patterns = new[]
+        {
+            "https://github.com/work/**",
+            "https://github.com/work/*",
+            "https://github.com/*",
+            "https://github.com/**",
+            "**/work/**",
+            "**/repo.git",
+            "https://*/work/repo.git",
+            "git@github.com:team/**",
+            "git@github.com:*/tool.git",
+            "*@github.com:team/tool.git",
+            "**github.com**",
+            "https://github.com/WORK/**",
+            "https://github.com/[wx]ork/repo.gi?",
+            "https://github.com/other/**",
+            "https://push.example.com/**",
+            "https://included.example.com/**",
+            "https://included.example.com/*/c.git",
+            "https://included.example.com/**/c.git",
+            "https://environment.example.com/**",
+            ""
+        };
+        var text = new StringBuilder();
+        for (var index = 0; index < patterns.Length; index++)
+        {
+            var file = scratch.At($"condition{index}.config").Replace('\\', '/');
+            await File.WriteAllTextAsync(file, $"[conditions]\n\tc{index} = included\n");
+            text.Append($"[includeIf \"hasconfig:remote.*.url:{patterns[index]}\"]\n\tpath = {file}\n");
+        }
+
+        text.Append($"[include]\n\tpath = {remotes}\n");
+        await File.WriteAllTextAsync(global, text.ToString());
+        var environment = Environment(global, ("remote.environment.url", "https://environment.example.com/x.git"));
+
+        var config = Read(repo, environment);
+
+        await Assert.That(Listed(config)).IsEquivalentTo(GitList(repo, environment), CollectionOrdering.Matching);
+        await Assert.That(config.Uncertain).IsFalse();
+        for (var index = 0; index < patterns.Length; index++)
+        {
+            var git = GitRun.Run(repo, environment, null, "config", "--get", $"conditions.c{index}");
+            string? expected = null;
+            if (git.Succeeded)
+            {
+                expected = git.Output.Trim();
+            }
+
+            await Assert.That((patterns[index], config.Get($"conditions.c{index}"))).IsEqualTo((patterns[index], expected));
+        }
+
+        await File.WriteAllTextAsync(scratch.At("work.config"), "[status]\n\tshowUntrackedFiles = no\n");
+        await File.AppendAllTextAsync(Path.Combine(repo, ".git", "config"), $"[includeIf \"hasconfig:remote.*.url:https://github.com/work/**\"]\n\tpath = {scratch.At("work.config").Replace('\\', '/')}\n");
+        await File.WriteAllTextAsync(Path.Combine(repo, "untracked.txt"), "untracked");
+        var state = await GitRun.Agree(repo);
+        await Assert.That(state.Changes).IsEqualTo(0);
+    }
+
+    // Git reads a remote's url from no file an includeIf includes, however far down, where the
+    // config has a hasconfig:remote.*.url: include anywhere, as such a url could have that
+    // include be taken or not: it refuses the config, as it does a url without a value then. So
+    // it is refused here too, and the repository left to git. A plain include may give one.
+    [Test]
+    [Arguments("hasconfig")]
+    [Arguments("nested")]
+    [Arguments("gitdir")]
+    [Arguments("onbranch")]
+    [Arguments("novalue")]
+    public async Task RefusesRemoteUrlsWhereGitDoes(string including)
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var setsUrl = scratch.At("sets.config").Replace('\\', '/');
+        var nested = scratch.At("nested.config").Replace('\\', '/');
+        await File.WriteAllTextAsync(setsUrl, "[remote \"extra\"]\n\turl = https://github.com/extra/repo.git\n");
+        await File.WriteAllTextAsync(nested, $"[include]\n\tpath = {setsUrl}\n");
+        var gitDir = Path.Combine(repo, ".git").Replace('\\', '/');
+        var elsewhere = "[includeIf \"hasconfig:remote.*.url:https://nowhere.example.com/**\"]\n\tpath = none.config\n";
+        var text = including switch
+        {
+            "hasconfig" => $"[includeIf \"hasconfig:remote.*.url:https://nowhere.example.com/**\"]\n\tpath = {setsUrl}\n",
+            "nested" => $"[includeIf \"hasconfig:remote.*.url:**\"]\n\tpath = {nested}\n",
+            "gitdir" => $"[includeIf \"gitdir:{gitDir}\"]\n\tpath = {setsUrl}\n{elsewhere}",
+            "onbranch" => $"[includeIf \"onbranch:main\"]\n\tpath = {setsUrl}\n{elsewhere}",
+            _ => $"[remote \"novalue\"]\n\turl\n{elsewhere}"
+        };
+        var config = Path.Combine(gitDir, "config");
+        var before = await File.ReadAllTextAsync(config);
+        await File.WriteAllTextAsync(config, before + text);
+        var environment = Environment(scratch.At("none.config"));
+
+        await Assert.That(GitRun.Run(repo, environment, null, "config", "--list", "--includes").Succeeded).IsFalse();
+        await Assert.That(() => Read(repo, environment)).Throws<GitFilesException>();
+        await GitRun.LeftToGit(repo);
+
+        // Without one on the remotes' urls, the same include may give one.
+        if (including is "gitdir" or "onbranch")
+        {
+            await File.WriteAllTextAsync(config, before + text.Replace(elsewhere, ""));
+            await Assert.That(Listed(Read(repo, environment))).IsEquivalentTo(GitList(repo, environment), CollectionOrdering.Matching);
+        }
     }
 
     // The system's config as GIT_CONFIG_SYSTEM names it, or none with GIT_CONFIG_NOSYSTEM, and

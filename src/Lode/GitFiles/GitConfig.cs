@@ -10,8 +10,8 @@ sealed class GitConfig
 
     /// <summary>
     /// Whether the config may not be what git would have: an include was conditional on what
-    /// isn't read here, hasconfig: say, or HOME is set to nothing, so where git reads the user's
-    /// config isn't known.
+    /// isn't read here, a hasconfig: on a key other than the remotes' urls say, or HOME is set to
+    /// nothing, so where git reads the user's config isn't known.
     /// </summary>
     public bool Uncertain { get; private set; }
 
@@ -405,7 +405,25 @@ sealed class GitConfig
         return path;
     }
 
-    sealed record Context(string GitDir, string? Branch);
+    // What the config is read for: the repository, for gitdir: and onbranch: includes, and the
+    // environment git would be run with, which says which files are read, as a
+    // hasconfig:remote.*.url: include has them all read again first.
+    sealed record Context(string GitDir, string CommonDir, string? Branch, Func<string, string?> Environment);
+
+    readonly Context context;
+
+    // Read as git reads the config for the remotes' urls as a hasconfig:remote.*.url: include is
+    // first met: every such include taken, as what decides them isn't known yet.
+    readonly bool gathering;
+
+    // The url of every remote the config has, once a hasconfig:remote.*.url: include is met.
+    List<string>? remoteUrls;
+
+    GitConfig(Context context, bool gathering)
+    {
+        this.context = context;
+        this.gathering = gathering;
+    }
 
     /// <summary>
     /// The config for the repository whose git folder is <paramref name="gitDir"/>, its branch,
@@ -418,53 +436,60 @@ sealed class GitConfig
     /// files to read, or give keys of its own.</param>
     internal static GitConfig Read(string gitDir, string commonDir, string? branch, Func<string, string?> environment)
     {
-        var config = new GitConfig();
-        var context = new Context(gitDir, branch);
+        var config = new GitConfig(new(gitDir, commonDir, branch, environment), false);
+        config.ReadAll();
+        return config;
+    }
+
+    // The system's, the user's, the repository's and its worktree's, then what the environment
+    // gives, in the order git reads them.
+    void ReadAll()
+    {
+        var environment = context.Environment;
         if (environment("GIT_CONFIG_NOSYSTEM") is not { Length: > 0 } noSystem ||
             ParseBool(noSystem) == false)
         {
             if (environment("GIT_CONFIG_SYSTEM") is { Length: > 0 } system)
             {
-                config.ReadFile(system, false, context, 0);
+                ReadFile(system, false, 0, false);
             }
             else
             {
                 if (environment("PROGRAMDATA") is { Length: > 0 } programData)
                 {
-                    config.ReadFile(Path.Combine(programData, "Git", "config"), false, context, 0);
+                    ReadFile(Path.Combine(programData, "Git", "config"), false, 0, false);
                 }
 
                 if (SystemConfig is { } systemConfig)
                 {
-                    config.ReadFile(systemConfig, false, context, 0);
+                    ReadFile(systemConfig, false, 0, false);
                 }
             }
         }
 
         if (environment("GIT_CONFIG_GLOBAL") is { Length: > 0 } global)
         {
-            config.ReadFile(global, false, context, 0);
+            ReadFile(global, false, 0, false);
         }
         else if (FindHome(environment, Directory.Exists, Environment.SystemDirectory) is { Length: > 0 } home)
         {
-            config.ReadFile(XdgPath("config", home, environment), false, context, 0);
-            config.ReadFile(Path.Combine(home, ".gitconfig"), false, context, 0);
+            ReadFile(XdgPath("config", home, environment), false, 0, false);
+            ReadFile(Path.Combine(home, ".gitconfig"), false, 0, false);
         }
         else
         {
             // HOME set to nothing, git reads /.gitconfig, at the top of whichever drive it is run
             // in, which isn't known here.
-            config.Uncertain = true;
+            Uncertain = true;
         }
 
-        config.ReadFile(Path.Combine(commonDir, "config"), true, context, 0);
-        if (ParseBool(config.GetLocal("extensions.worktreeconfig")) == true)
+        ReadFile(Path.Combine(context.CommonDir, "config"), true, 0, false);
+        if (ParseBool(GetLocal("extensions.worktreeconfig")) == true)
         {
-            config.ReadFile(Path.Combine(gitDir, "config.worktree"), true, context, 0);
+            ReadFile(Path.Combine(context.GitDir, "config.worktree"), true, 0, false);
         }
 
-        config.ReadEnvironment(environment);
-        return config;
+        ReadEnvironment(environment);
     }
 
     // GIT_CONFIG_COUNT, with a GIT_CONFIG_KEY_ and GIT_CONFIG_VALUE_ for each, as git -c does it
@@ -513,15 +538,16 @@ sealed class GitConfig
     internal IEnumerable<(string Key, string? Value)> List() =>
         entries.Select(_ => (_.Key, _.Value));
 
-    void ReadFile(string path, bool local, Context context, int depth)
+    // conditional: the file is included by an includeIf, or by a file that is, however far down.
+    void ReadFile(string path, bool local, int depth, bool conditional)
     {
         if (GitRepository.ReadSmall(path) is { } text)
         {
-            Parse(text, path, local, context, depth);
+            Parse(text, path, local, depth, conditional);
         }
     }
 
-    void Parse(string text, string path, bool local, Context context, int depth)
+    void Parse(string text, string path, bool local, int depth, bool conditional)
     {
         var position = 0;
         var section = "";
@@ -593,14 +619,29 @@ sealed class GitConfig
                 key = $"{section}.{name}";
             }
 
+            // As git's forbid_remote_url: a url in what an includeIf includes could have a
+            // hasconfig:remote.*.url: include taken or not, so git refuses the config.
+            if (gathering &&
+                conditional &&
+                IsRemoteUrl(key))
+            {
+                throw new GitFilesException($"{path} sets a remote's url, which git refuses in a file an includeIf includes where the config has a hasconfig:remote.*.url: include");
+            }
+
             entries.Add((key, value, local));
             if (name == "path" &&
                 value != null)
             {
-                Include(section, value, path, local, context, depth);
+                Include(section, value, path, local, depth, conditional);
             }
         }
     }
+
+    // remote.<name>.url, as git's add_remote_url takes it: with a name, if an empty one.
+    static bool IsRemoteUrl(string key) =>
+        key.Length > "remote.url".Length &&
+        key.StartsWith("remote.", StringComparison.Ordinal) &&
+        key.EndsWith(".url", StringComparison.Ordinal);
 
     static void SkipLine(string text, ref int position)
     {
@@ -814,15 +855,17 @@ sealed class GitConfig
 
     // include.path, and includeIf.<condition>.path where the condition holds: the file relative
     // to the one including it, as far down as git goes.
-    void Include(string section, string value, string from, bool local, Context context, int depth)
+    void Include(string section, string value, string from, bool local, int depth, bool conditional)
     {
         if (section != "include")
         {
             if (!section.StartsWith("includeif.", StringComparison.Ordinal) ||
-                !ConditionHolds(section["includeif.".Length..], from, context))
+                !ConditionHolds(section["includeif.".Length..], from))
             {
                 return;
             }
+
+            conditional = true;
         }
 
         if (depth >= 10)
@@ -836,10 +879,12 @@ sealed class GitConfig
             path = Path.Combine(Path.GetDirectoryName(from)!, path);
         }
 
-        ReadFile(path, local, context, depth + 1);
+        ReadFile(path, local, depth + 1, conditional);
     }
 
-    bool ConditionHolds(string condition, string from, Context context)
+    const string remoteUrlCondition = "hasconfig:remote.*.url:";
+
+    bool ConditionHolds(string condition, string from)
     {
         if (condition.StartsWith("gitdir:", StringComparison.Ordinal))
         {
@@ -867,9 +912,50 @@ sealed class GitConfig
             return Wildmatch.Match(branchPattern, context.Branch, Wildmatch.PathName);
         }
 
-        // hasconfig: and any newer, which git would know and this doesn't.
+        // As git's include_by_remote_url: the pattern globbed as a path is, against the url of
+        // every remote the config has. Taken while those are gathered, as git takes it then.
+        if (condition.StartsWith(remoteUrlCondition, StringComparison.Ordinal))
+        {
+            if (gathering)
+            {
+                return true;
+            }
+
+            remoteUrls ??= GatherRemoteUrls();
+            var urlPattern = condition[remoteUrlCondition.Length..];
+            return remoteUrls.Any(_ => Wildmatch.Match(urlPattern, _, Wildmatch.PathName));
+        }
+
+        // Another hasconfig:, and any newer, which git may know and this doesn't.
         Uncertain = true;
         return false;
+    }
+
+    // As git's populate_remote_urls: all of the config read again, for every remote's url in
+    // it, not only those before the include, as the url is most often in the repository's
+    // config and the include in the user's. A url set without a value git can't match, and
+    // fails on.
+    List<string> GatherRemoteUrls()
+    {
+        var all = new GitConfig(context, true);
+        all.ReadAll();
+        if (all.Uncertain)
+        {
+            Uncertain = true;
+        }
+
+        var urls = new List<string>();
+        foreach (var (key, value, _) in all.entries)
+        {
+            if (!IsRemoteUrl(key))
+            {
+                continue;
+            }
+
+            urls.Add(value ?? throw new GitFilesException($"{key} is set without a value, which git fails on where the config has a hasconfig:remote.*.url: include"));
+        }
+
+        return urls;
     }
 
     // As git's include_by_gitdir: ~ expanded, ./ from the including file's folder, a relative
