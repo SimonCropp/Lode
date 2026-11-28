@@ -1,3 +1,6 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 /// <summary>
 /// Updates Lode, installed as a dotnet tool, and starts it again. The update has to run once Lode
 /// has exited, since a running executable cannot be replaced, and since the Lode it then starts
@@ -45,6 +48,25 @@ sealed class ToolUpdate(string shim, string outcome)
     /// </summary>
     const int stopSeconds = 5;
 
+    /// <summary>
+    /// How long <see cref="Start"/> waits for the shell to have the update's signal open, which
+    /// is PowerShell starting up: well under this unless the machine is struggling.
+    /// </summary>
+    static TimeSpan startedWait = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long a launch put off by the update waits for it before starting anyway: longer than
+    /// any update takes, waiting for Lode, stopping what holds the store and trying twice, but
+    /// not for ever should the shell have died without saying it was done.
+    /// </summary>
+    const int deferredMinutes = 5;
+
+    /// <summary>
+    /// How long a launch put off by the update then waits for the Lode the update starts, which
+    /// it hands its folders to.
+    /// </summary>
+    const int restartSeconds = 30;
+
     public string Outcome => outcome;
 
     /// <summary>
@@ -69,12 +91,172 @@ sealed class ToolUpdate(string shim, string outcome)
     public string Dotnet { get; init; } = RunningDotnet();
 
     /// <summary>
+    /// The update's signal, while this Lode exits: kept, unset, till the process ends.
+    /// </summary>
+    static EventWaitHandle? exiting;
+
+    /// <summary>
     /// Starts the shell and returns. Exiting is the caller's, and has to be: the shell waits for
     /// this process to go before it updates.
     /// </summary>
-    public void Start()
+    public void Start() =>
+        exiting = Start(Environment.ProcessId);
+
+    /// <summary>
+    /// Starts the shell that updates once process <paramref name="processId"/> has gone, and
+    /// returns once the shell has the update's signal open too, or plainly can't. The signal,
+    /// unset, is returned for that process to keep till it ends, so every launch from now till
+    /// the update is done is put off (see <see cref="Defer"/>), those made while this Lode closes
+    /// too, which would otherwise hand their folders to a Lode about to go. The wait is so the
+    /// signal lasts: with Lode gone before the shell had it open, it would go with the last
+    /// handle on it, and a launch between would run from the store as before. Should the shell
+    /// take longer than <see cref="startedWait"/>, that is what happens.
+    /// </summary>
+    internal EventWaitHandle Start(int processId)
     {
-        using var process = Process.Start(StartInfo(Environment.ProcessId));
+        var updating = Signal(SignalName);
+        try
+        {
+            updating.Reset();
+            using var started = Signal($"{SignalName}-Started");
+            started.Reset();
+            using var process = Process.Start(StartInfo(processId))!;
+            var waited = Stopwatch.StartNew();
+            while (!started.WaitOne(100) &&
+                   !process.HasExited &&
+                   waited.Elapsed < startedWait)
+            {
+            }
+        }
+        catch
+        {
+            updating.Dispose();
+            throw;
+        }
+
+        return updating;
+    }
+
+    /// <summary>
+    /// The name of the signal, unset, for as long as an update of the tool in
+    /// <see cref="ToolPath"/> runs: from Lode starting the shell till the update is done and the
+    /// shell about to start Lode again. An event rather than a mutex, which a launch could only
+    /// ask after by taking it, and so, for that moment, look to the Lode the update starts like
+    /// the update still running. In the session's namespace, which every copy of Lode in it is
+    /// in, the copy run as administrator too, and named for the tool path, so a Debug build, in
+    /// none, never waits on an installed Lode's update, nor one install on another's.
+    /// </summary>
+    internal string SignalName
+    {
+        get
+        {
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(ToolPath).ToUpperInvariant()));
+            return $@"Local\Lode-Update-{Convert.ToHexString(hash)[..32]}";
+        }
+    }
+
+    // Whichever copy makes it, Lode or the shell, lets the user in, as by default one made by the
+    // copy run as administrator would let in only administrators, and so not the other copy.
+    static EventWaitHandle Signal(string name)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var security = new EventWaitHandleSecurity();
+        security.AddAccessRule(new(identity.User!, EventWaitHandleRights.FullControl, AccessControlType.Allow));
+        return EventWaitHandleAcl.Create(false, EventResetMode.ManualReset, name, out _, security);
+    }
+
+    /// <summary>
+    /// Whether an update of this tool is running now. Asked by every launch, so cheap: one
+    /// lookup of a name. One the signal can't be opened for is taken as none, rather than put
+    /// off for nothing.
+    /// </summary>
+    public bool IsRunning()
+    {
+        try
+        {
+            if (!EventWaitHandle.TryOpenExisting(SignalName, out var updating))
+            {
+                return false;
+            }
+
+            using (updating)
+            {
+                return !updating.WaitOne(0);
+            }
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    UnauthorizedAccessException or
+                    IOException or
+                    WaitHandleCannotBeOpenedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Puts off a launch made while the update runs, Win+E say, or a folder another program
+    /// opens with Lode in Explorer's place: a hidden shell starts it again, with the same
+    /// arguments in the same folder, once the update is done and the Lode it starts is running,
+    /// so the folders go to that Lode as any later launch's do. Waiting here instead would not
+    /// do: this process runs from the very store the update replaces, and for as long as it
+    /// runs, holds it, so the update would fail with access denied, or this launch be stopped
+    /// part way. Throws what starting PowerShell throws.
+    /// </summary>
+    /// <param name="instance">The name of the mutex the running Lode holds
+    /// (<see cref="SingleInstance"/>), there once the Lode the update starts is.</param>
+    public void Defer(IReadOnlyList<string> arguments, string directory, string instance)
+    {
+        using var process = Process.Start(DeferredStartInfo(arguments, directory, instance));
+    }
+
+    internal ProcessStartInfo DeferredStartInfo(IReadOnlyList<string> arguments, string directory, string instance)
+    {
+        // The shell is in no folder of the store's, which the update could then not delete.
+        if (Locations.IsWithin(directory, StoreDirectory))
+        {
+            directory = Path.GetTempPath();
+        }
+
+        return new("powershell.exe")
+        {
+            ArgumentList =
+            {
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Unrestricted",
+                "-EncodedCommand",
+                PowerShell.Encode(DeferredScript(arguments, directory, instance))
+            },
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = directory
+        };
+    }
+
+    /// <summary>
+    /// Waits for the update to be done, then for the Lode it starts to be running, for so long
+    /// at most, and starts the launch again. The arguments go as the one command line they make,
+    /// each quoted as the launch split them, as Windows PowerShell passing them one by one
+    /// splits a folder with a space and a backslash at its end in two.
+    /// </summary>
+    internal string DeferredScript(IReadOnlyList<string> arguments, string directory, string instance)
+    {
+        var commandLine = string.Join(' ', arguments.Select(RepositoryLink.Quoted));
+        string[] steps =
+        [
+            "$updating = $null",
+            $"if ([System.Threading.EventWaitHandle]::TryOpenExisting({PowerShell.Quote(SignalName)}, [ref]$updating)) {{ $null = $updating.WaitOne([TimeSpan]::FromMinutes({deferredMinutes})); $updating.Dispose() }}",
+            $"$deadline = [DateTime]::UtcNow.AddSeconds({restartSeconds})",
+            $$"""function Test-Running { try { $running = $null; if ([System.Threading.Mutex]::TryOpenExisting({{PowerShell.Quote($@"Local\{instance}")}}, [ref]$running)) { $running.Dispose(); return $true }; return $false } catch { return $true } }""",
+            "while (-not (Test-Running) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }",
+            $"$launch = [System.Diagnostics.ProcessStartInfo]::new({PowerShell.Quote(shim)}, {PowerShell.Quote(commandLine)})",
+            "$launch.UseShellExecute = $false",
+            $"$launch.WorkingDirectory = {PowerShell.Quote(directory)}",
+            "$null = [System.Diagnostics.Process]::Start($launch)"
+        ];
+        return string.Join("; ", steps);
     }
 
     public ProcessStartInfo StartInfo(int processId) =>
@@ -98,11 +280,18 @@ sealed class ToolUpdate(string shim, string outcome)
         };
 
     /// <summary>
-    /// Waits for Lode to go, rather than for a guess at how long that takes, and silent where it
-    /// already has, which is the usual case. Then stops whatever still holds the installed
-    /// version, since the uninstall the update starts with deletes the whole version's folder and
-    /// one open file under it fails all of it, as "Access to the path ... is denied": the shim, or
-    /// anything else started out of the store.
+    /// Opens the update's signal, unset, which Lode made, or makes it should Lode have gone
+    /// already, and tells Lode it has it, so it lasts past Lode, and sets it only once the update
+    /// is done, just before starting Lode again: every launch till then is put off (see
+    /// <see cref="Defer"/>). Waits for Lode to go, rather than for a guess at how long that
+    /// takes, and silent where it already has, which is the usual case. Then stops whatever still
+    /// holds the installed version, since the uninstall the update starts with deletes the whole
+    /// version's folder and one open file under it fails all of it, as "Access to the path ...
+    /// is denied": the shim, or anything else started out of the store. Something can still
+    /// start from there meanwhile, a launch for as long as it takes to put itself off, or one of
+    /// a Lode from before launches were, so an update denied its files, or told one is in use,
+    /// stops whatever holds them again and tries once more, where it would otherwise leave the
+    /// old version half uninstalled, or the new one not installed.
     /// </summary>
     public string Script(int processId)
     {
@@ -110,13 +299,20 @@ sealed class ToolUpdate(string shim, string outcome)
         var store = PowerShell.Quote($@"{StoreDirectory.TrimEnd('\\')}\");
         string[] steps =
         [
+            "$security = [System.Security.AccessControl.EventWaitHandleSecurity]::new()",
+            "$security.AddAccessRule([System.Security.AccessControl.EventWaitHandleAccessRule]::new([System.Security.Principal.WindowsIdentity]::GetCurrent().User, 'FullControl', 'Allow'))",
+            "$created = $false",
+            $"$updating = [System.Threading.EventWaitHandle]::new($false, 'ManualReset', {PowerShell.Quote(SignalName)}, [ref]$created, $security)",
+            $"try {{ $started = [System.Threading.EventWaitHandle]::OpenExisting({PowerShell.Quote($"{SignalName}-Started")}); $null = $started.Set(); $started.Dispose() }} catch {{ }}",
             $"Wait-Process -Id {processId} -Timeout {waitSeconds} -ErrorAction SilentlyContinue",
-            $$"""$locking = @(Get-Process | Where-Object { $_.Path -and ($_.Path -eq {{quotedShim}} -or $_.Path.StartsWith({{store}}, 'OrdinalIgnoreCase')) })""",
-            "$locking | Stop-Process -Force -ErrorAction SilentlyContinue",
-            $"$locking | Wait-Process -Timeout {stopSeconds} -ErrorAction SilentlyContinue",
-            $$"""$output = & {{PowerShell.Quote(Dotnet)}} tool update {{PackageId}} --tool-path {{PowerShell.Quote(ToolPath)}} --prerelease 2>&1 | ForEach-Object { "$_" }""",
+            $$"""function Stop-Locking { $locking = @(Get-Process | Where-Object { $_.Path -and ($_.Path -eq {{quotedShim}} -or $_.Path.StartsWith({{store}}, 'OrdinalIgnoreCase')) }); $locking | Stop-Process -Force -ErrorAction SilentlyContinue; $locking | Wait-Process -Timeout {{stopSeconds}} -ErrorAction SilentlyContinue }""",
+            "Stop-Locking",
+            $$"""$update = { & {{PowerShell.Quote(Dotnet)}} tool update {{PackageId}} --tool-path {{PowerShell.Quote(ToolPath)}} --prerelease 2>&1 | ForEach-Object { "$_" } }""",
+            "$output = & $update",
+            "if ($LASTEXITCODE -ne 0 -and ($output -match 'denied|being used by another process')) { Stop-Locking; $output = & $update }",
             $$"""$status = if ($LASTEXITCODE -eq 0) { '{{ToolUpdateOutcome.SucceededLine}}' } else { '{{ToolUpdateOutcome.FailedLine}}' }""",
             $"Set-Content -LiteralPath {PowerShell.Quote(outcome)} -Value (@($status) + $output) -Encoding UTF8",
+            "$null = $updating.Set()",
             $"& {quotedShim}"
         ];
         return string.Join("; ", steps);

@@ -318,7 +318,7 @@ sealed record RepositoryLink(RepositoryLinks.Handler Handler, string Link, strin
 
     // The text in quotes, as one argument, as JumpList.Argument puts a folder, which can hold no
     // quotes.
-    static string Quoted(string text) =>
+    internal static string Quoted(string text) =>
         $"\"{Escaped(text, beforeQuote: true)}\"";
 
     // The text as it goes inside quotes: each quote escaped by a backslash, and the backslashes

@@ -24,6 +24,38 @@ static class Program
                instance.TryHandOff(commandLine.FullPaths());
     }
 
+    // A launch while Lode updates, run from the store the update is replacing, is started again
+    // once the update is done, with the Lode it starts running to take its folders, and goes at
+    // once: running, it would hold the store open. A switch, which reports, runs as it is. Should
+    // the shell that waits not start, the launch carries on as it would have.
+    /// <param name="update">The update of this copy, or null for a build's output, which none
+    /// replaces.</param>
+    /// <param name="instance">The name of the running Lode's mutex, which this launch would hand
+    /// its folders to.</param>
+    internal static bool PutOffForUpdate(CommandLine commandLine, string[] arguments, ToolUpdate? update, string instance)
+    {
+        if (commandLine.Kind != CommandKind.Open ||
+            update == null ||
+            !update.IsRunning())
+        {
+            return false;
+        }
+
+        try
+        {
+            update.Defer(arguments, Environment.CurrentDirectory, instance);
+            return true;
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    Win32Exception or
+                    InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     [STAThread]
     static int Main(string[] arguments)
     {
@@ -31,7 +63,8 @@ static class Program
         // Windows Forms is set up, which it has no use for. With Lode in Explorer's place, that
         // is every folder another app opens, each a wait on fonts and styles nothing shows.
         var commandLine = CommandLine.Parse(arguments);
-        if (HandedOff(commandLine))
+        if (PutOffForUpdate(commandLine, arguments, Updates.Find(AppContext.BaseDirectory), SingleInstance.Name()) ||
+            HandedOff(commandLine))
         {
             return 0;
         }

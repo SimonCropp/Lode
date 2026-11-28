@@ -50,7 +50,7 @@ sealed class SingleInstance : IDisposable
     // at the same elevation. Named as the other is, each launch as administrator found the
     // other's mutex, couldn't reach its pipe, and stayed: one more copy every time, none of
     // them able to listen for the next.
-    static string Name()
+    internal static string Name()
     {
         var elevation = "";
         if (Environment.IsPrivilegedProcess)

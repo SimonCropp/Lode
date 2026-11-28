@@ -36,7 +36,7 @@ dotnet tool install -g Lode
 
 ### Updating
 
-Once a day Lode checks nuget.org for a newer version, prereleases included, and says so in the status bar. Click it, or **Update and restart** on the **Updates** page of **Options**: once nothing is running in the Actions panel, Lode closes, runs `dotnet tool update`, and starts again with the windows it had, each where it was with its tabs, the one used last in front. Any other start opens one window, with the tabs of the window closed last. The tray icon's menu has **Update to Lode {version}** too, which asks first while anything is running, as **Exit** does. **Check now**, or **Check for updates** in the tray icon's menu, checks straight away; from the tray, a balloon says what it found. A local build doesn't check.
+Once a day Lode checks nuget.org for a newer version, prereleases included, and says so in the status bar. Click it, or **Update and restart** on the **Updates** page of **Options**: once nothing is running in the Actions panel, Lode closes, runs `dotnet tool update`, and starts again with the windows it had, each where it was with its tabs, the one used last in front. A folder or link opened meanwhile, by Win+E or another program, waits for the update, which it would otherwise stop, and opens in the Lode it starts. Any other start opens one window, with the tabs of the window closed last. The tray icon's menu has **Update to Lode {version}** too, which asks first while anything is running, as **Exit** does. **Check now**, or **Check for updates** in the tray icon's menu, checks straight away; from the tray, a balloon says what it found. A local build doesn't check.
 
 A newer Lode, in the status bar:
 
