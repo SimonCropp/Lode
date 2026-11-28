@@ -517,7 +517,17 @@ sealed class Settings
     public int Width { get; set; }
     public int Height { get; set; }
     public bool Maximized { get; set; }
-    public int SplitterDistance { get; set; }
+
+    // How wide the tree is, at 100% scale, so it is as wide on a monitor at any scale, as the
+    // columns and the panes are. 0 for the width it starts at.
+    public int TreeWidth { get; set; }
+
+    // How wide the tree was in the pixels of the monitor its window was on, as Lode kept it
+    // before TreeWidth: read from settings an older Lode saved, and not written once a window
+    // has saved TreeWidth. See MainForm.TreeDistance.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SplitterDistance { get; set; }
+
     public List<string> Tabs { get; set; } = [];
 
     // When each of Tabs was last looked at, in the same order, so closing unused tabs counts from
@@ -538,6 +548,7 @@ sealed class Settings
             Width = Width,
             Height = Height,
             Maximized = Maximized,
+            TreeWidth = TreeWidth,
             SplitterDistance = SplitterDistance,
             Tabs = Tabs,
             TabsLastShown = TabsLastShown,
@@ -561,6 +572,7 @@ sealed class Settings
         nameof(Width),
         nameof(Height),
         nameof(Maximized),
+        nameof(TreeWidth),
         nameof(SplitterDistance),
         nameof(Tabs),
         nameof(TabsLastShown),
@@ -903,7 +915,11 @@ sealed class Settings
                     var window = new JsonObject();
                     foreach (var key in windowState)
                     {
-                        window[key] = mine[key]?.DeepClone();
+                        // Not one left out of the settings as unset, an older Lode's tree width.
+                        if (mine[key] is { } value)
+                        {
+                            window[key] = value.DeepClone();
+                        }
                     }
 
                     Write(windowPath, window.ToJsonString(serializerOptions));

@@ -100,6 +100,19 @@ class MainForm : Form
     /// </summary>
     internal static TimeProvider Time { get; set; } = TimeProvider.System;
 
+    /// <summary>
+    /// The scale the window is at, in dots per inch: its monitor's. Tests, which run at 100%,
+    /// put in another, as a monitor at another scale would have it.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal int Dpi
+    {
+        get => dpi ?? DeviceDpi;
+        set => dpi = value;
+    }
+
+    int? dpi;
+
     public FolderView? ActiveView => Tabs.SelectedTab?.Controls.OfType<FolderView>().FirstOrDefault();
 
     // Every tab but Find Results and the Diff tab holds one.
@@ -463,9 +476,39 @@ class MainForm : Form
             }
         }
 
-        var distance = place.SplitterDistance > 0 ? place.SplitterDistance : LogicalToDeviceUnits(250);
-        split.SplitterDistance = Math.Clamp(distance, split.Panel1MinSize, Math.Max(split.Panel1MinSize, split.Width / 2));
+        split.SplitterDistance = Math.Clamp(TreeDistance(place), split.Panel1MinSize, Math.Max(split.Panel1MinSize, split.Width / 2));
     }
+
+    // The tree's width at 100% scale, until it is dragged.
+    const int defaultTreeWidth = 250;
+
+    // How wide the tree is as it is kept, at 100% scale, so it opens as wide for its names on a
+    // monitor at any scale.
+    int TreeWidth =>
+        (int) Math.Round(split.SplitterDistance * 96.0 / Dpi);
+
+    // How wide the tree opens, in the pixels of the monitor the window is on: the width kept, at
+    // the window's scale. Settings an older Lode saved have it in the pixels of the monitor that
+    // window was on, which is taken as it was: the window opens where it closed, on that monitor
+    // unless it has moved since, so the tree is as wide as that Lode would have opened it, and is
+    // kept at 100% from then on.
+    int TreeDistance(SavedWindow place)
+    {
+        if (place.TreeWidth > 0)
+        {
+            return Scaled(place.TreeWidth);
+        }
+
+        if (place.SplitterDistance is > 0 and var older)
+        {
+            return older;
+        }
+
+        return Scaled(defaultTreeWidth);
+    }
+
+    int Scaled(int logical) =>
+        (int) Math.Round(logical * Dpi / 96.0);
 
     protected override void OnShown(EventArgs args)
     {
@@ -532,7 +575,8 @@ class MainForm : Form
         settings.Width = bounds.Width;
         settings.Height = bounds.Height;
         settings.Maximized = WasMaximized;
-        settings.SplitterDistance = split.SplitterDistance;
+        settings.TreeWidth = TreeWidth;
+        settings.SplitterDistance = null;
         tabsTimer.Stop();
         RememberTabs();
         settings.Save();
@@ -590,7 +634,7 @@ class MainForm : Form
             Width = bounds.Width,
             Height = bounds.Height,
             Maximized = WasMaximized,
-            SplitterDistance = split.SplitterDistance,
+            TreeWidth = TreeWidth,
             Tabs = Views
                 .Select(_ => _.CurrentPath)
                 .ToList(),

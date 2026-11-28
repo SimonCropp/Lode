@@ -271,6 +271,76 @@ public class WindowsTests
                 """);
     }
 
+    // The tree is kept as wide at 100% scale, as the columns are, so it is as wide for its names
+    // on a monitor at any scale: closed at 150% and opened at 100%, it was half as wide again,
+    // kept in the first monitor's pixels. The same for the windows an update brings back.
+    [Test]
+    public async Task TheTreeIsAsWideAtAnotherScale()
+    {
+        using var fixture = Fixture.Create();
+        var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
+        var settings = new Settings();
+        var atOneAndAHalf = await Show(places, settings, 144, fixture.Root);
+        var startedAt = TreeSplit(atOneAndAHalf).SplitterDistance;
+        TreeSplit(atOneAndAHalf).SplitterDistance = 360;
+        settings.RestartWindows = [atOneAndAHalf.Saved()!];
+        atOneAndAHalf.Close();
+
+        using var atOne = await Show(places, settings, 96, fixture.Root);
+        var restarted = MainForm.ForStart([], settings, places).Single();
+        restarted.ShowInTaskbar = false;
+        restarted.StartPosition = FormStartPosition.Manual;
+        restarted.Location = new(-20000, -20000);
+        restarted.Show();
+        var restartedAt = TreeSplit(restarted).SplitterDistance;
+        restarted.Dispose();
+
+        await Assert.That(TreeSplit(atOne).SplitterDistance).IsEqualTo(240);
+        await Assert.That(restartedAt).IsEqualTo(240);
+        await Assert.That(startedAt).IsEqualTo(375);
+    }
+
+    // Settings an older Lode saved have the tree's width in the pixels of the monitor its window
+    // was on, which is where it opens again unless it has moved since: taken as it was, the tree
+    // opens as wide as that Lode would have opened it, and is kept at 100% scale from then on.
+    [Test]
+    public async Task AnOlderLodesTreeWidthOpensAsItWas()
+    {
+        using var fixture = Fixture.Create();
+        var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
+        var settings = new Settings
+        {
+            SplitterDistance = 300
+        };
+
+        var form = await Show(places, settings, 144, fixture.Root);
+        var openedAt = TreeSplit(form).SplitterDistance;
+        form.Close();
+
+        await Assert.That(openedAt).IsEqualTo(300);
+        await Assert.That(settings.TreeWidth).IsEqualTo(200);
+        await Assert.That(settings.SplitterDistance).IsNull();
+    }
+
+    static SplitContainer TreeSplit(MainForm form) =>
+        (SplitContainer) form.Tree.Parent!.Parent!;
+
+    static async Task<MainForm> Show(Places places, Settings settings, int dpi, string path)
+    {
+        var form = new QuietForm([path], settings, places)
+        {
+            Dpi = dpi,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000),
+            MaximumSize = new(10_000, 10_000),
+            ClientSize = new(1200, 760)
+        };
+        form.Show();
+        await Pump.Loaded(form.ActiveView!);
+        return form;
+    }
+
     [Test]
     public async Task MoveTabToNewWindow()
     {

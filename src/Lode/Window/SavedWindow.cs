@@ -10,7 +10,15 @@ sealed class SavedWindow
     public int Width { get; set; }
     public int Height { get; set; }
     public bool Maximized { get; set; }
-    public int SplitterDistance { get; set; }
+
+    // At 100% scale, as Settings.TreeWidth is. 0 for the width it starts at.
+    public int TreeWidth { get; set; }
+
+    // In the pixels of the monitor the window was on, as an older Lode closing for an update
+    // saved it. See Settings.SplitterDistance.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? SplitterDistance { get; set; }
+
     public List<string> Tabs { get; set; } = [];
     public List<DateTimeOffset> TabsLastShown { get; set; } = [];
     public int ActiveTab { get; set; }

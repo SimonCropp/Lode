@@ -84,7 +84,7 @@ public class SettingsTests
         settings.Top = 20;
         settings.Width = 1200;
         settings.Height = 800;
-        settings.SplitterDistance = 250;
+        settings.TreeWidth = 250;
         settings.Tabs = [@"C:\Code", "This PC"];
         settings.TabsLastShown = [new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero), new(2026, 11, 19, 17, 30, 0, TimeSpan.Zero)];
         settings.ActiveTab = 1;
@@ -97,7 +97,7 @@ public class SettingsTests
                 Width = 1000,
                 Height = 700,
                 Maximized = true,
-                SplitterDistance = 200,
+                TreeWidth = 200,
                 Tabs = [@"D:\Work"],
                 TabsLastShown = [new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero)]
             }
@@ -184,7 +184,7 @@ public class SettingsTests
                   "Width": 1200,
                   "Height": 800,
                   "Maximized": false,
-                  "SplitterDistance": 250,
+                  "TreeWidth": 250,
                   "Tabs": [
                     "C:\\Code",
                     "This PC"
@@ -201,7 +201,7 @@ public class SettingsTests
                       "Width": 1000,
                       "Height": 700,
                       "Maximized": true,
-                      "SplitterDistance": 200,
+                      "TreeWidth": 200,
                       "Tabs": [
                         "D:\\Work"
                       ],
@@ -667,7 +667,7 @@ public class SettingsTests
                     })));
 
         var saved = Settings.Load(path);
-        await Assert.That(new[] { saved.PaneWidth, saved.FindContextLines, saved.UnusedTabHours, saved.Width, saved.Height, saved.SplitterDistance })
+        await Assert.That(new[] { saved.PaneWidth, saved.FindContextLines, saved.UnusedTabHours, saved.Width, saved.Height, saved.TreeWidth })
             .IsEquivalentTo([20, 20, 20, 20, 20, 20], CollectionOrdering.Matching);
         await Assert.That(Directory.EnumerateFiles(fixture.Root, "*.writing")).IsEmpty();
 
@@ -692,7 +692,7 @@ public class SettingsTests
                     copy.Height = value;
                     break;
                 default:
-                    copy.SplitterDistance = value;
+                    copy.TreeWidth = value;
                     break;
             }
         }
@@ -710,12 +710,14 @@ public class SettingsTests
         var normal = Settings.Load(path);
         normal.Tabs = [@"C:\Work"];
         normal.Width = 1200;
+        normal.TreeWidth = 250;
         normal.Save();
 
         var administrator = Settings.Load(path, administrator: true);
         var startedWith = administrator.Tabs.ToList();
         administrator.Tabs = [@"C:\Windows\System32"];
         administrator.Width = 900;
+        administrator.TreeWidth = 300;
         administrator.Theme = Theme.Dark;
         administrator.RestartWindows = [new() { Tabs = [@"C:\Windows"] }];
         administrator.Save();
@@ -732,6 +734,7 @@ public class SettingsTests
                 {
                     normalAgain.Tabs,
                     normalAgain.Width,
+                    normalAgain.TreeWidth,
                     normalAgain.Theme,
                     restart = normalAgain.RestartWindows.Select(_ => _.Tabs)
                 },
@@ -739,6 +742,7 @@ public class SettingsTests
                 {
                     administratorAgain.Tabs,
                     administratorAgain.Width,
+                    administratorAgain.TreeWidth,
                     administratorAgain.Theme,
                     restart = administratorAgain.RestartWindows.Select(_ => _.Tabs)
                 },
@@ -756,6 +760,7 @@ public class SettingsTests
                       D:\Code
                     ],
                     Width: 1200,
+                    TreeWidth: 250,
                     Theme: Dark,
                     restart: []
                   },
@@ -764,6 +769,7 @@ public class SettingsTests
                       C:\Windows\System32
                     ],
                     Width: 900,
+                    TreeWidth: 300,
                     Theme: Dark,
                     restart: [
                       [
@@ -774,6 +780,35 @@ public class SettingsTests
                   kept: settings.administrator.json
                 }
                 """);
+    }
+
+    // An older Lode kept the tree's width in the pixels of its monitor, as SplitterDistance: in
+    // the settings, in the windows an update brings back and in the administrator's own window
+    // file. Each is read, for the window to open as wide, and none written again once the
+    // window has saved its width at 100% scale.
+    [Test]
+    public async Task AnOlderLodesTreeWidthIsReadAndNotWrittenAgain()
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        await File.WriteAllTextAsync(path, """{ "SplitterDistance": 375, "RestartWindows": [ { "SplitterDistance": 300 } ] }""");
+        await File.WriteAllTextAsync(Settings.WindowPath(path), """{ "SplitterDistance": 450 }""");
+
+        var normal = Settings.Load(path);
+        var administrator = Settings.Load(path, administrator: true);
+        var read = (normal.SplitterDistance, normal.RestartWindows.Single().SplitterDistance, administrator.SplitterDistance);
+        normal.TreeWidth = 250;
+        normal.SplitterDistance = null;
+        normal.RestartWindows = [];
+        normal.Save();
+        administrator.TreeWidth = 300;
+        administrator.SplitterDistance = null;
+        administrator.Save();
+
+        await Assert.That(read).IsEqualTo((375, 300, 450));
+        await Assert.That(await File.ReadAllTextAsync(path)).DoesNotContain("SplitterDistance");
+        await Assert.That(await File.ReadAllTextAsync(Settings.WindowPath(path))).DoesNotContain("SplitterDistance");
+        await Assert.That((Settings.Load(path).TreeWidth, Settings.Load(path, administrator: true).TreeWidth)).IsEqualTo((250, 300));
     }
 
     // Settings saved by a newer Lode, with a place for diffs, a theme, labels for the strip and
