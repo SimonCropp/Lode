@@ -335,6 +335,36 @@ public class ZipTests
         await Assert.That(File.Exists(fixture.At("Docs", "guide.aleph"))).IsTrue();
     }
 
+    // Extracted here, what it put at the top is each item there once, as the zip first names it,
+    // in the zip's order, a folder there already among them, and a folder named twice but for
+    // case once; what it made, for undo, the highest of each, a folder it made with all in it,
+    // whatever case what is in it names it in, and what it put in a folder that was there.
+    // Extracted all, the new folder is both.
+    [Test]
+    public async Task ExtractSaysWhatItPutAtTheTopAndWhatItMade()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(
+            fixture,
+            "Bundle.zip",
+            ("one.txt", "one"),
+            ("Docs/more.txt", "more"),
+            ("New/Inner/deep.txt", "deep"),
+            ("new/two.txt", "two"),
+            ("DOCS/again.txt", "again"),
+            ("Empty/", ""),
+            ("last.txt", "last"));
+
+        var extraction = Zip.Extract(zip, fixture.Root, null, Cancel.None);
+        var (_, topLevel) = Zip.ExtractTo(zip, fixture.At("Docs"), false, null, Cancel.None);
+
+        await Assert.That(extraction.TopLevel.Select(fixture.Relative))
+            .IsEquivalentTo(["Projects/one.txt", "Projects/Docs", "Projects/New", "Projects/Empty", "Projects/last.txt"], CollectionOrdering.Matching);
+        await Assert.That(extraction.Created.Select(fixture.Relative))
+            .IsEquivalentTo(["Projects/one.txt", "Projects/Docs/more.txt", "Projects/New", "Projects/DOCS/again.txt", "Projects/Empty", "Projects/last.txt"], CollectionOrdering.Matching);
+        await Assert.That(topLevel.Select(fixture.Relative)).IsEquivalentTo(["Projects/Docs/Bundle"]);
+    }
+
     // An entry named to go outside the folder, or with a name Windows can't have, is left out
     // (Zip Slip). The rest is extracted.
     [Test]

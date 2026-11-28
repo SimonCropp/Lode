@@ -427,7 +427,7 @@ static class Zip
 
         try
         {
-            var extraction = Extract(zip, destination, progress, cancel);
+            var extraction = Extract(zip, destination, progress, cancel, intoNewFolder: true);
             if (extraction.TooLittleRoom is { } room)
             {
                 TakeAway([destination]);
@@ -495,7 +495,13 @@ static class Zip
     /// got, in files and bytes. When it fails, or <paramref name="cancel"/> stops it, which it
     /// heeds part way through a file, deletes what it made, and only that.
     /// </summary>
-    public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel)
+    public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel) =>
+        Extract(zip, destination, progress, cancel, intoNewFolder: false);
+
+    // As Extract. Into a new folder, made for it, of which nothing but the folder is used, it
+    // says neither what it put at the top nor what it made, which would be worked out for
+    // nothing.
+    static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel, bool intoNewFolder)
     {
         var mark = MarkOfTheWeb(zip);
         using var archive = OpenRead(zip);
@@ -589,14 +595,20 @@ static class Zip
             };
         }
 
-        // The top of each, beneath the destination: what was there and what is new.
+        // The top of each, beneath the destination, what was there and what is new, each once,
+        // as the zip first names it. Those had are a set, as looking along the list for each, in
+        // a zip of thousands at its top, a folder of photos say, took minutes.
         var topLevel = new List<string>();
-        foreach (var (_, path, _) in targets)
+        if (!intoNewFolder)
         {
-            var top = TopOf(path, destination);
-            if (!topLevel.Contains(top, StringComparer.OrdinalIgnoreCase))
+            var tops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (_, path, _) in targets)
             {
-                topLevel.Add(top);
+                var top = TopOf(path, destination);
+                if (tops.Add(top))
+                {
+                    topLevel.Add(top);
+                }
             }
         }
 
@@ -631,6 +643,11 @@ static class Zip
         {
             TakeAway(made);
             throw;
+        }
+
+        if (intoNewFolder)
+        {
+            return new([], [], leftOut, []);
         }
 
         // For undo, the highest of what it made: a folder it made, with all it made in it, or
