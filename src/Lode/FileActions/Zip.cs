@@ -124,7 +124,7 @@ static class Zip
     {
         // The files, and the folders with nothing in them, which a zip holds as entries of their
         // own. A folder with something in it is there in the names of what it holds.
-        var items = new List<(string Path, string Name, bool IsFolder)>();
+        var items = new List<(string Path, string Name, bool IsFolder, long Length)>();
 
         // Items of more than one folder, as a search finds, can share a name, which the zip
         // would then hold twice, and extracting it fail on. Those after the first are numbered,
@@ -140,15 +140,16 @@ static class Zip
             }
 
             var extension = Path.GetExtension(name);
-            items.Add((source, Untaken(name[..^extension.Length], extension, taken), false));
+            items.Add((source, Untaken(name[..^extension.Length], extension, taken), false, new FileInfo(source).Length));
         }
 
         var files = items.Count(_ => !_.IsFolder);
-        var written = 0;
+        var reporter = new Reporter(progress, "Compressing", files, items.Sum(_ => _.Length));
+        Action<long> copied = reporter.Copied;
         try
         {
             using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
-            foreach (var (path, name, isFolder) in items)
+            foreach (var (path, name, isFolder, _) in items)
             {
                 cancel.ThrowIfCancellationRequested();
                 if (isFolder)
@@ -157,9 +158,8 @@ static class Zip
                     continue;
                 }
 
-                written++;
-                progress?.Report($"Compressing {written} of {files}");
-                archive.CreateEntryFromFile(path, name, CompressionLevel.Optimal);
+                reporter.Next();
+                AddFile(archive, path, name, copied, cancel);
             }
         }
         catch
@@ -184,9 +184,93 @@ static class Zip
         return name;
     }
 
+    // Writes the file at path into the zip, named name, as CreateEntryFromFile does, with the
+    // time it was last changed, or, should the zip be unable to hold that, the first it can, as
+    // CreateEntryFromFile gives it. But a piece at a time, told of each, and stopped by cancel
+    // between pieces, so a big file stops within one, rather than once all of it is written.
+    static void AddFile(ZipArchive archive, string path, string name, Action<long> copied, Cancel cancel)
+    {
+        using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
+        var written = File.GetLastWriteTime(path);
+        if (written.Year is < 1980 or > 2107)
+        {
+            written = new(1980, 1, 1, 0, 0, 0);
+        }
+
+        entry.LastWriteTime = written;
+        using var target = entry.Open();
+        Copy(source, target, copied, cancel);
+    }
+
+    // Copies source to target a piece at a time, told of each piece, and stopped by cancel
+    // between pieces.
+    static void Copy(Stream source, Stream target, Action<long>? copied, Cancel cancel)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(pieceLength);
+        try
+        {
+            int read;
+            while ((read = source.Read(buffer, 0, pieceLength)) > 0)
+            {
+                cancel.ThrowIfCancellationRequested();
+                target.Write(buffer, 0, read);
+                copied?.Invoke(read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    // What is copied at a time, as Stream.CopyTo copies.
+    const int pieceLength = 81_920;
+
+    /// <summary>
+    /// Says how far compressing or extracting has got: how many files it has come to, and how
+    /// much of what they hold it has written, a big file saying nothing else for as long as it
+    /// takes. Only when that changes: each piece of a big file would otherwise tell the panel.
+    /// </summary>
+    sealed class Reporter(IProgress<string>? progress, string doing, int files, long total)
+    {
+        int file;
+        long done;
+        string reported = "";
+
+        public void Next()
+        {
+            file++;
+            Report();
+        }
+
+        public void Copied(long bytes)
+        {
+            done += bytes;
+            Report();
+        }
+
+        void Report()
+        {
+            if (progress == null)
+            {
+                return;
+            }
+
+            var text = $"{doing} {file} of {files}, {Formatting.Size(done)} of {Formatting.Size(total)}";
+            if (text == reported)
+            {
+                return;
+            }
+
+            reported = text;
+            progress.Report(text);
+        }
+    }
+
     // A folder, named in the zip as zips name what is in them, with forward slashes: what it
     // holds, or itself when it holds nothing. Not the zip being made, should it be in there.
-    static void AddFolder(string folder, string name, List<(string, string, bool)> items, string zip)
+    static void AddFolder(string folder, string name, List<(string, string, bool, long)> items, string zip)
     {
         var before = items.Count;
         var options = new EnumerationOptions
@@ -204,13 +288,13 @@ static class Zip
         {
             if (!Locations.Same(file.FullName, zip))
             {
-                items.Add((file.FullName, $"{name}/{file.Name}", false));
+                items.Add((file.FullName, $"{name}/{file.Name}", false, file.Length));
             }
         }
 
         if (items.Count == before)
         {
-            items.Add((folder, name, true));
+            items.Add((folder, name, true, 0));
         }
     }
 
@@ -224,13 +308,25 @@ static class Zip
     /// <summary>
     /// What extracting a zip did: what it made at the top of where it went, what it made there or
     /// beneath, for undo (the highest of each, made by it rather than found there), what it left
-    /// out, and why, and what was already there, which stops it before anything is written.
+    /// out, and why, and what was already there, which stops it before anything is written, as
+    /// <see cref="TooLittleRoom"/> does.
     /// </summary>
     public sealed record Extraction(
         IReadOnlyList<string> TopLevel,
         IReadOnlyList<string> Created,
         IReadOnlyList<LeftOutEntry> LeftOut,
-        IReadOnlyList<string> Conflicts);
+        IReadOnlyList<string> Conflicts)
+    {
+        /// <summary>
+        /// How much it would write, and the room the drive it goes to has, where that is less.
+        /// </summary>
+        public Room? TooLittleRoom { get; init; }
+    }
+
+    /// <summary>
+    /// How much extracting a zip would write, and how much room there is for it.
+    /// </summary>
+    public sealed record Room(long Needed, long Free);
 
     /// <summary>
     /// An entry of a zip that extracting it left out, by its name in the zip, and why.
@@ -310,6 +406,11 @@ static class Zip
                 return (ConflictOutcome(name, extraction.Conflicts), []);
             }
 
+            if (extraction.TooLittleRoom is { } room)
+            {
+                return (RoomOutcome(name, room), []);
+            }
+
             UndoHistory.Instance.RecordCreated("extract", extraction.Created);
             return (ExtractedOutcome(name, folder, extraction), extraction.TopLevel);
         }
@@ -327,6 +428,12 @@ static class Zip
         try
         {
             var extraction = Extract(zip, destination, progress, cancel);
+            if (extraction.TooLittleRoom is { } room)
+            {
+                TakeAway([destination]);
+                return (RoomOutcome(name, room), []);
+            }
+
             UndoHistory.Instance.RecordCreated("extract", [destination]);
             return (ExtractedOutcome(name, destination, extraction), [destination]);
         }
@@ -343,6 +450,13 @@ static class Zip
     {
         var details = $"Nothing was extracted from {name}: these are there already.{Environment.NewLine}{string.Join(Environment.NewLine, conflicts)}";
         return new(false, $"{Count(conflicts.Count, "item")} there already", details);
+    }
+
+    static ActionLog.Outcome RoomOutcome(string name, Room room)
+    {
+        var needed = Formatting.Size(room.Needed);
+        var free = Formatting.Size(room.Free);
+        return new(false, $"Not enough room: needs {needed}, {free} free", $"Nothing was extracted from {name}: it needs {needed}, and the drive it goes to has {free} free.");
     }
 
     static ActionLog.Outcome ExtractedOutcome(string name, string destination, Extraction extraction)
@@ -376,9 +490,10 @@ static class Zip
     /// there, each item with the time it was last changed, and each file with the zip's mark of
     /// the web, should it have one. Leaves out an entry named to go outside it, with a name
     /// Windows can't have, or keeps for a device, or named as another is but for case, which
-    /// Windows takes for the same name. When anything it would write is there already, writes
-    /// nothing and returns that. When it fails, or <paramref name="cancel"/> stops it, deletes
-    /// what it made, and only that.
+    /// Windows takes for the same name. When anything it would write is there already, or the
+    /// drive hasn't the room for all of it, writes nothing and returns that. Says how far it has
+    /// got, in files and bytes. When it fails, or <paramref name="cancel"/> stops it, which it
+    /// heeds part way through a file, deletes what it made, and only that.
     /// </summary>
     public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel)
     {
@@ -453,6 +568,27 @@ static class Zip
             return new([], [], leftOut, conflicts);
         }
 
+        // What it would write, against the room the drive it goes to has. A zip can hold far
+        // more than it takes, a few megabytes that fill the disk, which, written till it was
+        // full, failed then, and took all it had written away again.
+        var total = 0L;
+        foreach (var (entry, _, isFolder) in targets)
+        {
+            if (!isFolder)
+            {
+                total += entry.Length;
+            }
+        }
+
+        if (FreeSpace(destination) is { } free &&
+            total > free)
+        {
+            return new([], [], leftOut, [])
+            {
+                TooLittleRoom = new(total, free)
+            };
+        }
+
         // The top of each, beneath the destination: what was there and what is new.
         var topLevel = new List<string>();
         foreach (var (_, path, _) in targets)
@@ -473,7 +609,8 @@ static class Zip
             destination,
             Path.TrimEndingDirectorySeparator(destination)
         };
-        var written = 0;
+        var reporter = new Reporter(progress, "Extracting", files.Count, total);
+        Action<long> copied = reporter.Copied;
         try
         {
             foreach (var (entry, path, isFolder) in targets)
@@ -485,10 +622,9 @@ static class Zip
                     continue;
                 }
 
-                written++;
-                progress?.Report($"Extracting {written} of {files.Count}");
+                reporter.Next();
                 MakeFolder(Path.GetDirectoryName(path)!, known, made);
-                ExtractFile(entry, path, mark, made);
+                ExtractFile(entry, path, mark, made, copied, cancel);
             }
         }
         catch
@@ -504,6 +640,28 @@ static class Zip
             .Where(_ => !madeSet.Contains(Path.GetDirectoryName(_)!))
             .ToList();
         return new(topLevel, created, leftOut, []);
+    }
+
+    /// <summary>
+    /// How much the drive <paramref name="folder"/> is on has room for, for this user, or null
+    /// when it can't say. Tests stand in for a drive short of room.
+    /// </summary>
+    internal static Func<string, long?> FreeSpace { get; set; } = RoomOn;
+
+    static long? RoomOn(string folder)
+    {
+        var path = Extended(folder);
+        if (!Path.EndsInDirectorySeparator(path))
+        {
+            path += Path.DirectorySeparatorChar;
+        }
+
+        if (GetDiskFreeSpaceEx(path, out var freeToCaller, out _, out _))
+        {
+            return (long) Math.Min(freeToCaller, long.MaxValue);
+        }
+
+        return null;
     }
 
     // Makes folder, and those it is in that are not there, adding each it made to made. The
@@ -668,14 +826,7 @@ static class Zip
         {
             made?.Add(path);
             using var content = entry.Open();
-            var buffer = new byte[81_920];
-            int read;
-            while ((read = content.Read(buffer)) > 0)
-            {
-                cancel.ThrowIfCancellationRequested();
-                file.Write(buffer, 0, read);
-                copied?.Invoke(read);
-            }
+            Copy(content, file, copied, cancel);
         }
 
         if (mark != null)

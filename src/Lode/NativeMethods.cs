@@ -382,6 +382,14 @@ static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool CreateDirectory(string path, IntPtr security);
 
+    // The room on the drive a folder is on: what this user may write, which a quota can make
+    // less than the drive has free, then the drive's size and what it has free. Any folder will
+    // do, on a share, or a drive mounted in a folder, as DriveInfo, which takes a drive's
+    // letter, can't. A share's must end in a backslash.
+    [LibraryImport("kernel32.dll", EntryPoint = "GetDiskFreeSpaceExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetDiskFreeSpaceEx(string folder, out ulong freeToCaller, out ulong total, out ulong free);
+
     // Asking a service how it is needs no administrator permission, only these rights.
     public const uint ServiceManagerConnect = 0x0001;
     public const uint ServiceQueryStatus = 0x0004;

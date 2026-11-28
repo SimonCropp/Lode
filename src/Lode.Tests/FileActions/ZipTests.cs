@@ -568,7 +568,7 @@ public class ZipTests
         IReadOnlyList<string> StoppedPartWay(string item)
         {
             using var cancel = new CancelSource();
-            var progress = new Reporting(
+            var progress = new Reporting<int>(
                 _ =>
                 {
                     reported.Add(_);
@@ -598,10 +598,137 @@ public class ZipTests
     }
 
     // Told at once, on the thread reporting, as Progress, which posts, would not be.
-    sealed class Reporting(Action<int> report) : IProgress<int>
+    sealed class Reporting<T>(Action<T> report) : IProgress<T>
     {
-        public void Report(int value) =>
+        public void Report(T value) =>
             report(value);
+    }
+
+    // What a big entry is made of: enough pieces of what is copied at a time to stop part way.
+    const int bigLength = 4_000_000;
+
+    // Reports what it is told, and cancels on the second: once the first piece of a big file is
+    // written.
+    static (Reporting<string> Progress, List<string> Reports) CancelOnTheSecondReport(CancelSource cancel)
+    {
+        var reports = new List<string>();
+        var progress = new Reporting<string>(
+            _ =>
+            {
+                reports.Add(_);
+                if (reports.Count == 2)
+                {
+                    cancel.Cancel();
+                }
+            });
+        return (progress, reports);
+    }
+
+    // A big entry, stopped part way, stops within the piece it is writing, rather than once all
+    // of it is written, and takes away what it wrote, the folder made for it too. It says how
+    // far it has got in bytes as it goes, where Extracting 1 of 1 was all it said till the entry
+    // was done, the panel saying Cancelling meanwhile.
+    [Test]
+    public async Task CancelledExtractStopsPartWayThroughABigEntry()
+    {
+        using var fixture = Fixture.Create();
+        var zip = fixture.At("Big.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        {
+            await using var stream = archive.CreateEntry("big.bin", CompressionLevel.NoCompression).Open();
+            stream.Write(new byte[bigLength]);
+        }
+
+        using var cancel = new CancelSource();
+        var (progress, reports) = CancelOnTheSecondReport(cancel);
+
+        await Assert.That(() => Zip.ExtractTo(zip, fixture.Root, false, progress, cancel.Token)).Throws<OperationCanceledException>();
+
+        await Assert.That(reports.Count).IsEqualTo(2);
+        await Assert.That(reports[0]).IsEqualTo("Extracting 1 of 1, 0 bytes of 3.81 MB");
+        await Assert.That(reports[1]).StartsWith("Extracting 1 of 1, ").And.EndsWith(" KB of 3.81 MB");
+        await Assert.That(Path.Exists(fixture.At("Big"))).IsFalse();
+    }
+
+    // A zip can hold far more than it takes, a few megabytes that fill the disk. Where the drive
+    // it goes to hasn't the room for all it holds, nothing is extracted, here or to a folder of
+    // its own, which goes too, saying how much it needs and how much there is, rather than
+    // writing till the disk is full. The drive here stands in for one short of room, the real
+    // one having some.
+    [Test]
+    public async Task ExtractRefusesWhereThereIsNotTheRoom()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZip(fixture, "Bundle.zip", ("one.txt", new('a', 600)), ("Inner/two.txt", new('b', 600)), ("Empty/", ""));
+        var before = fixture.Tree();
+        var real = Zip.FreeSpace;
+        await Assert.That(real(fixture.Root) ?? 0).IsGreaterThan(0);
+        var askedOf = new List<string>();
+        Zip.FreeSpace = _ =>
+        {
+            askedOf.Add(fixture.Relative(_));
+            return 1_000;
+        };
+        (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) here;
+        (ActionLog.Outcome Outcome, IReadOnlyList<string> TopLevel) all;
+        try
+        {
+            here = Zip.ExtractTo(zip, fixture.Root, true, null, Cancel.None);
+            all = Zip.ExtractTo(zip, fixture.Root, false, null, Cancel.None);
+        }
+        finally
+        {
+            Zip.FreeSpace = real;
+        }
+
+        await Assert.That(fixture.Tree()).IsEquivalentTo(before, CollectionOrdering.Matching);
+        await Assert.That(here.TopLevel.Concat(all.TopLevel)).IsEmpty();
+        await Verify(
+            new
+            {
+                here = here.Outcome,
+                all = all.Outcome,
+                askedOf
+            })
+            .Snapshot(
+                """
+                {
+                  here: {
+                    Succeeded: false,
+                    Summary: Not enough room: needs 1.17 KB, 1,000 bytes free,
+                    Details: Nothing was extracted from Bundle.zip: it needs 1.17 KB, and the drive it goes to has 1,000 bytes free.
+                  },
+                  all: {
+                    Succeeded: false,
+                    Summary: Not enough room: needs 1.17 KB, 1,000 bytes free,
+                    Details: Nothing was extracted from Bundle.zip: it needs 1.17 KB, and the drive it goes to has 1,000 bytes free.
+                  },
+                  askedOf: [
+                    Projects,
+                    Projects/Bundle
+                  ]
+                }
+                """);
+    }
+
+    // As a big entry extracted is, a big file compressed, stopped part way, stops within the
+    // piece it is writing, leaving no zip, and says how far it has got in bytes as it goes.
+    [Test]
+    public async Task CancelledCompressStopsPartWayThroughABigFile()
+    {
+        using var fixture = Fixture.Create();
+        var big = fixture.At("big.bin");
+        await File.WriteAllBytesAsync(big, new byte[bigLength]);
+        var zip = fixture.At("Big.zip");
+        using var cancel = new CancelSource();
+        var (progress, reports) = CancelOnTheSecondReport(cancel);
+
+        await Assert.That(() => Zip.Compress(zip, [big], progress, cancel.Token)).Throws<OperationCanceledException>();
+
+        await Assert.That(reports.Count).IsEqualTo(2);
+        await Assert.That(reports[0]).IsEqualTo("Compressing 1 of 1, 0 bytes of 3.81 MB");
+        await Assert.That(reports[1]).StartsWith("Compressing 1 of 1, ").And.EndsWith(" KB of 3.81 MB");
+        await Assert.That(File.Exists(zip)).IsFalse();
     }
 
     // Zips extracted here together can share a folder, as the parts of a Google Takeout all hold
@@ -699,12 +826,13 @@ public class ZipTests
         await Assert.That(undone[1]).Contains(fixture.At("Takeout"));
     }
 
-    // Cancels on the report given, on the thread reporting it.
+    // Cancels on the report given, of how many files it has come to, whatever it says of the
+    // bytes after, on the thread reporting it.
     sealed class CancelOnReport(CancelSource cancel, string report) : IProgress<string>
     {
         public void Report(string value)
         {
-            if (value == report)
+            if (value.StartsWith($"{report},", StringComparison.Ordinal))
             {
                 cancel.Cancel();
             }
