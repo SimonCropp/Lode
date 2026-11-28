@@ -1019,6 +1019,110 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     }
 
     /// <summary>
+    /// Discards some lines of a file's uncommitted change, as GitHub Desktop's Discard line and
+    /// Discard hunk do: <paramref name="lines"/>, by their <see cref="DiffLine.Index"/> in the
+    /// diff shown, whose <see cref="TextDiff.PatchHash"/> is <paramref name="patchHash"/>, an
+    /// added line taken away and a deleted one put back. The diff is against the last commit,
+    /// of the file on disk, so the patch of them, applied in reverse, applies there, and only
+    /// there: what is staged stays as it is. The file as it is goes to the Recycle Bin first,
+    /// with <paramref name="recycle"/>, as Discard sends whole files, and is put back to have
+    /// the lines taken out of it, so it can be got back as it was. Nothing is discarded where
+    /// the diff isn't the one shown any more, git can't take the lines out, or the file can't
+    /// go to the Recycle Bin.
+    /// </summary>
+    public static async Task<CodeCommands.RepoResult> DiscardLines(DiffSource source, string patchHash, IReadOnlyCollection<int> lines, CodeCommands.Recycler recycle, Cancel cancel = default)
+    {
+        var repo = source.Repo;
+        var name = source.File.Path;
+        var path = Path.Combine(repo, name.Replace('/', '\\'));
+        var folder = Path.Combine(Path.GetTempPath(), "Lode", "Commits", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var patchFile = Path.Combine(folder, "discard.patch");
+            var held = Path.Combine(folder, "held");
+            var notReady = await Task.Run(() => ReadyToDiscard(source, patchHash, lines, patchFile, held, cancel), cancel);
+            if (notReady != null)
+            {
+                return notReady;
+            }
+
+            if (!await recycle([path]))
+            {
+                // Should it have gone all the same, it is put back as it was.
+                if (!File.Exists(path))
+                {
+                    File.Copy(held, path);
+                }
+
+                return new(repo, false, $"{name} couldn't go to the Recycle Bin, so nothing was discarded.");
+            }
+
+            // Seen through once the file is in the Recycle Bin, cancelled or not: stopped there,
+            // the file would be missing.
+            return await Task.Run(
+                () =>
+                {
+                    File.Copy(held, path);
+                    var applied = CodeCommands.GitToItsEnd(repo, Cancel.None, "apply", "--reverse", "--unidiff-zero", "--whitespace=nowarn", patchFile);
+                    var output = $"Moved {name} as it was to the Recycle Bin\n{applied.Output}".Trim();
+                    if (!applied.Succeeded)
+                    {
+                        output += "\nSo nothing was discarded: the file is still as it was.";
+                    }
+
+                    return applied with
+                    {
+                        Output = output
+                    };
+                });
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(folder, true);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    // Reads the diff again, byte for byte, as lines picked to commit are: still the one shown,
+    // the patch of the lines is written as it was read, a character a byte, for the lines put
+    // back to have the bytes they had, whatever the file's encoding, and git asked whether it
+    // applies, before anything goes to the Recycle Bin. Then the file is copied as it is, to be
+    // put back once it has gone there. Null when ready; otherwise why nothing was discarded.
+    static CodeCommands.RepoResult? ReadyToDiscard(DiffSource source, string patchHash, IReadOnlyCollection<int> lines, string patchFile, string held, Cancel cancel)
+    {
+        var repo = source.Repo;
+        var name = source.File.Path;
+        if (GitFileDiff.ReadToCommit(source, patchHash, cancel) is not { } diff)
+        {
+            return new(repo, false, $"{name} changed since its diff was read, so nothing was discarded.");
+        }
+
+        if (LinePatch.Discard(diff, lines.ToHashSet()) is not { } patch)
+        {
+            return new(repo, false, "None of the lines was added or deleted, so nothing was discarded.");
+        }
+
+        File.WriteAllText(patchFile, patch, Encoding.Latin1);
+        var check = CodeCommands.GitToItsEnd(repo, cancel, "apply", "--check", "--reverse", "--unidiff-zero", "--whitespace=nowarn", patchFile);
+        if (!check.Succeeded)
+        {
+            return check with
+            {
+                Output = $"{check.Output}\nSo nothing was discarded.".Trim()
+            };
+        }
+
+        File.Copy(Path.Combine(repo, name.Replace('/', '\\')), held);
+        return null;
+    }
+
+    /// <summary>
     /// Has git ignore <paramref name="path"/>, a file it doesn't track: a line for it alone, from
     /// the top of the repository, at the end of the .gitignore there.
     /// </summary>

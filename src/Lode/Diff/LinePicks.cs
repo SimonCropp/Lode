@@ -92,6 +92,47 @@ sealed record LinePicks(bool AllByDefault, ImmutableHashSet<int> Diverging, int 
             Diverging = diverging.ToImmutable()
         };
     }
+
+    /// <summary>
+    /// These picks, of <paramref name="before"/>, kept for <paramref name="after"/>, the diff once
+    /// <paramref name="discarded"/> were discarded from the file, each line left picked or not as
+    /// it was, rather than every line picked again, as for a file changed elsewhere. Only where
+    /// the lines added and deleted in <paramref name="after"/> are those of
+    /// <paramref name="before"/> not discarded, in the same order; null where git paired them
+    /// otherwise, when which is which can't be told.
+    /// </summary>
+    public LinePicks? AfterDiscarding(TextDiff before, IReadOnlySet<int> discarded, TextDiff after)
+    {
+        var kept = before.Hunks
+            .SelectMany(_ => _.Lines)
+            .Where(_ => _ is { IsChange: true, Index: { } index } && !discarded.Contains(index))
+            .ToList();
+        var now = after.Hunks
+            .SelectMany(_ => _.Lines)
+            .Where(_ => _ is { IsChange: true, Index: not null })
+            .ToList();
+        if (kept.Count != now.Count)
+        {
+            return null;
+        }
+
+        var unpicked = new List<int>();
+        for (var i = 0; i < kept.Count; i++)
+        {
+            if (kept[i].Kind != now[i].Kind ||
+                kept[i].Text != now[i].Text)
+            {
+                return null;
+            }
+
+            if (!IsPicked(kept[i].Index!.Value))
+            {
+                unpicked.Add(now[i].Index!.Value);
+            }
+        }
+
+        return All(after).With(unpicked, false);
+    }
 }
 
 /// <summary>
@@ -100,7 +141,8 @@ sealed record LinePicks(bool AllByDefault, ImmutableHashSet<int> Diverging, int 
 /// added and picked is added, one not is left out, as if never added; a line deleted and picked
 /// is deleted, one not is kept, as context. A hunk with nothing picked is left out. A last line
 /// that had no newline, kept, gains one when lines picked are added after it, as they can't
-/// follow it otherwise.
+/// follow it otherwise. And the patch of lines to discard from the file on disk, which
+/// <see cref="Discard"/> writes.
 /// </summary>
 static class LinePatch
 {
@@ -212,6 +254,189 @@ static class LinePatch
         hunkLines
             .Skip(position + 1)
             .Any(_ => _ is { Kind: DiffLineKind.Add, Index: { } index } && picks.IsPicked(index));
+
+    /// <summary>
+    /// Whether lines of <paramref name="diff"/>, the diff git wrote of an uncommitted change, can
+    /// be discarded by <see cref="Discard"/>'s patch: git's own diff of a file changed in place,
+    /// not one added, deleted, renamed or copied, which the patch, taking out only some lines,
+    /// would add, delete, or move back too, nor a submodule's commit, which isn't a file's lines.
+    /// </summary>
+    public static bool CanDiscard(TextDiff diff)
+    {
+        var header = HeaderLines(diff.Patch);
+        if (header is not [var first, ..] ||
+            !first.StartsWith("diff --git ", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return !header.Any(
+            _ => _.StartsWith("new file mode", StringComparison.Ordinal) ||
+                 _.StartsWith("deleted file mode", StringComparison.Ordinal) ||
+                 _.StartsWith("rename from ", StringComparison.Ordinal) ||
+                 _.StartsWith("copy from ", StringComparison.Ordinal) ||
+                 _.StartsWith("--- /dev/null", StringComparison.Ordinal) ||
+                 _.StartsWith("+++ /dev/null", StringComparison.Ordinal) ||
+                 _.EndsWith(" 160000", StringComparison.Ordinal));
+    }
+
+    // The lines git wrote above the first hunk, each without its newline. Split at newlines
+    // alone, as a diff read a character a byte can hold others, U+0085 for the second byte of
+    // Å in UTF-8, which aren't the end of a line to git.
+    static List<string> HeaderLines(string patch)
+    {
+        var lines = new List<string>();
+        var start = 0;
+        while (start < patch.Length)
+        {
+            var end = patch.IndexOf('\n', start);
+            if (end < 0)
+            {
+                end = patch.Length;
+            }
+
+            var line = patch[start..end];
+            if (line.StartsWith("@@", StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            lines.Add(line);
+            start = end + 1;
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// The patch that discards <paramref name="discarding"/>, lines of <paramref name="diff"/> by
+    /// their <see cref="DiffLine.Index"/>, from the file as it is, for git apply --reverse to
+    /// apply to it on disk, as GitHub Desktop's formatPatchToDiscardChanges in
+    /// patch-formatter.ts writes one, but the other way about. Its new side is the file as it
+    /// is, as in the diff git wrote, so it applies where that did: every line added, discarded
+    /// or not, with the lines both sides have. Its old side is the file once they are
+    /// discarded: a line added and discarded is taken away, one not is kept, as context; a line
+    /// deleted and discarded is put back, one not is left out, as it isn't there to keep. A
+    /// hunk with nothing discarded is left out. Null when nothing is discarded.
+    /// </summary>
+    public static string? Discard(TextDiff diff, IReadOnlySet<int> discarding)
+    {
+        var body = new StringBuilder();
+        var shift = 0;
+        foreach (var (header, _, hunkLines, _) in diff.Hunks)
+        {
+            var lines = new StringBuilder();
+            var oldCount = 0;
+            var newCount = 0;
+            var anyChange = false;
+            for (var i = 0; i < hunkLines.Count; i++)
+            {
+                var line = hunkLines[i];
+                if (line.Kind == DiffLineKind.Context)
+                {
+                    lines.Append(line.Text).Append('\n');
+                    oldCount++;
+                    newCount++;
+                }
+                else if (line.Index is { } index &&
+                         discarding.Contains(index))
+                {
+                    lines.Append(line.Text).Append('\n');
+                    anyChange = true;
+                    if (line.Kind == DiffLineKind.Add)
+                    {
+                        newCount++;
+                    }
+                    else
+                    {
+                        oldCount++;
+                        if (line.NoTrailingNewline &&
+                            KeptAddedAfter(hunkLines, i, discarding))
+                        {
+                            // The last line, which had no newline, put back, with lines added
+                            // after it kept: without one, git would join it to the first of
+                            // them. Put back with a newline instead, as they can't follow it
+                            // otherwise.
+                            continue;
+                        }
+                    }
+                }
+                else if (line.Kind == DiffLineKind.Delete)
+                {
+                    // Still deleted: not in the file, so nothing to keep, nor its marker.
+                    continue;
+                }
+                else
+                {
+                    // Still added: there, as context.
+                    lines.Append(' ').Append(line.Text, 1, line.Text.Length - 1).Append('\n');
+                    oldCount++;
+                    newCount++;
+                }
+
+                if (line.NoTrailingNewline)
+                {
+                    lines.Append("\\ No newline at end of file\n");
+                }
+            }
+
+            if (!anyChange)
+            {
+                continue;
+            }
+
+            // The new side is where git's diff has it. A side with no lines in the hunk names
+            // the line before it; one with some, its first. On the old side, moved by what the
+            // hunks before put back and took away.
+            var first = header.NewStart;
+            if (newCount == 0)
+            {
+                first++;
+            }
+
+            var oldStart = first + shift;
+            if (oldCount == 0)
+            {
+                oldStart--;
+            }
+
+            body.Append(CultureInfo.InvariantCulture, $"@@ -{oldStart},{oldCount} +{header.NewStart},{newCount} @@\n");
+            body.Append(lines);
+            shift += oldCount - newCount;
+        }
+
+        if (body.Length == 0)
+        {
+            return null;
+        }
+
+        return DiscardHeader(diff.Patch) + body;
+    }
+
+    // Whether any line added after the one at position in the hunk is kept, not discarded.
+    static bool KeptAddedAfter(IReadOnlyList<DiffLine> hunkLines, int position, IReadOnlySet<int> discarding) =>
+        hunkLines
+            .Skip(position + 1)
+            .Any(_ => _ is { Kind: DiffLineKind.Add, Index: { } index } && !discarding.Contains(index));
+
+    // The lines git wrote above the first hunk, but for a change of mode: discarding lines
+    // leaves the file's mode as it is, where the patch applied in reverse would put it back.
+    static string DiscardHeader(string patch)
+    {
+        var header = new StringBuilder();
+        foreach (var line in HeaderLines(patch))
+        {
+            if (line.StartsWith("old mode ", StringComparison.Ordinal) ||
+                line.StartsWith("new mode ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            header.Append(line).Append('\n');
+        }
+
+        return header.ToString();
+    }
 
     // The lines git wrote above the first hunk, which name the file as git would have them
     // named. A deleted file's say it is modified instead, as only some of its lines go.

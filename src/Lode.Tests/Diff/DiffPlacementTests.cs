@@ -259,6 +259,74 @@ public class DiffPlacementTests
         var source = host.TabView!.Source!;
         await Assert.That(source.Commit).IsEqualTo(PaneStubs.History[1]);
         await Assert.That(source.File).IsEqualTo(PaneStubs.CommitFiles[2]);
+
+        // A commit's lines aren't discarded.
+        await host.TabView.Reading;
+        var canvas = host.TabView.Canvas;
+        var added = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Added);
+        await Assert.That(canvas.MenuCommands(added, right: false).Any(_ => _?.Text.StartsWith("Discard", StringComparison.Ordinal) == true)).IsFalse();
+    }
+
+    // Lines discarded in the Diff tab: the Changes pane reads the repository again, and the diff
+    // its file, as after Discard changes in Changes.
+    [Test]
+    public async Task DiscardingReadsAgain()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Tab;
+        using var form = await Show(fixture.Root, settings);
+        await Pick(form, 0);
+        var host = form.DiffHost;
+        await Pump.Until(() => host.TabView?.Source != null);
+        var view = host.TabView!;
+        await view.Reading;
+
+        var changesRead = 0;
+        var readChanges = ChangesPane.Read;
+        ChangesPane.Read = (repo, cancel) =>
+        {
+            Interlocked.Increment(ref changesRead);
+            return readChanges(repo, cancel);
+        };
+        var diffsRead = 0;
+        var readDiff = DiffView.Read;
+        DiffView.Read = (source, hideWhitespace, evenIfLarge, cancel) =>
+        {
+            Interlocked.Increment(ref diffsRead);
+            return readDiff(source, hideWhitespace, evenIfLarge, cancel);
+        };
+        IReadOnlyCollection<int>? discarded = null;
+        var discardLines = DiffView.DiscardLines;
+        DiffView.DiscardLines = (source, _, lines, _, _) =>
+        {
+            discarded = lines;
+            return Task.FromResult(new CodeCommands.RepoResult(source.Repo, true, ""));
+        };
+        var ask = ChangesPane.AskDiscard;
+        ChangesPane.AskDiscard = (_, _) => DialogResult.OK;
+        try
+        {
+            var canvas = view.Canvas;
+            var added = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Added);
+            var index = canvas.Rows[added].After!.Index!.Value;
+
+            canvas.MenuCommands(added, right: false).Single(_ => _?.Text == "Discard line…")!.Action();
+            await view.Discarding;
+            await Pump.Until(() => changesRead > 0 && diffsRead > 0);
+            await Pump.Until(() => form.GitPanes.ChangesPane.Reading.IsCompleted && view.Reading.IsCompleted);
+
+            await Assert.That(discarded).IsEquivalentTo([index]);
+        }
+        finally
+        {
+            ChangesPane.Read = readChanges;
+            DiffView.Read = readDiff;
+            DiffView.DiscardLines = discardLines;
+            ChangesPane.AskDiscard = ask;
+        }
     }
 
     static Task Pick(MainForm form, params int[] rows)

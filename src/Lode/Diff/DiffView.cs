@@ -46,6 +46,28 @@ sealed class DiffView : UserControl
     internal static Func<DiffSource, IReadOnlyList<string>?> ReadNewLines { get; set; } = GitFileDiff.NewLines;
 
     /// <summary>
+    /// What sends a file to the Recycle Bin, with the window asking as its owner, before lines of
+    /// it are discarded. Tests stand in for the Recycle Bin, so a run leaves nothing there.
+    /// </summary>
+    internal static Func<IntPtr, CodeCommands.Recycler> Recycler { get; set; } = owner => paths => FileOperations.Delete(owner, paths, permanent: false);
+
+    /// <summary>
+    /// Discards lines of a file's uncommitted change. Tests answer for git.
+    /// </summary>
+    internal static Func<DiffSource, string, IReadOnlyCollection<int>, CodeCommands.Recycler, Cancel, Task<CodeCommands.RepoResult>> DiscardLines { get; set; } = GitChanges.DiscardLines;
+
+    /// <summary>
+    /// Lines of a file in the repository were discarded from a diff, wherever it shows, for the
+    /// Changes pane to read what is uncommitted in it again, as after Discard changes there.
+    /// </summary>
+    internal static event Action<string>? LinesDiscarded;
+
+    /// <summary>
+    /// The discarding under way, from the question to the diff read again, for tests to wait on.
+    /// </summary>
+    internal Task Discarding { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
     /// The × along the top was clicked, or Escape pressed: the diff over the folder list goes.
     /// </summary>
     public event Action? CloseRequested;
@@ -59,6 +81,7 @@ sealed class DiffView : UserControl
         header.CloseClicked += () => CloseRequested?.Invoke();
         message.ButtonClicked += OnMessageButton;
         canvas.PicksChanged += OnCanvasPicked;
+        canvas.DiscardRequested += OnDiscardRequested;
         CommitDrafts.PicksChanged += OnDraftPicked;
         Controls.Add(canvas);
         Controls.Add(images);
@@ -193,6 +216,7 @@ sealed class DiffView : UserControl
         {
             case TextDiff text:
                 var (picks, hint) = PicksFor(file, text, hideWhitespace);
+                canvas.Discardable = CanDiscard(file, text, hideWhitespace);
                 canvas.Show(text, lines, settings.DiffSplit, picks, hint, keepPlace);
                 ShowOnly(canvas);
                 return;
@@ -278,6 +302,21 @@ sealed class DiffView : UserControl
         return (CommitDrafts.PicksOf(file.Repo, file.File.Path, diff), null);
     }
 
+    /// <summary>
+    /// Whether lines of <paramref name="diff"/> can be discarded from the menu: an uncommitted
+    /// change to a file git tracks, changed in place, whose diff, against the last commit, is
+    /// of the file on disk as it is, staged or not, so the lines can be taken out of it there.
+    /// Not a file git doesn't track, nor one added, deleted or renamed, which Discard changes in
+    /// Changes puts back whole, nor one in conflict; nor part way through a merge, when git
+    /// commits everything, nor with whitespace hidden, when the diff isn't what the file has.
+    /// A binary file has no lines.
+    /// </summary>
+    internal static bool CanDiscard(DiffSource file, TextDiff diff, bool hideWhitespace) =>
+        file is { IsUncommitted: true, HasCommits: true, Merging: false } &&
+        file.File is { OldPath: null, Kind: GitChange.Modified or GitChange.Staged } &&
+        !hideWhitespace &&
+        LinePatch.CanDiscard(diff);
+
     void ShowMessageOnly(string text, string? button)
     {
         message.Show(text, button);
@@ -355,6 +394,71 @@ sealed class DiffView : UserControl
         }
 
         canvas.SetPicks(CommitDrafts.PicksOf(repo, path, diff));
+    }
+
+    // One at a time: another, of the diff before the first's lines went, would find it changed.
+    void OnDiscardRequested(IReadOnlyList<int> lines, string what)
+    {
+        if (Discarding.IsCompleted)
+        {
+            Discarding = DiscardAsync(lines, what);
+        }
+    }
+
+    // Discard line or Discard hunk: having asked, as Discard changes in Changes does, the file
+    // as it is goes to the Recycle Bin first, the lines are taken out of it on disk, in the
+    // Actions panel, and then what is uncommitted is read again, by the Changes pane and here,
+    // whether they were or not, as what is there now is what to show. Lines of the file left
+    // out of the commit stay left out, which the file changed would otherwise forget, ticking it
+    // whole again.
+    async Task DiscardAsync(IReadOnlyList<int> lines, string what)
+    {
+        if (source is not { } file ||
+            shown is not TextDiff diff ||
+            !canvas.Discardable ||
+            lines.Count == 0)
+        {
+            return;
+        }
+
+        if (ChangesPane.AskDiscard(this, $"Discard {what} in {file.File.Path}?\n\nThe file as it is now goes to the Recycle Bin.") != DialogResult.OK)
+        {
+            return;
+        }
+
+        var patchHash = diff.PatchHash;
+        var picked = canvas.Picks;
+        var recycle = Recycler(Handle);
+        CodeCommands.RepoResult? discarded = null;
+        await ActionLog.Run(
+            "Git discard",
+            [file.Repo],
+            async (_, cancel) =>
+            {
+                discarded = await DiscardLines(file, patchHash, lines, recycle, cancel);
+                GitCache.MarkStale([file.Repo]);
+                return CodeCommands.GitOutcome([discarded]);
+            });
+        if (discarded is { Succeeded: true } &&
+            picked is { State: null } &&
+            picked.PatchHash == patchHash)
+        {
+            // As it is about to be shown: whitespace and all, as lines aren't discarded with it
+            // hidden, and whole, as it was shown.
+            var after = await Task.Run(() => Read(file, false, true, Cancel.None));
+            if (after is TextDiff afterDiff &&
+                picked.AfterDiscarding(diff, lines.ToHashSet(), afterDiff) is { } kept)
+            {
+                CommitDrafts.KeepPicks(file.Repo, file.File.Path, kept);
+            }
+        }
+
+        LinesDiscarded?.Invoke(file.Repo);
+        if (!IsDisposed &&
+            file.SameFile(source))
+        {
+            Reload();
+        }
     }
 
     void ShowOptions(Control button)

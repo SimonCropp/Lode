@@ -134,6 +134,18 @@ static class CommitDrafts
     /// </summary>
     public static void SetPicks(string repo, string path, LinePicks picks)
     {
+        KeepPicks(repo, path, picks);
+        PicksChanged?.Invoke(repo, path);
+    }
+
+    /// <summary>
+    /// Notes the lines picked of a file's diff that nothing shows yet, read again once lines of
+    /// it were discarded, without telling what shows the file: it finds them once it reads that
+    /// diff, as it does next, where it would take them now for lines picked of a diff that has
+    /// changed since the one it shows, and forget them.
+    /// </summary>
+    public static void KeepPicks(string repo, string path, LinePicks picks)
+    {
         var draft = Of(repo);
         switch (picks.State)
         {
@@ -148,8 +160,6 @@ static class CommitDrafts
                 draft.Unticked.Remove(path);
                 break;
         }
-
-        PicksChanged?.Invoke(repo, path);
     }
 
     /// <summary>

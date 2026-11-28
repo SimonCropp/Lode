@@ -225,6 +225,7 @@ sealed class ChangesPane : UserControl
         list.SelectedIndexChanged += (_, _) => PickedChanged();
         list.VirtualItemsSelectionRangeChanged += (_, _) => PickedChanged();
         CommitDrafts.PicksChanged += OnPicksChanged;
+        DiffView.LinesDiscarded += OnLinesDiscarded;
         rowTip = new(list, _ => ChangeRows.TipAt(list, _, shown));
         list.ShowItemToolTips = false;
         list.GotFocus += (_, _) => list.Invalidate();
@@ -578,6 +579,20 @@ sealed class ChangesPane : UserControl
         list.Invalidate();
         tickRow.Invalidate();
         ShowCommitButton();
+    }
+
+    // Lines discarded in the diff, wherever it shows: what is uncommitted is read again, as
+    // after Discard changes here.
+    void OnLinesDiscarded(string discardedIn)
+    {
+        if (IsDisposed ||
+            !SameRepo(repo, discardedIn))
+        {
+            return;
+        }
+
+        Reload();
+        Committed?.Invoke();
     }
 
     void KeepDraft()
@@ -1775,6 +1790,7 @@ sealed class ChangesPane : UserControl
         {
             KeepDraft();
             CommitDrafts.PicksChanged -= OnPicksChanged;
+            DiffView.LinesDiscarded -= OnLinesDiscarded;
             tip.Dispose();
             rowTip.Dispose();
         }

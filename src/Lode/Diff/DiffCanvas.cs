@@ -5,9 +5,10 @@
 /// hunk's @@ heading on blue, its gutter holding the arrows that show more of the file. Lines of
 /// an uncommitted change can be picked to commit by clicking or dragging down their numbers, the
 /// numbers of those picked blue; the strip beside the numbers picks a run of changes at once.
-/// Rows are one height, and long lines scroll sideways, so only the rows showing are drawn,
-/// however long the diff. The text is selected as an editor's is, from a character to another,
-/// by dragging, a word by a double-click, a line by a third click, and copied with Ctrl+C.
+/// Its menu discards the line right-clicked, or the lines selected, or the hunk. Rows are one
+/// height, and long lines scroll sideways, so only the rows showing are drawn, however long the
+/// diff. The text is selected as an editor's is, from a character to another, by dragging, a
+/// word by a double-click, a line by a third click, and copied with Ctrl+C.
 /// </summary>
 sealed class DiffCanvas : Control
 {
@@ -107,6 +108,20 @@ sealed class DiffCanvas : Control
     /// The lines picked to commit changed, by a click or drag here.
     /// </summary>
     public event Action<LinePicks>? PicksChanged;
+
+    /// <summary>
+    /// Discard line or Discard hunk chosen from the menu: the lines, by their
+    /// <see cref="DiffLine.Index"/> in the diff git wrote, and what they are, for the question
+    /// asked first, 3 changed lines say.
+    /// </summary>
+    public event Action<IReadOnlyList<int>, string>? DiscardRequested;
+
+    /// <summary>
+    /// Whether the menu offers to discard lines: for an uncommitted change whose lines can be
+    /// taken out of the file on disk.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal bool Discardable { get; set; }
 
     public DiffCanvas()
     {
@@ -1839,6 +1854,18 @@ sealed class DiffCanvas : Control
 
     void ShowMenu(Point location)
     {
+        var (index, _, right) = HitTest(location);
+        PaneMenu.Show(this, location, MenuCommands(index, right), _ => { });
+    }
+
+    /// <summary>
+    /// The menu for a right-click on row <paramref name="index"/>, -1 for none, on the right
+    /// side when <paramref name="right"/>: Copy, with text selected; the expansions, given the
+    /// file's lines; and, where lines can be discarded, Discard line, for the line, or the lines
+    /// selected, and Discard hunk, each given only where there is something to discard.
+    /// </summary>
+    internal List<QuickMenu.Command?> MenuCommands(int index, bool right)
+    {
         var commands = new List<QuickMenu.Command?>();
         if (Selection != null)
         {
@@ -1861,7 +1888,91 @@ sealed class DiffCanvas : Control
             commands.Add(new("Collapse expanded lines", Collapse, IsExpanded));
         }
 
-        PaneMenu.Show(this, location, commands, _ => { });
+        if (Discardable)
+        {
+            if (commands.Count > 0)
+            {
+                commands.Add(null);
+            }
+
+            var lines = LinesToDiscard(index, right);
+            var lineText = "Discard line…";
+            if (lines.Count > 1)
+            {
+                lineText = $"Discard {lines.Count:N0} lines…";
+            }
+
+            commands.Add(
+                new(lineText, () => DiscardRequested?.Invoke(lines, GitState.CountOf(lines.Count, "changed line")), lines.Count > 0)
+                {
+                    Glyph = Icons.Discard
+                });
+            var hunk = HunkToDiscard(index);
+            commands.Add(new("Discard hunk…", () => DiscardRequested?.Invoke(hunk, $"the hunk of {GitState.CountOf(hunk.Count, "changed line")}"), hunk.Count > 0));
+        }
+
+        return commands;
+    }
+
+    /// <summary>
+    /// The lines Discard line takes for a right-click on row <paramref name="index"/>, by their
+    /// <see cref="DiffLine.Index"/>: the lines added and deleted among those selected, where the
+    /// row is one of them, on the side selected; otherwise the row's line, on the side
+    /// right-clicked, when it was added or deleted.
+    /// </summary>
+    List<int> LinesToDiscard(int index, bool right)
+    {
+        if (index < 0 ||
+            index >= rows.Count)
+        {
+            return [];
+        }
+
+        if (Selection is { } selection &&
+            index >= selection.Start.Row &&
+            index <= selection.End.Row &&
+            (!split || right == selectRight))
+        {
+            var selected = new List<int>();
+            for (var row = selection.Start.Row; row <= selection.End.Row; row++)
+            {
+                // A line the selection only starts at the end of, its newline alone selected,
+                // isn't one of them, as nothing of it shows selected.
+                if (SelectedOn(row, selectRight) is { } part &&
+                    (part.End > part.Start || part.Start == 0) &&
+                    LineAt(row, selectRight) is { IsChange: true, Index: { } lineIndex })
+                {
+                    selected.Add(lineIndex);
+                }
+            }
+
+            return selected;
+        }
+
+        if (LineAt(index, right) is { IsChange: true, Index: { } line })
+        {
+            return [line];
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// The lines Discard hunk takes for a right-click on row <paramref name="index"/>, its
+    /// heading or one of its lines: every line added and deleted in the hunk as it shows.
+    /// </summary>
+    List<int> HunkToDiscard(int index)
+    {
+        if (index < 0 ||
+            index >= rows.Count)
+        {
+            return [];
+        }
+
+        return hunks[rows[index].HunkIndex].Lines
+            .Where(_ => _ is { IsChange: true, Index: not null })
+            .Select(_ => _.Index!.Value)
+            .ToList();
     }
 
     /// <summary>

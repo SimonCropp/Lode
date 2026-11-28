@@ -13,7 +13,7 @@ Alternative to Windows Explorer with a focus on developers.
  * [A right-click menu that opens at once](#right-click-menu), touching no shell extension, with the full Windows menu a click away.
  * [Git on the folder](#code-folder): fetch, pull, push, tag, discard and purge every repository under it, bring in the default branch, merge, squash and merge, or rebase onto another branch, and sync every fork with the repository it was made from, from the right-click menu, the actions bar or the command palette.
  * [The state of each repository and file](#git-state) in a Git column, in changed files' names, and in the status bar.
- * [Changes and History panes](#changes-and-history) on the right edge, as GitHub Desktop's tabs: pick the files to commit, and see the commits and what each changed, with GitHub Desktop's [diff](#diff), [lines picked to commit](#pick-lines) and all.
+ * [Changes and History panes](#changes-and-history) on the right edge, as GitHub Desktop's tabs: pick the files to commit, and see the commits and what each changed, with GitHub Desktop's [diff](#diff), [lines picked to commit](#pick-lines), [lines and hunks discarded](#discard-lines) and all.
  * [Clone](#clone) a repository from GitHub, Azure DevOps or a url, signed in as git signs in.
  * [Coding agents](#coding-agent) and [Claude](#open-in-claude) started in the folder.
  * [Find in Files](#find-in-files), with replace, leaving out what git ignores.
@@ -256,6 +256,7 @@ Each has **Open in Lode**, and **Revert** to give the links back.
      * The arrows in a hunk's heading show 20 more lines of the file above or below it, or all of a short gap at once. Right-click for **Expand whole file** or **Collapse expanded lines**.
      * A picture shows as it was beside as it is. A binary file, an empty one, one only renamed, and a diff too big to show straight away say so, the last with **Show diff**.
      * <a id="pick-lines"></a>**Pick lines to commit**: in an uncommitted change, click a line's numbers, or drag down them, to leave it out of the commit or put it back; the strip beside the numbers does a run of changes at once. The file's tick shows a dash while only some of its lines go in, and Commit takes only those: the rest stay changed, and whatever else was staged stays staged. Lines aren't picked with whitespace hidden, part way through a merge, or in a renamed file, which goes in whole. Should the file change after its lines were picked, nothing is committed, and it is ticked whole again.
+     * <a id="discard-lines"></a>**Discard lines**: in an uncommitted change, right-click a line added or deleted for **Discard line**, or one of the lines selected to discard them all, or anywhere in a hunk for **Discard hunk**, as GitHub Desktop has them: a line added goes, and a line deleted comes back, in the file on disk alone, whatever is staged staying staged. It asks first, and the file as it is goes to the Recycle Bin before, so it can be got back. Lines left out of the commit stay left out. Not offered with whitespace hidden, part way through a merge, or in a file new, deleted, renamed or in conflict, which **Discard changes** in Changes puts back whole. Should the file have changed since its diff showed, nothing is discarded.
      * Rows clicked copy with Ctrl+C.
 
      The Diff tab, Changes beside it:

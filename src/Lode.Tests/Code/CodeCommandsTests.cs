@@ -229,7 +229,7 @@ public class CodeCommandsTests
     // Stands in for the Recycle Bin, so a test run leaves nothing there: each file is moved into
     // a folder of the scratch folder's, under where it was, as the Recycle Bin keeps where each
     // came from.
-    sealed class Bin(Scratch code)
+    internal sealed class Bin(Scratch code)
     {
         public List<string> Recycled { get; } = [];
 

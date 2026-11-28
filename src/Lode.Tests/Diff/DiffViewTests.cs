@@ -329,6 +329,123 @@ public class DiffViewTests
         await Assert.That(CommitDrafts.Of(repo).TickOf(DiffSample.File.Path)).IsTrue();
     }
 
+    // An uncommitted change's menu offers to discard the line right-clicked, or the lines
+    // selected, and the hunk it is in, asking first; a commit's, as History shows it, neither.
+    [Test]
+    public async Task DiscardOnlyFromAnUncommittedChange()
+    {
+        using var stub = DiffSample.Stub();
+        using var view = await Shown(new(Unique(), DiffSample.File));
+        var canvas = view.Canvas;
+        var added = Row(canvas, "        var written = document.Written;");
+        var context = Row(canvas, "        var options = BuildOptions();");
+        var heading = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Hunk);
+
+        await Assert.That(Discards(canvas, added)).IsEquivalentTo(["Discard line…", "Discard hunk…"], CollectionOrdering.Matching);
+        await Assert.That(Discards(canvas, context)).IsEquivalentTo(["Discard line… (not now)", "Discard hunk…"], CollectionOrdering.Matching);
+        await Assert.That(Discards(canvas, heading)).IsEquivalentTo(["Discard line… (not now)", "Discard hunk…"], CollectionOrdering.Matching);
+
+        // The lines selected, from the deleted line to the third added after it, right-clicked
+        // among them.
+        var deleted = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Deleted);
+        canvas.Select(new(deleted, 2), new(deleted + 3, 4), right: false);
+        await Assert.That(Discards(canvas, deleted + 1)).IsEquivalentTo(["Discard 4 lines…", "Discard hunk…"], CollectionOrdering.Matching);
+
+        // Asked first: how many lines, of which file, and that it goes to the Recycle Bin.
+        var asked = new List<string>();
+        var ask = ChangesPane.AskDiscard;
+        ChangesPane.AskDiscard = (_, question) =>
+        {
+            asked.Add(question);
+            return DialogResult.Cancel;
+        };
+        try
+        {
+            canvas.MenuCommands(deleted + 1, right: false).Single(_ => _?.Text == "Discard 4 lines…")!.Action();
+            await view.Discarding;
+            canvas.MenuCommands(added, right: false).Single(_ => _?.Text == "Discard hunk…")!.Action();
+            await view.Discarding;
+        }
+        finally
+        {
+            ChangesPane.AskDiscard = ask;
+        }
+
+        await Assert.That(asked).IsEquivalentTo(
+            [
+                "Discard 4 changed lines in src/Scripting/ScriptRunner.cs?\n\nThe file as it is now goes to the Recycle Bin.",
+                "Discard the hunk of 1 changed line in src/Scripting/ScriptRunner.cs?\n\nThe file as it is now goes to the Recycle Bin."
+            ],
+            CollectionOrdering.Matching);
+
+        var commit = new GitCommit("abc", [], "Ada", DateTimeOffset.UnixEpoch, [], "Subject");
+        using var committed = await Shown(new(Unique(), DiffSample.File, commit));
+        await Assert.That(Discards(committed.Canvas, added)).IsEmpty();
+    }
+
+    // The menu's Discard items for a row, one above the other, those that can't be chosen there
+    // saying so.
+    static List<string> Discards(DiffCanvas canvas, int row) =>
+        canvas.MenuCommands(row, right: false)
+            .OfType<QuickMenu.Command>()
+            .Where(_ => _.Text.StartsWith("Discard", StringComparison.Ordinal))
+            .Select(_ => _.Enabled ? _.Text : $"{_.Text} (not now)")
+            .ToList();
+
+    // Discard hunk, asked and answered, in a repository: the file as it is goes to the Recycle
+    // Bin, the hunk's changes are taken out of it on disk, the other hunk's staying, and the diff
+    // is read again, the Changes pane told to read the repository again too. A line of the other
+    // hunk left out of the commit stays left out.
+    [Test]
+    public async Task DiscardingAHunk()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        CodeCommandsTests.Scratch.Git(repo, "config", "core.autocrlf", "false");
+        var path = Path.Combine(repo, "tracked.txt");
+        var lines = Enumerable.Range(1, 20).Select(_ => $"line {_}").ToArray();
+        await File.WriteAllTextAsync(path, string.Join('\n', lines) + "\n");
+        CodeCommandsTests.Scratch.Git(repo, "commit", "-am", "Twenty");
+        lines[2] = "line three";
+        lines[14] = "line fifteen";
+        var both = string.Join('\n', lines) + "\n";
+        await File.WriteAllTextAsync(path, both);
+        var bin = new CodeCommandsTests.Bin(scratch);
+        var recycler = DiffView.Recycler;
+        var ask = ChangesPane.AskDiscard;
+        DiffView.Recycler = _ => bin.Recycle;
+        ChangesPane.AskDiscard = (_, _) => DialogResult.OK;
+        string? told = null;
+        void Told(string discardedIn) =>
+            told = discardedIn;
+        DiffView.LinesDiscarded += Told;
+        try
+        {
+            using var view = await Shown(new(repo, new("tracked.txt", null, GitChange.Modified)));
+            var canvas = view.Canvas;
+            canvas.PickLine(Row(canvas, "line three"), right: false);
+
+            canvas.MenuCommands(Row(canvas, "line fifteen"), right: false).Single(_ => _?.Text == "Discard hunk…")!.Action();
+            await view.Discarding;
+            await Read(view);
+
+            await Assert.That(await File.ReadAllTextAsync(path)).IsEqualTo(both.Replace("line fifteen", "line 15"));
+            await Assert.That(bin.Read("Repo/tracked.txt")).IsEqualTo(both);
+            await Assert.That(canvas.Rows.Where(_ => _.Kind is DiffRowKind.Added or DiffRowKind.Deleted).Select(_ => (_.After ?? _.Before)!.Content))
+                .IsEquivalentTo(["line 3", "line three"], CollectionOrdering.Matching);
+            await Assert.That(told).IsEqualTo(repo);
+            await Assert.That(canvas.Picks!.IsPicked(canvas.Rows[Row(canvas, "line three")].After!.Index!.Value)).IsFalse();
+            await Assert.That(canvas.Picks.IsPicked(canvas.Rows[Row(canvas, "line 3")].Before!.Index!.Value)).IsTrue();
+            await Assert.That(CommitDrafts.Of(repo).TickOf("tracked.txt")).IsNull();
+        }
+        finally
+        {
+            DiffView.LinesDiscarded -= Told;
+            DiffView.Recycler = recycler;
+            ChangesPane.AskDiscard = ask;
+        }
+    }
+
     const int mouseMove = 0x0200;
     const int leftButtonDown = 0x0201;
     const int leftButtonUp = 0x0202;
