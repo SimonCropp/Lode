@@ -177,6 +177,7 @@ sealed class GitPanes : IDisposable
         paneSplit.Panel2.Controls.Add(columnSplit);
 
         GitCache.Stale += OnStale;
+        GitCache.HistoryStale += OnHistoryStale;
     }
 
     /// <summary>
@@ -346,8 +347,17 @@ sealed class GitPanes : IDisposable
         history.Reload();
     }
 
-    // A repository changed, heard on a background thread.
-    void OnStale(IReadOnlyCollection<string> stale)
+    // A repository changed, heard on a background thread: what is uncommitted is read again.
+    // Its commits are read again only once told its history may have changed, a commit or a
+    // checkout say: a file saved changes none of them, and History reads every commit listed,
+    // every tag and the commits not pushed.
+    void OnStale(IReadOnlyCollection<string> stale) =>
+        OnStale(stale, changes.Reload);
+
+    void OnHistoryStale(IReadOnlyCollection<string> stale) =>
+        OnStale(stale, history.Reload);
+
+    void OnStale(IReadOnlyCollection<string> stale, Action reload)
     {
         var current = repo;
         if (current == null ||
@@ -365,7 +375,7 @@ sealed class GitPanes : IDisposable
                     return;
                 }
 
-                Reload();
+                reload();
             },
             null);
     }
@@ -1117,6 +1127,7 @@ sealed class GitPanes : IDisposable
     {
         disposed = true;
         GitCache.Stale -= OnStale;
+        GitCache.HistoryStale -= OnHistoryStale;
         hoverTimer.Dispose();
         retractTimer.Dispose();
         slideTimer.Dispose();

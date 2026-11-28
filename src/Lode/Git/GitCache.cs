@@ -48,6 +48,12 @@ static class GitCache
         public bool Changing { get; private set; }
 
         /// <summary>
+        /// Whether what its views are yet to be told of may have changed its history, or what
+        /// points into it: see <see cref="HistoryStale"/>.
+        /// </summary>
+        public bool HistoryChanging { get; private set; }
+
+        /// <summary>
         /// The folders in it that have been looked at for whether git ignores them, and how
         /// many times what was learned of them has been forgotten: see <see cref="folders"/>.
         /// </summary>
@@ -80,11 +86,16 @@ static class GitCache
         /// <summary>
         /// A change in it. <paramref name="inGit"/> for one in .git, other than
         /// <see cref="IsNoise"/>: a commit, a stage or a pull, which are what a state is made
-        /// of, so it is held no longer.
+        /// of, so it is held no longer. <paramref name="ofHistory"/> for one that may have
+        /// changed its history too: see <see cref="HistoryStale"/>.
         /// </summary>
-        public void Changed(long now, bool inGit)
+        public void Changed(long now, bool inGit, bool ofHistory = false)
         {
             Changes++;
+            if (ofHistory)
+            {
+                HistoryChanging = true;
+            }
 
             // Stopped a while, its changes begin afresh: these may be nothing like the last.
             var begun = now - last >= longestSettle;
@@ -115,8 +126,11 @@ static class GitCache
         /// <summary>
         /// Its views have been told of its changes.
         /// </summary>
-        public void Told() =>
+        public void Told()
+        {
             Changing = false;
+            HistoryChanging = false;
+        }
 
         /// <summary>
         /// To be read whatever has been seen of it: Refresh, or anything may have changed.
@@ -135,7 +149,7 @@ static class GitCache
         public void AnyChanged(long now)
         {
             hold = 0;
-            Changed(now, inGit: true);
+            Changed(now, inGit: true, ofHistory: true);
         }
 
         /// <summary>
@@ -212,6 +226,16 @@ static class GitCache
     /// showing them to read them again, each on its own thread.
     /// </summary>
     public static event Action<IReadOnlyCollection<string>>? Stale;
+
+    /// <summary>
+    /// Raised after <see cref="Stale"/>, on the same thread, with those of the repositories
+    /// whose history may have changed, or what points into it, for History to read their commits
+    /// again: a change in .git other than to the index, as a commit, a checkout, a branch or a tag
+    /// made, or a fetch writes there, or to the .mailmap, which authors are named by. Not a file
+    /// saved, nor one staged, which change no commit: told of those, History read every commit
+    /// listed, every tag and the commits not pushed again after every save.
+    /// </summary>
+    public static event Action<IReadOnlyCollection<string>>? HistoryStale;
 
     /// <summary>
     /// Whether changes in <paramref name="folder"/>, the code folder, are being heard, so what
@@ -1004,7 +1028,7 @@ static class GitCache
                         Forget(its);
                     }
 
-                    Mark(own.Repo, inGit, now);
+                    Mark(own.Repo, inGit, ChangesHistory(Beneath(path, current)), now);
 
                     // A worktree's index and HEAD are its own alone. A submodule's HEAD is also
                     // the commit the repository it is in has it at, so that is changed too.
@@ -1022,7 +1046,7 @@ static class GitCache
                 {
                     foreach (var worktree in worktrees)
                     {
-                        Mark(worktree, inGit, now);
+                        Mark(worktree, inGit, ofHistory: true, now);
                     }
                 }
 
@@ -1040,19 +1064,23 @@ static class GitCache
                     continue;
                 }
 
+                bool ofHistory;
                 if (inGit)
                 {
                     if (ChangesWhatIsIgnored(inside))
                     {
                         Forget(entry);
                     }
+
+                    ofHistory = ChangesHistory(inside);
                 }
                 else
                 {
                     LearnOf(path, repo, entry, folderLooked);
+                    ofHistory = IsMailmap(path, repo);
                 }
 
-                Mark(repo, entry, inGit, now);
+                Mark(repo, entry, inGit, ofHistory, now);
                 return;
             }
         }
@@ -1103,19 +1131,32 @@ static class GitCache
         inside.Equals("packed-refs", StringComparison.OrdinalIgnoreCase) ||
         inside.Equals("config", StringComparison.OrdinalIgnoreCase);
 
+    // Whether a change in a repository's .git, at inside, may change its history, or what points
+    // into it: anything but its index, which a file staged changes, and the git folders of its
+    // worktrees and submodules, whose HEAD and index are theirs.
+    static bool ChangesHistory(CharSpan inside) =>
+        !inside.Equals("index", StringComparison.OrdinalIgnoreCase) &&
+        !Locations.IsWithin(inside, "worktrees") &&
+        !Locations.IsWithin(inside, "modules");
+
+    // The .mailmap at the top of the repository, which History names authors by.
+    static bool IsMailmap(string path, string repo) =>
+        Path.GetFileName(path.AsSpan()).Equals(".mailmap", StringComparison.OrdinalIgnoreCase) &&
+        Path.GetDirectoryName(path.AsSpan()).Equals(repo, StringComparison.OrdinalIgnoreCase);
+
     // Under the gate.
-    static void Mark(string repo, bool inGit, long now)
+    static void Mark(string repo, bool inGit, bool ofHistory, long now)
     {
         if (known.TryGetValue(repo, out var entry))
         {
-            Mark(repo, entry, inGit, now);
+            Mark(repo, entry, inGit, ofHistory, now);
         }
     }
 
     // Under the gate.
-    static void Mark(string repo, Known entry, bool inGit, long now)
+    static void Mark(string repo, Known entry, bool inGit, bool ofHistory, long now)
     {
-        entry.Changed(now, inGit);
+        entry.Changed(now, inGit, ofHistory);
         changing[repo] = entry;
 
         // Left as it is set when that is soon enough, as it nearly always is: it then finds
@@ -1138,6 +1179,7 @@ static class GitCache
     static void Settled()
     {
         var stale = new List<string>();
+        var historyStale = new List<string>();
         lock (gate)
         {
             var now = Environment.TickCount64;
@@ -1148,6 +1190,11 @@ static class GitCache
                 {
                     next = Math.Min(next, entry.Due);
                     continue;
+                }
+
+                if (entry.HistoryChanging)
+                {
+                    historyStale.Add(repo);
                 }
 
                 entry.Told();
@@ -1166,7 +1213,7 @@ static class GitCache
             }
         }
 
-        Raise(stale);
+        Raise(stale, historyStale);
     }
 
     // Too many changes at once in a code folder to keep track of, or its watch failed or was
@@ -1216,7 +1263,7 @@ static class GitCache
         }
     }
 
-    static void Raise(List<string> stale)
+    static void Raise(List<string> stale, List<string> historyStale)
     {
         if (stale.Count == 0)
         {
@@ -1224,6 +1271,10 @@ static class GitCache
         }
 
         Stale?.Invoke(stale);
+        if (historyStale.Count > 0)
+        {
+            HistoryStale?.Invoke(historyStale);
+        }
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 /// The History pane, as GitHub Desktop's History tab lists commits: the branch's commits, newest
 /// first, each with its subject, its author, how long ago, its tags, and an arrow for one not
 /// pushed yet. Beneath, the files the commit picked changed, each shown changed on a
-/// double-click. A page of commits at a time, the next as the list nears its end.
+/// double-click. A page of commits at a time, the next as the list nears its end, going on from
+/// where the last stopped.
 /// </summary>
 sealed class HistoryPane : UserControl
 {
@@ -29,6 +30,9 @@ sealed class HistoryPane : UserControl
     string? repo;
     RemoteSite? site;
     List<GitCommit> loaded = [];
+
+    // Where the commits listed were read to, for the next page to go on from there.
+    HistoryWalk walk = new();
     HashSet<string> unpushed = [];
 
     // On a branch tracking none, whether the commit checked out is on no remote's branch: not
@@ -84,9 +88,10 @@ sealed class HistoryPane : UserControl
     internal string CompareText => compareBar.Description;
 
     /// <summary>
-    /// Reads a page of commits, in process where it can. Tests answer for git.
+    /// Reads a page of commits, in process where it can, going on from where the walk given
+    /// stopped. Tests answer for git.
     /// </summary>
-    internal static Func<string, int, int, Cancel, List<GitCommit>?> ReadCommits { get; set; } = InProcessHistory.ReadFaster;
+    internal static Func<string, int, int, HistoryWalk, Cancel, List<GitCommit>?> ReadCommits { get; set; } = InProcessHistory.ReadFaster;
 
     /// <summary>
     /// Reads the files a commit changed, in process where it can. Tests answer for git.
@@ -293,6 +298,7 @@ sealed class HistoryPane : UserControl
         version++;
         filesVersion++;
         loaded = [];
+        walk = new();
         more = false;
         selected = null;
         unpicked = false;
@@ -303,12 +309,13 @@ sealed class HistoryPane : UserControl
         heading.ShowPicked();
     }
 
-    // What is listed: HEAD's commits, or, comparing, those behind or ahead of the branch.
-    static List<GitCommit>? Read(string reading, string? comparing, bool ahead, int skip, int count)
+    // What is listed: HEAD's commits, on from where the walk stopped, or, comparing, those
+    // behind or ahead of the branch.
+    static List<GitCommit>? Read(string reading, string? comparing, bool ahead, int skip, int count, HistoryWalk walking)
     {
         if (comparing == null)
         {
-            return ReadCommits(reading, skip, count, Cancel.None);
+            return ReadCommits(reading, skip, count, walking, Cancel.None);
         }
 
         var range = $"HEAD..{comparing}";
@@ -364,6 +371,7 @@ sealed class HistoryPane : UserControl
         // this one.
         filesVersion++;
         loaded = [];
+        walk = new();
         unpushed = [];
         neverPushed = false;
         more = false;
@@ -443,12 +451,15 @@ sealed class HistoryPane : UserControl
         var count = Math.Max(GitHistory.Page, loaded.Count);
         var comparing = compareTo;
         var ahead = showAhead;
+
+        // Read from the top, with a walk of its own: what changed may be HEAD itself.
+        var walking = new HistoryWalk();
         this.reading = true;
         stale = false;
         try
         {
             var (read, notPushed, readNeverPushed, readSite, readApart) = await Task.Run(() => (
-                Read(reading, comparing, ahead, 0, count),
+                Read(reading, comparing, ahead, 0, count, walking),
                 ReadUnpushed(reading, Cancel.None),
                 comparing == null && ReadNeverPushed(reading, Cancel.None),
                 RemoteSite.OfRepo(reading),
@@ -469,6 +480,7 @@ sealed class HistoryPane : UserControl
             unpushed = notPushed;
             neverPushed = readNeverPushed;
             loaded = read ?? [];
+            walk = walking;
             more = loaded.Count >= count;
             ShowCommits();
         }
@@ -511,9 +523,12 @@ sealed class HistoryPane : UserControl
         var skip = loaded.Count;
         var comparing = compareTo;
         var ahead = showAhead;
+
+        // On from where the page before stopped, rather than from HEAD past every commit listed.
+        var walking = walk;
         try
         {
-            var read = await Task.Run(() => Read(reading, comparing, ahead, skip, GitHistory.Page));
+            var read = await Task.Run(() => Read(reading, comparing, ahead, skip, GitHistory.Page, walking));
             if (asked != version ||
                 IsDisposed ||
                 read == null)

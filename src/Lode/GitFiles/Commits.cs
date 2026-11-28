@@ -272,6 +272,24 @@ sealed class CommitInfo
 }
 
 /// <summary>
+/// Where a walk as git log's stopped, for the next to go on from, though the repository is let
+/// go of between and read again by another <see cref="Commits"/>: the commits found and not yet
+/// taken, in the order the walk would take them, and every commit found, taken or not, so none
+/// is found twice.
+/// </summary>
+sealed class LogWalk
+{
+    public LogWalk(ObjectId start)
+    {
+        Waiting.Add(start);
+        Found.Add(start);
+    }
+
+    public List<ObjectId> Waiting { get; } = [];
+    public HashSet<ObjectId> Found { get; } = [];
+}
+
+/// <summary>
 /// Commits walked as git walks them: by committer date, newest first, those of the same date in
 /// the order found, each once. Read from the commit graph where it has them, otherwise from their
 /// objects. Each walk is made for one question, its marks its own.
@@ -441,33 +459,61 @@ sealed class Commits
         nodes[node].Info ??= new(repository.Objects.Read(nodes[node].Id, GitObjectType.Commit));
 
     /// <summary>
+    /// How many commits have been read, from the commit graph or their objects: each taken, and
+    /// each parent of one taken, once. For tests.
+    /// </summary>
+    public int Read => count;
+
+    /// <summary>
     /// The commits from <paramref name="start"/> back, as git log lists them, after the first
     /// <paramref name="skip"/>.
     /// </summary>
     public List<int> Log(int start, int skip, int take)
     {
-        const uint seen = 1;
+        var walk = new LogWalk(IdOf(start));
+        if (skip > 0)
+        {
+            Log(walk, skip);
+        }
+
+        return Log(walk, take);
+    }
+
+    /// <summary>
+    /// The next <paramref name="take"/> commits of <paramref name="walk"/>, as git log lists
+    /// them, going on from where it stopped, which it is left at for the next: what was left
+    /// waiting taken in the order it would have been, so the commits are those, in that order,
+    /// of one walk of them all. Read by this, though the walk was begun by another.
+    /// </summary>
+    public List<int> Log(LogWalk walk, int take)
+    {
         var found = new List<int>(Math.Min(take, 1024));
         var queue = new DateQueue(this);
-        Flags(start) |= seen;
-        queue.Push(start);
-        var index = 0;
+
+        // Put back in the order they were to be taken, those of one date keep theirs among
+        // themselves, and come before any found from here on, as they did.
+        foreach (var waiting in walk.Waiting)
+        {
+            queue.Push(Node(waiting));
+        }
+
+        walk.Waiting.Clear();
         while (found.Count < take &&
                queue.TryPop(out var node))
         {
-            if (index++ >= skip)
-            {
-                found.Add(node);
-            }
-
+            found.Add(node);
             foreach (var parent in Parents(node))
             {
-                if ((Flags(parent) & seen) == 0)
+                if (walk.Found.Add(IdOf(parent)))
                 {
-                    Flags(parent) |= seen;
                     queue.Push(parent);
                 }
             }
+        }
+
+        while (queue.TryPop(out var waiting))
+        {
+            walk.Waiting.Add(IdOf(waiting));
         }
 
         return found;

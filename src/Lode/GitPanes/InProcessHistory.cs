@@ -16,7 +16,15 @@ static class InProcessHistory
     /// where that can't.
     /// </summary>
     public static List<GitCommit>? ReadFaster(string repo, int skip, int count, Cancel cancel) =>
-        Read(repo, skip, count, cancel) ?? GitHistory.Read(repo, skip, count, cancel);
+        ReadFaster(repo, skip, count, new(), cancel);
+
+    /// <summary>
+    /// As <see cref="ReadFaster(string, int, int, Cancel)"/>, going on from where
+    /// <paramref name="walk"/> stopped where that is <paramref name="skip"/> commits down, as it
+    /// is for the next page: see <see cref="HistoryWalk"/>.
+    /// </summary>
+    public static List<GitCommit>? ReadFaster(string repo, int skip, int count, HistoryWalk walk, Cancel cancel) =>
+        Read(repo, skip, count, walk, cancel) ?? GitHistory.Read(repo, skip, count, cancel);
 
     /// <summary>
     /// The commits not pushed, as <see cref="GitHistory.Unpushed"/> finds them, in process.
@@ -45,7 +53,15 @@ static class InProcessHistory
     /// which git turns into UTF-8, say.
     /// </summary>
     public static List<GitCommit>? Read(string repo, int skip, int count, Cancel cancel) =>
-        Open(repo, cancel, _ => Read(_, skip, count));
+        Read(repo, skip, count, new(), cancel);
+
+    /// <summary>
+    /// As <see cref="Read(string, int, int, Cancel)"/>, going on from where
+    /// <paramref name="walk"/> stopped where that is <paramref name="skip"/> commits down, and
+    /// leaving it where this stops.
+    /// </summary>
+    public static List<GitCommit>? Read(string repo, int skip, int count, HistoryWalk walk, Cancel cancel) =>
+        Open(repo, cancel, _ => Read(_, skip, count, walk));
 
     /// <summary>
     /// The commits on the branch that the branch it tracks hasn't got yet, as
@@ -95,18 +111,39 @@ static class InProcessHistory
     }
 
     // Newest first, as git log has them, with the tags on each.
-    static List<GitCommit>? Read(GitRepository repository, int skip, int count)
+    static List<GitCommit>? Read(GitRepository repository, int skip, int count, HistoryWalk walk)
     {
-        // No commits yet, so nothing to log from.
-        if (repository.Head is not { } head)
+        // Taken from the walk while this reads, so one that fails part way, at a commit not in
+        // UTF-8 say, leaves nothing to go on from, and the next page walks from HEAD again.
+        LogWalk log;
+        Mailmap mailmap;
+        Dictionary<ObjectId, List<string>> tags;
+        Commits commits;
+        if (walk.TakeAt(skip) is { } stopped)
         {
-            return [];
+            (log, mailmap, tags) = stopped;
+            commits = new(repository);
+        }
+        else
+        {
+            // No commits yet, so nothing to log from.
+            if (repository.Head is not { } head)
+            {
+                return [];
+            }
+
+            mailmap = Mailmap.Read(repository);
+            commits = new(repository);
+            log = new(head);
+            if (skip > 0)
+            {
+                commits.Log(log, skip);
+            }
+
+            tags = TagsByCommit(repository);
         }
 
-        var mailmap = Mailmap.Read(repository);
-        var commits = new Commits(repository);
-        var nodes = commits.Log(commits.Node(head), skip, count);
-        var tags = TagsByCommit(repository);
+        var nodes = commits.Log(log, count);
         var read = new List<GitCommit>(nodes.Count);
         foreach (var node in nodes)
         {
@@ -133,6 +170,7 @@ static class InProcessHistory
                     info.Subject));
         }
 
+        walk.StoppedAt(skip + read.Count, new(log, mailmap, tags), commits.Read);
         return read;
     }
 
@@ -290,5 +328,54 @@ static class InProcessHistory
 
         files.Sort((first, second) => string.CompareOrdinal(first.Path, second.Path));
         return files;
+    }
+}
+
+/// <summary>
+/// Where the commits History has listed were read to, kept by the pane between pages, so the
+/// next page is read on from there: walked from HEAD again, past every commit listed, the page
+/// 5,000 commits down walked 5,000, and each further down took longer. With the .mailmap and the
+/// tags read for the first page, which the next have as they were: a change of either, or of
+/// HEAD, reads History again from the top, with a walk of its own.
+/// </summary>
+sealed class HistoryWalk
+{
+    internal sealed record Stop(LogWalk Log, Mailmap Mailmap, Dictionary<ObjectId, List<string>> Tags);
+
+    // How many commits were listed when it stopped, and where. None before the first page, and
+    // none once a page failed part way.
+    int listed;
+    Stop? stop;
+
+    /// <summary>
+    /// How many commits the last page read, from the commit graph or their objects. For tests.
+    /// </summary>
+    public int CommitsRead { get; private set; }
+
+    /// <summary>
+    /// Where it stopped, for a page read on from <paramref name="skip"/> commits down to go on
+    /// from, taken from it until the page is read. Null where it stopped elsewhere, or nowhere.
+    /// </summary>
+    internal Stop? TakeAt(int skip)
+    {
+        var taken = stop;
+        stop = null;
+        if (listed != skip)
+        {
+            return null;
+        }
+
+        return taken;
+    }
+
+    /// <summary>
+    /// A page was read: <paramref name="listed"/> commits have been, to where it stopped, and
+    /// that page read <paramref name="read"/> commits to do it.
+    /// </summary>
+    internal void StoppedAt(int listed, Stop stop, int read)
+    {
+        this.listed = listed;
+        this.stop = stop;
+        CommitsRead = read;
     }
 }

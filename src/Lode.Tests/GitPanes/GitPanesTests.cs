@@ -955,7 +955,7 @@ public class GitPanesTests
     {
         using var stubs = new PaneStubs();
         var history = PaneStubs.History.ToList();
-        HistoryPane.ReadCommits = (_, skip, count, _) => history.Skip(skip).Take(count).ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _, _) => history.Skip(skip).Take(count).ToList();
         using var fixture = Repositories();
         var settings = new Settings
         {
@@ -1027,7 +1027,7 @@ public class GitPanesTests
             held.Wait(TimeSpan.FromSeconds(30));
             return new("main", true, false, PaneStubs.Files);
         };
-        HistoryPane.ReadCommits = (repo, skip, count, _) =>
+        HistoryPane.ReadCommits = (repo, skip, count, _, _) =>
         {
             if (!ChangesPane.SameRepo(repo, docs))
             {
@@ -1064,6 +1064,130 @@ public class GitPanesTests
         }
     }
 
+    // A file saved reads Changes again, but not History, whose commits it doesn't change: read
+    // again, History read every commit listed, every tag and the commits not pushed after every
+    // save. Nor is History read again for a file staged, which changes only the index. A change
+    // anywhere else in .git reads both: a commit, a branch or a tag made, a checkout, a fetch.
+    // And so does the .mailmap, which History names authors by.
+    [Test]
+    public async Task HistoryIsReadAgainOnlyForAChangeOfItsOwn()
+    {
+        using var stubs = new PaneStubs();
+        var changesRead = 0;
+        var historyRead = 0;
+        ChangesPane.Read = (_, _) =>
+        {
+            Interlocked.Increment(ref changesRead);
+            return new("main", true, false, PaneStubs.Files);
+        };
+        HistoryPane.ReadCommits = (_, skip, count, _, _) =>
+        {
+            Interlocked.Increment(ref historyRead);
+            return PaneStubs.History.Skip(skip).Take(count).ToList();
+        };
+        var settle = GitCache.Settle;
+        GitCache.Settle = TimeSpan.FromMilliseconds(50);
+        using var fixture = Repositories();
+        var repo = fixture.At("Docs");
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        try
+        {
+            using var form = await Show(repo, settings, wide);
+            await PaneStubs.Settled(form);
+
+            // Whether History was read again as Changes was, once told of a change at the path.
+            async Task<bool> HistoryReadFor(params string[] path)
+            {
+                var changesBefore = Volatile.Read(ref changesRead);
+                var historyBefore = Volatile.Read(ref historyRead);
+                GitCache.ChangedAt(Path.Combine([repo, .. path]));
+                await Pump.Until(() => Volatile.Read(ref changesRead) > changesBefore);
+
+                // Long enough for whatever else the change was told of with to have come too.
+                await Pump.For(TimeSpan.FromMilliseconds(300));
+                await PaneStubs.Settled(form);
+                return Volatile.Read(ref historyRead) > historyBefore;
+            }
+
+            var saved = await HistoryReadFor("notes.aleph");
+            var savedDeeper = await HistoryReadFor("Source", "main.aleph");
+            var staged = await HistoryReadFor(".git", "index");
+            var committed = await HistoryReadFor(".git", "refs", "heads", "main");
+            var branched = await HistoryReadFor(".git", "refs", "heads", "feature");
+            var tagged = await HistoryReadFor(".git", "refs", "tags", "v1.0");
+            var packed = await HistoryReadFor(".git", "packed-refs");
+            var checkedOut = await HistoryReadFor(".git", "HEAD");
+            var fetched = await HistoryReadFor(".git", "refs", "remotes", "origin", "main");
+            var mailmap = await HistoryReadFor(".mailmap");
+
+            await Assert.That((saved, savedDeeper, staged)).IsEqualTo((false, false, false));
+            await Assert.That((committed, branched, tagged, packed, checkedOut, fetched, mailmap)).IsEqualTo((true, true, true, true, true, true, true));
+        }
+        finally
+        {
+            GitCache.Settle = settle;
+        }
+    }
+
+    // The next page, read as the list nears the end of those read, goes on from where the first
+    // stopped, with its walk, rather than from HEAD past every commit listed. Read again from the
+    // top, after a commit say, the commits are walked afresh, as HEAD may be another.
+    [Test]
+    public async Task NextPageGoesOnFromWhereTheLastStopped()
+    {
+        using var stubs = new PaneStubs();
+        var history = Enumerable.Range(0, 500)
+            .Select(_ => new GitCommit($"{_:x40}", ["0000000000000000000000000000000000000000"], "Ada Lovelace", PaneStubs.Now, [], $"Commit {_}"))
+            .ToList();
+        var asked = new List<(int Skip, int Count, HistoryWalk Walk)>();
+        HistoryPane.ReadCommits = (_, skip, count, walk, _) =>
+        {
+            lock (asked)
+            {
+                asked.Add((skip, count, walk));
+            }
+
+            return history.Skip(skip).Take(count).ToList();
+        };
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        settings.SetPaneTab(fixture.At("Docs"), GitPane.History);
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.HistoryPane;
+        var list = pane.CommitList;
+        (int Skip, int Count, HistoryWalk Walk) Last()
+        {
+            lock (asked)
+            {
+                return asked[^1];
+            }
+        }
+
+        var first = Last();
+
+        list.TopItem = list.Items[GitHistory.Page - 10];
+        await Pump.Until(() => pane.Commits.Count == GitHistory.Page * 2);
+        var next = Last();
+
+        pane.Reload();
+        await PaneStubs.Settled(form);
+        var again = Last();
+
+        await Assert.That((first.Skip, first.Count)).IsEqualTo((0, GitHistory.Page));
+        await Assert.That((next.Skip, next.Count)).IsEqualTo((GitHistory.Page, GitHistory.Page));
+        await Assert.That(ReferenceEquals(next.Walk, first.Walk)).IsTrue();
+        await Assert.That((again.Skip, again.Count)).IsEqualTo((0, GitHistory.Page * 2));
+        await Assert.That(ReferenceEquals(again.Walk, first.Walk)).IsFalse();
+        await Assert.That(pane.Commits.Select(_ => _.Subject)).IsEquivalentTo(history.Take(GitHistory.Page * 2).Select(_ => _.Subject), CollectionOrdering.Matching);
+    }
+
     // The files of a commit of the repository before, still being read once another is gone to,
     // aren't shown under it: here one with no commits, so none is picked whose files would be
     // read in their place.
@@ -1076,7 +1200,7 @@ public class GitPanesTests
         var source = fixture.At("Source");
         using var held = new ManualResetEventSlim();
         var started = 0;
-        HistoryPane.ReadCommits = (repo, skip, count, _) =>
+        HistoryPane.ReadCommits = (repo, skip, count, _, _) =>
         {
             if (!ChangesPane.SameRepo(repo, docs))
             {
@@ -1170,7 +1294,7 @@ public class GitPanesTests
         var history = Enumerable.Range(0, 40)
             .Select(_ => new GitCommit($"{_:x40}", ["0000000000000000000000000000000000000000"], "Ada Lovelace", PaneStubs.Now, [], $"Commit {_}"))
             .ToList();
-        HistoryPane.ReadCommits = (_, skip, count, _) => history.Skip(skip).Take(count).ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _, _) => history.Skip(skip).Take(count).ToList();
         using var fixture = Repositories();
         var settings = new Settings
         {
@@ -1350,7 +1474,7 @@ public class GitPanesTests
         var history = Enumerable.Range(0, 40)
             .Select(_ => new GitCommit($"{_:x40}", ["0000000000000000000000000000000000000000"], "Ada Lovelace", PaneStubs.Now, [], $"Commit {_}"))
             .ToList();
-        HistoryPane.ReadCommits = (_, skip, count, _) => history.Skip(skip).Take(count).ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _, _) => history.Skip(skip).Take(count).ToList();
         var many = Enumerable.Range(0, 40)
             .Select(_ => new Change($"src/file{_:00}.cs", null, GitChange.Modified))
             .ToList();

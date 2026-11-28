@@ -254,6 +254,8 @@ The hold ends early when:
 
 `Stale` is raised on a background thread with the repositories that are due. Every `FolderView` in every window hears it, but each checks first, on that thread, whether it is showing and whether it lists, or is inside, one of them. Only then does it post to its window's thread and read. A view that can't be seen reads what has gone stale once it shows.
 
+`HistoryStale` follows it, with those of them whose history may have changed: a change in `.git` other than to the index, as a commit, a checkout, a branch or tag made, or a fetch writes there, or to the `.mailmap`, which authors are named by. The Changes pane reads its repository again on `Stale`, the History pane only on `HistoryStale`: a file saved, or staged, changes no commit, and History reads every commit listed, every tag and the commits not pushed. History's next page, as the list nears its end, goes on from where the last stopped, rather than walking from HEAD past every commit listed again.
+
 
 ### One read between several views
 

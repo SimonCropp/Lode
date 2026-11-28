@@ -9,7 +9,7 @@ sealed class PaneStubs : IDisposable
 
     GitState.Reader readGit = FolderView.ReadGit;
     Func<string, Cancel, GitChanges> readChanges = ChangesPane.Read;
-    Func<string, int, int, Cancel, List<GitCommit>?> readCommits = HistoryPane.ReadCommits;
+    Func<string, int, int, HistoryWalk, Cancel, List<GitCommit>?> readCommits = HistoryPane.ReadCommits;
     Func<string, GitCommit, Cancel, List<Change>?> readFiles = HistoryPane.ReadFiles;
     Func<string, Cancel, HashSet<string>> readUnpushed = HistoryPane.ReadUnpushed;
     Func<string, Cancel, bool> readNeverPushed = HistoryPane.ReadNeverPushed;
@@ -73,7 +73,7 @@ sealed class PaneStubs : IDisposable
             UpstreamName = "origin/main"
         };
         ChangesPane.Read = (_, _) => new("main", true, false, Files);
-        HistoryPane.ReadCommits = (_, skip, count, _) => History.Skip(skip).Take(count).ToList();
+        HistoryPane.ReadCommits = (_, skip, count, _, _) => History.Skip(skip).Take(count).ToList();
         HistoryPane.ReadFiles = (_, _, _) => CommitFiles;
         HistoryPane.ReadUnpushed = (_, _) => [History[0].Sha];
         HistoryPane.ReadNeverPushed = (_, _) => false;

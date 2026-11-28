@@ -207,6 +207,64 @@ public class InProcessHistoryTests
         await Assert.That(Lines(InProcessHistory.FilesOf(repo, git[0], Cancel.None)!)).IsEquivalentTo(["Deleted file2.txt", "Renamed moved/file1-renamed.txt file1.txt"], CollectionOrdering.Matching);
     }
 
+    // Read a page at a time, as History reads them, each page goes on from where the one before
+    // stopped: it reads only its own commits, and the parent of its last, never those before it
+    // again, as each did walking from HEAD, so the page 5,000 commits down walked 5,000. And the
+    // commits are those of one read of them all, in its order, as git lists them: a merge's two
+    // sides, of commits made in the same second, taken in the order git takes them, from their
+    // objects and from the commit graph git gc writes.
+    [Test]
+    public async Task PagesGoOnFromWhereTheLastStopped()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "switch", "-q", "-c", "side");
+        for (var index = 0; index < 5; index++)
+        {
+            Git(repo, "commit", "-q", "--allow-empty", "-m", $"Side {index}");
+        }
+
+        Git(repo, "switch", "-q", "main");
+        for (var index = 0; index < 5; index++)
+        {
+            Git(repo, "commit", "-q", "--allow-empty", "-m", $"Main {index}");
+        }
+
+        Git(repo, "merge", "-q", "--no-ff", "-m", "Merge side", "side");
+        for (var index = 0; index < 12; index++)
+        {
+            Git(repo, "commit", "-q", "--allow-empty", "-m", $"Later {index}");
+        }
+
+        static (List<GitCommit> Commits, List<int> Read) Paged(string repo)
+        {
+            var walk = new HistoryWalk();
+            var commits = new List<GitCommit>();
+            var read = new List<int>();
+            while (InProcessHistory.Read(repo, commits.Count, 4, walk, Cancel.None) is { Count: > 0 } page)
+            {
+                commits.AddRange(page);
+                read.Add(walk.CommitsRead);
+            }
+
+            return (commits, read);
+        }
+
+        var git = GitHistory.Read(repo, 0, GitHistory.Page, Cancel.None)!;
+        var loose = Paged(repo);
+        Git(repo, "gc", "--quiet");
+        var graphed = Paged(repo);
+
+        await Assert.That(git.Count).IsEqualTo(24);
+        await Assert.That(Lines(loose.Commits)).IsEquivalentTo(Lines(git), CollectionOrdering.Matching);
+        await Assert.That(Lines(graphed.Commits)).IsEquivalentTo(Lines(git), CollectionOrdering.Matching);
+
+        // The first three pages are of the twelve commits after the merge, one after another:
+        // each reads its four, and the parent of its last, which the next starts from.
+        await Assert.That(loose.Read.Take(3)).IsEquivalentTo([5, 5, 5], CollectionOrdering.Matching);
+        await Assert.That(graphed.Read.Take(3)).IsEquivalentTo([5, 5, 5], CollectionOrdering.Matching);
+    }
+
     // A shallow clone's oldest commit has no parents as far as git log says, and the commits
     // are read from their objects, as a commit graph would have them going on.
     [Test]
