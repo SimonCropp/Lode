@@ -708,7 +708,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 }
             }
 
-            RemoveUnwanted(contextMenu, menu, alsoRemoved);
+            // Asking each entry for its verb asks the extension that added it, which can answer
+            // building the menu and stick on this.
+            using (ShellExtensionGuard.ForCalls())
+            {
+                RemoveUnwanted(contextMenu, menu, alsoRemoved);
+            }
+
             InsertCustomCommands(menu, customCommands, customFirst);
 
             menu2 = contextMenu as IContextMenu2;
@@ -719,7 +725,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             if (command >= firstShellCommand)
             {
                 var offset = command - firstShellCommand;
-                var verb = GetVerb(contextMenu, offset);
+                string? verb;
+                using (ShellExtensionGuard.ForCalls())
+                {
+                    verb = GetVerb(contextMenu, offset);
+                }
+
                 if (verb == null || !handleVerb(verb))
                 {
                     Invoke(contextMenu, owner, offset, location, directory);
@@ -1116,8 +1127,12 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
                 contextMenu.QueryContextMenu(menu, 0, firstShellCommand, lastShellCommand, RenameFlag(canRename));
             }
 
-            RemoveUnwanted(contextMenu, menu);
-            return DescribeMenu(contextMenu, menu);
+            // Each entry is asked for its verb, as Show asks.
+            using (ShellExtensionGuard.ForCalls())
+            {
+                RemoveUnwanted(contextMenu, menu);
+                return DescribeMenu(contextMenu, menu);
+            }
         }
         finally
         {
@@ -1249,7 +1264,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             Show = showNormal,
             InvokePoint = location
         };
-        contextMenu.InvokeCommand(ref info);
+
+        // The entry chosen can be any extension's, and one stuck running it would hold up the
+        // window as one stuck building the menu does. Given longer, as a command can rightly be.
+        using (ShellExtensionGuard.ForCommand())
+        {
+            contextMenu.InvokeCommand(ref info);
+        }
     }
 
     static IContextMenu? CreateForItems(IntPtr owner, IReadOnlyList<string> paths)
@@ -1399,9 +1420,21 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             message.Msg is initMenuPopupMessage or measureItemMessage or drawItemMessage or menuCharMessage;
         if (isMenuMessage)
         {
+            // Each message is the extension's to answer, filling in a submenu as it opens say,
+            // and one stuck on it would hold up the menu, and the window with it. Guarded one at
+            // a time: the menu can be open for as long as it is looked at, with nothing asked of
+            // the extensions meanwhile, and calls made then, by Lode's other windows, are not
+            // theirs to have cancelled.
             if (menu3 != null)
             {
-                if (menu3.HandleMenuMsg2((uint)message.Msg, message.WParam, message.LParam, out var result) == 0)
+                int answer;
+                IntPtr result;
+                using (ShellExtensionGuard.ForCalls())
+                {
+                    answer = menu3.HandleMenuMsg2((uint)message.Msg, message.WParam, message.LParam, out result);
+                }
+
+                if (answer == 0)
                 {
                     message.Result = result;
                     return;
@@ -1410,7 +1443,13 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             else if (menu2 != null &&
                      message.Msg != menuCharMessage)
             {
-                if (menu2.HandleMenuMsg((uint)message.Msg, message.WParam, message.LParam) == 0)
+                int answer;
+                using (ShellExtensionGuard.ForCalls())
+                {
+                    answer = menu2.HandleMenuMsg((uint)message.Msg, message.WParam, message.LParam);
+                }
+
+                if (answer == 0)
                 {
                     message.Result = message.Msg == initMenuPopupMessage ? 0 : 1;
                     return;

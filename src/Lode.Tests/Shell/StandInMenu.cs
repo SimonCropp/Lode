@@ -3,18 +3,30 @@
 /// Lode gets one from the shell: <see cref="Menu"/> is the shell's menu, on Lode's thread, which
 /// calls the extension for what it added. The extension is on a thread of its own, in an
 /// apartment of its own, as one in another process is to Lode, so each call into it is COM's,
-/// through its proxy, as the guard on shell extensions can cancel.
+/// through its proxy, as the guard on shell extensions can cancel. It can be made to stick in
+/// one of them, as a hung extension does, till the test is done with it.
 /// </summary>
 sealed class StandInMenu : IDisposable
 {
+    /// <summary>
+    /// The calls into an extension Lode makes once the menu is built.
+    /// </summary>
+    public enum Call
+    {
+        None,
+        GetCommandString,
+        HandleMenuMsg2,
+        InvokeCommand
+    }
+
     Thread thread;
     uint threadId;
     IContextMenu3 extension;
     Extension standIn;
 
-    StandInMenu(IReadOnlyList<string> verbs)
+    StandInMenu(IReadOnlyList<string> verbs, Call sticksIn)
     {
-        standIn = new(verbs);
+        standIn = new(verbs, sticksIn);
         using var started = new ManualResetEventSlim();
         var stream = IntPtr.Zero;
         var marshalled = 0;
@@ -46,7 +58,27 @@ sealed class StandInMenu : IDisposable
     }
 
     public static StandInMenu Start(params string[] verbs) =>
-        new(verbs);
+        new(verbs, Call.None);
+
+    /// <summary>
+    /// One that sticks in <paramref name="call"/>, each time it is made, till the test is done.
+    /// </summary>
+    public static StandInMenu StuckIn(Call call, params string[] verbs) =>
+        new(verbs, call);
+
+    /// <summary>
+    /// The calls the extension has had made of it once the menu was built, in turn.
+    /// </summary>
+    public IReadOnlyList<Call> Asked
+    {
+        get
+        {
+            lock (standIn.Asked)
+            {
+                return standIn.Asked.ToList();
+            }
+        }
+    }
 
     /// <summary>
     /// The shell's menu, which Lode is given and calls on its own thread.
@@ -75,6 +107,7 @@ sealed class StandInMenu : IDisposable
 
     public void Dispose()
     {
+        standIn.Release.Set();
         Marshal.ReleaseComObject(extension);
         PostThreadMessage(threadId, quitMessage, IntPtr.Zero, IntPtr.Zero);
         thread.Join(TimeSpan.FromSeconds(10));
@@ -129,7 +162,7 @@ sealed class StandInMenu : IDisposable
     // The extension, on its own thread. Refusing IMarshal has COM give Lode its proxy, as it
     // would for an extension in another process, rather than the object itself, as .NET's own
     // marshaller would.
-    sealed class Extension(IReadOnlyList<string> verbs) :
+    sealed class Extension(IReadOnlyList<string> verbs, Call sticksIn) :
         IContextMenu,
         IContextMenu2,
         IContextMenu3,
@@ -141,6 +174,23 @@ sealed class StandInMenu : IDisposable
         public IReadOnlyList<string> Verbs => verbs;
         public uint FirstCommand { get; private set; }
         public List<string> Invoked { get; } = [];
+        public List<Call> Asked { get; } = [];
+        public ManualResetEventSlim Release { get; } = new();
+
+        // Stuck, where it is to stick, till the test is done with it. Not for ever: were Lode to
+        // wait it out, the test fails rather than holding up the run.
+        void Answer(Call call)
+        {
+            lock (Asked)
+            {
+                Asked.Add(call);
+            }
+
+            if (call == sticksIn)
+            {
+                Release.Wait(TimeSpan.FromSeconds(20));
+            }
+        }
 
         public int QueryContextMenu(IntPtr menu, uint indexMenu, uint firstCommand, uint lastCommand, uint flags)
         {
@@ -162,6 +212,7 @@ sealed class StandInMenu : IDisposable
                 Invoked.Add(verbs[offset]);
             }
 
+            Answer(Call.InvokeCommand);
             return 0;
         }
 
@@ -174,6 +225,7 @@ sealed class StandInMenu : IDisposable
                 return unchecked((int)0x80004001);
             }
 
+            Answer(Call.GetCommandString);
             return 0;
         }
 
@@ -182,6 +234,7 @@ sealed class StandInMenu : IDisposable
 
         public int HandleMenuMsg2(uint message, IntPtr wParam, IntPtr lParam, out IntPtr result)
         {
+            Answer(Call.HandleMenuMsg2);
             result = IntPtr.Zero;
             return 0;
         }
