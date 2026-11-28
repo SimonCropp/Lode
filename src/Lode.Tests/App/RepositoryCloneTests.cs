@@ -170,6 +170,84 @@ public class RepositoryCloneTests
         await Assert.That(Directory.Exists(code.At("Code"))).IsTrue();
     }
 
+    // Every folder made for it goes, not only the one it was to be in.
+    [Test]
+    public async Task AFailedCloneTakesBackEachFolderItMade()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        Directory.CreateDirectory(code.At("Code"));
+
+        var result = RepositoryClone.Clone(code.Origin("Missing"), code.At("Code", "Owner", "Group", "Missing"), null, null, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(Directory.EnumerateFileSystemEntries(code.At("Code"))).IsEmpty();
+    }
+
+    // The owner's folder made for it may hold more by the time git fails: another clone into
+    // it, or a file saved there. That stays, and so does the folder. It is put there as git
+    // says why it fails, which it does before it ends.
+    [Test]
+    public async Task AFailedCloneLeavesWhatWasPutBesideIt()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        Directory.CreateDirectory(code.At("Code"));
+        var destination = code.At("Code", "Owner", "Missing");
+        var other = code.At("Code", "Owner", "Other");
+
+        var result = RepositoryClone.Clone(code.Origin("Missing"), destination, null, _ => PutThere(other), Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(Directory.Exists(destination)).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(other, "work.txt"))).IsTrue();
+    }
+
+    // As for one that fails: cancelled, what it cloned so far goes, and what is beside it stays.
+    [Test]
+    public async Task ACancelledCloneLeavesWhatWasPutBesideIt()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        code.CreateRepo("Lode");
+        Directory.CreateDirectory(code.At("Code"));
+        var destination = code.At("Code", "Owner", "Lode");
+        var other = code.At("Code", "Owner", "Other");
+        using var cancellation = new CancelSource();
+
+        var result = RepositoryClone.Clone(
+            code.Origin("Lode"),
+            destination,
+            null,
+            _ =>
+            {
+                PutThere(other);
+                cancellation.Cancel();
+            },
+            cancellation.Token);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(Directory.Exists(destination)).IsFalse();
+        await Assert.That(File.Exists(Path.Combine(other, "work.txt"))).IsTrue();
+    }
+
+    // A folder that was there already isn't the clone's to take back, empty or not.
+    [Test]
+    public async Task AFailedCloneLeavesTheFolderThatWasThere()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        Directory.CreateDirectory(code.At("Code", "Owner"));
+
+        var result = RepositoryClone.Clone(code.Origin("Missing"), code.At("Code", "Owner", "Missing"), null, null, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(Directory.Exists(code.At("Code", "Owner"))).IsTrue();
+    }
+
+    // Another clone, say, with work in it.
+    static void PutThere(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "work.txt"), "not committed");
+    }
+
     // Cloned by another dialog for the same link since this one was offered, say: the clone
     // fails, and what is there, the work in it too, is not what it takes back.
     [Test]

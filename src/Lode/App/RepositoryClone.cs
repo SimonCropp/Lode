@@ -307,8 +307,9 @@ static class RepositoryClone
     /// yet, giving <paramref name="progress"/> each line of git's progress. Then switches to
     /// <paramref name="branch"/> where origin has it: a pull request's from a fork it doesn't,
     /// so the clone stays on the default branch. A clone that fails, or is cancelled, leaves
-    /// nothing behind. With something at <paramref name="destination"/> by now, it fails, and
-    /// leaves that as it is.
+    /// nothing of its own behind: what it cloned so far, and the folders made for it, while
+    /// nothing else has gone in them since. With something at <paramref name="destination"/>
+    /// by now, it fails, and leaves that as it is.
     /// </summary>
     internal static CodeCommands.RepoResult Clone(string remote, string destination, string? branch, Action<string>? progress, Cancel cancel)
     {
@@ -321,7 +322,15 @@ static class RepositoryClone
         }
 
         var parent = Path.GetDirectoryName(destination)!;
-        var madeParent = !Directory.Exists(parent);
+
+        // The folders made for it, deepest first, which are all a clone that fails takes back
+        // besides its own: those that weren't there already.
+        var made = new List<string>();
+        for (var folder = parent; folder != null && !Directory.Exists(folder); folder = Path.GetDirectoryName(folder))
+        {
+            made.Add(folder);
+        }
+
         try
         {
             Directory.CreateDirectory(parent);
@@ -343,11 +352,7 @@ static class RepositoryClone
         if (!clone.Succeeded)
         {
             Remove(destination);
-            if (madeParent)
-            {
-                Remove(parent);
-            }
-
+            TakeBack(made);
             return clone;
         }
 
@@ -416,6 +421,28 @@ static class RepositoryClone
                         UnauthorizedAccessException)
             {
                 Thread.Sleep(100);
+            }
+        }
+    }
+
+    // Only while each is empty: by the time git fails, one may hold another clone into the same
+    // owner's folder, or something saved there, and the folder goes only with nothing in it.
+    static void TakeBack(List<string> made)
+    {
+        foreach (var folder in made)
+        {
+            try
+            {
+                Directory.Delete(folder, recursive: false);
+            }
+            catch (Exception exception)
+                when (
+                    exception is
+                        IOException or
+                        UnauthorizedAccessException)
+            {
+                // It stays, so the folders it is in aren't empty either.
+                return;
             }
         }
     }
