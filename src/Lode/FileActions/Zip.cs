@@ -601,14 +601,22 @@ static class Zip
     // soon as it is there, so one that fails part written is taken away with the rest. Then the
     // zip's mark, should it have one, and the time the entry was last changed, which writing the
     // mark would change. A drive that can't hold the mark, FAT or exFAT say, has the file without
-    // it, as Explorer leaves it there, rather than the extract failing.
-    static void ExtractFile(ZipArchiveEntry entry, string path, byte[]? mark, List<string>? made)
+    // it, as Explorer leaves it there, rather than the extract failing. Told of what it writes as
+    // it goes, a piece at a time, and stopped by cancel between pieces.
+    static void ExtractFile(ZipArchiveEntry entry, string path, byte[]? mark, List<string>? made, Action<long>? copied = null, Cancel cancel = default)
     {
         using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             made?.Add(path);
             using var content = entry.Open();
-            content.CopyTo(file);
+            var buffer = new byte[81_920];
+            int read;
+            while ((read = content.Read(buffer)) > 0)
+            {
+                cancel.ThrowIfCancellationRequested();
+                file.Write(buffer, 0, read);
+                copied?.Invoke(read);
+            }
         }
 
         if (mark != null)
@@ -951,9 +959,19 @@ static class Zip
     /// is now and the item, so extracting it again goes to the same place, written again unless
     /// what is there is in use, an editor having it open say, when that is kept.
     /// </summary>
-    public static IReadOnlyList<string> ExtractToTemp(IReadOnlyList<string> paths)
+    public static IReadOnlyList<string> ExtractToTemp(IReadOnlyList<string> paths) =>
+        ExtractToTemp(paths, null, Cancel.None);
+
+    /// <summary>
+    /// <see cref="ExtractToTemp(IReadOnlyList{string})"/>, saying how far it has got, as a
+    /// percentage of what there is to write, and stopped by <paramref name="cancel"/>. Each item is
+    /// written beside where it goes, and put there once it is all written, so one stopped part
+    /// way leaves nothing of itself behind, and what an earlier extract left there, still on the
+    /// clipboard say, is as it was.
+    /// </summary>
+    public static IReadOnlyList<string> ExtractToTemp(IReadOnlyList<string> paths, IProgress<int>? progress, Cancel cancel)
     {
-        var extracted = new List<string>(paths.Count);
+        var locations = new List<Location>(paths.Count);
         foreach (var path in paths)
         {
             if (Split(path) is not { Inner.Length: > 0 } location)
@@ -961,23 +979,121 @@ static class Zip
                 throw new FileNotFoundException($"'{path}' is not in a zip.");
             }
 
-            var written = File.GetLastWriteTimeUtc(location.Archive);
-            var key = $"{location.Archive}|{location.Inner}|{written.Ticks}".ToUpperInvariant();
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16];
-            var folder = Path.Combine(TempRoot, hash);
-            var target = Path.Combine(folder, Path.GetFileName(location.Inner));
-            if (TryClear(target))
+            locations.Add(location);
+        }
+
+        // How much there is to write, only where anyone is to be told how far it has got.
+        var total = 0L;
+        if (progress != null)
+        {
+            foreach (var location in locations)
             {
-                Directory.CreateDirectory(folder);
-                var mark = MarkOfTheWeb(location.Archive);
                 using var archive = OpenRead(location.Archive);
-                ExtractItem(archive, location.Inner, target, mark);
+                total += SizeOf(archive, location.Inner);
+            }
+        }
+
+        var done = 0L;
+        var reported = -1;
+        void Copied(long bytes)
+        {
+            done += bytes;
+            var percent = total == 0 ? 100 : (int) (done * 100 / total);
+            if (percent != reported)
+            {
+                reported = percent;
+                progress?.Report(percent);
+            }
+        }
+
+        var extracted = new List<string>(paths.Count);
+        foreach (var location in locations)
+        {
+            cancel.ThrowIfCancellationRequested();
+            var target = TempTarget(location);
+            var folder = Path.GetDirectoryName(target)!;
+            Directory.CreateDirectory(folder);
+            var staging = Path.Combine(folder, $".extracting-{Guid.NewGuid():N}");
+            try
+            {
+                var written = Path.Combine(staging, Path.GetFileName(target));
+                var mark = MarkOfTheWeb(location.Archive);
+                using (var archive = OpenRead(location.Archive))
+                {
+                    ExtractItem(archive, location.Inner, written, mark, Copied, cancel);
+                }
+
+                if (TryClear(target))
+                {
+                    if (Directory.Exists(written))
+                    {
+                        Directory.Move(written, target);
+                    }
+                    else
+                    {
+                        File.Move(written, target);
+                    }
+                }
+            }
+            finally
+            {
+                TryDelete(staging);
+
+                // Made for this one, which was stopped before it was there.
+                if (Directory.Exists(folder) &&
+                    !Directory.EnumerateFileSystemEntries(folder).Any())
+                {
+                    TryDelete(folder);
+                }
             }
 
             extracted.Add(target);
         }
 
+        progress?.Report(100);
         return extracted;
+    }
+
+    /// <summary>
+    /// Where <see cref="ExtractToTemp(IReadOnlyList{string})"/> puts the item at
+    /// <paramref name="location"/>: in a folder of its own for the zip as it is now and the item.
+    /// </summary>
+    internal static string TempTarget(Location location)
+    {
+        var written = File.GetLastWriteTimeUtc(location.Archive);
+        var key = $"{location.Archive}|{location.Inner}|{written.Ticks}".ToUpperInvariant();
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16];
+        return Path.Combine(TempRoot, hash, Path.GetFileName(location.Inner));
+    }
+
+    // How much the item at inner, a file or a folder with all beneath it, comes to extracted.
+    static long SizeOf(ZipArchive archive, string inner)
+    {
+        var innerSegments = inner.Split(Path.DirectorySeparatorChar);
+        var size = 0L;
+        foreach (var entry in archive.Entries)
+        {
+            if (IsBeneath(entry, innerSegments) is not null &&
+                !IsFolderEntry(entry.FullName))
+            {
+                size += entry.Length;
+            }
+        }
+
+        return size;
+    }
+
+    // The segments of the entry's name, where it is the item innerSegments names, or beneath it.
+    static string[]? IsBeneath(ZipArchiveEntry entry, string[] innerSegments)
+    {
+        if (Segments(entry.FullName) is not { } segments ||
+            segments.Length < innerSegments.Length ||
+            !innerSegments.AsSpan().SequenceEqual(segments.AsSpan(0, innerSegments.Length), StringComparer.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return segments;
     }
 
     // Takes away what an earlier extract left at target. False when it is in use, to be kept.
@@ -1008,16 +1124,16 @@ static class Zip
 
     // Writes the item at inner, a file or a folder with all beneath it, to target, each file with
     // the zip's mark of the web, should it have one: opened from there, or copied or dragged on
-    // from there, Windows is as wary of it as of the zip it came out of.
-    static void ExtractItem(ZipArchive archive, string inner, string target, byte[]? mark)
+    // from there, Windows is as wary of it as of the zip it came out of. Told of what it writes
+    // as it goes, and stopped by cancel.
+    static void ExtractItem(ZipArchive archive, string inner, string target, byte[]? mark, Action<long> copied, Cancel cancel)
     {
         var innerSegments = inner.Split(Path.DirectorySeparatorChar);
         var any = false;
         foreach (var entry in archive.Entries)
         {
-            if (Segments(entry.FullName) is not { } segments ||
-                segments.Length < innerSegments.Length ||
-                !innerSegments.AsSpan().SequenceEqual(segments.AsSpan(0, innerSegments.Length), StringComparer.OrdinalIgnoreCase))
+            cancel.ThrowIfCancellationRequested();
+            if (IsBeneath(entry, innerSegments) is not { } segments)
             {
                 continue;
             }
@@ -1037,7 +1153,7 @@ static class Zip
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            ExtractFile(entry, path, mark, null);
+            ExtractFile(entry, path, mark, null, copied, cancel);
             any = true;
         }
 

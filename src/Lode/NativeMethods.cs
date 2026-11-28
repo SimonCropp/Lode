@@ -212,6 +212,11 @@ static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool KillTimer(IntPtr window, nuint id);
 
+    // Whether a key, or a mouse button, is down now, wherever the pointer is: the high bit.
+    // Mouse buttons by where they are, not by what they are set to do.
+    [LibraryImport("user32.dll")]
+    public static partial short GetAsyncKeyState(int key);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool AddClipboardFormatListener(IntPtr window);

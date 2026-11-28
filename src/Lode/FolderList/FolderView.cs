@@ -611,6 +611,11 @@ sealed class FolderView : UserControl
             return $"Looking for {looking}...";
         }
 
+        if (dragExtracted >= 0)
+        {
+            return $"Extracting what is dragged, {dragExtracted}% done. Let go, or press Esc, to stop.";
+        }
+
         if (error != null)
         {
             return error;
@@ -4863,10 +4868,10 @@ sealed class FolderView : UserControl
     }
 
     /// <summary>
-    /// What is in a zip, extracted to the temp folder for <see cref="Copy"/> and drags. Replaced
-    /// in tests.
+    /// What is in a zip, extracted to the temp folder for <see cref="Copy"/> and drags, saying
+    /// how far it has got, as a percentage, and stopped when cancelled. Replaced in tests.
     /// </summary>
-    internal Func<IReadOnlyList<string>, IReadOnlyList<string>> ExtractToTemp = Zip.ExtractToTemp;
+    internal Func<IReadOnlyList<string>, IProgress<int>?, Cancel, IReadOnlyList<string>> ExtractToTemp = Zip.ExtractToTemp;
 
     // Items in a zip are on the clipboard as copies extracted to the temp folder, off the UI
     // thread, so they paste anywhere as files do.
@@ -4875,7 +4880,7 @@ sealed class FolderView : UserControl
         IReadOnlyList<string> extracted;
         try
         {
-            extracted = await Task.Run(() => ExtractToTemp(paths));
+            extracted = await Task.Run(() => ExtractToTemp(paths, null, Cancel.None));
         }
         catch (Exception exception)
         {
@@ -5835,12 +5840,28 @@ sealed class FolderView : UserControl
         return false;
     }
 
-    void OnItemDrag(object? sender, ItemDragEventArgs args)
+    /// <summary>
+    /// Drags what is given from the list until it is dropped. Replaced in tests, which can't drag.
+    /// </summary>
+    internal Func<Control, DataObject, DragDropEffects, DragDropEffects> DragOut = DragImage.Drag;
+
+    /// <summary>
+    /// Whether a drag with the button given, not yet begun, is still wanted: the button held, and
+    /// Escape not pressed. Replaced in tests, which hold no button.
+    /// </summary>
+    internal Func<MouseButtons, bool> StillDragging = IsStillDragging;
+
+    /// <summary>
+    /// The drag out of a zip under way: what it carries being extracted, then the drag. For tests.
+    /// </summary>
+    internal Task DraggingOutOfArchive { get; private set; } = Task.CompletedTask;
+
+    internal void OnItemDrag(object? sender, ItemDragEventArgs args)
     {
         var selection = SelectedEntries();
         if (selection.Any(_ => _.InArchive))
         {
-            DragOutOfArchive(selection);
+            DragOutOfArchive(selection, args.Button);
             return;
         }
 
@@ -5860,7 +5881,7 @@ sealed class FolderView : UserControl
 
         var data = new DataObject(DataFormats.FileDrop, paths);
         SetDragImage(data, selection);
-        DragImage.Drag(list, data, effects);
+        DragOut(list, data, effects);
     }
 
     // A picture of what is dragged, of the icons the list shows them with, as Explorer's drags
@@ -5876,32 +5897,153 @@ sealed class FolderView : UserControl
         DragImage.Set(data, icons, dragged.Count, DeviceDpi);
     }
 
-    // What is in a zip is dragged as copies extracted to the temp folder, there and then, as the
-    // drag can't start until they are, and only copied: moving one would take it out of the temp
-    // folder, not the zip.
-    void DragOutOfArchive(List<FileEntry> selection)
+    // A drag out of a zip whose items are still being extracted, to stop should it be given up.
+    CancelSource? draggingOut;
+
+    // How far that extraction has got, as a percentage, said in the status bar once it has taken
+    // long enough to be worth saying; -1 until then.
+    int dragExtracted = -1;
+
+    // How long an extraction for a drag goes before the status bar says how far it has got: one
+    // done sooner says nothing, as there was nothing to wait for.
+    static TimeSpan dragProgressAfter = TimeSpan.FromMilliseconds(250);
+
+    // What is in a zip is dragged as copies extracted to the temp folder, and only copied: moving
+    // one would take it out of the temp folder, not the zip. They are extracted off the UI thread,
+    // the drag starting once they are, as it can't start without them, with the button still
+    // held: a big folder takes a while, which the status bar counts, and every window waited for
+    // it all, given up or not. Given up meanwhile, the button let go or Escape pressed, the
+    // extraction stops, leaving nothing of itself, and no drag begins. Few and small, it is done
+    // before anyone could tell, and the drag starts as it always did.
+    void DragOutOfArchive(List<FileEntry> selection, MouseButtons button)
     {
+        if (draggingOut != null)
+        {
+            return;
+        }
+
+        var cancel = new CancelSource();
+        draggingOut = cancel;
+        DraggingOutOfArchive = ExtractThenDrag(selection, button, cancel);
+    }
+
+    async Task ExtractThenDrag(List<FileEntry> selection, MouseButtons button, CancelSource cancel)
+    {
+        var paths = selection.Select(_ => _.FullPath).ToList();
+        var extract = ExtractToTemp;
+        var token = cancel.Token;
+        var latest = 0;
+        var progress = new Progress<int>(_ =>
+        {
+            latest = _;
+            if (dragExtracted >= 0 &&
+                draggingOut == cancel)
+            {
+                dragExtracted = _;
+                QueueStatusChanged();
+            }
+        });
+        var extracting = Task.Run(() => extract(paths, progress, token), token);
+        var started = Stopwatch.GetTimestamp();
+        var cursor = list.Cursor;
+        list.Cursor = Cursors.AppStarting;
         IReadOnlyList<string> extracted;
-        var cursor = Cursor.Current;
-        Cursor.Current = Cursors.WaitCursor;
         try
         {
-            extracted = ExtractToTemp(selection.Select(_ => _.FullPath).ToList());
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
+            while (!extracting.IsCompleted)
+            {
+                if (IsDisposed ||
+                    !StillDragging(button))
+                {
+                    await cancel.CancelAsync();
+                    break;
+                }
+
+                if (dragExtracted < 0 &&
+                    Stopwatch.GetElapsedTime(started) >= dragProgressAfter)
+                {
+                    dragExtracted = latest;
+                    QueueStatusChanged();
+                }
+
+                await Task.WhenAny(extracting, Task.Delay(30));
+            }
+
+            try
+            {
+                extracted = await extracting;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                if (!IsDisposed)
+                {
+                    MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
+                return;
+            }
         }
         finally
         {
-            Cursor.Current = cursor;
+            draggingOut = null;
+            cancel.Dispose();
+            if (!IsDisposed)
+            {
+                list.Cursor = cursor;
+                if (dragExtracted >= 0)
+                {
+                    QueueStatusChanged();
+                }
+            }
+
+            dragExtracted = -1;
+        }
+
+        // Let go of just as it was done: nothing to drag. What was extracted is left, as it is
+        // once dragged, for the temp folder's clearing.
+        if (IsDisposed ||
+            !StillDragging(button))
+        {
+            return;
         }
 
         var data = new DataObject(DataFormats.FileDrop, extracted.ToArray());
         SetDragImage(data, selection);
-        DragImage.Drag(list, data, DragDropEffects.Copy);
+        DragOut(list, data, DragDropEffects.Copy);
     }
+
+    // The virtual keys of the mouse's buttons, as they are on the mouse, and of Escape.
+    const int leftButtonKey = 0x01;
+    const int rightButtonKey = 0x02;
+    const int middleButtonKey = 0x04;
+    const int escapeKey = 0x1B;
+
+    // Whether the button is down now, wherever the pointer is, as the drag has no window of its
+    // own yet to be told: let go over another program's, the list would hear nothing of it.
+    // Swapped, the left button is the one on the right of the mouse.
+    static bool IsStillDragging(MouseButtons button)
+    {
+        if (IsDown(escapeKey))
+        {
+            return false;
+        }
+
+        var swapped = SystemInformation.MouseButtonsSwapped;
+        var key = button switch
+        {
+            MouseButtons.Right => swapped ? leftButtonKey : rightButtonKey,
+            MouseButtons.Middle => middleButtonKey,
+            _ => swapped ? rightButtonKey : leftButtonKey
+        };
+        return IsDown(key);
+    }
+
+    static bool IsDown(int key) =>
+        (GetAsyncKeyState(key) & 0x8000) != 0;
 
     string? DropDestination(DragEventArgs args)
     {

@@ -433,6 +433,65 @@ public class ZipTests
         }
     }
 
+    // Stopped part way, an extract to the temp folder leaves nothing of itself there: none of
+    // an item not extracted before, and of one that was, what was there before, untouched,
+    // rather than taken away to be written again. It said how far it had got as it went.
+    [Test]
+    public async Task ExtractToTempStoppedLeavesNothingOfItself()
+    {
+        using var fixture = Fixture.Create();
+        var zip = fixture.At("Big.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        {
+            foreach (var name in new[] {"Before/big.bin", "Fresh/big.bin"})
+            {
+                await using var stream = archive.CreateEntry(name).Open();
+                stream.Write(new byte[2_000_000]);
+            }
+        }
+
+        var before = Zip.ExtractToTemp([Path.Combine(zip, "Before")])[0];
+        var fresh = Zip.TempTarget(new(zip, "Fresh"));
+        var reported = new List<int>();
+        IReadOnlyList<string> StoppedPartWay(string item)
+        {
+            using var cancel = new CancelSource();
+            var progress = new Reporting(
+                _ =>
+                {
+                    reported.Add(_);
+                    if (_ is > 0 and < 100)
+                    {
+                        cancel.Cancel();
+                    }
+                });
+            return Zip.ExtractToTemp([Path.Combine(zip, item)], progress, cancel.Token);
+        }
+
+        try
+        {
+            await Assert.That(() => StoppedPartWay("Before")).Throws<OperationCanceledException>();
+            await Assert.That(() => StoppedPartWay("Fresh")).Throws<OperationCanceledException>();
+
+            await Assert.That(new FileInfo(Path.Combine(before, "big.bin")).Length).IsEqualTo(2_000_000);
+            await Assert.That(Directory.GetFileSystemEntries(Path.GetDirectoryName(before)!)).IsEquivalentTo([before]);
+            await Assert.That(Directory.Exists(Path.GetDirectoryName(fresh))).IsFalse();
+            await Assert.That(reported.Count).IsEqualTo(2);
+            await Assert.That(reported.All(_ => _ is > 0 and < 100)).IsTrue();
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(before)!, true);
+        }
+    }
+
+    // Told at once, on the thread reporting, as Progress, which posts, would not be.
+    sealed class Reporting(Action<int> report) : IProgress<int>
+    {
+        public void Report(int value) =>
+            report(value);
+    }
+
     // Zips extracted here together can share a folder, as the parts of a Google Takeout all hold
     // Takeout. Each is extracted in its turn, so the second finds what the first wrote in its
     // way and writes nothing, and the first keeps all it wrote: the two at once, both found

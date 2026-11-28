@@ -3009,6 +3009,222 @@ public class FolderViewTests
         await Assert.That(Names(view)).IsEquivalentTo(["inside.aleph"]);
     }
 
+    // A zip whose entries hold their own names, so what is extracted from it can be told apart.
+    static string MakeZipOfNames(Fixture fixture, string name, params string[] entries)
+    {
+        var zip = fixture.At(name);
+        using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
+        foreach (var entry in entries)
+        {
+            var created = archive.CreateEntry(entry);
+            if (entry.EndsWith('/'))
+            {
+                continue;
+            }
+
+            using var writer = new StreamWriter(created.Open());
+            writer.Write($"this is {entry}");
+        }
+
+        return zip;
+    }
+
+    // What every file and folder beneath these is, and what each file holds, from where they are.
+    static List<string> Contents(IEnumerable<string> paths)
+    {
+        var contents = new List<string>();
+        foreach (var path in paths)
+        {
+            var parent = Path.GetDirectoryName(path)!;
+            if (File.Exists(path))
+            {
+                contents.Add($"{Path.GetFileName(path)}: {File.ReadAllText(path)}");
+                continue;
+            }
+
+            contents.Add($"{Path.GetFileName(path)}/");
+            foreach (var inside in Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(parent, inside).Replace('\\', '/');
+                contents.Add(Directory.Exists(inside) ? $"{relative}/" : $"{relative}: {File.ReadAllText(inside)}");
+            }
+        }
+
+        contents.Sort(StringComparer.Ordinal);
+        return contents;
+    }
+
+    // Dragged out of a zip, what is dragged is extracted off the UI thread, the drag starting
+    // once it is, with every file and folder in it as it is in the zip, only to be copied.
+    [Test]
+    public async Task DraggingOutOfAZipExtractsOffTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        var zip = MakeZipOfNames(fixture, "Bundle.zip", "readme.aleph", "Docs/guide.aleph", "Docs/Deep/", "Docs/Deep/leaf.aleph", "Docs/Empty/", "tool.exe");
+        using var view = await Open(zip);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var extractedOn = -1;
+        var extract = view.ExtractToTemp;
+        view.ExtractToTemp = (paths, progress, cancel) =>
+        {
+            Volatile.Write(ref extractedOn, Environment.CurrentManagedThreadId);
+            return extract(paths, progress, cancel);
+        };
+        view.StillDragging = _ => true;
+        string[]? dragged = null;
+        var effects = DragDropEffects.None;
+        view.DragOut = (_, data, allowed) =>
+        {
+            data.TryGetData<string[]>(DataFormats.FileDrop, out dragged);
+            effects = allowed;
+            return DragDropEffects.Copy;
+        };
+        view.Reveal([Path.Combine(zip, "Docs"), Path.Combine(zip, "readme.aleph")]);
+        await Pump.Loaded(view);
+
+        view.OnItemDrag(null, new(MouseButtons.Left));
+        var draggedAtOnce = dragged;
+        await Pump.Until(() => view.DraggingOutOfArchive.IsCompleted);
+        await view.DraggingOutOfArchive;
+
+        try
+        {
+            await Assert.That(draggedAtOnce).IsNull();
+            await Assert.That(extractedOn).IsNotEqualTo(uiThread);
+            await Assert.That(effects).IsEqualTo(DragDropEffects.Copy);
+            await Assert.That(dragged!.All(_ => _.StartsWith(Zip.TempRoot, StringComparison.OrdinalIgnoreCase))).IsTrue();
+            await Assert.That(Contents(dragged!))
+                .IsEquivalentTo(
+                    [
+                        "Docs/",
+                        "Docs/Deep/",
+                        "Docs/Deep/leaf.aleph: this is Docs/Deep/leaf.aleph",
+                        "Docs/Empty/",
+                        "Docs/guide.aleph: this is Docs/guide.aleph",
+                        "readme.aleph: this is readme.aleph"
+                    ],
+                    CollectionOrdering.Matching);
+        }
+        finally
+        {
+            foreach (var path in dragged ?? [])
+            {
+                Directory.Delete(Path.GetDirectoryName(path)!, true);
+            }
+        }
+    }
+
+    // A drag out of a zip given up while what it carries is still being extracted, the button
+    // let go or Escape pressed, stops the extraction at once, leaves nothing of it in the temp
+    // folder, and never begins.
+    [Test]
+    public async Task ADragOutOfAZipGivenUpStopsExtractingAndLeavesNothing()
+    {
+        using var fixture = Fixture.Create();
+        var zip = fixture.At("Big.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        {
+            await using var stream = archive.CreateEntry("big.aleph").Open();
+            stream.Write(new byte[4_000_000]);
+        }
+
+        var target = Zip.TempTarget(new(zip, "big.aleph"));
+        using var view = await Open(zip);
+        using var underWay = new ManualResetEventSlim();
+        var extract = view.ExtractToTemp;
+        view.ExtractToTemp = (paths, progress, cancel) =>
+            extract(paths, new HeldOnceUnderWay(progress, underWay, cancel.WaitHandle), cancel);
+        view.StillDragging = _ => !underWay.IsSet;
+        var dragged = false;
+        view.DragOut = (_, _, _) =>
+        {
+            dragged = true;
+            return DragDropEffects.Copy;
+        };
+        view.Reveal(Path.Combine(zip, "big.aleph"));
+        await Pump.Loaded(view);
+
+        view.OnItemDrag(null, new(MouseButtons.Left));
+        await Pump.Until(() => underWay.IsSet);
+        var givenUp = Stopwatch.StartNew();
+        await Pump.Until(() => view.DraggingOutOfArchive.IsCompleted);
+        givenUp.Stop();
+
+        await Assert.That(dragged).IsFalse();
+        await Assert.That(givenUp.Elapsed).IsLessThan(TimeSpan.FromSeconds(4));
+        await Assert.That(Path.Exists(target)).IsFalse();
+        await Assert.That(Directory.Exists(Path.GetDirectoryName(target))).IsFalse();
+    }
+
+    // While what a drag carries takes a while to extract, the status bar says how far it has got,
+    // and says what it said before once the drag has begun.
+    [Test]
+    public async Task ADragOutOfAZipSaysHowFarItHasGot()
+    {
+        using var fixture = Fixture.Create();
+        var zip = fixture.At("Big.zip");
+        using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+        {
+            await using var stream = archive.CreateEntry("big.aleph").Open();
+            stream.Write(new byte[4_000_000]);
+        }
+
+        using var view = await Open(zip);
+        using var underWay = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var extract = view.ExtractToTemp;
+        view.ExtractToTemp = (paths, progress, cancel) =>
+            extract(paths, new HeldOnceUnderWay(progress, underWay, release.WaitHandle), cancel);
+        view.StillDragging = _ => true;
+        string[]? dragged = null;
+        view.DragOut = (_, data, _) =>
+        {
+            data.TryGetData<string[]>(DataFormats.FileDrop, out dragged);
+            return DragDropEffects.Copy;
+        };
+        view.Reveal(Path.Combine(zip, "big.aleph"));
+        await Pump.Loaded(view);
+        var before = view.StatusText;
+
+        try
+        {
+            view.OnItemDrag(null, new(MouseButtons.Left));
+            await Pump.Until(() => view.StatusText.StartsWith("Extracting what is dragged, ", StringComparison.Ordinal));
+            var whileExtracting = view.StatusText;
+            release.Set();
+            await Pump.Until(() => view.DraggingOutOfArchive.IsCompleted);
+            await Pump.Until(() => view.StatusText == before);
+
+            await Assert.That(whileExtracting).Matches(@"^Extracting what is dragged, \d+% done\. Let go, or press Esc, to stop\.$");
+            await Assert.That(dragged).IsNotNull();
+            await Assert.That(new FileInfo(dragged![0]).Length).IsEqualTo(4_000_000);
+        }
+        finally
+        {
+            release.Set();
+            foreach (var path in dragged ?? [])
+            {
+                Directory.Delete(Path.GetDirectoryName(path)!, true);
+            }
+        }
+    }
+
+    // Says how far an extraction has got, and once it has started holds it there until told to
+    // go on, so it is part way when the test looks, however quick the machine.
+    sealed class HeldOnceUnderWay(IProgress<int>? progress, ManualResetEventSlim underWay, WaitHandle hold) : IProgress<int>
+    {
+        public void Report(int value)
+        {
+            progress?.Report(value);
+            if (value is > 0 and < 100 &&
+                !underWay.IsSet)
+            {
+                underWay.Set();
+                hold.WaitOne(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
     // Compress to ZIP file makes the zip beside what is selected and selects it, ready to rename,
     // as Explorer has it.
     [Test]
