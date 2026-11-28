@@ -1140,7 +1140,8 @@ class MainForm : Form
             .ToList();
 
     // Back at the front, where a commit made in a terminal meanwhile went unseen: git changes
-    // only .git, not the folder listed.
+    // only .git, not the folder listed. And a folder pinned or used meanwhile, in Explorer or
+    // a file dialog, which Lode hears nothing of.
     protected override void OnActivated(EventArgs args)
     {
         base.OnActivated(args);
@@ -1150,6 +1151,8 @@ class MainForm : Form
         {
             view.ReadGitStateUnlessFresh();
         }
+
+        places.ReadAgainIfStale();
     }
 
     // Only the tab showing, in a window that is, reads its folder and follows the changes to
@@ -1311,7 +1314,7 @@ class MainForm : Form
     }
 
     // Refresh also asks again what it otherwise remembers about files: their own icons, and
-    // which types are text.
+    // which types are text. And Quick access, for Pinned and Recent, off the UI thread.
     internal void Reload()
     {
         ShellIcons.ForgetFileIcons();
@@ -1320,6 +1323,7 @@ class MainForm : Form
         ShellIcons.ForgetDrives();
         TextEditors.ForgetTypes();
         Tree.RefreshDrives();
+        places.ReadAgain();
         GitPanes.Reload();
         if (FindHost.ResultsShowing)
         {

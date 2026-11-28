@@ -2869,9 +2869,11 @@ public class WindowsTests
     static Task<MainForm> Show(Fixture fixture, params string[] paths) =>
         Show(fixture, new(), paths);
 
-    static async Task<MainForm> Show(Fixture fixture, Settings settings, params string[] paths)
+    static Task<MainForm> Show(Fixture fixture, Settings settings, params string[] paths) =>
+        Show(new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB"), settings, paths);
+
+    static async Task<MainForm> Show(Places places, Settings settings, params string[] paths)
     {
-        var places = new Places([fixture.Root], [], ShowComputer: false, _ => "120 GB free of 500 GB");
         var form = new QuietForm(paths, settings, places)
         {
             ShowInTaskbar = false,
@@ -2913,5 +2915,106 @@ public class WindowsTests
             ProcessCmdKey(ref message, keys);
             Application.DoEvents();
         }
+
+        // As Windows has it when the window comes to the front, which a test's never does.
+        public void ComeToTheFront() =>
+            OnActivated(EventArgs.Empty);
+    }
+
+    // Pinned and Recent from what Quick access is read as, which is a folder pinned in Explorer
+    // or a file dialog once it has been, each read counted and the thread it was read on kept.
+    // The tree has the fixture's drive alone under This PC.
+    sealed class QuickAccess(Fixture fixture)
+    {
+        List<string> pinned = [fixture.Root];
+        List<Thread> readOn = [];
+
+        public Places Make(TimeProvider? time = null) =>
+            Places.Remembering(
+                new()
+                {
+                    PinnedFolders = [fixture.Root]
+                },
+                () =>
+                {
+                    lock (readOn)
+                    {
+                        readOn.Add(Thread.CurrentThread);
+                        return (pinned.ToList(), []);
+                    }
+                },
+                time,
+                [Path.GetDirectoryName(fixture.Root)!]);
+
+        public void Pin(string folder)
+        {
+            lock (readOn)
+            {
+                pinned.Add(folder);
+            }
+        }
+
+        public List<Thread> ReadOn
+        {
+            get
+            {
+                lock (readOn)
+                {
+                    return readOn.ToList();
+                }
+            }
+        }
+    }
+
+    static List<string> PinnedInTheTree(MainForm form) =>
+        form.Tree.Nodes
+            .Cast<TreeNode>()
+            .Where(_ => _.Text == "Pinned")
+            .SelectMany(_ => _.Nodes.Cast<TreeNode>())
+            .Select(_ => (string) _.Tag!)
+            .ToList();
+
+    // F5 reads Quick access again, off the UI thread, as it reads everything else again: a
+    // folder pinned in Explorer or a file dialog since shows in Pinned.
+    [Test]
+    public async Task F5ReadsQuickAccessAgain()
+    {
+        using var fixture = Fixture.Create();
+        var uiThread = Thread.CurrentThread;
+        var quickAccess = new QuickAccess(fixture);
+        var places = quickAccess.Make();
+        await Pump.Until(() => quickAccess.ReadOn.Count == 1);
+        using var form = (QuietForm) await Show(places, new(), fixture.Root);
+        quickAccess.Pin(fixture.At("Docs"));
+
+        form.Press(Keys.F5);
+        await Pump.Until(() => PinnedInTheTree(form).Contains(fixture.At("Docs")));
+
+        await Assert.That(quickAccess.ReadOn.Count).IsEqualTo(2);
+        await Assert.That(quickAccess.ReadOn).DoesNotContain(uiThread);
+    }
+
+    // Coming to the front reads Quick access again, for what was pinned or used in Explorer
+    // meanwhile, once a few minutes have passed since it was last read, and not before.
+    [Test]
+    public async Task ComingToTheFrontReadsQuickAccessAgain()
+    {
+        using var fixture = Fixture.Create();
+        var clock = new Clock(new(2026, 11, 28, 9, 0, 0, TimeSpan.Zero));
+        var quickAccess = new QuickAccess(fixture);
+        var places = quickAccess.Make(clock);
+        await Pump.Until(() => quickAccess.ReadOn.Count == 1);
+        using var form = (QuietForm) await Show(places, new(), fixture.Root);
+        quickAccess.Pin(fixture.At("Docs"));
+
+        form.ComeToTheFront();
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+        var tooSoon = quickAccess.ReadOn.Count;
+        clock.Now += Places.FreshFor;
+        form.ComeToTheFront();
+        await Pump.Until(() => PinnedInTheTree(form).Contains(fixture.At("Docs")));
+
+        await Assert.That(tooSoon).IsEqualTo(1);
+        await Assert.That(quickAccess.ReadOn.Count).IsEqualTo(2);
     }
 }

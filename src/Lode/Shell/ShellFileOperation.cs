@@ -61,6 +61,13 @@ static class ShellFileOperation
     public static event Action<IReadOnlyList<(string From, string To)>>? Moved;
 
     /// <summary>
+    /// Where what a move, a rename or a delete took away was, for Quick access, which keeps
+    /// folders by their paths, to be read again. Raised on the operation's thread once it is
+    /// done, as far as it got.
+    /// </summary>
+    public static event Action<IReadOnlyList<string>>? Gone;
+
+    /// <summary>
     /// Runs one operation over <paramref name="sources"/>. <paramref name="destination"/> is the
     /// folder to copy or move into, or the new name for a rename.
     /// </summary>
@@ -136,6 +143,11 @@ static class ShellFileOperation
             {
                 // A folder merged went too, for a tab showing it to follow.
                 TellMoved([.. sink.Merged, .. sink.Changes]);
+            }
+
+            if (kind != Kind.Copy)
+            {
+                TellGone([.. sink.Merged, .. sink.Changes]);
             }
 
             if (!performed)
@@ -248,6 +260,14 @@ static class ShellFileOperation
         if (moved.Count > 0)
         {
             Moved?.Invoke(moved);
+        }
+    }
+
+    static void TellGone(IReadOnlyList<Change> changes)
+    {
+        if (changes.Count > 0)
+        {
+            Gone?.Invoke(changes.Select(_ => _.Source).ToList());
         }
     }
 

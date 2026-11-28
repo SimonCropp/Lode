@@ -278,6 +278,97 @@ public class PlacesTests
         await Assert.That(order).IsEquivalentTo([@"C:\First", @"C:\Second", @"C:\Third"], CollectionOrdering.Matching);
     }
 
+    // A window coming to the front reads Quick access again, for what was pinned or used in
+    // Explorer or a file dialog meanwhile, but not every time: only once a few minutes have
+    // passed since it was last read.
+    [Test]
+    public async Task ComingToTheFrontReadsAgainOnceAWhileHasPassed()
+    {
+        var clock = new Clock(new(2026, 11, 28, 9, 0, 0, TimeSpan.Zero));
+        var readings = 0;
+        var places = Places.Remembering(
+            new(),
+            () =>
+            {
+                Interlocked.Increment(ref readings);
+                return ([], []);
+            },
+            clock);
+        await Pump.Until(() => Volatile.Read(ref readings) == 1);
+
+        places.ReadAgainIfStale();
+        clock.Now += Places.FreshFor - TimeSpan.FromSeconds(1);
+        places.ReadAgainIfStale();
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+        var tooSoon = Volatile.Read(ref readings);
+
+        clock.Now += TimeSpan.FromSeconds(1);
+        places.ReadAgainIfStale();
+        await Pump.Until(() => Volatile.Read(ref readings) == 2);
+        places.ReadAgainIfStale();
+        await Pump.For(TimeSpan.FromMilliseconds(300));
+
+        await Assert.That(tooSoon).IsEqualTo(1);
+        await Assert.That(Volatile.Read(ref readings)).IsEqualTo(2);
+    }
+
+    // A pinned folder Lode renames, or a recent one in a folder it deletes, has Quick access
+    // read again, which follows the folder moved and no longer has the one deleted, off the UI
+    // thread. A folder neither pinned nor recent reads nothing.
+    [Test]
+    public async Task AFolderPinnedOrRecentGoneInLodeIsReadAgain()
+    {
+        using var fixture = Fixture.Create();
+        var uiThread = Thread.CurrentThread;
+        var readings = 0;
+        var readOn = new List<Thread>();
+        var places = Places.Remembering(
+            new(),
+            () =>
+            {
+                lock (readOn)
+                {
+                    readOn.Add(Thread.CurrentThread);
+                }
+
+                Interlocked.Increment(ref readings);
+                return ([fixture.At("Docs")], [fixture.At("Source", "Deep")]);
+            });
+        places.FollowedAfter = TimeSpan.Zero;
+        await Pump.Until(() => Volatile.Read(ref readings) == 1 && places.Pinned.Count == 1);
+        ShellFileOperation.Gone += places.ReadIfGone;
+        int neither;
+        int renamed;
+        try
+        {
+            await Run(ShellFileOperation.Kind.Rename, fixture.At("Archive"), "Elsewhere");
+            await Pump.For(TimeSpan.FromMilliseconds(300));
+            neither = Volatile.Read(ref readings);
+
+            await Run(ShellFileOperation.Kind.Rename, fixture.At("Docs"), "Documents");
+            await Pump.Until(() => Volatile.Read(ref readings) > neither);
+            await Pump.For(TimeSpan.FromMilliseconds(300));
+            renamed = Volatile.Read(ref readings);
+
+            await Run(ShellFileOperation.Kind.Delete, fixture.At("Source"), null);
+            await Pump.Until(() => Volatile.Read(ref readings) > renamed);
+        }
+        finally
+        {
+            ShellFileOperation.Gone -= places.ReadIfGone;
+        }
+
+        await Assert.That(neither).IsEqualTo(1);
+        await Assert.That(renamed).IsEqualTo(2);
+        await Assert.That(Directory.Exists(fixture.At("Documents"))).IsTrue();
+        await Assert.That(Directory.Exists(fixture.At("Source"))).IsFalse();
+        await Assert.That(readOn).DoesNotContain(uiThread);
+
+        // On a thread of its own, as Lode runs them.
+        static Task Run(ShellFileOperation.Kind kind, string source, string? destination) =>
+            FileOperations.OnStaThread(() => ShellFileOperation.Run(IntPtr.Zero, kind, [source], destination, ShellFileOperation.NoConfirmation));
+    }
+
     // A shell item as Quick access gives one, by default for a folder in the file system.
     sealed record ShellItem(string Path, bool IsFolder = true, bool IsFileSystem = true, bool IsBrowsable = false);
 }

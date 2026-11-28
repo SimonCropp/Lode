@@ -24,8 +24,9 @@ sealed record Places(
 
     /// <summary>
     /// Raised on the UI thread once <see cref="Pinned"/> and <see cref="Recent"/> have been read
-    /// again: after a folder was pinned or unpinned from one of Lode's menus, and at the start
-    /// if they are not as they were remembered.
+    /// again: after a folder was pinned or unpinned from one of Lode's menus, and otherwise
+    /// only when they are not as they were: at the start, on F5, when a window comes to the
+    /// front, and after Lode moved, renamed or deleted one of them.
     /// </summary>
     public event Action? Changed;
 
@@ -40,10 +41,27 @@ sealed record Places(
     // straight after another say, is dropped.
     int reading;
 
+    // When Quick access was last asked for, by the clock given in tests.
+    TimeProvider time = TimeProvider.System;
+    DateTimeOffset lastRead;
+
+    /// <summary>
+    /// How long Quick access is taken to be as it was read, as far as a window coming to the
+    /// front goes.
+    /// </summary>
+    internal static readonly TimeSpan FreshFor = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// How long after Lode moved, renamed or deleted a pinned or recent folder Quick access is
+    /// read again. Tests have it at once.
+    /// </summary>
+    internal TimeSpan FollowedAfter { get; set; } = TimeSpan.FromSeconds(2);
+
     public static Places ForThisMachine(Settings settings)
     {
         var places = Remembering(settings, QuickAccessFolders);
         ShellContextMenu.QuickAccessChanged += places.Reread;
+        ShellFileOperation.Gone += places.ReadIfGone;
         return places;
     }
 
@@ -53,13 +71,20 @@ sealed record Places(
     /// thread; the tree follows if it turns out to have changed. Made on the UI thread.
     /// </summary>
     /// <param name="read">Reads Quick access, on a thread of its own. Given in tests.</param>
-    internal static Places Remembering(Settings settings, Func<(List<string> Pinned, List<string> Recent)> read)
+    /// <param name="time">The clock, given in tests.</param>
+    /// <param name="drives">The drives under This PC, given in tests.</param>
+    internal static Places Remembering(
+        Settings settings,
+        Func<(List<string> Pinned, List<string> Recent)> read,
+        TimeProvider? time = null,
+        IReadOnlyList<string>? drives = null)
     {
-        var places = new Places(settings.PinnedFolders.ToList(), settings.RecentFolders.ToList(), ShowComputer: true, DescribeFreeSpace)
+        var places = new Places(settings.PinnedFolders.ToList(), settings.RecentFolders.ToList(), ShowComputer: true, DescribeFreeSpace, drives)
         {
             settings = settings,
             read = read,
-            context = new WindowsFormsSynchronizationContext()
+            context = new WindowsFormsSynchronizationContext(),
+            time = time ?? TimeProvider.System
         };
         places.Read(evenIfUnchanged: false);
         return places;
@@ -72,15 +97,77 @@ sealed record Places(
     internal void Reread() =>
         Read(evenIfUnchanged: true);
 
-    // On a thread of its own, set up for the shell's COM objects as the UI thread is. In the
-    // background, so a slow shell does not keep Lode from exiting.
-    void Read(bool evenIfUnchanged)
+    /// <summary>
+    /// Reads Quick access again for F5, as anything else is read again then: a folder pinned
+    /// since in Explorer or a file dialog, unpinned there, or used lately. Says so only when it
+    /// has changed.
+    /// </summary>
+    internal void ReadAgain() =>
+        Read(evenIfUnchanged: false);
+
+    /// <summary>
+    /// Reads Quick access again as a window comes to the front, back from the tray or another
+    /// app, where folders may have been pinned or used meanwhile, unless it was read in the
+    /// last few minutes: going from one window to another and back reads it once.
+    /// </summary>
+    internal void ReadAgainIfStale()
     {
+        if (time.GetUtcNow() - lastRead < FreshFor)
+        {
+            return;
+        }
+
+        Read(evenIfUnchanged: false);
+    }
+
+    /// <summary>
+    /// Reads Quick access again after Lode moved, renamed or deleted what is given, where a
+    /// pinned or recent folder was one of those or in one: Quick access follows a folder moved,
+    /// and a folder deleted is no longer listed. Heard on the operation's thread, and looked
+    /// into back on the UI thread. Read a moment after, as the shell itself follows the folder
+    /// in Quick access only once it has heard of the move from the operation.
+    /// </summary>
+    internal void ReadIfGone(IReadOnlyList<string> gone)
+    {
+        try
+        {
+            context?.Post(_ => ReadIfAmong(gone), null);
+        }
+        catch (InvalidOperationException)
+        {
+            // Lode is exiting, and there is no longer a UI thread to tell.
+        }
+    }
+
+    void ReadIfAmong(IReadOnlyList<string> gone)
+    {
+        if (Pinned.Concat(Recent).Any(_ => gone.Any(place => Locations.IsWithin(_, place))))
+        {
+            Read(evenIfUnchanged: false, after: FollowedAfter);
+        }
+    }
+
+    // On a thread of its own, set up for the shell's COM objects as the UI thread is. In the
+    // background, so a slow shell does not keep Lode from exiting. Not for places a test made
+    // up, which have nothing to read.
+    void Read(bool evenIfUnchanged, TimeSpan after = default)
+    {
+        if (read is not { } readQuickAccess)
+        {
+            return;
+        }
+
         var version = ++reading;
+        lastRead = time.GetUtcNow();
         var thread = new Thread(
             () =>
             {
-                var (pinned, recent) = read!();
+                if (after > TimeSpan.Zero)
+                {
+                    Thread.Sleep(after);
+                }
+
+                var (pinned, recent) = readQuickAccess();
                 try
                 {
                     context!.Post(_ => Take(version, pinned, recent, evenIfUnchanged), null);
