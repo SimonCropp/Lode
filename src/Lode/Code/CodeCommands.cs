@@ -621,7 +621,8 @@ static class CodeCommands
         ForEach(repos, progress, cancel, repo => TagAndPush(repo, name, "HEAD", commitMessage, cancel));
 
     // Tags commit, HEAD or the SHA History picked, and pushes the tag, with what of the branch
-    // checked out origin's hasn't got, up to the commit: see BranchToPushWithTag.
+    // checked out origin's hasn't got, up to the commit: see BranchToPushWithTag. The tag is
+    // annotated, its name its message, and signed where git's config says.
     static RepoResult TagAndPush(string repo, string name, string commit, string? commitMessage, Cancel cancel)
     {
         var committed = "";
@@ -646,7 +647,9 @@ static class CodeCommands
             };
         }
 
-        var tag = GitToItsEnd(repo, cancel, "tag", name, commit);
+        // Annotated, with its name for its message: a tag tag.gpgSign signs has to have one, and
+        // with none given git would ask an editor for it, which nobody can use here.
+        var tag = GitToItsEnd(repo, cancel, "tag", "-m", name, name, commit);
         if (!tag.Succeeded)
         {
             return tag with
@@ -1597,6 +1600,14 @@ static class CodeCommands
         // That stops git's own, and BatchMode stops ssh's: for a key's passphrase, with no
         // agent holding it, or a host whose key is not known yet.
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+
+        // Nor can anybody use an editor started in one, which git starts for a message it isn't
+        // given, a tag's that tag.gpgSign signs say, or for the list of commits an interactive
+        // rebase works through, as pull.rebase=interactive has it: git would wait on it for ever,
+        // unseen, and one left to its end, as a tag is, couldn't even be cancelled. False fails
+        // at once, git saying why. A caller's own, in the environment it gives, is kept.
+        startInfo.Environment["GIT_EDITOR"] = "false";
+        startInfo.Environment["GIT_SEQUENCE_EDITOR"] = "false";
 
         // In English, whatever the user's language: Purge reads clean's "Would remove" lines.
         // File names still come as UTF-8.

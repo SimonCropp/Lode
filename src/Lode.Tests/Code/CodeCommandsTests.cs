@@ -395,6 +395,60 @@ public class CodeCommandsTests
         await Assert.That(clean).IsEqualTo("Would remove St Mary’s ä.txt");
     }
 
+    // Nobody can answer an editor in a hidden window, any more than a prompt: git wanting one,
+    // for a commit with no message say, fails at once, rather than waiting on one nobody sees,
+    // here one that would take a minute, as vim would wait for ever. A caller's own editor, given
+    // in the environment, is left as it is.
+    [Test]
+    public async Task GitWantingAnEditorFailsAtOnce()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        string[] showEditors = ["-c", "alias.editors=!echo \"[$GIT_EDITOR] [$GIT_SEQUENCE_EDITOR]\"", "editors"];
+        var started = Stopwatch.StartNew();
+
+        var commit = await Task.Run(() => CodeCommands.GitToItsEnd(repo, Cancel.None, "-c", "core.editor=sleep 60;:", "commit", "--allow-empty"))
+            .WaitAsync(TimeSpan.FromSeconds(30));
+        var took = started.Elapsed;
+        var editors = CodeCommands.Git(repo, showEditors).Output;
+        var theirOwn = CodeCommands.GitToItsEnd(repo, Cancel.None, new Dictionary<string, string> {["GIT_EDITOR"] = "mine"}, showEditors).Output;
+
+        await Assert.That(took).IsLessThan(TimeSpan.FromSeconds(20));
+        await Assert.That(commit.Succeeded).IsFalse();
+        await Assert.That(Scratch.Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Initial");
+        await Assert.That(editors).IsEqualTo("[false] [false]");
+        await Assert.That(theirOwn).IsEqualTo("[mine] [false]");
+    }
+
+    // Pull rebasing interactively, as pull.rebase=interactive has it, would wait on an editor
+    // for the list of commits to rebase: it fails at once instead, leaving no rebase part way,
+    // and the branch as it was.
+    [Test]
+    public async Task PullRebasingInteractivelyFailsAtOnce()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var other = code.Clone("Repo", "Other");
+        await File.WriteAllTextAsync(Path.Combine(other, "theirs.txt"), "theirs");
+        Scratch.Git(other, "add", "theirs.txt");
+        Scratch.Git(other, "commit", "-m", "Theirs");
+        Scratch.Git(other, "push");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "ours");
+        Scratch.Git(repo, "commit", "-am", "Ours");
+        Scratch.Git(repo, "config", "pull.rebase", "interactive");
+        Scratch.Git(repo, "config", "sequence.editor", "sleep 60;:");
+        var ours = Scratch.Git(repo, "rev-parse", "HEAD");
+        var started = Stopwatch.StartNew();
+
+        var result = (await CodeCommands.Pull([repo]).WaitAsync(TimeSpan.FromSeconds(30))).Single();
+
+        await Assert.That(started.Elapsed).IsLessThan(TimeSpan.FromSeconds(20));
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(CodeCommands.Unfinished(repo)).IsNull();
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(ours);
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
     [Test]
     public async Task PushCommitsWithTheMessageAndPushes()
     {
@@ -956,6 +1010,37 @@ public class CodeCommandsTests
         await Assert.That(again.Succeeded).IsFalse();
         await Assert.That(Scratch.Git(repo, "rev-parse", "v1.0^{commit}")).IsEqualTo(Scratch.Git(repo, "rev-parse", "HEAD"));
         await Assert.That(Scratch.Git(code.Origin("Repo"), "tag")).IsEqualTo("v1.0");
+    }
+
+    // With tag.gpgSign set, a tag is signed, which takes a message, and git would wait on an
+    // editor nobody sees for it: the tag's name is its message, so it needs none. A stand-in
+    // signs, as gpg would, here a script saying it has, as git asks gpg to.
+    [Test]
+    public async Task TagSignedAsGitConfigSaysNeedsNoEditor()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        var gpg = code.At("gpg.sh");
+        await File.WriteAllTextAsync(
+            gpg,
+            """
+            #!/bin/sh
+            cat > /dev/null
+            printf -- '-----BEGIN PGP SIGNATURE-----\nstand-in\n-----END PGP SIGNATURE-----\n'
+            printf '\n[GNUPG:] SIG_CREATED D 1 8 00 0 STAND-IN\n' >&2
+            """.ReplaceLineEndings("\n"));
+        Scratch.Git(repo, "config", "tag.gpgSign", "true");
+        Scratch.Git(repo, "config", "gpg.program", gpg.Replace('\\', '/'));
+        Scratch.Git(repo, "config", "core.editor", "sleep 60;:");
+        var started = Stopwatch.StartNew();
+
+        var result = (await CodeCommands.Tag([repo], "v1.0").WaitAsync(TimeSpan.FromSeconds(30))).Single();
+
+        await Assert.That(started.Elapsed).IsLessThan(TimeSpan.FromSeconds(20));
+        await Assert.That(result.Succeeded).IsTrue();
+        var tag = Scratch.Git(repo, "cat-file", "tag", "v1.0");
+        await Assert.That(tag).Contains("\n\nv1.0\n-----BEGIN PGP SIGNATURE-----\nstand-in\n");
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "cat-file", "tag", "v1.0")).IsEqualTo(tag);
     }
 
     static GitCommit Commit(string repo, string sha)
