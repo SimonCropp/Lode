@@ -326,13 +326,14 @@ static class Zip
 
     /// <summary>
     /// Writes what <paramref name="zip"/> holds into <paramref name="destination"/>, which is
-    /// there, each item with the time it was last changed. Leaves out an entry named to go
-    /// outside it, or with a name Windows can't have. When anything it would write is there
-    /// already, writes nothing and returns that. When it fails, or <paramref name="cancel"/>
-    /// stops it, deletes what it made.
+    /// there, each item with the time it was last changed, and each file with the zip's mark of
+    /// the web, should it have one. Leaves out an entry named to go outside it, or with a name
+    /// Windows can't have. When anything it would write is there already, writes nothing and
+    /// returns that. When it fails, or <paramref name="cancel"/> stops it, deletes what it made.
     /// </summary>
     public static Extraction Extract(string zip, string destination, IProgress<string>? progress, Cancel cancel)
     {
+        var mark = MarkOfTheWeb(zip);
         using var archive = OpenRead(zip);
         var targets = new List<(ZipArchiveEntry Entry, string Path, bool IsFolder)>();
         var leftOut = new List<string>();
@@ -417,7 +418,7 @@ static class Zip
                 written++;
                 progress?.Report($"Extracting {written} of {files.Count}");
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                entry.ExtractToFile(path, overwrite: false);
+                ExtractFile(entry, path, mark);
             }
         }
         catch
@@ -431,6 +432,78 @@ static class Zip
         }
 
         return new(topLevel, created, leftOut, []);
+    }
+
+    // The stream Windows writes beside a file a browser downloads, saying where it came from:
+    // the mark of the web.
+    const string zoneIdentifier = ":Zone.Identifier";
+
+    // The internet's zone. Above it is the one for sites set as restricted.
+    const int internetZone = 3;
+
+    /// <summary>
+    /// The mark of the web <paramref name="zip"/> has, as it is written, when it says the zip
+    /// came from the internet or a restricted site. Explorer puts the zip's mark on all it
+    /// extracts from it, which has Office open a document in Protected View, and SmartScreen
+    /// check a program before it runs, so Lode does too. Null when the zip has no mark, or one
+    /// of a zone nothing is checked for, the machine's own or a trusted site's.
+    /// </summary>
+    static byte[]? MarkOfTheWeb(string zip)
+    {
+        byte[] mark;
+        try
+        {
+            mark = File.ReadAllBytes(zip + zoneIdentifier);
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(new MemoryStream(mark), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        while (reader.ReadLine() is { } line)
+        {
+            var equals = line.IndexOf('=');
+            if (equals > 0 &&
+                line[..equals].Trim().Equals("ZoneId", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(line[(equals + 1)..].Trim(), CultureInfo.InvariantCulture, out var zone) &&
+                zone >= internetZone)
+            {
+                return mark;
+            }
+        }
+
+        return null;
+    }
+
+    // Writes an entry's file, with the time it was last changed, and the zip's mark, should it
+    // have one. Writing the mark changes the file's time, so the time is given again after it.
+    // A drive that can't hold the mark, FAT or exFAT say, has the file without it, as Explorer
+    // leaves it there, rather than the extract failing.
+    static void ExtractFile(ZipArchiveEntry entry, string path, byte[]? mark)
+    {
+        entry.ExtractToFile(path, overwrite: false);
+        if (mark == null)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllBytes(path + zoneIdentifier, mark);
+            File.SetLastWriteTime(path, entry.LastWriteTime.DateTime);
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException)
+        {
+        }
     }
 
     // The highest folder or file on the way from the destination down to path that is not there.
@@ -758,10 +831,10 @@ static class Zip
 
     /// <summary>
     /// Extracts each of <paramref name="paths"/>, items in a zip, a folder with all it holds, to
-    /// the temp folder, under its own name. Returns where each is there. Each goes in a folder of
-    /// its own for the zip as it is now and the item, so extracting it again goes to the same
-    /// place, written again unless what is there is in use, an editor having it open say, when
-    /// that is kept.
+    /// the temp folder, under its own name, each file with the zip's mark of the web, should it
+    /// have one. Returns where each is there. Each goes in a folder of its own for the zip as it
+    /// is now and the item, so extracting it again goes to the same place, written again unless
+    /// what is there is in use, an editor having it open say, when that is kept.
     /// </summary>
     public static IReadOnlyList<string> ExtractToTemp(IReadOnlyList<string> paths)
     {
@@ -781,8 +854,9 @@ static class Zip
             if (TryClear(target))
             {
                 Directory.CreateDirectory(folder);
+                var mark = MarkOfTheWeb(location.Archive);
                 using var archive = OpenRead(location.Archive);
-                ExtractItem(archive, location.Inner, target);
+                ExtractItem(archive, location.Inner, target, mark);
             }
 
             extracted.Add(target);
@@ -817,8 +891,10 @@ static class Zip
         }
     }
 
-    // Writes the item at inner, a file or a folder with all beneath it, to target.
-    static void ExtractItem(ZipArchive archive, string inner, string target)
+    // Writes the item at inner, a file or a folder with all beneath it, to target, each file with
+    // the zip's mark of the web, should it have one: opened from there, or copied or dragged on
+    // from there, Windows is as wary of it as of the zip it came out of.
+    static void ExtractItem(ZipArchive archive, string inner, string target, byte[]? mark)
     {
         var innerSegments = inner.Split(Path.DirectorySeparatorChar);
         var any = false;
@@ -846,7 +922,7 @@ static class Zip
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            entry.ExtractToFile(path);
+            ExtractFile(entry, path, mark);
             any = true;
         }
 

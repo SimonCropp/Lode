@@ -432,4 +432,64 @@ public class ZipTests
             }
         }
     }
+
+    // What Windows writes beside a file a browser downloads, saying where it came from.
+    static string? MarkOf(string path)
+    {
+        try
+        {
+            return File.ReadAllText(path + ":Zone.Identifier");
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    // A zip downloaded from the internet is marked so, and Explorer marks what it extracts from
+    // one the same, which has Office open a document in Protected View and SmartScreen check a
+    // program: extracted all at once, or an item opened, copied or dragged out of it, each file
+    // has the zip's mark, and keeps the time the zip gives it. A zip with no mark, or one from a
+    // trusted site, gives none.
+    [Test]
+    public async Task ExtractedFromADownloadedZipIsMarkedAsTheZipIs()
+    {
+        using var fixture = Fixture.Create();
+        const string mark = "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=https://example.com/Downloaded.zip\r\n";
+        var downloaded = MakeZip(fixture, "Downloaded.zip", ("invoice.docm", "macro"), ("Inner/setup.exe", "program"), ("Inner/Empty/", ""));
+        await File.WriteAllTextAsync(downloaded + ":Zone.Identifier", mark);
+        var trusted = MakeZip(fixture, "Trusted.zip", ("invoice.docm", "macro"));
+        await File.WriteAllTextAsync(trusted + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=2\r\n");
+        var local = MakeZip(fixture, "Local.zip", ("invoice.docm", "macro"));
+        DateTime written;
+        using (var archive = ZipFile.OpenRead(downloaded))
+        {
+            written = archive.GetEntry("invoice.docm")!.LastWriteTime.DateTime;
+        }
+
+        Zip.ExtractTo(downloaded, fixture.Root, false, null, Cancel.None);
+        Zip.ExtractTo(trusted, fixture.Root, false, null, Cancel.None);
+        Zip.ExtractTo(local, fixture.Root, false, null, Cancel.None);
+        var extracted = Zip.ExtractToTemp([Path.Combine(downloaded, "invoice.docm"), Path.Combine(downloaded, "Inner"), Path.Combine(local, "invoice.docm")]);
+
+        try
+        {
+            await Assert.That(MarkOf(fixture.At("Downloaded", "invoice.docm"))).IsEqualTo(mark);
+            await Assert.That(MarkOf(fixture.At("Downloaded", "Inner", "setup.exe"))).IsEqualTo(mark);
+            await Assert.That(File.GetLastWriteTime(fixture.At("Downloaded", "invoice.docm"))).IsEqualTo(written);
+            await Assert.That(MarkOf(extracted[0])).IsEqualTo(mark);
+            await Assert.That(MarkOf(Path.Combine(extracted[1], "setup.exe"))).IsEqualTo(mark);
+            await Assert.That(File.GetLastWriteTime(extracted[0])).IsEqualTo(written);
+            await Assert.That(MarkOf(fixture.At("Trusted", "invoice.docm"))).IsNull();
+            await Assert.That(MarkOf(fixture.At("Local", "invoice.docm"))).IsNull();
+            await Assert.That(MarkOf(extracted[2])).IsNull();
+        }
+        finally
+        {
+            foreach (var path in extracted)
+            {
+                Directory.Delete(Path.GetDirectoryName(path)!, true);
+            }
+        }
+    }
 }
