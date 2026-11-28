@@ -561,6 +561,34 @@ public class CodeCommandsTests
         await Assert.That(Scratch.Git(repo, "log", "-1", "--format=%s")).IsEqualTo("Initial");
     }
 
+    // A branch made here, as Lode makes one, tracks none: git's push, as push.default=simple
+    // has it, would refuse it, having nowhere set to push to, once the commit was made. It goes
+    // to a branch of its own name on origin, which it tracks from then on, and Push says so,
+    // whether it commits first or only pushes.
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task PushPublishesABranchTrackingNone(bool committing)
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "config", "push.autoSetupRemote", "false");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        await File.WriteAllTextAsync(Path.Combine(repo, "tracked.txt"), "changed");
+        if (!committing)
+        {
+            Scratch.Git(repo, "commit", "-am", "Feature");
+        }
+
+        var result = (await CodeCommands.Push([repo], committing ? "Feature" : null)).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.Output).EndsWith("Published feature to origin, as origin/feature, which it tracks from now on.");
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "log", "-1", "--format=%s", "feature")).IsEqualTo("Feature");
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "feature")).IsEqualTo(Scratch.Git(repo, "rev-parse", "HEAD"));
+        await Assert.That(Scratch.Git(repo, "rev-parse", "--abbrev-ref", "feature@{upstream}")).IsEqualTo("origin/feature");
+    }
+
     [Test]
     public async Task PullBringsInWhatOriginHas()
     {
@@ -890,6 +918,27 @@ public class CodeCommandsTests
 
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(result.Output).IsEqualTo("No branch is checked out in it, so nothing was merged or pushed.");
+    }
+
+    // A branch of the fork's own, made here, tracks none: upstream is merged into it, then it
+    // goes to origin, under its own name, which it tracks from then on, rather than the push
+    // being refused once the merge is made.
+    [Test]
+    public async Task SyncForkPublishesABranchTrackingNone()
+    {
+        using var code = new Scratch();
+        var fork = code.CreateFork("Repo");
+        Scratch.Git(fork, "config", "push.autoSetupRemote", "false");
+        Scratch.Git(fork, "switch", "-c", "feature");
+        var upstream = code.CommitUpstream("Repo", "upstream.txt", "upstream");
+
+        var result = (await CodeCommands.SyncFork([fork])).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(result.Output).EndsWith("Published feature to origin, as origin/feature, which it tracks from now on.");
+        await Assert.That(Scratch.Git(fork, "rev-parse", "HEAD")).IsEqualTo(upstream);
+        await Assert.That(Scratch.Git(code.Origin("Repo"), "rev-parse", "feature")).IsEqualTo(upstream);
+        await Assert.That(Scratch.Git(fork, "rev-parse", "--abbrev-ref", "feature@{upstream}")).IsEqualTo("origin/feature");
     }
 
     // A tag goes on the commit each repository is at, and to origin. A second of the same name

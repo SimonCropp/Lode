@@ -278,7 +278,8 @@ static class CodeCommands
     /// Brings each fork up to date with the repository it was made from, as GitHub Desktop's
     /// Fetch origin, Update from upstream and Push origin do, one after another: learns what
     /// origin and upstream have, brings in what origin has that the branch hasn't, merges
-    /// upstream's default branch into the branch checked out, then pushes the branch to origin.
+    /// upstream's default branch into the branch checked out, then pushes the branch to origin,
+    /// one tracking none to one of its own name there, which it tracks from then on, as Push does.
     /// A branch that has diverged from origin is left as it is, as is one whose merge would
     /// conflict: the merge is undone, so none is left part way through one. Nor is one merged
     /// into that is part way through a merge or a rebase already.
@@ -332,7 +333,7 @@ static class CodeCommands
             return Said(UndoMerge(repo, from, merge));
         }
 
-        return Said(Git(repo, cancel, network: true, "push", "origin"));
+        return Said(PushToOrigin(repo, cancel));
 
         RepoResult Said(RepoResult result)
         {
@@ -896,7 +897,8 @@ static class CodeCommands
     /// <summary>
     /// Commits every change with the message, new files included, as the Changes pane commits
     /// them, though not what git ignores, then pushes to origin. With no message, where nothing
-    /// was uncommitted as it asked, it only pushes.
+    /// was uncommitted as it asked, it only pushes. A branch tracking none, as one made here
+    /// does, goes to one of its own name on origin, which it tracks from then on.
     /// </summary>
     public static Task<List<RepoResult>> Push(IReadOnlyList<string> repos, string? message, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(
@@ -907,7 +909,7 @@ static class CodeCommands
             {
                 if (message == null)
                 {
-                    return Git(repo, cancel, network: true, "push", "origin");
+                    return PushToOrigin(repo, cancel);
                 }
 
                 var commit = CommitAll(repo, message, "nothing was committed or pushed", cancel);
@@ -916,12 +918,43 @@ static class CodeCommands
                     return commit;
                 }
 
-                var push = Git(repo, cancel, network: true, "push", "origin");
+                var push = PushToOrigin(repo, cancel);
                 return push with
                 {
                     Output = $"{commit.Output}\n{push.Output}".Trim()
                 };
             });
+
+    // Pushes the branch checked out to origin, as git push does, to the branch it tracks there.
+    // One tracking none, as a branch made here does, Lode's own among them, goes to a branch of
+    // its own name on origin, which it then tracks, as GitHub Desktop publishes one: git would
+    // refuse it, having nowhere set to push to, as push.default=simple has it, unless
+    // push.autoSetupRemote is set. Detached, there is no branch to push, which git says.
+    static RepoResult PushToOrigin(string repo, Cancel cancel)
+    {
+        var symbolic = Git(repo, "symbolic-ref", "--quiet", "--short", "HEAD");
+        if (!symbolic.Succeeded)
+        {
+            return Git(repo, cancel, network: true, "push", "origin");
+        }
+
+        var branch = symbolic.Output.Trim();
+        if (Git(repo, "config", "--get", $"branch.{branch}.remote").Succeeded)
+        {
+            return Git(repo, cancel, network: true, "push", "origin");
+        }
+
+        var push = Git(repo, cancel, network: true, "push", "--set-upstream", "origin", $"HEAD:refs/heads/{branch}");
+        if (!push.Succeeded)
+        {
+            return push;
+        }
+
+        return push with
+        {
+            Output = $"{push.Output}\nPublished {branch} to origin, as origin/{branch}, which it tracks from now on.".Trim()
+        };
+    }
 
     // Commits every change, new files included, as Push and Tag commit them: what went wrong,
     // ending with what was not done, or what the commit said. Nothing to commit is fine: there
