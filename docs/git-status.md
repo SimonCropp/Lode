@@ -34,7 +34,7 @@ flowchart TD
 - the branch, or null when HEAD is detached
 - the commit, or null before the first commit
 - how many commits it is ahead of and behind the branch it tracks, as of the last fetch
-- whether it tracks a branch at all
+- the branch it tracks, if any, as `git status` names it, `origin/main` say (`UpstreamName`), and whether that branch is gone, deleted on origin and pruned since say, as `git status -sb` says `[gone]` (`UpstreamGone`). The status bar views a branch on origin's site only where it tracks one of origin's that is there still, by its name on origin (`OriginBranch`)
 - in a fork, how many commits upstream's default branch has that the commit checked out hasn't, as of the last fetch (`ForkBehind`)
 - the most recent tag the commit checked out has in its history, as `git describe --tags --abbrev=0` finds it (`Tag`), shown in the **Tag** column of a folder listing repositories
 - the files with changes not yet committed, each with a `GitChange`: Modified, Staged, Added, Renamed, Deleted, Untracked or Conflicted

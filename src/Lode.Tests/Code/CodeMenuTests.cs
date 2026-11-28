@@ -43,7 +43,7 @@ public class CodeMenuTests
         using var owner = new Control();
         var clean = new GitState("main", "abc1234", 0, 0, [])
         {
-            Upstream = true
+            UpstreamName = "origin/main"
         };
         string Offered(IReadOnlyList<string> folders, GitState? state)
         {
@@ -71,7 +71,7 @@ public class CodeMenuTests
         await Assert.That(Offered([clone], clean with { Ahead = 1 })).IsEqualTo("push");
         await Assert.That(Offered([clone], clean with { Files = [new("tracked.txt", GitChange.Modified)] })).IsEqualTo("push");
         await Assert.That(Offered([clone], clean with { Files = [new("new.txt", GitChange.Untracked)] })).IsEqualTo("push");
-        await Assert.That(Offered([clone], clean with { Upstream = false })).IsEqualTo("push");
+        await Assert.That(Offered([clone], clean with { UpstreamName = null })).IsEqualTo("push");
         await Assert.That(Offered([clone], null)).IsEqualTo("push");
         await Assert.That(Offered([code.Root], clean)).IsEqualTo("switch, push");
     }
@@ -93,7 +93,7 @@ public class CodeMenuTests
         using var owner = new Control();
         var clean = new GitState("main", "abc1234", 0, 0, [])
         {
-            Upstream = true
+            UpstreamName = "origin/main"
         };
         var changed = clean with
         {
@@ -115,7 +115,7 @@ public class CodeMenuTests
         await Assert.That(Offered([clone], _ => clean)).IsFalse();
         await Assert.That(Offered([Path.Combine(clone, "sub")], _ => clean)).IsFalse();
         await Assert.That(Offered([clone], _ => clean with { Ahead = 1 })).IsFalse();
-        await Assert.That(Offered([clone], _ => clean with { Upstream = false })).IsFalse();
+        await Assert.That(Offered([clone], _ => clean with { UpstreamName = null })).IsFalse();
         await Assert.That(Offered([clone], _ => changed)).IsTrue();
         await Assert.That(Offered([clone], _ => clean with { Files = [new("new.txt", GitChange.Untracked)] })).IsTrue();
         await Assert.That(Offered([clone, other], OtherChanged)).IsTrue();
@@ -333,7 +333,7 @@ public class CodeMenuTests
     {
         var clean = new GitState("main", "abc1234", 0, 0, [])
         {
-            Upstream = true,
+            UpstreamName = "origin/main",
             Tag = "2.0.0"
         };
         var changed = clean with
@@ -396,7 +396,7 @@ public class CodeMenuTests
                 @"C:\Code\NServiceBus.Community.SqlNative",
                 new("main", "eaae4361234", 0, 0, [new("tracked.txt", GitChange.Modified)])
                 {
-                    Upstream = true,
+                    UpstreamName = "origin/main",
                     Tag = "17.1.0"
                 },
                 [],
@@ -465,7 +465,7 @@ public class CodeMenuTests
                 @"C:\Code\NServiceBus.Community.SqlNative",
                 new("main", "eaae4361234", 1, 0, [new("tracked.txt", GitChange.Modified)])
                 {
-                    Upstream = true,
+                    UpstreamName = "origin/main",
                     Tag = "17.1.0"
                 },
                 [],

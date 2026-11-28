@@ -1471,7 +1471,7 @@ public class CodeCommandsTests
     {
         var clean = new GitState("main", "abc1234", 0, 0, [])
         {
-            Upstream = true
+            UpstreamName = "origin/main"
         };
         var changed = clean with
         {
@@ -1484,8 +1484,8 @@ public class CodeCommandsTests
                 clean = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean, [], "Release 2.0.1")]),
                 ahead = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Ahead = 1 }, ["2.0.0"])]),
                 diverged = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Ahead = 2, Behind = 1 }, [])]),
-                newBranch = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = "feature", Upstream = false }, [])]),
-                detached = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = null, Upstream = false }, [])]),
+                newBranch = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = "feature", UpstreamName = null }, [])]),
+                detached = CodeMenu.TagQuestion([new(@"C:\Code\Lode", clean with { Branch = null, UpstreamName = null }, [])]),
                 changed = CodeMenu.TagQuestion([new(@"C:\Code\Lode", changed, [], "Fix the build")]),
                 several = CodeMenu.TagQuestion(
                 [

@@ -70,7 +70,7 @@ sealed class PaneStubs : IDisposable
     {
         FolderView.ReadGit = (_, _) => new("main", History[0].Sha, 1, 0, Files.Select(_ => new GitFile(_.Path, _.Kind)).ToList())
         {
-            Upstream = true
+            UpstreamName = "origin/main"
         };
         ChangesPane.Read = (_, _) => new("main", true, false, Files);
         HistoryPane.ReadCommits = (_, skip, count, _) => History.Skip(skip).Take(count).ToList();

@@ -2444,7 +2444,7 @@ public class WindowsTests
             GitCache.Reset();
             FolderView.ReadGit = (_, _) => new("main", PaneStubs.History[0].Sha, 1, 0, [])
             {
-                Upstream = true,
+                UpstreamName = "origin/main",
                 Tag = tag
             };
             using var form = await Show(fixture, settings, fixture.Root);
@@ -2475,16 +2475,16 @@ public class WindowsTests
         FolderView.SetClipboardText = _ => done.Add($"copied {_}");
         try
         {
-            await Assert.That(await Run("main", true, "git")).IsEquivalentTo(
+            await Assert.That(await Run("main", "origin/main", "git")).IsEquivalentTo(
                 ["Copy branch name: copied main", "View on GitHub: opened https://github.com/octo/Lode/tree/main"],
                 CollectionOrdering.Matching);
-            await Assert.That(await Run("main", true, "gitTag")).IsEquivalentTo(
+            await Assert.That(await Run("main", "origin/main", "gitTag")).IsEquivalentTo(
                 ["Copy tag name: copied 0.25.0", "View on GitHub: opened https://github.com/octo/Lode/releases/tag/0.25.0"],
                 CollectionOrdering.Matching);
-            await Assert.That(await Run(null, false, "git")).IsEquivalentTo(
+            await Assert.That(await Run(null, null, "git")).IsEquivalentTo(
                 [$"Copy SHA: copied {sha}", $"View on GitHub: opened https://github.com/octo/Lode/commit/{sha}"],
                 CollectionOrdering.Matching);
-            await Assert.That(await Run("local-only", false, "git")).IsEquivalentTo(
+            await Assert.That(await Run("local-only", null, "git")).IsEquivalentTo(
                 ["Copy branch name: copied local-only"],
                 CollectionOrdering.Matching);
         }
@@ -2494,12 +2494,12 @@ public class WindowsTests
         }
 
         // Each entry of the item's right-click menu, run, with what it did.
-        async Task<List<string>> Run(string? branch, bool upstream, string item)
+        async Task<List<string>> Run(string? branch, string? upstream, string item)
         {
             GitCache.Reset();
             FolderView.ReadGit = (_, _) => new(branch, sha, 0, 0, [])
             {
-                Upstream = upstream,
+                UpstreamName = upstream,
                 Tag = "0.25.0"
             };
             using var form = await Show(fixture, settings, fixture.Root);
@@ -2507,6 +2507,97 @@ public class WindowsTests
             form.OpenSite = _ => done.Add($"opened {_}");
             var ran = new List<string>();
             foreach (var command in form.StatusBar.CommandsFor(form.StatusBar.Strip.Items[item]!))
+            {
+                command!.Action();
+                ran.Add($"{command.Text}: {done[^1]}");
+            }
+
+            return ran;
+        }
+    }
+
+    // The branch is viewed on the site as origin has it, by the name it has there: one tracking
+    // origin's main under a name of its own is viewed at main. One whose branch on origin has
+    // gone, merged and deleted say, one tracking a branch of the repository's own, and one
+    // tracking another remote's, as a fork's tracks upstream's, aren't on origin as they are, so
+    // offer only their names.
+    [Test]
+    public async Task StatusBarViewsTheBranchOriginHas()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        await File.WriteAllTextAsync(fixture.At(".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/octo/Lode.git\n");
+        using var code = new CodeCommandsTests.Scratch();
+        var fork = code.CreateFork("Repo");
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "feature/x");
+        CodeCommandsTests.Scratch.Git(fork, "push", "-u", "origin", "feature/x");
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "fix", "--track", "origin/main");
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "local", "--track", "main");
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "synced", "--track", "upstream/main");
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-c", "merged");
+        CodeCommandsTests.Scratch.Git(fork, "push", "-u", "origin", "merged");
+        CodeCommandsTests.Scratch.Git(fork, "push", "origin", "--delete", "merged");
+        CodeCommandsTests.Scratch.Git(fork, "fetch", "--prune", "origin");
+        var done = new List<string>();
+        var setClipboardText = FolderView.SetClipboardText;
+        FolderView.SetClipboardText = _ => done.Add($"copied {_}");
+        try
+        {
+            await Verify(
+                new
+                {
+                    main = await Run("main"),
+                    sameName = await Run("feature/x"),
+                    otherName = await Run("fix"),
+                    local = await Run("local"),
+                    otherRemote = await Run("synced"),
+                    gone = await Run("merged")
+                })
+                .Snapshot(
+                    """
+                    {
+                      main: [
+                        Copy branch name: copied main,
+                        View on GitHub: opened https://github.com/octo/Lode/tree/main
+                      ],
+                      sameName: [
+                        Copy branch name: copied feature/x,
+                        View on GitHub: opened https://github.com/octo/Lode/tree/feature/x
+                      ],
+                      otherName: [
+                        Copy branch name: copied fix,
+                        View on GitHub: opened https://github.com/octo/Lode/tree/main
+                      ],
+                      local: [
+                        Copy branch name: copied local
+                      ],
+                      otherRemote: [
+                        Copy branch name: copied synced
+                      ],
+                      gone: [
+                        Copy branch name: copied merged
+                      ]
+                    }
+                    """);
+        }
+        finally
+        {
+            FolderView.SetClipboardText = setClipboardText;
+        }
+
+        // The branch's right-click entries, each run, with what it did, the branch checked out
+        // and its state read from the repository as Lode reads it.
+        async Task<List<string>> Run(string branch)
+        {
+            CodeCommandsTests.Scratch.Git(fork, "switch", branch);
+            GitCache.Reset();
+            FolderView.ReadGit = (_, cancel) => InProcessState.FromFaster(fork, cancel);
+            using var form = await Show(fixture, settings, fixture.Root);
+            await PaneStubs.Settled(form);
+            form.OpenSite = _ => done.Add($"opened {_}");
+            var ran = new List<string>();
+            foreach (var command in form.StatusBar.CommandsFor(form.StatusBar.Strip.Items["git"]!))
             {
                 command!.Action();
                 ran.Add($"{command.Text}: {done[^1]}");

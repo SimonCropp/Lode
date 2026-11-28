@@ -27,9 +27,13 @@ static class InProcessState
 
             var files = WorkingTree.Read(repository, cancel);
             var upstreamRef = UpstreamRef(repository);
+
+            // Gone until there is something to count ahead and behind against, as git status
+            // has it: the branch tracked there, and a commit checked out to count from.
             var state = new GitState(repository.Branch, repository.Head?.ToString(), 0, 0, files)
             {
-                Upstream = upstreamRef != null
+                UpstreamName = upstreamRef == null ? null : ShortName(repository, upstreamRef),
+                UpstreamGone = upstreamRef != null
             };
             if (repository.Head is not { } head)
             {
@@ -46,7 +50,8 @@ static class InProcessState
                 state = state with
                 {
                     Ahead = ahead.Count,
-                    Behind = behind.Count
+                    Behind = behind.Count,
+                    UpstreamGone = false
                 };
             }
 
@@ -98,6 +103,59 @@ static class InProcessState
         }
 
         return repository.Upstream(branch);
+    }
+
+    // The forms git takes a short name in, as it reads refs/remotes/origin/main for origin/main,
+    // in the order it tries them.
+    static (string Prefix, string Suffix)[] shortForms =
+    [
+        ("", ""),
+        ("refs/", ""),
+        ("refs/tags/", ""),
+        ("refs/heads/", ""),
+        ("refs/remotes/", ""),
+        ("refs/remotes/", "/HEAD")
+    ];
+
+    /// <summary>
+    /// A ref's name as git status gives the branch tracked: as short as it can be while git would
+    /// read it back as that ref and no other, refs/remotes/origin/main as origin/main, and
+    /// refs/heads/main as main, but as remotes/origin/main where a branch here is called
+    /// origin/main too.
+    /// </summary>
+    static string ShortName(GitRepository repository, string name)
+    {
+        // The last form first, the one that takes the most off. The first form, the name as it
+        // is, always fits, so is the name given where no other will do.
+        for (var form = shortForms.Length - 1; form > 0; form--)
+        {
+            var (prefix, suffix) = shortForms[form];
+            if (name.Length <= prefix.Length + suffix.Length ||
+                !name.StartsWith(prefix, StringComparison.Ordinal) ||
+                !name.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var shortName = name[prefix.Length..^suffix.Length];
+            var ambiguous = false;
+            for (var before = 0; before < form; before++)
+            {
+                var (beforePrefix, beforeSuffix) = shortForms[before];
+                if (repository.Resolve(beforePrefix + shortName + beforeSuffix) != null)
+                {
+                    ambiguous = true;
+                    break;
+                }
+            }
+
+            if (!ambiguous)
+            {
+                return shortName;
+            }
+        }
+
+        return name;
     }
 
     /// <summary>

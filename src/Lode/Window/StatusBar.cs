@@ -289,9 +289,12 @@ sealed class StatusBar : IDisposable
     /// <summary>
     /// The right-click entries of the branch or the tag on the bar: to copy its name, as GitHub
     /// Desktop's branch menu has Copy branch name, and to view it on the site origin is on, as
-    /// History views a commit. Detached, the commit, in the branch's place. A branch tracking
-    /// none isn't on the site yet, so isn't viewed there. None for anything else, or with no
-    /// repository shown.
+    /// History views a commit. Detached, the commit, in the branch's place. A branch is viewed as
+    /// origin has it, by its name there, so only one tracking a branch on origin that is there
+    /// still: one tracking none isn't on the site yet, and one whose branch on origin has gone,
+    /// one tracking a branch of the repository's own, or another remote's, upstream's in a fork
+    /// say, isn't there by its name, so none of them is viewed there. None for anything else, or
+    /// with no repository shown.
     /// </summary>
     internal List<QuickMenu.Command?> CommandsFor(ToolStripItem item)
     {
@@ -315,9 +318,9 @@ sealed class StatusBar : IDisposable
         if (state.Branch is { } branch)
         {
             string? url = null;
-            if (state.Upstream)
+            if (state.OriginBranch is { } onOrigin)
             {
-                url = site?.BranchUrl(branch);
+                url = site?.BranchUrl(onOrigin);
             }
 
             return WithView(Copy("Copy branch name", branch), url);

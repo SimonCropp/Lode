@@ -63,7 +63,7 @@ public class GitPanesCaptureTests
             {
                 FolderView.ReadGit = (_, _) => new("main", PaneStubs.History[0].Sha, 1, 0, [])
                 {
-                    Upstream = true
+                    UpstreamName = "origin/main"
                 };
                 ChangesPane.Read = (_, _) => new("main", true, false, []);
                 form.Reload();

@@ -17,10 +17,48 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     public int Changes => Files.Count;
 
     /// <summary>
+    /// The branch this one tracks, as git status names it: origin/main say, the remote's name
+    /// and then the branch's there, or a branch of the repository's own by its name alone. Null
+    /// where it tracks none.
+    /// </summary>
+    public string? UpstreamName { get; init; }
+
+    /// <summary>
     /// Whether the branch tracks one, on origin say, which <see cref="Ahead"/> and
     /// <see cref="Behind"/> count against. Without one, both are 0.
     /// </summary>
-    public bool Upstream { get; init; }
+    public bool Upstream => UpstreamName != null;
+
+    /// <summary>
+    /// Whether the branch tracked is gone, as git status -sb says [gone]: deleted on origin
+    /// once merged, say, and pruned since. Git names it still, but there is nothing to count
+    /// <see cref="Ahead"/> and <see cref="Behind"/> against, so both are 0. Before the first
+    /// commit there is nothing to count from either, which git takes as gone too.
+    /// </summary>
+    public bool UpstreamGone { get; init; }
+
+    /// <summary>
+    /// The branch's name on origin, where it tracks one there that is there still, as of the
+    /// last fetch: origin's feature/x for origin/feature/x, whatever the branch is called here.
+    /// Null where it tracks none, one gone, a branch of the repository's own, or one of another
+    /// remote, upstream's in a fork say, none of which is on origin as it is.
+    /// </summary>
+    public string? OriginBranch
+    {
+        get
+        {
+            const string prefix = "origin/";
+            if (UpstreamGone ||
+                UpstreamName is not { } name ||
+                !name.StartsWith(prefix, StringComparison.Ordinal) ||
+                name.Length == prefix.Length)
+            {
+                return null;
+            }
+
+            return name[prefix.Length..];
+        }
+    }
 
     /// <summary>
     /// In a fork, how many commits the repository it was made from has, on its default branch,
@@ -52,7 +90,8 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
     public bool Equals(GitState? other) =>
         other != null &&
         Branch == other.Branch &&
-        Upstream == other.Upstream &&
+        UpstreamName == other.UpstreamName &&
+        UpstreamGone == other.UpstreamGone &&
         Commit == other.Commit &&
         Ahead == other.Ahead &&
         Behind == other.Behind &&
@@ -243,7 +282,8 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
         string? branch = null;
         var ahead = 0;
         var behind = 0;
-        var upstream = false;
+        string? upstream = null;
+        var counted = false;
         var files = new List<GitFile>();
 
         // Each entry where it is in the output, so the only strings made are those kept: a
@@ -275,15 +315,17 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
                 continue;
             }
 
+            // Printed whether the branch tracked is there or has gone.
             if (entry.StartsWith("# branch.upstream ", StringComparison.Ordinal))
             {
-                upstream = true;
+                upstream = entry["# branch.upstream ".Length..].ToString();
                 continue;
             }
 
             // "+2 -1": ahead, then behind. Missing without an upstream, or one that has gone.
             if (entry.StartsWith("# branch.ab ", StringComparison.Ordinal))
             {
+                counted = true;
                 var counts = entry["# branch.ab ".Length..];
                 var space = counts.IndexOf(' ');
                 if (space >= 0 &&
@@ -325,7 +367,8 @@ sealed record GitState(string? Branch, string? Commit, int Ahead, int Behind, IR
 
         return new(branch, commit, ahead, behind, InOrder(files))
         {
-            Upstream = upstream
+            UpstreamName = upstream,
+            UpstreamGone = upstream != null && !counted
         };
     }
 

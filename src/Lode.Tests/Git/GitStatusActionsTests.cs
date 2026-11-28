@@ -16,7 +16,7 @@ public class GitStatusActionsTests
             .ToList();
         return new(branch, commit, ahead, behind, files)
         {
-            Upstream = branch != null
+            UpstreamName = branch == null ? null : $"origin/{branch}"
         };
     }
 
@@ -72,7 +72,7 @@ public class GitStatusActionsTests
                 merging = AskMerging(
                     new("main", commit, 0, 0, [new("src/0.cs", GitChange.Conflicted), new("src/1.cs", GitChange.Modified)])
                     {
-                        Upstream = true
+                        UpstreamName = "origin/main"
                     }),
                 mergingSettled = AskMerging(State(modified: 1)),
                 noCommits = Ask(GitState.PartKind.NoCommits, new("main", null, 0, 0, [])),

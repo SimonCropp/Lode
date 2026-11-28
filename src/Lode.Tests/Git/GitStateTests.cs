@@ -20,7 +20,7 @@ public class GitStateTests
                 "# branch.upstream origin/main",
                 "# branch.ab +0 -0"));
 
-        await Assert.That(state).IsEqualTo(new GitState("main", commit, 0, 0, []) with { Upstream = true });
+        await Assert.That(state).IsEqualTo(new GitState("main", commit, 0, 0, []) with { UpstreamName = "origin/main" });
     }
 
     // One entry a path, whatever has happened to it, in order of their paths. A rename's entry
@@ -94,7 +94,40 @@ public class GitStateTests
                 "# branch.upstream origin/feature",
                 "# branch.ab +12 -3"));
 
-        await Assert.That(state).IsEqualTo(new GitState("feature", commit, 12, 3, []) with { Upstream = true });
+        await Assert.That(state).IsEqualTo(new GitState("feature", commit, 12, 3, []) with { UpstreamName = "origin/feature" });
+    }
+
+    // The branch tracked is kept as git names it, the remote's name, then the branch's there,
+    // which is the branch on origin, whatever the one here is called. One gone, deleted on origin
+    // once merged and pruned since, git names still, but says nothing of ahead and behind, as
+    // there is nothing to count against: it is on origin no longer.
+    [Test]
+    public async Task ParsesTheBranchTracked()
+    {
+        var tracked = GitState.Parse(
+            Entries(
+                $"# branch.oid {commit}",
+                "# branch.head fix",
+                "# branch.upstream origin/feature/x",
+                "# branch.ab +1 -0"));
+        var gone = GitState.Parse(
+            Entries(
+                $"# branch.oid {commit}",
+                "# branch.head merged",
+                "# branch.upstream origin/merged"));
+        var otherRemote = GitState.Parse(
+            Entries(
+                $"# branch.oid {commit}",
+                "# branch.head main",
+                "# branch.upstream upstream/main",
+                "# branch.ab +0 -0"));
+
+        await Assert.That(tracked).IsEqualTo(new GitState("fix", commit, 1, 0, []) with { UpstreamName = "origin/feature/x" });
+        await Assert.That(tracked.OriginBranch).IsEqualTo("feature/x");
+        await Assert.That(gone).IsEqualTo(new GitState("merged", commit, 0, 0, []) with { UpstreamName = "origin/merged", UpstreamGone = true });
+        await Assert.That(gone.Upstream).IsTrue();
+        await Assert.That(gone.OriginBranch).IsNull();
+        await Assert.That(otherRemote.OriginBranch).IsNull();
     }
 
     [Test]
@@ -189,7 +222,7 @@ public class GitStateTests
 
         var state = await Read(repo);
 
-        await Assert.That(state).IsEqualTo(new GitState("main", Head(repo), 0, 0, []) with { Upstream = true });
+        await Assert.That(state).IsEqualTo(new GitState("main", Head(repo), 0, 0, []) with { UpstreamName = "origin/main" });
     }
 
     // A file changed, one staged, one untracked and a folder of them, each one change, and one
@@ -232,7 +265,7 @@ public class GitStateTests
                     new("tracked.txt", GitChange.Modified)
                 ]) with
             {
-                Upstream = true
+                UpstreamName = "origin/main"
             });
     }
 
@@ -272,11 +305,11 @@ public class GitStateTests
         CodeCommandsTests.Scratch.Git(other, "push");
         Commit(repo, "mine.txt");
 
-        await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 0, []) with { Upstream = true });
+        await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 0, []) with { UpstreamName = "origin/main" });
 
         CodeCommandsTests.Scratch.Git(repo, "fetch");
 
-        await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { Upstream = true });
+        await Assert.That(await Read(repo)).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { UpstreamName = "origin/main" });
     }
 
     // In a fork, how many commits upstream's HEAD has that the one checked out hasn't, as of the
@@ -289,11 +322,78 @@ public class GitStateTests
         code.CommitUpstream("Repo", "one.txt", "one");
         code.CommitUpstream("Repo", "two.txt", "two");
 
-        await Assert.That(await Read(fork)).IsEqualTo(new GitState("main", Head(fork), 0, 0, []) with { Upstream = true });
+        await Assert.That(await Read(fork)).IsEqualTo(new GitState("main", Head(fork), 0, 0, []) with { UpstreamName = "origin/main" });
 
         CodeCommandsTests.Scratch.Git(fork, "fetch", "upstream");
 
-        await Assert.That(await Read(fork)).IsEqualTo(new GitState("main", Head(fork), 0, 0, []) with { Upstream = true, ForkBehind = 2 });
+        await Assert.That(await Read(fork)).IsEqualTo(new GitState("main", Head(fork), 0, 0, []) with { UpstreamName = "origin/main", ForkBehind = 2 });
+    }
+
+    // The branch tracked, as both readers name it: origin's by the branch's own name and by
+    // another, a branch of the repository's own, another remote's, as a fork's tracks
+    // upstream's, and origin's once deleted there and pruned. Then origin's main once a branch
+    // here is called origin/main too, which git names in full enough to tell the two apart.
+    [Test]
+    public async Task ReadsTheBranchTracked()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var fork = code.CreateFork("Repo");
+        var main = await Tracked("main");
+
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-q", "-c", "feature/x");
+        CodeCommandsTests.Scratch.Git(fork, "push", "-q", "-u", "origin", "feature/x");
+        var sameName = await Tracked("feature/x");
+
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-q", "-c", "fix", "--track", "origin/main");
+        var otherName = await Tracked("fix");
+
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-q", "-c", "local", "--track", "main");
+        var local = await Tracked("local");
+
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-q", "-c", "synced", "--track", "upstream/main");
+        var otherRemote = await Tracked("synced");
+
+        CodeCommandsTests.Scratch.Git(fork, "switch", "-q", "-c", "merged");
+        CodeCommandsTests.Scratch.Git(fork, "push", "-q", "-u", "origin", "merged");
+        CodeCommandsTests.Scratch.Git(fork, "push", "-q", "origin", "--delete", "merged");
+        CodeCommandsTests.Scratch.Git(fork, "fetch", "-q", "--prune", "origin");
+        var gone = await Tracked("merged");
+
+        CodeCommandsTests.Scratch.Git(fork, "branch", "origin/main", "main");
+        var ambiguous = await Tracked("main");
+
+        await Verify(
+            new
+            {
+                main,
+                sameName,
+                otherName,
+                local,
+                otherRemote,
+                gone,
+                ambiguous
+            })
+            .Snapshot(
+                """
+                {
+                  main: origin/main, on origin main,
+                  sameName: origin/feature/x, on origin feature/x,
+                  otherName: origin/main, on origin main,
+                  local: main, on origin none,
+                  otherRemote: upstream/main, on origin none,
+                  gone: origin/merged gone, on origin none,
+                  ambiguous: remotes/origin/main, on origin none
+                }
+                """);
+
+        // The branch checked out, read by both, which must agree.
+        async Task<string> Tracked(string branch)
+        {
+            CodeCommandsTests.Scratch.Git(fork, "switch", "-q", branch);
+            var state = await Read(fork);
+            var goneText = state.UpstreamGone ? " gone" : "";
+            return $"{state.UpstreamName}{goneText}, on origin {state.OriginBranch ?? "none"}";
+        }
     }
 
     // An upstream added by hand, its HEAD not recorded, gives nothing to count against.
@@ -326,7 +426,7 @@ public class GitStateTests
 
         var state = await Read(repo);
 
-        await Assert.That(state).IsEqualTo(new GitState("main", Head(repo), 1, 1, [new("tracked.txt", GitChange.Conflicted)]) with { Upstream = true });
+        await Assert.That(state).IsEqualTo(new GitState("main", Head(repo), 1, 1, [new("tracked.txt", GitChange.Conflicted)]) with { UpstreamName = "origin/main" });
     }
 
     [Test]
@@ -534,7 +634,7 @@ public class GitStateTests
 
         var state = await Read(repo);
 
-        await Assert.That(state with { Files = [] }).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { Upstream = true, Tag = "v1.0" });
+        await Assert.That(state with { Files = [] }).IsEqualTo(new GitState("main", Head(repo), 1, 1, []) with { UpstreamName = "origin/main", Tag = "v1.0" });
         await Assert.That(state.Files)
             .IsEquivalentTo<IReadOnlyList<GitFile>, GitFile>(
                 [

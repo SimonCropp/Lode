@@ -579,7 +579,7 @@ public class GitPanesTests
         static GitState State(int ahead, int behind, int forkBehind = 0) =>
             new("main", "abc", ahead, behind, [])
             {
-                Upstream = true,
+                UpstreamName = "origin/main",
                 ForkBehind = forkBehind
             };
 
