@@ -33,7 +33,7 @@ sealed class DiffView : UserControl
 
     // The file read again while lines of it were being picked by dragging down their numbers,
     // to show once the drag is let go.
-    (DiffSource File, FileDiff Diff, IReadOnlyList<string>? Lines, bool HideWhitespace)? held;
+    (DiffSource File, Prepared Read, bool HideWhitespace)? held;
 
     /// <summary>
     /// Reads a file's diff. Tests answer for git.
@@ -66,6 +66,17 @@ sealed class DiffView : UserControl
     /// The discarding under way, from the question to the diff read again, for tests to wait on.
     /// </summary>
     internal Task Discarding { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Lays a text diff out in rows, one above the other or side by side, off the UI thread.
+    /// Tests watch where, and hold it up.
+    /// </summary>
+    internal static Func<TextDiff, IReadOnlyList<string>?, bool, DiffLayout> LayOut { get; set; } = DiffLayout.Of;
+
+    /// <summary>
+    /// A diff read, ready to show: a text diff laid out.
+    /// </summary>
+    readonly record struct Prepared(FileDiff Diff, DiffLayout? Layout);
 
     /// <summary>
     /// The × along the top was clicked, or Escape pressed: the diff over the folder list goes.
@@ -173,20 +184,40 @@ sealed class DiffView : UserControl
         Reading = Task.CompletedTask;
     }
 
-    async Task ReadAsync(DiffSource file, bool keepPlace, bool evenIfLarge)
+    // Reads the diff, or, given largePatch, the patch of a diff too big to show straight away,
+    // asked to be shown anyway, parses it, rather than reading it again. Everything that takes
+    // as long as the diff is big is done off the UI thread: reading it, parsing it, laying it
+    // out, and, for lines to be picked, hashing it. What a later read asked for shows, whichever
+    // ends first.
+    async Task ReadAsync(DiffSource file, bool keepPlace, bool evenIfLarge, string? largePatch = null)
     {
         var asked = ++version;
         var hideWhitespace = settings.DiffHideWhitespace;
-        var (diff, lines) = await Task.Run(() =>
+        var split = settings.DiffSplit;
+        var read = await Task.Run(() =>
         {
-            var read = Read(file, hideWhitespace, evenIfLarge, Cancel.None);
-            IReadOnlyList<string>? newLines = null;
-            if (read is TextDiff)
+            FileDiff diff;
+            if (largePatch == null)
             {
-                newLines = ReadNewLines(file);
+                diff = Read(file, hideWhitespace, evenIfLarge, Cancel.None);
+            }
+            else
+            {
+                diff = DiffParser.Parse(largePatch, evenIfLarge: true);
             }
 
-            return (read, newLines);
+            if (diff is not TextDiff text)
+            {
+                return new Prepared(diff, null);
+            }
+
+            if (file.IsUncommitted)
+            {
+                // Worked out here, once, rather than as the lines picked are matched to it.
+                _ = text.PatchHash;
+            }
+
+            return new Prepared(diff, LayOut(text, ReadNewLines(file), split));
         });
         if (asked != version ||
             IsDisposed)
@@ -194,32 +225,36 @@ sealed class DiffView : UserControl
             return;
         }
 
-        Present(file, diff, lines, keepPlace, hideWhitespace);
+        Present(file, read, keepPlace, hideWhitespace);
     }
 
-    void Present(DiffSource file, FileDiff diff, IReadOnlyList<string>? lines, bool keepPlace, bool hideWhitespace)
+    void Present(DiffSource file, Prepared read, bool keepPlace, bool hideWhitespace)
     {
         // The drag picks lines of the diff it started on: what was read waits for it to end,
         // rather than taking the lines from under it, the drag lost.
         if (keepPlace &&
             canvas.Dragging)
         {
-            held = (file, diff, lines, hideWhitespace);
+            held = (file, read, hideWhitespace);
             return;
         }
 
         held = null;
+        var diff = read.Diff;
         shown = diff;
         header.Show(file.File, diff as TextDiff);
         header.Visible = true;
+        if (read.Layout is { } layout)
+        {
+            var (picks, hint) = PicksFor(file, layout.Diff, hideWhitespace);
+            canvas.Discardable = CanDiscard(file, layout.Diff, hideWhitespace);
+            canvas.Show(layout, settings.DiffSplit, picks, hint, keepPlace);
+            ShowOnly(canvas);
+            return;
+        }
+
         switch (diff)
         {
-            case TextDiff text:
-                var (picks, hint) = PicksFor(file, text, hideWhitespace);
-                canvas.Discardable = CanDiscard(file, text, hideWhitespace);
-                canvas.Show(text, lines, settings.DiffSplit, picks, hint, keepPlace);
-                ShowOnly(canvas);
-                return;
             case ImageDiff image when images.Show(image):
                 ShowOnly(images);
                 return;
@@ -339,21 +374,7 @@ sealed class DiffView : UserControl
 
         if (shown is LargeDiff large)
         {
-            var parsed = DiffParser.Parse(large.Patch, evenIfLarge: true);
-            var file = source;
-            var hideWhitespace = settings.DiffHideWhitespace;
-            var asked = ++version;
-            Reading = Task.Run(() => ReadNewLines(file))
-                .ContinueWith(
-                    _ =>
-                    {
-                        if (asked == version &&
-                            !IsDisposed)
-                        {
-                            Present(file, parsed, _.Result, keepPlace: false, hideWhitespace);
-                        }
-                    },
-                    TaskScheduler.FromCurrentSynchronizationContext());
+            Reading = ReadAsync(source, keepPlace: false, evenIfLarge: true, large.Patch);
             return;
         }
 
@@ -376,7 +397,7 @@ sealed class DiffView : UserControl
             held = null;
             if (waiting.File.SameFile(source))
             {
-                Present(waiting.File, waiting.Diff, waiting.Lines, keepPlace: true, waiting.HideWhitespace);
+                Present(waiting.File, waiting.Read, keepPlace: true, waiting.HideWhitespace);
             }
         }
     }

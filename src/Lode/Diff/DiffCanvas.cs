@@ -7,8 +7,9 @@
 /// numbers of those picked blue; the strip beside the numbers picks a run of changes at once.
 /// Its menu discards the line right-clicked, or the lines selected, or the hunk. Rows are one
 /// height, and long lines scroll sideways, so only the rows showing are drawn, however long the
-/// diff. The text is selected as an editor's is, from a character to another, by dragging, a
-/// word by a double-click, a line by a third click, and copied with Ctrl+C.
+/// diff, and of a long line only what shows of it. The text is selected as an editor's is, from a
+/// character to another, by dragging, a word by a double-click, a line by a third click, and
+/// copied with Ctrl+C.
 /// </summary>
 sealed class DiffCanvas : Control
 {
@@ -20,6 +21,15 @@ sealed class DiffCanvas : Control
 
     // How much of the selection's blue shows over a line, the colours under it showing through.
     const int selectionAlpha = 0x55;
+
+    // A line longer than this, in characters, has only the part of it around what shows measured
+    // and drawn, rather than all of it, which for a minified line of a megabyte took seconds on
+    // every paint and every step sideways; the rest is placed a character's width a column. A
+    // shorter one is measured from its start, a wide character in it moving what follows.
+    const int longLine = 1024;
+
+    // How many columns of a long line are measured either side of what shows, give or take.
+    const int measuredBlock = 256;
 
     const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.PreserveGraphicsClipping;
 
@@ -180,6 +190,22 @@ sealed class DiffCanvas : Control
     internal bool Dragging => dragging;
 
     /// <summary>
+    /// How many characters of lines have been measured or drawn, for tests to see that a long
+    /// line isn't, all of it.
+    /// </summary>
+    internal long CharactersMeasured { get; private set; }
+
+    /// <summary>
+    /// How far the text is scrolled sideways, in pixels.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal int ScrolledAcross
+    {
+        get => horizontal.Value;
+        set => ScrollSideways(value - horizontal.Value);
+    }
+
+    /// <summary>
     /// The first row showing.
     /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -222,16 +248,19 @@ sealed class DiffCanvas : Control
     }
 
     /// <summary>
-    /// Shows <paramref name="shown"/>, the arrows that show more of the file only given
-    /// <paramref name="lines"/>, the file's lines, and lines to pick only given
-    /// <paramref name="linePicks"/>. <paramref name="hint"/>, when there is one, is said when the
-    /// numbers are clicked instead: why lines can't be picked. With <paramref name="keepPlace"/>,
-    /// for the same file read again, the diff stays as it was, expanded, scrolled and selected,
-    /// when it is the same diff; when the file changed, what was expanded still is where it can
-    /// be, and the same line is at the top.
+    /// Shows the diff <paramref name="layout"/> laid out, the arrows that show more of the file
+    /// only given the file's lines, and lines to pick only given <paramref name="linePicks"/>.
+    /// <paramref name="hint"/>, when there is one, is said when the numbers are clicked instead:
+    /// why lines can't be picked. With <paramref name="keepPlace"/>, for the same file read
+    /// again, the diff stays as it was, expanded, scrolled and selected, when it is the same
+    /// diff; when the file changed, what was expanded still is where it can be, and the same line
+    /// is at the top.
     /// </summary>
-    public void Show(TextDiff shown, IReadOnlyList<string>? lines, bool sideBySide, LinePicks? linePicks, string? hint, bool keepPlace)
+    public void Show(DiffLayout layout, bool sideBySide, LinePicks? linePicks, string? hint, bool keepPlace)
     {
+        var shown = layout.Diff;
+        var lines = layout.Lines;
+
         // The same diff, of the same file as it was, read again, as it is whenever anything in the
         // repository changes, mostly another file: nothing changes but what is picked, and how
         // it shows. The file's lines too, which an expansion shows.
@@ -269,24 +298,29 @@ sealed class DiffCanvas : Control
         split = sideBySide;
         picks = linePicks;
         pickHint = hint;
-        var start = shown.Hunks;
-        if (lines != null)
-        {
-            var oldCount = lines.Count - shown.Added + shown.Deleted;
-            start = DiffExpansion.WithBottom(start, oldCount, lines.Count);
-        }
-
-        unexpanded = start;
-        hunks = start;
+        unexpanded = layout.Hunks;
+        hunks = layout.Hunks;
         if (keepPlace &&
             expandedBefore &&
             lines != null)
         {
-            hunks = DiffExpansion.ExpandAsShown(start, shownBefore, lines);
+            hunks = DiffExpansion.ExpandAsShown(layout.Hunks, shownBefore, lines);
         }
 
         dragging = false;
-        BuildRows();
+
+        // The rows as laid out, unless expanded as it was, or since shown the other way, when
+        // they are made again here, of a file small enough to expand.
+        if (ReferenceEquals(hunks, layout.Hunks) &&
+            layout.Split == split)
+        {
+            UseRows(layout.Rows, layout.Widest);
+        }
+        else
+        {
+            BuildRows();
+        }
+
         if (keepPlace)
         {
             TopRow = TopFor(topLine) ?? top;
@@ -389,7 +423,7 @@ sealed class DiffCanvas : Control
 
             split = value;
             var top = vertical.Value;
-            BuildRows();
+            UseRows(DiffRows.Build(hunks, split), widest);
             TopRow = top;
         }
     }
@@ -408,74 +442,137 @@ sealed class DiffCanvas : Control
         Invalidate();
     }
 
-    // The rows made again, which the selection was a place in.
-    void BuildRows()
+    // The rows made again, of the hunks as expanded.
+    void BuildRows() =>
+        UseRows(DiffRows.Build(hunks, split), DiffRows.Widest(hunks));
+
+    // The rows shown, which the selection was a place in.
+    void UseRows(List<DiffRow> shownRows, int widestLine)
     {
         anchor = null;
         StopSelecting();
-        rows = DiffRows.Build(hunks, split);
-        widest = 0;
-        foreach (var hunk in hunks)
-        {
-            foreach (var line in hunk.Lines)
-            {
-                widest = Math.Max(widest, ShownLength(line.Content));
-            }
-        }
-
+        rows = shownRows;
+        widest = widestLine;
         Arrange();
         Invalidate();
     }
 
-    // How many columns a line takes, its tabs four.
-    static int ShownLength(string content)
+    /// <summary>
+    /// The part of a line measured and drawn: all of it, but for a long line, only its characters
+    /// from <paramref name="First"/> to before <paramref name="Last"/>, around what shows as it
+    /// is scrolled. <paramref name="Text"/> is them with their tabs as the spaces they take,
+    /// starting in <paramref name="Column"/> of the line, and <paramref name="Offsets"/> where
+    /// in it each starts, and the last ends.
+    /// </summary>
+    readonly record struct LinePart(int First, int Last, int Column, string Text, int[] Offsets)
     {
-        var length = 0;
-        foreach (var character in content)
-        {
-            if (character == '\t')
-            {
-                length += 4 - length % 4;
-                continue;
-            }
-
-            length++;
-        }
-
-        return length;
+        // The column after the part.
+        public int EndColumn => Column + Text.Length;
     }
 
-    // The line with its tabs as the spaces they take, and where each of its characters went, to
-    // find the part that changed.
-    static string ExpandTabs(string content, out int[] columns)
+    // The part of a line to measure and draw, its text shown in a width. A long line's starts at
+    // a multiple of measuredBlock columns at or before the first showing, so it stays put while
+    // the line scrolls a little, and goes on measuredBlock columns past the last.
+    LinePart PartOf(string content, int width)
     {
-        columns = new int[content.Length + 1];
-        if (!content.Contains('\t'))
+        if (content.Length <= longLine)
         {
-            for (var index = 0; index <= content.Length; index++)
-            {
-                columns[index] = index;
-            }
-
-            return content;
+            return PartBetween(content, 0, content.Length, 0);
         }
 
-        var builder = new StringBuilder(content.Length + 8);
-        for (var index = 0; index < content.Length; index++)
+        var from = Math.Max(0, (horizontal.Value - LogicalToDeviceUnits(textInset)) / charWidth - 2);
+        var to = from + width / charWidth + 2 + measuredBlock;
+        var (first, column) = CharacterAtColumn(content, from - from % measuredBlock, 0, 0);
+        var (last, _) = CharacterAtColumn(content, to, first, column);
+        return PartBetween(content, first, last, column);
+    }
+
+    // A line's characters from first to before last, the first starting in column, its tabs
+    // as the spaces they take from there.
+    static LinePart PartBetween(string content, int first, int last, int column)
+    {
+        var offsets = new int[last - first + 1];
+        var characters = content.AsSpan(first, last - first);
+        if (!characters.Contains('\t'))
         {
-            columns[index] = builder.Length;
-            var character = content[index];
+            for (var index = 0; index < offsets.Length; index++)
+            {
+                offsets[index] = index;
+            }
+
+            return new(first, last, column, content.Substring(first, last - first), offsets);
+        }
+
+        var builder = new StringBuilder(characters.Length + 8);
+        for (var index = 0; index < characters.Length; index++)
+        {
+            offsets[index] = builder.Length;
+            var character = characters[index];
             if (character == '\t')
             {
-                builder.Append(' ', 4 - builder.Length % 4);
+                builder.Append(' ', 4 - (column + builder.Length) % 4);
                 continue;
             }
 
             builder.Append(character);
         }
 
-        columns[content.Length] = builder.Length;
-        return builder.ToString();
+        offsets[characters.Length] = builder.Length;
+        return new(first, last, column, builder.ToString(), offsets);
+    }
+
+    // The last character of a line starting at or before a column, and the column it starts in,
+    // counted from a character known to start in another: the line's length past its end.
+    static (int Index, int Column) CharacterAtColumn(string content, int column, int fromIndex, int fromColumn)
+    {
+        // Without tabs, a column a character.
+        if (!content.AsSpan(fromIndex).Contains('\t'))
+        {
+            var reach = Math.Clamp(column - fromColumn, 0, content.Length - fromIndex);
+            return (fromIndex + reach, fromColumn + reach);
+        }
+
+        var index = fromIndex;
+        var at = fromColumn;
+        while (index < content.Length)
+        {
+            var next = at + 1;
+            if (content[index] == '\t')
+            {
+                next = at + 4 - at % 4;
+            }
+
+            if (next > column)
+            {
+                break;
+            }
+
+            at = next;
+            index++;
+        }
+
+        return (index, at);
+    }
+
+    // How far across a character of a line starts, from where the line's characters do: in the
+    // part measured, as measured; before it or after it, a character's width a column, as the
+    // scrollbar's reach is.
+    int Across(string content, LinePart part, int character, Graphics? graphics)
+    {
+        if (character < part.First)
+        {
+            return DiffRows.Columns(content.AsSpan(0, character)) * charWidth;
+        }
+
+        var start = part.Column * charWidth;
+        if (character <= part.Last)
+        {
+            return start + Measured(graphics, part.Text.AsSpan(0, part.Offsets[character - part.First]));
+        }
+
+        var end = start + Measured(graphics, part.Text);
+        var column = DiffRows.Columns(content.AsSpan(part.Last, character - part.Last), part.EndColumn);
+        return end + (column - part.EndColumn) * charWidth;
     }
 
     protected override void OnLayout(LayoutEventArgs args)
@@ -820,25 +917,24 @@ sealed class DiffCanvas : Control
         }
 
         var textLeft = x + charWidth * 2;
-        var content = ExpandTabs(line.Content, out var columns);
+        var content = line.Content;
+        var part = PartOf(content, bounds.Width);
 
-        // Where the part that changed starts and ends in the line with its tabs as spaces, and
-        // across.
+        // Where the part that changed starts and ends, and across.
         (int Start, int End, int Left, int Right)? changedAt = null;
         if (changed is { } range &&
-            range.Start + range.Length <= line.Content.Length)
+            range.Start + range.Length <= content.Length)
         {
-            var start = columns[range.Start];
-            var end = columns[range.Start + range.Length];
-            changedAt = (start, end, textLeft + Measured(graphics, content[..start]), textLeft + Measured(graphics, content[..end]));
+            var end = range.Start + range.Length;
+            changedAt = (range.Start, end, textLeft + Across(content, part, range.Start, graphics), textLeft + Across(content, part, end, graphics));
             using var highlight = new SolidBrush(inner);
             graphics.FillRectangle(highlight, changedAt.Value.Left, bounds.Top, Math.Max(1, changedAt.Value.Right - changedAt.Value.Left), bounds.Height);
         }
 
         if (selected is { } chosen)
         {
-            var left = textLeft + Measured(graphics, content[..columns[chosen.Start]]);
-            var right = textLeft + Measured(graphics, content[..columns[chosen.End]]);
+            var left = textLeft + Across(content, part, chosen.Start, graphics);
+            var right = textLeft + Across(content, part, chosen.End, graphics);
             if (chosen.Newline)
             {
                 right += charWidth;
@@ -848,41 +944,57 @@ sealed class DiffCanvas : Control
             graphics.FillRectangle(selection, left, bounds.Top, Math.Max(1, right - left), bounds.Height);
         }
 
+        var partLeft = textLeft + part.Column * charWidth;
         if (changedAt is { } at)
         {
-            TextRenderer.DrawText(graphics, content[..at.Start], codeFont, new Point(textLeft, y), ink, flags);
-            TextRenderer.DrawText(graphics, content[at.Start..at.End], codeFont, new Point(at.Left, y), DiffStyle.InnerText(ink), flags);
-            TextRenderer.DrawText(graphics, content[at.End..], codeFont, new Point(at.Right, y), ink, flags);
+            // What of the part is before the change, in it, and after it. Of a long line, the
+            // change may start or end outside the part, what is drawn of it then starting where
+            // the part does.
+            var start = Math.Clamp(at.Start, part.First, part.Last);
+            var end = Math.Clamp(at.End, part.First, part.Last);
+            var startOffset = part.Offsets[start - part.First];
+            var endOffset = part.Offsets[end - part.First];
+            DrawCharacters(graphics, part.Text.AsSpan(0, startOffset), partLeft, y, ink);
+            DrawCharacters(graphics, part.Text.AsSpan(startOffset, endOffset - startOffset), start == at.Start ? at.Left : partLeft, y, DiffStyle.InnerText(ink));
+            DrawCharacters(graphics, part.Text.AsSpan(endOffset), end == at.End ? at.Right : partLeft, y, ink);
         }
         else
         {
-            TextRenderer.DrawText(graphics, content, codeFont, new Point(textLeft, y), ink, flags);
+            DrawCharacters(graphics, part.Text, partLeft, y, ink);
         }
 
         if (line.NoTrailingNewline)
         {
-            DrawNoNewline(graphics, textLeft + Measured(graphics, content) + charWidth, bounds);
+            DrawNoNewline(graphics, textLeft + Across(content, part, content.Length, graphics) + charWidth, bounds);
         }
 
         graphics.Restore(state);
     }
 
-    // Off the screen's, outside painting: where the pointer is in the text.
-    int Measured(string text)
+    void DrawCharacters(Graphics graphics, CharSpan text, int left, int top, Color colour)
+    {
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        CharactersMeasured += text.Length;
+        TextRenderer.DrawText(graphics, text, codeFont, new Point(left, top), colour, flags);
+    }
+
+    // With the graphics painting, or, outside painting, the screen's: where the pointer is in
+    // the text.
+    int Measured(Graphics? graphics, CharSpan text)
     {
         if (text.Length == 0)
         {
             return 0;
         }
 
-        return TextRenderer.MeasureText(text, codeFont, Size.Empty, flags).Width;
-    }
-
-    int Measured(Graphics graphics, string text)
-    {
-        if (text.Length == 0)
+        CharactersMeasured += text.Length;
+        if (graphics == null)
         {
-            return 0;
+            return TextRenderer.MeasureText(text, codeFont, Size.Empty, flags).Width;
         }
 
         return TextRenderer.MeasureText(graphics, text, codeFont, Size.Empty, flags).Width;
@@ -1104,8 +1216,16 @@ sealed class DiffCanvas : Control
         return (columns.TextLeft, columns.TextRight);
     }
 
+    // The part of a line measured and drawn on a side, as scrolled.
+    LinePart PartOn(string content, bool right)
+    {
+        var (left, sideRight) = SideText(right);
+        return PartOf(content, sideRight - left);
+    }
+
     // The character of a line a point across is over, as measured, not counted, so a wide one
-    // or a tab is found too: the line's length past its end, 0 before its start.
+    // or a tab is found too, in the part of the line measured; the line's length past its end, 0
+    // before its start.
     int CharacterAt(DiffLine line, int x, bool right)
     {
         var offset = x - CharactersLeft(right);
@@ -1114,14 +1234,32 @@ sealed class DiffCanvas : Control
             return 0;
         }
 
+        // Before the part of a long line measured, or after it, as drawn, a character's width a
+        // column.
+        var content = line.Content;
+        var part = PartOn(content, right);
+        var start = part.Column * charWidth;
+        if (offset < start)
+        {
+            return CharacterAtColumn(content, offset / charWidth, 0, 0).Index;
+        }
+
+        if (part.Last < content.Length)
+        {
+            var end = start + Measured(null, part.Text);
+            if (offset >= end)
+            {
+                return CharacterAtColumn(content, part.EndColumn + (offset - end) / charWidth, part.Last, part.EndColumn).Index;
+            }
+        }
+
         // The last character starting at or before the point, the widths growing with each.
-        var content = ExpandTabs(line.Content, out var columns);
-        var low = 0;
-        var high = line.Content.Length;
+        var low = part.First;
+        var high = part.Last;
         while (low < high)
         {
             var middle = (low + high + 1) / 2;
-            if (Measured(content[..columns[middle]]) <= offset)
+            if (start + Measured(null, part.Text.AsSpan(0, part.Offsets[middle - part.First])) <= offset)
             {
                 low = middle;
             }
@@ -1139,15 +1277,16 @@ sealed class DiffCanvas : Control
     int ColumnAt(DiffLine line, int x, bool right)
     {
         var character = CharacterAt(line, x, right);
-        if (character >= line.Content.Length)
+        var content = line.Content;
+        if (character >= content.Length)
         {
             return character;
         }
 
-        var content = ExpandTabs(line.Content, out var columns);
+        var part = PartOn(content, right);
         var offset = x - CharactersLeft(right);
-        var before = Measured(content[..columns[character]]);
-        var after = Measured(content[..columns[character + 1]]);
+        var before = Across(content, part, character, null);
+        var after = Across(content, part, character + 1, null);
         if (offset - before > after - offset)
         {
             return character + 1;
@@ -1189,9 +1328,8 @@ sealed class DiffCanvas : Control
     /// </summary>
     internal Point PointOf(TextPlace place, bool right)
     {
-        var line = LineAt(place.Row, right)!;
-        var content = ExpandTabs(line.Content, out var columns);
-        var x = CharactersLeft(right) + Measured(content[..columns[Math.Min(place.Column, line.Content.Length)]]);
+        var content = LineAt(place.Row, right)!.Content;
+        var x = CharactersLeft(right) + Across(content, PartOn(content, right), Math.Min(place.Column, content.Length), null);
         return new(x + 1, (place.Row - vertical.Value) * rowHeight + rowHeight / 2);
     }
 

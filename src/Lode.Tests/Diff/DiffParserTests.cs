@@ -125,6 +125,31 @@ public class DiffParserTests
         await Assert.That(added.Content).IsEqualTo("new");
     }
 
+    // What is shown of a line, read whenever it is drawn or the pointer moves over it, and the
+    // hash of the whole patch, read whenever lines picked are matched to it, are worked out once
+    // each. A line or diff made from another with other text has that text's; and whether either
+    // was worked out yet is no part of what it is.
+    [Test]
+    public async Task ContentAndHashAreWorkedOutOnce()
+    {
+        var diff = (TextDiff) DiffParser.Parse("--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\r\n+new\r\n");
+        var added = diff.Hunks[0].Lines[1];
+        var copy = added with { };
+        var diffCopy = diff with { };
+
+        await Assert.That(added.Content).IsSameReferenceAs(added.Content);
+        await Assert.That(diff.PatchHash).IsSameReferenceAs(diff.PatchHash);
+
+        await Assert.That(added).IsEqualTo(copy);
+        await Assert.That(added.GetHashCode()).IsEqualTo(copy.GetHashCode());
+        await Assert.That(diff).IsEqualTo(diffCopy);
+        await Assert.That(diff.GetHashCode()).IsEqualTo(diffCopy.GetHashCode());
+
+        await Assert.That((added with { Text = "+other\r" }).Content).IsEqualTo("other");
+        await Assert.That((diff with { Patch = "other" }).PatchHash).IsEqualTo(TextDiff.HashOf("other"));
+        await Assert.That(added).IsNotEqualTo(added with { Text = "+other" });
+    }
+
     // A line too long to show straight away, or too much altogether.
     [Test]
     public async Task Large()

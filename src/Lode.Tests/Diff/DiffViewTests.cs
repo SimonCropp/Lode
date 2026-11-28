@@ -446,6 +446,170 @@ public class DiffViewTests
         }
     }
 
+    // Read, a diff is parsed and laid out in rows off the UI thread, which takes as long as the
+    // diff is big: the rows shown are those made there.
+    [Test]
+    public async Task LaidOutOffTheUIThread()
+    {
+        var uiThread = Environment.CurrentManagedThreadId;
+        using var stub = DiffSample.Stub();
+        var readOn = new ConcurrentQueue<int>();
+        var read = DiffView.Read;
+        DiffView.Read = (source, hideWhitespace, evenIfLarge, cancel) =>
+        {
+            readOn.Enqueue(Environment.CurrentManagedThreadId);
+            return read(source, hideWhitespace, evenIfLarge, cancel);
+        };
+        var laidOut = new ConcurrentQueue<(int Thread, DiffLayout Layout)>();
+        var layOut = DiffView.LayOut;
+        DiffView.LayOut = (diff, lines, split) =>
+        {
+            var layout = layOut(diff, lines, split);
+            laidOut.Enqueue((Environment.CurrentManagedThreadId, layout));
+            return layout;
+        };
+        try
+        {
+            using var view = await Shown(new(Unique(), DiffSample.File));
+
+            await Assert.That(readOn.Single()).IsNotEqualTo(uiThread);
+            var (thread, layout) = laidOut.Single();
+            await Assert.That(thread).IsNotEqualTo(uiThread);
+            await Assert.That(view.Canvas.Rows).IsSameReferenceAs(layout.Rows);
+        }
+        finally
+        {
+            DiffView.LayOut = layOut;
+        }
+    }
+
+    // Shown anyway, a diff too big to show straight away is parsed and laid out off the UI
+    // thread, what it says staying until it is, rather than the window not answering.
+    [Test]
+    public async Task LargeShownAnywayOffTheUIThread()
+    {
+        var uiThread = Environment.CurrentManagedThreadId;
+        using var stub = DiffSample.Stub(new LargeDiff(DiffSample.Patch));
+        using var gate = new ManualResetEventSlim();
+        var threads = new ConcurrentQueue<int>();
+        var layOut = DiffView.LayOut;
+        DiffView.LayOut = (diff, lines, split) =>
+        {
+            threads.Enqueue(Environment.CurrentManagedThreadId);
+            gate.Wait(TimeSpan.FromSeconds(10));
+            return layOut(diff, lines, split);
+        };
+        try
+        {
+            using var view = await Shown(new(Unique(), DiffSample.File));
+            Descendants(view).OfType<AccentButton>().Single(_ => _.Text == "Show diff").PerformClick();
+            await Pump.Until(() => !threads.IsEmpty);
+            await Pump.For(TimeSpan.FromMilliseconds(100));
+
+            await Assert.That(view.MessageText).IsEqualTo("This diff is too big to show straight away.");
+
+            gate.Set();
+            await Read(view);
+
+            await Assert.That(view.MessageText).IsNull();
+            await Assert.That(view.Canvas.Rows.Count(_ => _.Kind == DiffRowKind.Added)).IsEqualTo(8);
+            await Assert.That(threads).DoesNotContain(uiThread);
+        }
+        finally
+        {
+            gate.Set();
+            DiffView.LayOut = layOut;
+        }
+    }
+
+    // One file shown, then another while the first is still being laid out: the second shows,
+    // the first, laid out after it, thrown away.
+    [Test]
+    public async Task ALaterShowWins()
+    {
+        var slow = new Change("src/Slow.cs", null, GitChange.Modified);
+        var slowDiff = DiffSample.MoreAdded;
+        using var stub = DiffSample.Stub();
+        DiffView.Read = (source, _, _, _) => source.File.Path == slow.Path ? slowDiff : DiffSample.Diff;
+        using var gate = new ManualResetEventSlim();
+        var layOut = DiffView.LayOut;
+        DiffView.LayOut = (diff, lines, split) =>
+        {
+            if (ReferenceEquals(diff, slowDiff))
+            {
+                gate.Wait(TimeSpan.FromSeconds(10));
+            }
+
+            return layOut(diff, lines, split);
+        };
+        try
+        {
+            var repo = Unique();
+            using var view = new DiffView(new())
+            {
+                Size = new(800, 400)
+            };
+            view.CreateControl();
+            view.Show(new(repo, slow));
+            var first = view.Reading;
+            view.Show(new(repo, DiffSample.File));
+            await Read(view);
+
+            gate.Set();
+            await Pump.Until(() => first.IsCompleted);
+            await first;
+
+            await Assert.That(view.Source!.File.Path).IsEqualTo(DiffSample.File.Path);
+            await Assert.That(view.Canvas.Rows.Count(_ => _.Kind == DiffRowKind.Added)).IsEqualTo(8);
+        }
+        finally
+        {
+            gate.Set();
+            DiffView.LayOut = layOut;
+        }
+    }
+
+    // A minified line of a megabyte, tabs among it, drawn and scrolled along: only what shows of
+    // it is measured and drawn, give or take, rather than all of it every time, and the pointer
+    // still finds its characters where they are drawn.
+    [Test]
+    public async Task MeasuresOnlyWhatShowsOfALongLine()
+    {
+        var minified = string.Concat(Enumerable.Repeat("var a=1;\tb(", 100_000));
+        var diff = (TextDiff) DiffParser.Parse($"--- a/min.js\n+++ b/min.js\n@@ -1 +1 @@\n-x\n+{minified}\n", evenIfLarge: true);
+        using var stub = DiffSample.Stub(diff, [minified]);
+        using var view = await Shown(new(Unique(), new("min.js", null, GitChange.Modified)));
+        var canvas = view.Canvas;
+        var row = canvas.Rows.ToList().FindIndex(_ => _.Kind == DiffRowKind.Added);
+        var width = canvas.PointOf(new(row, 1), right: false).X - canvas.PointOf(new(row, 0), right: false).X;
+        using var bitmap = new Bitmap(canvas.Width, canvas.Height);
+
+        var measured = canvas.CharactersMeasured;
+        canvas.DrawToBitmap(bitmap, new(0, 0, canvas.Width, canvas.Height));
+        await Assert.That(canvas.CharactersMeasured - measured).IsLessThan(5_000);
+
+        // Scrolled to the 600,000th character.
+        const int character = 600_000;
+        var across = DiffRows.Columns(minified.AsSpan(0, character)) * width;
+        canvas.ScrolledAcross = across;
+        await Assert.That(canvas.ScrolledAcross).IsEqualTo(across);
+        measured = canvas.CharactersMeasured;
+        canvas.DrawToBitmap(bitmap, new(0, 0, canvas.Width, canvas.Height));
+        await Assert.That(canvas.CharactersMeasured - measured).IsLessThan(5_000);
+
+        measured = canvas.CharactersMeasured;
+        Press(canvas, leftButtonDown, canvas.PointOf(new(row, character), right: false));
+        Press(canvas, mouseMove, canvas.PointOf(new(row, character + 12), right: false));
+        Press(canvas, leftButtonUp, canvas.PointOf(new(row, character + 12), right: false));
+        await Assert.That(canvas.SelectedText()).IsEqualTo(minified.Substring(character, 12));
+        await Assert.That(canvas.CharactersMeasured - measured).IsLessThan(100_000);
+    }
+
+    static IEnumerable<Control> Descendants(Control control) =>
+        control.Controls
+            .Cast<Control>()
+            .SelectMany(_ => Descendants(_).Prepend(_));
+
     const int mouseMove = 0x0200;
     const int leftButtonDown = 0x0201;
     const int leftButtonUp = 0x0202;

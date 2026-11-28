@@ -93,8 +93,8 @@ static class DiffRows
         {
             for (var index = 0; index < deleted.Count; index++)
             {
-                var before = deleted[index].Content;
-                var after = added[index].Content;
+                var before = deleted[index].ContentSpan;
+                var after = added[index].ContentSpan;
                 if (before.Length >= MaxChangedLineLength ||
                     after.Length >= MaxChangedLineLength)
                 {
@@ -147,7 +147,7 @@ static class DiffRows
     /// and the end they share are taken off, as GitHub Desktop's relativeChanges in
     /// changed-range.ts. Lines that are the same have nothing changed.
     /// </summary>
-    public static (ChangedRange? Before, ChangedRange? After) Changed(string before, string after)
+    public static (ChangedRange? Before, ChangedRange? After) Changed(CharSpan before, CharSpan after)
     {
         var max = Math.Min(before.Length, after.Length);
         var prefix = 0;
@@ -179,5 +179,70 @@ static class DiffRows
         }
 
         return (beforeRange, afterRange);
+    }
+
+    /// <summary>
+    /// How many columns the widest line of <paramref name="hunks"/> takes, for how far the diff
+    /// scrolls sideways.
+    /// </summary>
+    public static int Widest(IReadOnlyList<DiffHunk> hunks)
+    {
+        var widest = 0;
+        foreach (var hunk in hunks)
+        {
+            foreach (var line in hunk.Lines)
+            {
+                widest = Math.Max(widest, Columns(line.ContentSpan));
+            }
+        }
+
+        return widest;
+    }
+
+    /// <summary>
+    /// The column <paramref name="text"/> ends in, starting in <paramref name="column"/>: a
+    /// column a character, a tab to the next multiple of four.
+    /// </summary>
+    public static int Columns(CharSpan text, int column = 0)
+    {
+        // Without tabs, as most lines are, a column a character.
+        if (!text.Contains('\t'))
+        {
+            return column + text.Length;
+        }
+
+        foreach (var character in text)
+        {
+            if (character == '\t')
+            {
+                column += 4 - column % 4;
+                continue;
+            }
+
+            column++;
+        }
+
+        return column;
+    }
+}
+
+/// <summary>
+/// A text diff laid out to draw, which takes as long as the diff is big, so is done as it is
+/// read, off the UI thread: its hunks, with the one below the last for the rest of the file
+/// given the file's <paramref name="Lines"/>, the rows they make, one above the other or side
+/// by side, and how many columns the widest line takes.
+/// </summary>
+sealed record DiffLayout(TextDiff Diff, IReadOnlyList<string>? Lines, bool Split, IReadOnlyList<DiffHunk> Hunks, List<DiffRow> Rows, int Widest)
+{
+    public static DiffLayout Of(TextDiff diff, IReadOnlyList<string>? lines, bool split)
+    {
+        var hunks = diff.Hunks;
+        if (lines != null)
+        {
+            var oldCount = lines.Count - diff.Added + diff.Deleted;
+            hunks = DiffExpansion.WithBottom(hunks, oldCount, lines.Count);
+        }
+
+        return new(diff, lines, split, hunks, DiffRows.Build(hunks, split), DiffRows.Widest(hunks));
     }
 }

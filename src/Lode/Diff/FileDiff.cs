@@ -18,11 +18,33 @@ enum DiffLineKind
 /// </summary>
 sealed record DiffLine(DiffLineKind Kind, string Text, int? Index, int? OldNumber, int? NewNumber, bool NoTrailingNewline = false)
 {
+    // A line made from another with other text, by with, works its content out again.
+    public string Text
+    {
+        get;
+        init
+        {
+            field = value;
+            content = null;
+        }
+    } = Text;
+
+    // Worked out the first time it is asked for, rather than cut from the text every time, as it
+    // is asked for whenever the line is drawn or the pointer moves over it. The lines of a big
+    // diff never drawn never have one made.
+    string? content;
+
     /// <summary>
     /// The line as the file has it: without the +, - or space git puts first, nor the carriage
     /// return git leaves at the end of a line of a file with Windows line endings.
     /// </summary>
-    public string Content
+    public string Content => content ??= ContentSpan.ToString();
+
+    /// <summary>
+    /// <see cref="Content"/> as the part of <see cref="Text"/> it is, for what reads every line
+    /// of a diff, to measure it, to make no string of each.
+    /// </summary>
+    public CharSpan ContentSpan
     {
         get
         {
@@ -35,14 +57,27 @@ sealed record DiffLine(DiffLineKind Kind, string Text, int? Index, int? OldNumbe
 
             if (end <= 1)
             {
-                return "";
+                return [];
             }
 
-            return Text[1..end];
+            return Text.AsSpan(1, end - 1);
         }
     }
 
     public bool IsChange => Kind is DiffLineKind.Add or DiffLineKind.Delete;
+
+    // Whether its content has been worked out yet is no part of what a line is.
+    public bool Equals(DiffLine? other) =>
+        other is not null &&
+        Kind == other.Kind &&
+        Text == other.Text &&
+        Index == other.Index &&
+        OldNumber == other.OldNumber &&
+        NewNumber == other.NewNumber &&
+        NoTrailingNewline == other.NoTrailingNewline;
+
+    public override int GetHashCode() =>
+        HashCode.Combine(Kind, Text, Index, OldNumber, NewNumber, NoTrailingNewline);
 }
 
 /// <summary>
@@ -90,6 +125,21 @@ abstract record FileDiff;
 /// </summary>
 sealed record TextDiff(IReadOnlyList<DiffHunk> Hunks, string Patch) : FileDiff
 {
+    // A diff made from another with other text, by with, works its hash out again.
+    public string Patch
+    {
+        get;
+        init
+        {
+            field = value;
+            patchHash = null;
+        }
+    } = Patch;
+
+    // Worked out the first time it is asked for, rather than the whole patch hashed every time
+    // lines picked are matched to it.
+    string? patchHash;
+
     public int Added => Hunks.Sum(_ => _.Lines.Count(_ => _.Kind == DiffLineKind.Add));
 
     public int Deleted => Hunks.Sum(_ => _.Lines.Count(_ => _.Kind == DiffLineKind.Delete));
@@ -115,14 +165,23 @@ sealed record TextDiff(IReadOnlyList<DiffHunk> Hunks, string Patch) : FileDiff
     /// <summary>
     /// A short hash of <see cref="Patch"/>, which lines picked to commit are noted against.
     /// </summary>
-    public string PatchHash =>
-        HashOf(Patch);
+    public string PatchHash => patchHash ??= HashOf(Patch);
 
     /// <summary>
     /// The <see cref="PatchHash"/> of a diff whose text is <paramref name="patch"/>.
     /// </summary>
     public static string HashOf(string patch) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(patch)))[..16];
+
+    // Whether its hash has been worked out yet is no part of what a diff is.
+    public bool Equals(TextDiff? other) =>
+        other is not null &&
+        base.Equals(other) &&
+        EqualityComparer<IReadOnlyList<DiffHunk>>.Default.Equals(Hunks, other.Hunks) &&
+        Patch == other.Patch;
+
+    public override int GetHashCode() =>
+        HashCode.Combine(base.GetHashCode(), Hunks, Patch);
 }
 
 sealed record BinaryDiff : FileDiff;
