@@ -104,6 +104,20 @@ sealed class GutterMarquee : IDisposable
     /// </summary>
     internal void Begin(Point point, bool add)
     {
+        // Large icons lays the items out in rows of icons, not one to a row, and draws a
+        // rectangle of its own dragged from anywhere between them. A click in the margin clears
+        // the selection still.
+        if (list.View != View.Details)
+        {
+            list.Focus();
+            if (!add)
+            {
+                list.SelectedIndices.Clear();
+            }
+
+            return;
+        }
+
         tracking = true;
         toggle = add;
         initial = add ? list.SelectedIndices.Cast<int>().ToHashSet() : [];

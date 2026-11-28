@@ -123,6 +123,18 @@ public class MainFormTests
     public Task Narrow() =>
         Capture(width: 700);
 
+    // Large icons: each item's thumbnail, or as here its icon, big, with its name under it. A
+    // folder's picture shows what is in it once the shell has looked, which it may not have yet,
+    // so here each folder shows its icon, and the capture is the same every run.
+    [Test]
+    public Task LargeIcons() =>
+        Capture((form, _) =>
+        {
+            var view = form.ActiveView!;
+            view.ReadThumbnail = (path, size) => Directory.Exists(path) ? null : Thumbnails.FromShell(path, size);
+            view.ShowLargeIcons(true);
+        });
+
     // A newer Lode, beside the free space.
     [Test]
     public async Task UpdateAvailable()
@@ -208,6 +220,12 @@ public class MainFormTests
         {
             arrange(form, fixture);
             await Pump.Loaded(form.ActiveView!);
+        }
+
+        // In Large icons, once every item's picture has been read off the UI thread.
+        if (form.ActiveView is {LargeIcons: true} view)
+        {
+            await Pump.Until(() => view.ThumbnailsRead.Count == view.Entries.Count && !view.ReadingThumbnails);
         }
 
         // Windows can activate this window when another test closes its own, which gives the

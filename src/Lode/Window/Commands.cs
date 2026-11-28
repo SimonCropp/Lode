@@ -84,6 +84,19 @@ sealed class Commands
                 Glyph = Icons.Purge
             },
             null,
+            // The list's views, as Explorer's View menu has them, above what it shows.
+            new("Large icons", () => ShowLargeIcons(true), window.ActiveView != null)
+            {
+                Glyph = Icons.LargeIcons,
+                Shortcut = "Ctrl+Shift+2",
+                Checked = window.ActiveView is {LargeIcons: true}
+            },
+            new("Details", () => ShowLargeIcons(false), window.ActiveView != null)
+            {
+                Glyph = Icons.Details,
+                Shortcut = "Ctrl+Shift+6",
+                Checked = window.ActiveView is {LargeIcons: false}
+            },
             new("Show hidden items", ToggleHidden)
             {
                 Glyph = Icons.ShowHidden,
@@ -229,6 +242,8 @@ sealed class Commands
         Add("Previous tab", () => SelectAdjacentTab(-1), "Ctrl+Shift+Tab", tabs.TabCount > 1);
         Add(settings.ShowHidden ? "Hide hidden items" : "Show hidden items", ToggleHidden, "Ctrl+H");
         Add(settings.ShowSystem ? "Hide system files" : "Show system files", ToggleSystem);
+        Add("Large icons", () => ShowLargeIcons(true), "Ctrl+Shift+2", view != null);
+        Add("Details", () => ShowLargeIcons(false), "Ctrl+Shift+6", view != null);
         Add("Terminal", () => OpenTerminal(admin: false), enabled: PinnablePath() != null);
         Add("Terminal (admin)", () => OpenTerminal(admin: true), enabled: PinnablePath() != null);
         if (ClaudeDesktop.IsInstalled())
@@ -416,6 +431,13 @@ sealed class Commands
             case Keys.Control | Keys.H:
                 ToggleHidden();
                 return true;
+            // Explorer's keys for its views, those Lode has.
+            case Keys.Control | Keys.Shift | Keys.D2:
+                ShowLargeIcons(true);
+                return true;
+            case Keys.Control | Keys.Shift | Keys.D6:
+                ShowLargeIcons(false);
+                return true;
             case Keys.Control | Keys.B:
                 window.StatusBar.ShowBranches();
                 return true;
@@ -558,6 +580,10 @@ sealed class Commands
         settings.ShowSystem = !settings.ShowSystem;
         MainForm.ApplySettingsToAllWindows(SettingsChange.Listing);
     }
+
+    // The tab showing's list in Large icons or in Details, its folder from now on.
+    void ShowLargeIcons(bool large) =>
+        window.ActiveView?.ShowLargeIcons(large);
 
     void OpenTerminal(bool admin)
     {

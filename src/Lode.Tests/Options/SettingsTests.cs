@@ -44,6 +44,35 @@ public class SettingsTests
         await Assert.That(settings.PaneTabOf(@"D:\Code\Lode")).IsEqualTo(GitPane.Changes);
     }
 
+    // Which folders show in Large icons, however a path is written; Details, which every other
+    // folder shows, isn't kept. The longest ago chosen go first past 500.
+    [Test]
+    public async Task LargeIconsForEachFolder()
+    {
+        var settings = new Settings();
+        await Assert.That(settings.ShowsLargeIcons(@"D:\Pictures")).IsFalse();
+
+        settings.SetLargeIcons(@"D:\Pictures", true);
+        settings.SetLargeIcons(@"D:\Videos", true);
+        settings.SetLargeIcons(@"d:\pictures\", true);
+
+        await Assert.That(settings.LargeIconFolders).IsEquivalentTo([@"D:\Videos", @"d:\pictures\"], CollectionOrdering.Matching);
+        await Assert.That(settings.ShowsLargeIcons(@"D:\Pictures")).IsTrue();
+
+        settings.SetLargeIcons(@"D:\Videos", false);
+        await Assert.That(settings.ShowsLargeIcons(@"D:\Videos")).IsFalse();
+        await Assert.That(settings.LargeIconFolders.Count).IsEqualTo(1);
+
+        for (var index = 0; index < 600; index++)
+        {
+            settings.SetLargeIcons($@"D:\Pictures\Album{index}", true);
+        }
+
+        await Assert.That(settings.LargeIconFolders.Count).IsEqualTo(500);
+        await Assert.That(settings.ShowsLargeIcons(@"D:\Pictures\Album599")).IsTrue();
+        await Assert.That(settings.ShowsLargeIcons(@"D:\Pictures")).IsFalse();
+    }
+
     [Test]
     public async Task SaveWritesJson()
     {
@@ -61,6 +90,7 @@ public class SettingsTests
         settings.ActiveTab = 1;
         settings.ColumnWidths["Name"] = 420;
         settings.SetSort(@"C:\Code", "Date", ascending: false);
+        settings.SetLargeIcons(@"C:\Code\Pictures", true);
 
         settings.Save();
 
@@ -85,6 +115,9 @@ public class SettingsTests
                       "Column": "Date",
                       "Ascending": false
                     }
+                  ],
+                  "LargeIconFolders": [
+                    "C:\\Code\\Pictures"
                   ],
                   "PaneTabs": [],
                   "PaneWidth": 0,

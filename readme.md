@@ -155,6 +155,10 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 
    ![Column header menu](src/Lode.Tests/Menus/MenuTests.ColumnMenu.verified.png)
 
+ * <a id="large-icons"></a>**Large icons**: each item's thumbnail, a picture's, a video's or a document's, where the shell can make one, or else its icon, big, with its name under it. Ctrl+Shift+2, or Ctrl and the mouse wheel turned away, as in Explorer; **Details** (Ctrl+Shift+6, or the wheel turned back) is the columns again. Both are on the ⋯ menu. Each folder keeps the view it was last shown in, in every tab and the next time Lode starts, as Explorer's do. Thumbnails are read in the background, only for what is on screen, and kept while the folder is open. A changed file's letter is at the foot of its picture. Selecting, renaming, dragging and the keys work as in Details; the columns, the Git column's state of each repository among them, and dragging a selection rectangle from the margin, are Details' alone.
+
+   ![Large icons](src/Lode.Tests/Window/MainFormTests.LargeIcons.verified.png)
+
  * <a id="promoted-files"></a>**Promoted files**: at a git repository's root, the files just below it that you name, `src\Lode.slnx` or `src\Directory.Build.props` say, are listed there too, as shortcuts with the arrow, so they open without going into `src`. Name them on the **Promoted files** page of Options, one a line: a whole name, or one with a `*`, before which is how the name starts and after which how it ends (`*.slnx`, `Directory.*.props`). They open, edit, copy and drag as the file itself, but Rename, Cut and Delete aren't offered on them at the root. Only the folders just below the root are looked in, and nothing is written to the repository.
 
    The **Promoted files** page of **Options**:
@@ -338,6 +342,8 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+Shift+N                      | New folder                    |
 | Alt+Enter                         | Properties                    |
 | Ctrl+H                            | Show or hide hidden items     |
+| Ctrl+Shift+2, Ctrl+Shift+6        | Large icons, details          |
+| Ctrl+mouse wheel                  | Large icons or details        |
 | Ctrl+N                            | New window                    |
 
 Click a tab's cross or middle-click the tab to close it. Middle-click or Ctrl+click a folder in the tree or the address bar to open it in a new tab, behind the one showing. The mouse back and forward buttons work too.

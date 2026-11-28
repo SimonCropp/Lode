@@ -167,6 +167,17 @@ sealed class ShellListView : ListView
     /// </summary>
     public event Action? HorizontalScrollChanged;
 
+    // WM_MOUSEWHEEL, and MK_CONTROL among the keys it says were held.
+    const int mouseWheel = 0x020A;
+    const int wheelControl = 0x0008;
+
+    /// <summary>
+    /// The mouse wheel was turned over the list with Ctrl held, by this much, in 120ths of a
+    /// notch: away from the user for bigger icons, as in Explorer, toward for smaller. The list
+    /// doesn't scroll for it.
+    /// </summary>
+    public event Action<int>? ZoomRequested;
+
     /// <summary>
     /// The range, page and position of a scrollbar, as Windows has them.
     /// </summary>
@@ -253,6 +264,26 @@ sealed class ShellListView : ListView
         }
     }
 
+    IntPtr largeImages;
+
+    /// <summary>
+    /// The image list Large icons draws from, given to the window itself as the rows' is, which
+    /// leaves it alone when it closes. Zero for none.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public IntPtr LargeImages
+    {
+        get => largeImages;
+        set
+        {
+            largeImages = value;
+            if (IsHandleCreated)
+            {
+                SendMessage(Handle, ListViewSetImageList, ListViewImageListNormal, value);
+            }
+        }
+    }
+
     protected override void OnHandleCreated(EventArgs args)
     {
         // Given to the window itself rather than through SmallImageList, which would have the
@@ -260,6 +291,10 @@ sealed class ShellListView : ListView
         // take their height from it. Windows leaves the list alone when this window closes, as
         // every ListView asks it to.
         SendMessage(Handle, ListViewSetImageList, ListViewImageListSmall, PaddedIcons.Handle(DeviceDpi));
+        if (largeImages != IntPtr.Zero)
+        {
+            SendMessage(Handle, ListViewSetImageList, ListViewImageListNormal, largeImages);
+        }
 
         // Each row's cut state, and whether a drop would go into it, are asked for as it is
         // drawn, as the rows are.
@@ -338,6 +373,12 @@ sealed class ShellListView : ListView
             return;
         }
 
+        if (View == View.LargeIcon)
+        {
+            DrawBadge(index, context, mark);
+            return;
+        }
+
         var label = GetItemRect(index, ItemBoundsPortion.Label);
         using var graphics = Graphics.FromHdc(context);
         const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter;
@@ -350,6 +391,42 @@ sealed class ShellListView : ListView
         }
 
         TextRenderer.DrawText(graphics, mark.Text, Font, new Rectangle(left, label.Top, markWidth, label.Height), mark.Color, flags);
+    }
+
+    // Pixels at 100% scale: the space either side of a mark in its box in Large icons.
+    const int badgePadding = 3;
+
+    // In Large icons a name lies under its icon, wrapped, with no room after it. So the mark is
+    // at the foot of the item's picture, on its right, in a box of the list's own colour edged
+    // in the mark's, to read over whatever the picture is.
+    void DrawBadge(int index, IntPtr context, NameMark mark)
+    {
+        if (largeImages == IntPtr.Zero)
+        {
+            return;
+        }
+
+        // The picture lies across the middle of the icon's part of the item.
+        var icon = GetItemRect(index, ItemBoundsPortion.Icon);
+        ImageList_GetIconSize(largeImages, out var imageWidth, out var imageHeight);
+        using var graphics = Graphics.FromHdc(context);
+
+        // Measured without centring, which has Windows give half the height.
+        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        var text = TextRenderer.MeasureText(graphics, mark.Text, Font, Size.Empty, flags);
+        var padding = LogicalToDeviceUnits(badgePadding);
+        var right = icon.Left + (icon.Width + imageWidth) / 2;
+        var bottom = icon.Top + (icon.Height + imageHeight) / 2;
+        var badge = Rectangle.FromLTRB(right - text.Width - 2 * padding, bottom - text.Height, right, bottom);
+        using var background = new SolidBrush(BackColor);
+        using var edge = new Pen(mark.Color);
+        graphics.FillRectangle(background, badge);
+        graphics.DrawRectangle(edge, badge with
+        {
+            Width = badge.Width - 1,
+            Height = badge.Height - 1
+        });
+        TextRenderer.DrawText(graphics, mark.Text, Font, badge, mark.Color, flags | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
     }
 
     int dropTarget = -1;
@@ -507,6 +584,15 @@ sealed class ShellListView : ListView
                 CutAsked++;
             }
 
+            return;
+        }
+
+        // Ctrl held, as the message says, the wheel changes the view rather than scrolling.
+        if (message.Msg == mouseWheel &&
+            ZoomRequested != null &&
+            ((long) message.WParam & wheelControl) != 0)
+        {
+            ZoomRequested((short) ((long) message.WParam >> 16));
             return;
         }
 

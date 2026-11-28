@@ -1932,6 +1932,8 @@ public class WindowsTests
                   Open NuGet cache,
                   Purge NuGet cache,
                   ----,
+                  Large icons,
+                  Details,
                   Show hidden items,
                   Show system files,
                   Unpin this folder from Quick access,
@@ -1942,6 +1944,33 @@ public class WindowsTests
                   Exit Lode
                 ]
                 """);
+    }
+
+    // Ctrl+Shift+2 and Ctrl+Shift+6, Explorer's keys for Large icons and Details, switch the
+    // list of the tab showing, from anywhere in the window, and the ⋯ menu ticks the view it is
+    // in.
+    [Test]
+    public async Task TheViewKeysSwitchTheList()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, fixture.Root);
+        var view = form.ActiveView!;
+        var before = TickedView(form);
+
+        var largeHandled = form.Commands.RunKey(Keys.Control | Keys.Shift | Keys.D2);
+        var large = (view.LargeIcons, TickedView(form));
+        var detailsHandled = form.Commands.RunKey(Keys.Control | Keys.Shift | Keys.D6);
+        var details = (view.LargeIcons, TickedView(form));
+
+        await Assert.That((largeHandled, detailsHandled)).IsEqualTo((true, true));
+        await Assert.That(before).IsEqualTo("Details");
+        await Assert.That(large).IsEqualTo((true, "Large icons"));
+        await Assert.That(details).IsEqualTo((false, "Details"));
+
+        static string TickedView(MainForm form) =>
+            form.Commands.Menu()
+                .Single(_ => _ is {Text: "Large icons" or "Details", Checked: true})!
+                .Text;
     }
 
     // Purge NuGet cache, from the ⋯ menu, runs in the Actions panel, as Update NuGets does,
@@ -2096,6 +2125,8 @@ public class WindowsTests
                   Previous tab (Ctrl+Shift+Tab),
                   Hide hidden items (Ctrl+H),
                   Show system files,
+                  Large icons (Ctrl+Shift+2),
+                  Details (Ctrl+Shift+6),
                   Terminal,
                   Terminal (admin),
                   Open in Claude,

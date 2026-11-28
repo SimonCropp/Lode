@@ -450,7 +450,19 @@ sealed class FolderView : UserControl
         // The list holds no rows. It is told how many there are, and asks for each as it needs
         // it, so a folder of any size costs it only the rows on screen.
         list.VirtualMode = true;
-        list.RetrieveVirtualItem += (_, args) => args.Item = Row(args.ItemIndex);
+        list.RetrieveVirtualItem += (_, args) =>
+        {
+            args.Item = Row(args.ItemIndex);
+
+            // Asked for as it is drawn: what shows is looked at once the list is done.
+            if (largeIcons)
+            {
+                WantThumbnails();
+            }
+        };
+        list.ZoomRequested += OnZoom;
+        list.HandleCreated += (_, _) => ThumbnailsAtScale();
+        list.DpiChangedAfterParent += (_, _) => ThumbnailsAtScale();
         list.IsCut = index =>
             index < displayed.Count &&
             CutItems.Contains(displayed[index].FullPath);
@@ -1110,6 +1122,7 @@ sealed class FolderView : UserControl
             settings.SetSort(normalized, columnDefinitions[sortColumn].Key, sortAscending);
         }
 
+        LayOutFor(normalized, followed: keep != null);
         remembered = keep;
         if (!showing)
         {
@@ -1182,7 +1195,7 @@ sealed class FolderView : UserControl
             }
         }
 
-        remembered = new(selected, (list.FocusedItem?.Tag as FileEntry)?.FullPath, list.TopItem?.Index ?? -1);
+        remembered = new(selected, (list.FocusedItem?.Tag as FileEntry)?.FullPath, FirstShown());
         stale = true;
         Unwatch();
         Clear();
@@ -1203,6 +1216,7 @@ sealed class FolderView : UserControl
         loading = false;
         entries = [];
         ShowRows([]);
+        thumbnails?.Drop();
         QueueStatusChanged();
     }
 
@@ -1215,6 +1229,7 @@ sealed class FolderView : UserControl
         rows.Clear();
         rowsStale = false;
         displayed = visible;
+        ThumbnailsFor(CurrentPath);
         list.VirtualListSize = visible.Count;
         UpdateEmptyText();
     }
@@ -1407,6 +1422,321 @@ sealed class FolderView : UserControl
         row = CreateItem(displayed[index]);
         rows[index] = row;
         return row;
+    }
+
+    // Large icons, as Explorer's: each item's thumbnail, or its icon, big, its name under it, in
+    // rows across the list. Details, the columns, is the default. Each folder shows as it was
+    // last shown, as each keeps its own sort. See Thumbnails.
+    bool largeIcons;
+    Thumbnails? thumbnails;
+
+    // The folder whose rows the thumbnails are of: the one the list shows, which is the folder
+    // left until the one gone to has been read.
+    string? thumbnailsFolder;
+
+    // What shows is to be looked at once the list is done drawing; and is being looked at.
+    bool thumbnailsWanted;
+    bool findingShown;
+
+    // The items Large icons showed when last looked at, by where they are in what is displayed.
+    (int First, int Last) iconsShown = (0, -1);
+
+    // How far Ctrl and the wheel have turned toward another view, and how far is a notch.
+    int zoom;
+    const int wheelNotch = 120;
+
+    const int listViewScroll = 0x1014;
+
+    /// <summary>
+    /// Whether the list shows Large icons, rather than Details.
+    /// </summary>
+    public bool LargeIcons => largeIcons;
+
+    /// <summary>
+    /// Reads an item's thumbnail, or its icon where it has none, no bigger than the size given,
+    /// as <see cref="Thumbnails.FromShell"/> does. Called off the UI thread. Replaced in tests,
+    /// which mustn't depend on what the shell's thumbnail cache has.
+    /// </summary>
+    internal Func<string, int, Bitmap?> ReadThumbnail = Thumbnails.FromShell;
+
+    /// <summary>
+    /// The items whose thumbnails have been read and are kept, by their paths. For tests.
+    /// </summary>
+    internal IReadOnlyList<string> ThumbnailsRead => thumbnails?.ReadItems ?? [];
+
+    /// <summary>
+    /// Whether any thumbnail is still to be read, or being read. For tests.
+    /// </summary>
+    internal bool ReadingThumbnails => thumbnails?.Busy ?? false;
+
+    /// <summary>
+    /// Shows the list in Large icons, or in Details: the folder from now on, in any tab, and the
+    /// next time Lode starts, as Explorer keeps each folder's view.
+    /// </summary>
+    public void ShowLargeIcons(bool large)
+    {
+        settings.SetLargeIcons(CurrentPath, large);
+        SetLargeIcons(large);
+    }
+
+    // A folder gone to shows as it was last shown. Followed where it was moved or renamed, it
+    // shows as it did, noted so where it is now. Nothing more is read of the folder left.
+    void LayOutFor(string folder, bool followed)
+    {
+        thumbnails?.Cancel();
+        if (!followed)
+        {
+            SetLargeIcons(settings.ShowsLargeIcons(folder));
+            return;
+        }
+
+        if (largeIcons)
+        {
+            settings.SetLargeIcons(folder, true);
+        }
+    }
+
+    void SetLargeIcons(bool large)
+    {
+        if (largeIcons == large)
+        {
+            return;
+        }
+
+        largeIcons = large;
+        zoom = 0;
+        if (large)
+        {
+            ThumbnailsAtScale();
+        }
+        else
+        {
+            thumbnails?.Cancel();
+        }
+
+        // The rows' images are the other view's. A rectangle dragged from the margin selects
+        // rows, which icons aren't in.
+        rows.Clear();
+        marquee.End();
+        list.View = large ? View.LargeIcon : View.Details;
+        list.FocusedItem?.EnsureVisible();
+        list.Invalidate();
+    }
+
+    // The thumbnails at the list's scale: made the first time Large icons shows, and made again,
+    // and so read again, on a monitor of another scale.
+    void ThumbnailsAtScale()
+    {
+        if (!largeIcons)
+        {
+            return;
+        }
+
+        // An image list's are at most 256 pixels square.
+        var size = Math.Min(list.LogicalToDeviceUnits(Thumbnails.UnscaledSize), 256);
+        if (thumbnails?.Size == size)
+        {
+            return;
+        }
+
+        list.LargeImages = IntPtr.Zero;
+        thumbnails?.Dispose();
+        thumbnails = new(size, (path, pixels) => ReadThumbnail(path, pixels), context, ThumbnailArrived, ThumbnailsLetGo);
+        list.LargeImages = thumbnails.Handle;
+        rows.Clear();
+        list.Invalidate();
+    }
+
+    // The rows given are of this folder: the thumbnails of another are let go.
+    void ThumbnailsFor(string folder)
+    {
+        if (Locations.Same(thumbnailsFolder, folder))
+        {
+            return;
+        }
+
+        thumbnailsFolder = folder;
+        thumbnails?.Drop();
+    }
+
+    // The image a row shows: in Details its icon, padded for the row, from the images every list
+    // shares; in Large icons its own picture, its type's icon until its thumbnail is read.
+    int RowImage(FileEntry entry, int icon, int overlay)
+    {
+        if (largeIcons &&
+            thumbnails != null)
+        {
+            return thumbnails.Slot(entry, icon, overlay);
+        }
+
+        return ShellListView.PaddedIcon(icon, overlay);
+    }
+
+    void WantThumbnails()
+    {
+        if (thumbnailsWanted ||
+            findingShown ||
+            !IsHandleCreated)
+        {
+            return;
+        }
+
+        thumbnailsWanted = true;
+        BeginInvoke(ReadShownThumbnails);
+    }
+
+    // The items on screen have their thumbnails read, and no others: those scrolled past are
+    // not, unless being read already. Nothing while the rows are still the folder left's.
+    void ReadShownThumbnails()
+    {
+        thumbnailsWanted = false;
+        if (IsDisposed ||
+            !largeIcons ||
+            thumbnails == null ||
+            !Locations.Same(thumbnailsFolder, CurrentPath))
+        {
+            return;
+        }
+
+        iconsShown = ShownRange();
+        var entriesShown = new List<FileEntry>();
+        for (var index = iconsShown.First; index <= iconsShown.Last; index++)
+        {
+            entriesShown.Add(displayed[index]);
+        }
+
+        thumbnails.Want(entriesShown);
+    }
+
+    // The items Large icons shows, first to last, by where they are in what is displayed: those
+    // whose icon is within the list. The list lays them out across in rows, in order, so the
+    // first and last are found by halving, asking the list where a few of them are.
+    (int First, int Last) ShownRange()
+    {
+        if (!list.IsHandleCreated)
+        {
+            return (0, -1);
+        }
+
+        var count = Math.Min(displayed.Count, list.VirtualListSize);
+        var height = list.ClientSize.Height;
+        findingShown = true;
+        try
+        {
+            var low = 0;
+            var high = count;
+            while (low < high)
+            {
+                var middle = (low + high) / 2;
+                if (IconBounds(middle).Bottom > 0)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            var first = low;
+            high = count;
+            while (low < high)
+            {
+                var middle = (low + high) / 2;
+                if (IconBounds(middle).Top >= height)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            return (first, low - 1);
+        }
+        finally
+        {
+            findingShown = false;
+        }
+    }
+
+    Rectangle IconBounds(int index) =>
+        list.GetItemRect(index, ItemBoundsPortion.Icon);
+
+    // The first row showing, by where it is in what is displayed, or -1 for none. In Large icons
+    // the first icon showing: WinForms has no top item to give in a view of icons, and throws.
+    int FirstShown()
+    {
+        if (!largeIcons)
+        {
+            return list.TopItem?.Index ?? -1;
+        }
+
+        var (first, last) = ShownRange();
+        if (first > last)
+        {
+            return -1;
+        }
+
+        return first;
+    }
+
+    // Scrolls the list, just given its rows and so at the top, down to the row at an index: in
+    // Large icons, to the row of icons it is in.
+    void ShowFirst(int index)
+    {
+        if (!largeIcons)
+        {
+            list.TopItem = list.Items[index];
+            return;
+        }
+
+        SendMessage(list.Handle, listViewScroll, IntPtr.Zero, IconBounds(index).Top - IconBounds(0).Top);
+    }
+
+    // A thumbnail read: its item drawn again, where it shows.
+    void ThumbnailArrived(string path)
+    {
+        for (var index = iconsShown.First; index <= iconsShown.Last && index < displayed.Count; index++)
+        {
+            if (string.Equals(displayed[index].FullPath, path, StringComparison.OrdinalIgnoreCase))
+            {
+                list.RedrawItems(index, index, true);
+                return;
+            }
+        }
+    }
+
+    // Every thumbnail let go, there being too many: the rows showing them are made again.
+    void ThumbnailsLetGo()
+    {
+        rows.Clear();
+        list.Invalidate();
+    }
+
+    // Ctrl and the wheel: a notch away, Large icons, a notch toward, Details, as Explorer goes
+    // from one view to the next. A fine wheel's small turns add up to a notch, unless it turns
+    // back.
+    void OnZoom(int delta)
+    {
+        if (Math.Sign(delta) != Math.Sign(zoom))
+        {
+            zoom = 0;
+        }
+
+        zoom += delta;
+        if (Math.Abs(zoom) < wheelNotch)
+        {
+            return;
+        }
+
+        var large = zoom > 0;
+        zoom = 0;
+        if (large != largeIcons)
+        {
+            ShowLargeIcons(large);
+        }
     }
 
     // Typing the start of a name moves to the next item with it, as it does in a list that
@@ -3100,7 +3430,7 @@ sealed class FolderView : UserControl
                 }
             }
 
-            topIndex = list.TopItem?.Index ?? -1;
+            topIndex = FirstShown();
         }
         else if (remembered is { } kept)
         {
@@ -3134,7 +3464,7 @@ sealed class FolderView : UserControl
             if (topIndex > 0 &&
                 visible.Count > 0)
             {
-                list.TopItem = list.Items[Math.Min(topIndex, visible.Count - 1)];
+                ShowFirst(Math.Min(topIndex, visible.Count - 1));
             }
         }
 
@@ -3798,7 +4128,7 @@ sealed class FolderView : UserControl
         if (entry.IsDrive)
         {
             var (driveCells, driveIcon) = DescribeDrive(entry);
-            var drive = new ListViewItem(ShownCells(driveCells), ShellListView.PaddedIcon(driveIcon)) {Tag = entry};
+            var drive = new ListViewItem(ShownCells(driveCells), RowImage(entry, driveIcon, 0)) {Tag = entry};
             ColorDetails(drive, ExplorerStyle.SecondaryText);
             return drive;
         }
@@ -3814,7 +4144,7 @@ sealed class FolderView : UserControl
             Cell(entry, sizeColumn)
         ];
         var (shellIcon, overlay) = IconOf(entry, FileIconKnown);
-        var item = new ListViewItem(ShownCells(cells), ShellListView.PaddedIcon(shellIcon, overlay)) {Tag = entry};
+        var item = new ListViewItem(ShownCells(cells), RowImage(entry, shellIcon, overlay)) {Tag = entry};
         if (entry.IsHidden)
         {
             item.ForeColor = SystemColors.GrayText;
@@ -3850,11 +4180,12 @@ sealed class FolderView : UserControl
 
     // After a changed item's name, where the Git column doesn't show, its letter, or how many
     // changes a folder holds, in the name's colour: so the change is told by more than colour.
+    // Large icons shows no columns, so has the mark always.
     ShellListView.NameMark? NameMark(int index)
     {
         if (fitting != null ||
             index >= displayed.Count ||
-            IsColumnShown(gitColumn))
+            (!largeIcons && IsColumnShown(gitColumn)))
         {
             return null;
         }
@@ -5711,7 +6042,7 @@ sealed class FolderView : UserControl
                 .Select(_ => _.FullPath)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             focused = (list.FocusedItem?.Tag as FileEntry)?.FullPath;
-            topIndex = list.TopItem?.Index ?? -1;
+            topIndex = FirstShown();
         }
 
         var movedFocus = focused == null ? null : MovedTo(focused, moved);
@@ -5877,6 +6208,10 @@ sealed class FolderView : UserControl
             promotedWatcher?.Dispose();
             marquee.Dispose();
             italic.Dispose();
+
+            // Taken from the list before it goes, as the list draws from it until it does.
+            list.LargeImages = IntPtr.Zero;
+            thumbnails?.Dispose();
         }
 
         base.Dispose(disposing);

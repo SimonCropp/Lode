@@ -7,6 +7,7 @@ static partial class NativeMethods
 
     public const int ListViewGetImageList = 0x1002;
     public const int ListViewSetImageList = 0x1003;
+    public const int ListViewImageListNormal = 0;
     public const int ListViewImageListSmall = 1;
     public const int ListViewGetStringWidth = 0x1057;
     public const int ListViewGetEditControl = 0x1018;

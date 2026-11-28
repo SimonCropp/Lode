@@ -86,6 +86,9 @@ static class Icons
     public const char CommandPalette = '\uE765';
     public const char ShowHidden = '\uE890';
     public const char ShowSystem = '\uEA18';
+    // The list's views: a grid of squares, and lines.
+    public const char LargeIcons = '\uE8A9';
+    public const char Details = '\uEA37';
     public const char Pin = '\uE718';
     public const char Unpin = '\uE77A';
     public const char Options = '\uE713';

@@ -278,6 +278,34 @@ sealed class Settings
         }
     }
 
+    // The folders the file list shows in Large icons, as Explorer keeps each folder's view: the
+    // rest show Details. The most recently chosen last, as FolderSorts are.
+    public List<string> LargeIconFolders { get; set; } = [];
+
+    const int maximumLargeIconFolders = 500;
+
+    public bool ShowsLargeIcons(string folder) =>
+        LargeIconFolders.Exists(_ => Locations.Same(_, folder));
+
+    /// <summary>
+    /// Notes that a folder shows in Large icons, or forgets it for Details, which every folder
+    /// shows unless noted.
+    /// </summary>
+    public void SetLargeIcons(string folder, bool large)
+    {
+        LargeIconFolders.RemoveAll(_ => Locations.Same(_, folder));
+        if (!large)
+        {
+            return;
+        }
+
+        LargeIconFolders.Add(folder);
+        if (LargeIconFolders.Count > maximumLargeIconFolders)
+        {
+            LargeIconFolders.RemoveRange(0, LargeIconFolders.Count - maximumLargeIconFolders);
+        }
+    }
+
     // Which of the Changes and History panes shows, as tabs, where the window has room beside the
     // list for only one, for each repository History was last chosen or used in. Changes is the
     // default, and isn't noted. The most recently changed last, as FolderSorts are.
