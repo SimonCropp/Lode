@@ -3446,6 +3446,41 @@ public class FolderViewTests
                 """);
     }
 
+    // The rectangle's window is owned by the window the list is in, which disposes it as it
+    // closes. A window's only tab dragged onto another closes the window it left, so the next
+    // rectangle drawn in the tab moved needs a window of its own again, owned by where it is now.
+    [Test]
+    public async Task MarqueeAfterTheTabMovesToAnotherWindow()
+    {
+        using var fixture = Fixture.Create();
+        var left = Host();
+        using var moved = Host();
+        var view = await OpenIn(left, fixture.Root);
+        var marquee = view.Marquee;
+
+        // From the margin out across the rows, so the rectangle has a width to draw.
+        void Drag(int from, int to)
+        {
+            marquee.Begin(new(-5, view.RowBounds(from).Top + 2), add: false);
+            marquee.Update(new(40, view.RowBounds(to).Top + 2));
+        }
+
+        Drag(1, 3);
+        var drawnBefore = left.OwnedForms.Any(_ => _.Visible);
+        marquee.End();
+
+        moved.Controls.Add(view);
+        moved.Show();
+        left.Dispose();
+        Drag(0, 1);
+        var drawnAfter = moved.OwnedForms.Any(_ => _.Visible);
+        marquee.End();
+
+        await Assert.That(drawnBefore).IsTrue();
+        await Assert.That(drawnAfter).IsTrue();
+        await Assert.That(Selected(view)).IsEquivalentTo(Names(view).Take(2));
+    }
+
     // The horizontal scrollbar runs from the left edge of the view, across the margin, as
     // Explorer's does, rather than from where the list starts. It goes with the list's own:
     // moved, it scrolls the list, and the list scrolled another way, it follows.

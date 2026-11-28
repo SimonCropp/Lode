@@ -245,6 +245,17 @@ sealed class GutterMarquee : IDisposable
             return;
         }
 
+        // The rectangle's window is owned by the window the list is in, and disposed with it. A
+        // tab dragged to another window takes the list with it, and the window it left closes if
+        // that was its only tab, so the rectangle is given a window again, owned by the one the
+        // list is in now.
+        if (window != null &&
+            (window.IsDisposed || window.Owner != form))
+        {
+            window.Dispose();
+            window = null;
+        }
+
         window ??= new();
         window.Bounds = list.RectangleToScreen(clipped);
         if (!window.Visible)
