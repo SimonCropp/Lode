@@ -110,7 +110,7 @@ static class Program
         // options lost.
         if (settings.LoadProblem != null)
         {
-            MessageBox.Show(settings.LoadProblem, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(settings.LoadProblem, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         if (settings.LoadBug != null)
@@ -122,7 +122,7 @@ static class Program
         // only look as though Lode had lost them.
         if (settings.MissingCodeDirectory() is { } missing)
         {
-            MessageBox.Show(
+            MessageBoxes.Show(
                 $"Lode can't find the code folder:{Environment.NewLine}{Environment.NewLine}" +
                 $"{missing}{Environment.NewLine}{Environment.NewLine}" +
                 "It may have been renamed, moved or deleted. Until another is chosen on the Code " +
@@ -190,7 +190,7 @@ static class Program
                 var handler = RepositoryLinks.HandlerOf(text)!;
                 if (!new RepositoryLink(handler, text, "", null).Forward(repositoryLinks))
                 {
-                    MessageBox.Show(
+                    MessageBoxes.Show(
                         $"Lode can't tell which repository this link is for, and can't find {handler.App} to hand it to:{Environment.NewLine}{Environment.NewLine}{text}",
                         "Lode",
                         MessageBoxButtons.OK,
@@ -232,7 +232,7 @@ static class Program
             : $"Lode can't find the code folder, {codeFolder}, to look for {link.Name} in. Choose another on the Code page of Options.";
         if (repositoryLinks.ForwardCommand(link.Handler) == null)
         {
-            MessageBox.Show(
+            MessageBoxes.Show(
                 $"{why}{Environment.NewLine}{Environment.NewLine}{app} isn't there to open the link instead.",
                 "Lode",
                 MessageBoxButtons.OK,
@@ -240,7 +240,7 @@ static class Program
             return null;
         }
 
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             $"{why}{Environment.NewLine}{Environment.NewLine}Open the link in {app} instead?",
             "Lode",
             MessageBoxButtons.YesNo,
@@ -248,7 +248,7 @@ static class Program
         if (answer == DialogResult.Yes &&
             !link.Forward(repositoryLinks))
         {
-            MessageBox.Show($"{app} wouldn't start.", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show($"{app} wouldn't start.", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         return null;
@@ -296,7 +296,7 @@ static class Program
         }
         else if (GetStdHandle(StandardOutputHandle) is 0 or -1)
         {
-            MessageBox.Show(
+            MessageBoxes.Show(
                 message,
                 "Lode",
                 MessageBoxButtons.OK,

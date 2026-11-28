@@ -735,7 +735,7 @@ sealed class Settings
     /// waiting on a modal box nobody is there to answer.
     /// </summary>
     internal static Action<string, Exception> Unsaved = static (path, exception) =>
-        MessageBox.Show(
+        MessageBoxes.Show(
             $"""
              Lode couldn't save its settings to {path}
 

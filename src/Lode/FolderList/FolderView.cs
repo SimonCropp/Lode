@@ -824,7 +824,7 @@ sealed class FolderView : UserControl
                     Win32Exception or
                     InvalidOperationException)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -954,7 +954,7 @@ sealed class FolderView : UserControl
     }
 
     void SayNotFound(string target) =>
-        MessageBox.Show(
+        MessageBoxes.Show(
             this,
             $"Lode can't find '{target}'. Check the spelling and try again.",
             "Lode",
@@ -4564,7 +4564,7 @@ sealed class FolderView : UserControl
         {
             if (!IsDisposed)
             {
-                MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
 
             return;
@@ -4926,7 +4926,7 @@ sealed class FolderView : UserControl
         {
             if (!IsDisposed)
             {
-                MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
 
             return;
@@ -5078,7 +5078,7 @@ sealed class FolderView : UserControl
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         Loading = LoadAsync(true);
@@ -5151,7 +5151,7 @@ sealed class FolderView : UserControl
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -5286,7 +5286,7 @@ sealed class FolderView : UserControl
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
             args.CancelEdit = true;
-            MessageBox.Show(
+            MessageBoxes.Show(
                 this,
                 "A file name can't contain any of these characters:  \\ / : * ? \" < > |",
                 "Lode",
@@ -5673,7 +5673,7 @@ sealed class FolderView : UserControl
         if (failure != null &&
             !IsDisposed)
         {
-            MessageBox.Show(this, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -6021,7 +6021,7 @@ sealed class FolderView : UserControl
             {
                 if (!IsDisposed)
                 {
-                    MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
                 return;

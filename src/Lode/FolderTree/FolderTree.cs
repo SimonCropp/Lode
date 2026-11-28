@@ -2132,7 +2132,7 @@ sealed class FolderTree : TreeView
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -2177,7 +2177,7 @@ sealed class FolderTree : TreeView
 
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
-            MessageBox.Show(
+            MessageBoxes.Show(
                 this,
                 "A folder name can't contain any of these characters:  \\ / : * ? \" < > |",
                 "Lode",

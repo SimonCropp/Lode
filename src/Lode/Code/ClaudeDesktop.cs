@@ -81,7 +81,7 @@ static class ClaudeDesktop
         catch (Exception exception)
         {
             // The app was removed since the menu was shown, say.
-            MessageBox.Show(owner, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(owner, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 }

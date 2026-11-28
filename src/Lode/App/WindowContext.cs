@@ -321,7 +321,7 @@ sealed class WindowContext : ApplicationContext
                     Win32Exception or
                     InvalidOperationException)
         {
-            MessageBox.Show(
+            MessageBoxes.Show(
                 windows.FirstOrDefault(_ => _.Visible),
                 $"Lode couldn't start the update: {exception.Message}",
                 "Lode",
@@ -342,7 +342,7 @@ sealed class WindowContext : ApplicationContext
             return true;
         }
 
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             windows.FirstOrDefault(_ => _.Visible),
             $"{running}\n\n{doing} anyway?",
             doing,

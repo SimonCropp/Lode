@@ -109,7 +109,7 @@ static partial class OpenWith
         var failure = Invoke(owner.Handle, app, paths);
         if (failure != null)
         {
-            MessageBox.Show(owner, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(owner, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

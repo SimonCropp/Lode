@@ -248,7 +248,7 @@ sealed class FindHost
             Buttons = { replace, TaskDialogButton.Cancel },
             DefaultButton = replace
         };
-        return TaskDialog.ShowDialog(owner, prompt) == replace;
+        return MessageBoxes.ShowDialog(owner, prompt) == replace;
     }
 
     // Whether results are of the query, and searched everything, as Replace replaces in what

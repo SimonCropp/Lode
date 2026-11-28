@@ -1044,7 +1044,7 @@ class OptionsForm : Form
         page.Icon = TaskDialogIcon.ShieldBlueBar;
         page.Buttons = [change, TaskDialogButton.Cancel];
         page.DefaultButton = change;
-        return TaskDialog.ShowDialog(this, page) == change;
+        return MessageBoxes.ShowDialog(this, page) == change;
     }
 
     void ShowWindowsSearchOutcome(bool on, Elevated.Outcome outcome)
@@ -1061,7 +1061,7 @@ class OptionsForm : Form
             change = "on";
         }
 
-        MessageBox.Show(this, $"Lode couldn't turn Windows Search {change}: {outcome.Error}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        MessageBoxes.Show(this, $"Lode couldn't turn Windows Search {change}: {outcome.Error}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     Control[] BuildLinksPage()
@@ -1131,7 +1131,7 @@ class OptionsForm : Form
                     SecurityException or
                     IOException)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         UpdateLinkState();
@@ -1147,7 +1147,7 @@ class OptionsForm : Form
         }
         catch (Win32Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -1325,7 +1325,7 @@ class OptionsForm : Form
                     Win32Exception or
                     InvalidOperationException)
         {
-            MessageBox.Show(this, $"Lode couldn't start the update: {exception.Message}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, $"Lode couldn't start the update: {exception.Message}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -1595,7 +1595,7 @@ class OptionsForm : Form
             Buttons = {use, TaskDialogButton.Cancel},
             DefaultButton = use
         };
-        return TaskDialog.ShowDialog(this, page) == use;
+        return MessageBoxes.ShowDialog(this, page) == use;
     }
 
     // The one it was is watched no longer, so nothing of Lode's holds it.
@@ -1661,7 +1661,7 @@ class OptionsForm : Form
             Buttons = {exclude, TaskDialogButton.Cancel},
             DefaultButton = exclude
         };
-        return TaskDialog.ShowDialog(this, page) == exclude;
+        return MessageBoxes.ShowDialog(this, page) == exclude;
     }
 
     void ShowDefenderOutcome(string folder, DefenderExclusion.Outcome outcome)
@@ -1673,7 +1673,7 @@ class OptionsForm : Form
 
         if (!outcome.Succeeded)
         {
-            MessageBox.Show(this, $"Lode couldn't exclude {folder} from Defender: {outcome.Error}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, $"Lode couldn't exclude {folder} from Defender: {outcome.Error}", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -1684,7 +1684,7 @@ class OptionsForm : Form
                     string.Join("\n", outcome.Removed);
         }
 
-        MessageBox.Show(this, text, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBoxes.Show(this, text, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     // The editors found, then one chosen by browsing if that is what is set, then Browse….
@@ -1801,7 +1801,7 @@ class OptionsForm : Form
                     SecurityException or
                     IOException)
         {
-            MessageBox.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(this, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         // Apps find Lode's windows to show a file selected in only while Lode opens folders.

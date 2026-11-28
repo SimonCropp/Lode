@@ -327,7 +327,7 @@ static class GitStatusActions
             };
         }
 
-        var answer = TaskDialog.ShowDialog(owner, page);
+        var answer = MessageBoxes.ShowDialog(owner, page);
         foreach (var (choice, button) in buttons)
         {
             if (answer == button)

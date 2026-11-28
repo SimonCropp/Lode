@@ -14,11 +14,21 @@ public static class ModuleInitializer
         // An exception inside a window's message handler fails the test that caused it, rather
         // than putting up WinForms' error dialog: WindowThread sees to that, on each test's
         // thread. Likewise an error Lode would offer an issue for: a bug, which fails the test
-        // rather than asking, in a box nobody is there to answer.
-        IssueLauncher.Declined = text => throw new(text);
+        // rather than asking, in a box nobody is there to answer. Thrown where the box would have
+        // been put up, as it would have stopped there, and kept for the test, should what it is
+        // thrown to swallow it.
+        IssueLauncher.Declined = text => throw WindowThreadExecutor.Keep(new(text));
 
         // And settings a test could not save, which fail it too.
-        Settings.Unsaved = (path, exception) => throw new($"Could not save settings to {path}", exception);
+        Settings.Unsaved = (path, exception) => throw WindowThreadExecutor.Keep(new($"Could not save settings to {path}", exception));
+
+        // And any other box Lode puts up, which fails the test with what it says, rather than
+        // waiting for a click. A test that expects a box answers it through the stand-in Lode
+        // asks it through, and never reaches here.
+        MessageBoxes.Showing = (_, text, caption, _, _, _) =>
+            throw WindowThreadExecutor.Keep(new($"Lode put up a message box, which nobody in a test run is there to answer. {caption}: {text}"));
+        MessageBoxes.ShowingDialog = (_, page, _) =>
+            throw WindowThreadExecutor.Keep(new($"Lode put up a task dialog, which nobody in a test run is there to answer. {page.Caption}: {page.Heading} {page.Text}"));
 
         // Unscaled, so captures describe the app rather than the display of whoever ran them.
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);

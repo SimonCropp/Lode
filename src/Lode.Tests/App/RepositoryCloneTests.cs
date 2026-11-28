@@ -606,6 +606,7 @@ public class RepositoryCloneTests
     }
 
     // The dialog answered by answer, with forward as the command of the app the link was for.
+    // Put up for real, as answer clicks its buttons.
     static string? OfferAnswering(string link, string codeFolder, string? forward, Action<TaskDialogPage> answer)
     {
         var links = new RepositoryLinks(
@@ -613,6 +614,8 @@ public class RepositoryCloneTests
             "lode",
             @"Software\Lode.Tests.NotTaken.Associations",
             (_, _) => forward);
+        var showing = MessageBoxes.ShowingDialog;
+        MessageBoxes.ShowingDialog = MessageBoxes.ShowDialogNow;
         RepositoryClone.PageShown = answer;
         try
         {
@@ -621,6 +624,7 @@ public class RepositoryCloneTests
         finally
         {
             RepositoryClone.PageShown = null;
+            MessageBoxes.ShowingDialog = showing;
         }
     }
 

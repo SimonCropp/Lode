@@ -363,7 +363,7 @@ static class FileOperations
 
     // On whichever thread, owned by the window, as Windows' own dialogs for the operation are.
     static void Warn(IntPtr owner, string message) =>
-        MessageBox.Show(new Owner(owner), message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        MessageBoxes.Show(new Owner(owner), message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
     // A window by its handle. Not the control itself, which Windows Forms would refuse to own a
     // dialog from another thread.
@@ -503,7 +503,7 @@ static class FileOperations
         }
         catch (Exception exception)
         {
-            MessageBox.Show(owner, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(owner, exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -946,7 +946,7 @@ static class FileOperations
         }
         catch (Exception exception)
         {
-            MessageBox.Show(Control.FromHandle(owner), exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(Control.FromHandle(owner), exception.Message, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 

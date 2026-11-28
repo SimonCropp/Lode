@@ -362,7 +362,7 @@ static class CodeMenu
         var choices = SwitchChoices(reads);
         if (choices.Count == 0)
         {
-            MessageBox.Show(owner, $"No other branch is in every one of the {Repositories(reads.Count)}.", "Merge current branch into", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBoxes.Show(owner, $"No other branch is in every one of the {Repositories(reads.Count)}.", "Merge current branch into", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -561,13 +561,13 @@ static class CodeMenu
     {
         if (listing.Error != null)
         {
-            MessageBox.Show(owner, $"Couldn't read the branches:\n{listing.Error}", caption, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(owner, $"Couldn't read the branches:\n{listing.Error}", caption, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return null;
         }
 
         if (listing.Current == null)
         {
-            MessageBox.Show(owner, "No branch is checked out. Check one out first.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBoxes.Show(owner, "No branch is checked out. Check one out first.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return null;
         }
 
@@ -611,7 +611,7 @@ static class CodeMenu
 
         if (!window.GitPanes.Compare(repo, branch))
         {
-            MessageBox.Show(owner, $"History shows the repository open here. Open {Path.GetFileName(repo)} to compare its branches.", "Compare to branch", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBoxes.Show(owner, $"History shows the repository open here. Open {Path.GetFileName(repo)} to compare its branches.", "Compare to branch", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 
@@ -684,7 +684,7 @@ static class CodeMenu
 
         if (reads is [{ Listing.Error: { } error }])
         {
-            MessageBox.Show(owner, $"Couldn't read the branches:\n{error}", "Switch branch", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(owner, $"Couldn't read the branches:\n{error}", "Switch branch", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -703,7 +703,7 @@ static class CodeMenu
                 none = $"No other branch is in every one of the {Repositories(reads.Count)}.";
             }
 
-            MessageBox.Show(owner, none, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBoxes.Show(owner, none, title, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -1032,7 +1032,7 @@ static class CodeMenu
             DefaultButton = leave,
             AllowCancel = true
         };
-        var answer = TaskDialog.ShowDialog(owner, page);
+        var answer = MessageBoxes.ShowDialog(owner, page);
         if (answer == leave)
         {
             return true;
@@ -1192,7 +1192,7 @@ static class CodeMenu
             switchTo = SwitchOffTo(listing, branch);
             if (switchTo == null)
             {
-                MessageBox.Show(owner, $"{branch.Name} is the only branch, so can't be deleted.", "Delete branch", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBoxes.Show(owner, $"{branch.Name} is the only branch, so can't be deleted.", "Delete branch", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
         }
@@ -1271,7 +1271,7 @@ static class CodeMenu
             page.Verification = new($"Also delete {branch.Upstream}");
         }
 
-        if (TaskDialog.ShowDialog(owner, page) != delete)
+        if (MessageBoxes.ShowDialog(owner, page) != delete)
         {
             return null;
         }
@@ -1310,7 +1310,7 @@ static class CodeMenu
                 return;
             }
         }
-        else if (MessageBox.Show(owner, PushOnlyQuestion(repos), "Git push", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+        else if (MessageBoxes.Show(owner, PushOnlyQuestion(repos), "Git push", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
         {
             return;
         }
@@ -1671,7 +1671,7 @@ static class CodeMenu
     /// </summary>
     internal static void RevertCommit(Control owner, string repo, GitCommit commit)
     {
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             owner,
             $"Revert {commit.ShortSha} \"{commit.Subject}\" in {Path.GetFileName(repo)}?\n\nA new commit undoes its changes. It isn't pushed.",
             "Git revert",
@@ -1699,7 +1699,7 @@ static class CodeMenu
     /// </summary>
     internal static void CheckoutCommit(Control owner, string repo, GitCommit commit)
     {
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             owner,
             CheckoutCommitQuestion(repo, commit),
             "Git checkout commit",
@@ -1728,7 +1728,7 @@ static class CodeMenu
     /// </summary>
     internal static void CherryPick(Control owner, string repo, GitCommit commit, string branch)
     {
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             owner,
             CherryPickQuestion(repo, commit, branch),
             "Git cherry-pick",
@@ -1767,7 +1767,7 @@ static class CodeMenu
         var draft = CommitDrafts.Of(repo);
         var typed = draft.Summary.Trim().Length > 0 ||
                     draft.Description.Trim().Length > 0;
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             owner,
             UndoCommitQuestion(repo, commit, uncommitted, typed),
             "Git undo commit",
@@ -1874,7 +1874,7 @@ static class CodeMenu
             return;
         }
 
-        var answer = MessageBox.Show(
+        var answer = MessageBoxes.Show(
             owner,
             DiscardQuestion(targets),
             "Git discard",
@@ -1965,10 +1965,10 @@ static class CodeMenu
     {
         if (owner.IsDisposed)
         {
-            return MessageBox.Show(question, "Git purge", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK;
+            return MessageBoxes.Show(question, "Git purge", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK;
         }
 
-        return MessageBox.Show(owner, question, "Git purge", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK;
+        return MessageBoxes.Show(owner, question, "Git purge", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.OK;
     }
 
     static void UpdateNugets(IReadOnlyList<string> folders) =>

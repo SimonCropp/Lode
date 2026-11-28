@@ -556,7 +556,7 @@ sealed class Commands
         if (failure != null &&
             !window.IsDisposed)
         {
-            MessageBox.Show(window, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show(window, failure, "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -725,7 +725,7 @@ sealed class Commands
         var folder = NuGetCache.PackagesFolder();
         if (!Directory.Exists(folder))
         {
-            MessageBox.Show(window, $"The NuGet cache isn't there:\n{folder}", "Open NuGet cache", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBoxes.Show(window, $"The NuGet cache isn't there:\n{folder}", "Open NuGet cache", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -765,6 +765,6 @@ sealed class Commands
 
             IssueLauncher.OpenUrl(args.LinkHref);
         };
-        TaskDialog.ShowDialog(window, page);
+        MessageBoxes.ShowDialog(window, page);
     }
 }

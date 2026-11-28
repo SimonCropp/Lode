@@ -55,15 +55,28 @@ sealed class WindowThreadExecutor : STAThreadExecutor
         if (kept.Thrown.Count > 0)
         {
             throw new AggregateException(
-                "Thrown in a window's message handler, where WinForms would have put up its error dialog",
+                "Thrown on the test's thread where the test couldn't see it: in a window's message handler, where WinForms would have put up its error dialog, or for a box Lode put up",
                 kept.Thrown);
         }
     }
 
     /// <summary>
-    /// What was thrown in a window's message handler on this thread while it was kept, for the
-    /// test to fail on. Application.ThreadException keeps one handler a thread, and adding one
-    /// replaces whatever the thread had, so nothing else on the thread sets it meanwhile.
+    /// Keeps <paramref name="exception"/> for the test on this thread to fail with, should
+    /// whatever it is thrown to swallow it, as the test thread's synchronization context does
+    /// what an async void method throws. Kept only on a window test's thread. Answers the
+    /// exception, to be thrown.
+    /// </summary>
+    internal static Exception Keep(Exception exception)
+    {
+        errors?.Keep(exception);
+        return exception;
+    }
+
+    /// <summary>
+    /// What was thrown in a window's message handler on this thread while it was kept, and what
+    /// else was kept, for the test to fail on. Application.ThreadException keeps one handler a
+    /// thread, and adding one replaces whatever the thread had, so nothing else on the thread
+    /// sets it meanwhile.
     /// </summary>
     sealed class WindowErrors : IDisposable
     {
@@ -73,7 +86,16 @@ sealed class WindowThreadExecutor : STAThreadExecutor
             Application.ThreadException += Keep;
 
         void Keep(object sender, ThreadExceptionEventArgs args) =>
-            Thrown.Add(args.Exception);
+            Keep(args.Exception);
+
+        // Once each: one kept as it was thrown can reach a window's handler too.
+        public void Keep(Exception exception)
+        {
+            if (!Thrown.Contains(exception))
+            {
+                Thrown.Add(exception);
+            }
+        }
 
         public void Dispose() =>
             Application.ThreadException -= Keep;

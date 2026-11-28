@@ -1451,7 +1451,7 @@ sealed class ChangesPane : UserControl
     /// named. Tests answer for the user.
     /// </summary>
     internal static Func<Control, string, DialogResult> AskAbort { get; set; } = (owner, what) =>
-        MessageBox.Show(
+        MessageBoxes.Show(
             owner,
             $"Abort the {what}?\n\nThe branch and its files go back to how they were before it began, and any conflicts settled are lost.",
             $"Abort {what}",
@@ -1507,7 +1507,7 @@ sealed class ChangesPane : UserControl
     /// Asks whether to discard. Tests answer for the user.
     /// </summary>
     internal static Func<Control, string, DialogResult> AskDiscard { get; set; } = (owner, text) =>
-        MessageBox.Show(owner, text, "Discard changes", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        MessageBoxes.Show(owner, text, "Discard changes", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
 
     // Whether git can stash, or restore a stash, now: not part way through a merge or rebase,
     // nor with files in conflict, which git refuses to stash or restore over, nor while git
@@ -1640,7 +1640,7 @@ sealed class ChangesPane : UserControl
     /// Asks whether to discard a stash. Tests answer for the user.
     /// </summary>
     internal static Func<Control, string, DialogResult> AskDiscardStash { get; set; } = (owner, text) =>
-        MessageBox.Show(owner, text, "Discard stash", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        MessageBoxes.Show(owner, text, "Discard stash", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
 
     static string FullPath(string repo, string path) =>
         Path.Combine(repo, path.Replace('/', '\\'));

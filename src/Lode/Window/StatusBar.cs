@@ -124,7 +124,7 @@ sealed class StatusBar : IDisposable
         this.updates = updates;
         this.openTab = openTab;
         this.openSite = openSite;
-        Tell = (caption, text) => MessageBox.Show(window, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        Tell = (caption, text) => MessageBoxes.Show(window, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         // White, as Explorer's is, with its text further in from the edge, and no grip: Windows
         // 11 windows are resized from their edges.

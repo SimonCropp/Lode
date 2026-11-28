@@ -68,11 +68,11 @@ static class RepositoryClone
         ask.Created += (_, _) => PageShown?.Invoke(ask);
         clone.Click += (_, _) => ask.Navigate(Cloning());
 
-        var answer = TaskDialog.ShowDialog(ask, TaskDialogStartupLocation.CenterScreen);
+        var answer = MessageBoxes.ShowDialog(ask, TaskDialogStartupLocation.CenterScreen);
         if (forwards.Contains(answer) &&
             !link.Forward(links))
         {
-            MessageBox.Show($"{app} wouldn't start.", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBoxes.Show($"{app} wouldn't start.", "Lode", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         return cloned;

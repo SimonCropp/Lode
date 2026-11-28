@@ -105,7 +105,7 @@ static class IssueLauncher
     /// there for a click.
     /// </summary>
     internal static Func<string, bool> Declined = text =>
-        MessageBox.Show(
+        MessageBoxes.Show(
             text,
             "Lode Error",
             MessageBoxButtons.YesNo,
