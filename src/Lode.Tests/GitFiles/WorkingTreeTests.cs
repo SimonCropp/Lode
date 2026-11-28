@@ -361,6 +361,56 @@ public class WorkingTreeTests
         await GitRun.Agree(repo);
     }
 
+    // Copies, which git status finds with status.renames, or diff.renames, set to copies or to
+    // copy, as git takes either, in any case: a file copied from one changed, both staged, which
+    // git has as copied, and nothing deleted, so the repository is left to git. Before, only
+    // copies was taken, and only where a file was deleted too, so a copy was read as added.
+    [Test]
+    [Arguments("status.renames", "copy")]
+    [Arguments("status.renames", "Copies")]
+    [Arguments("diff.renames", "COPY")]
+    [Arguments("diff.renames", "copies")]
+    public async Task LeavesCopiesToGit(string key, string value)
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "config", key, value);
+        File.Copy(Path.Combine(repo, "tracked.txt"), Path.Combine(repo, "copied.txt"));
+        await File.AppendAllTextAsync(Path.Combine(repo, "tracked.txt"), " and more");
+        Git(repo, "add", ".");
+
+        await GitRun.LeftToGit(repo);
+        await Assert.That(GitState.FromGit(repo, Cancel.None)!.Files).Contains(new GitFile("copied.txt", GitChange.Renamed));
+    }
+
+    // status.renames and diff.renames as git status reads them: diff.renames only the first time,
+    // so the first of two wins, and not over status.renames, which, set without a value, is on;
+    // set to what git refuses, git status fails, so the repository is left to git rather than
+    // its renames found here, nothing to find them in or not.
+    [Test]
+    public async Task TakesRenamesSettingsAsGitDoes()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "config", "--add", "diff.renames", "false");
+        Git(repo, "config", "--add", "diff.renames", "true");
+        Git(repo, "mv", "tracked.txt", "renamed.txt");
+        var firstDiff = await GitRun.Agree(repo);
+        await Assert.That(firstDiff.Files.Count).IsEqualTo(2);
+
+        await File.AppendAllTextAsync(Path.Combine(repo, ".git", "config"), "[status]\n\trenames\n");
+        var statusWithoutValue = await GitRun.Agree(repo);
+        await Assert.That(statusWithoutValue.Files).IsEquivalentTo([new GitFile("renamed.txt", GitChange.Renamed)]);
+
+        Git(repo, "config", "status.renames", "maybe");
+        await Assert.That(GitState.FromGit(repo, Cancel.None)).IsNull();
+        await GitRun.LeftToGit(repo);
+
+        Git(repo, "mv", "renamed.txt", "tracked.txt");
+        await Assert.That(GitState.FromGit(repo, Cancel.None)).IsNull();
+        await GitRun.LeftToGit(repo);
+    }
+
     // core.fileMode not set, as a repository made other than by git for Windows' git init can
     // have it, which git takes as on: a file staged as one that runs, against its file, which on
     // Windows can't say whether it does, is a change of mode to git, and isn't staged alone, so

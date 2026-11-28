@@ -58,6 +58,15 @@ sealed class GitConfig
             .Select(_ => _.Value!);
 
     /// <summary>
+    /// Each value of either key, in the order git reads them, null for one set without a value:
+    /// for a setting git takes from one key over the other however they are ordered.
+    /// </summary>
+    public IEnumerable<(string Key, string? Value)> InOrder(string first, string second) =>
+        entries
+            .Where(_ => _.Key == first || _.Key == second)
+            .Select(_ => (_.Key, _.Value));
+
+    /// <summary>
     /// The keys set under <paramref name="prefix"/>, extensions. say, from the repository's own
     /// config.
     /// </summary>

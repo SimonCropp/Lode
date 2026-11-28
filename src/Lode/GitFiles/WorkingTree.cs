@@ -31,6 +31,13 @@ sealed class WorkingTree
         All
     }
 
+    enum RenameDetection
+    {
+        None,
+        Renames,
+        Copies
+    }
+
     sealed class Status
     {
         public char Staged = '.';
@@ -336,25 +343,25 @@ sealed class WorkingTree
     }
 
     // Staged renames, as git status finds them, unless status.renames or diff.renames turns them
-    // off; copies, which git would find with them set to copies, aren't looked for here.
+    // off. Copies, which git finds with either set to copies, aren't looked for here, so where a
+    // file is added, which one could be, the repository is left to git, as it is, added or not,
+    // where either is set to what git status refuses, and fails on.
     void FindRenames()
     {
-        if (deleted.Count == 0 ||
-            added.Count == 0)
+        var config = repository.Config;
+        var detection = RenameDetectionOf(config);
+        if (added.Count == 0)
         {
             return;
         }
 
-        var config = repository.Config;
-        var setting = config.Get("status.renames") ?? config.Get("diff.renames");
-        if (setting != null &&
-            setting.StartsWith("copies", StringComparison.OrdinalIgnoreCase))
+        if (detection == RenameDetection.Copies)
         {
             throw new GitFilesException("Copies need git");
         }
 
-        if (setting != null &&
-            GitConfig.ParseBool(setting) == false)
+        if (detection == RenameDetection.None ||
+            deleted.Count == 0)
         {
             return;
         }
@@ -371,6 +378,49 @@ sealed class WorkingTree
             StatusOf(Encoding.UTF8.GetString(added[destination].Path)).Staged = 'R';
             statuses.Remove(Encoding.UTF8.GetString(deleted[found[destination]].Path));
         }
+    }
+
+    // As git status reads status.renames and diff.renames, in the order they are set: every
+    // status.renames, the last winning, but diff.renames only where neither has been read
+    // before it, so only the first, and none after a status.renames. Renames where neither is.
+    static RenameDetection RenameDetectionOf(GitConfig config)
+    {
+        RenameDetection? detection = null;
+        foreach (var (key, value) in config.InOrder("status.renames", "diff.renames"))
+        {
+            if (key == "diff.renames" &&
+                detection != null)
+            {
+                continue;
+            }
+
+            detection = RenameDetectionOf(value);
+        }
+
+        return detection ?? RenameDetection.Renames;
+    }
+
+    // As git_config_rename: copies or copy, in any case, for copies, and set without a value for
+    // renames; otherwise a bool, what isn't one failing git status.
+    static RenameDetection RenameDetectionOf(string? value)
+    {
+        if (value == null)
+        {
+            return RenameDetection.Renames;
+        }
+
+        if (value.Equals("copies", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("copy", StringComparison.OrdinalIgnoreCase))
+        {
+            return RenameDetection.Copies;
+        }
+
+        return GitConfig.ParseBool(value) switch
+        {
+            true => RenameDetection.Renames,
+            false => RenameDetection.None,
+            null => throw new GitFilesException("A renames setting git refuses")
+        };
     }
 
     // A folder's place in what git ignores, only worked out where something in it, or in a
