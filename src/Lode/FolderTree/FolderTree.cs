@@ -219,6 +219,7 @@ sealed class FolderTree : TreeView
         this.settings = settings;
         this.places = places;
         SetPinned = (path, pin) => ShellContextMenu.SetPinned(FindForm()?.Handle ?? Handle, path, pin);
+        RemoveFromQuickAccess = _ => ShellContextMenu.RemoveFromQuickAccess(FindForm()?.Handle ?? Handle, _);
         Pin = _ => SetPinned(_, true);
         MovePinnedToEnd = _ => ShellContextMenu.MoveToEnd(FindForm()?.Handle ?? Handle, _);
         StartDrag = (data, allowed) => DragImage.Drag(this, data, allowed);
@@ -2291,12 +2292,27 @@ sealed class FolderTree : TreeView
             LodeActions.Command("delete", () => DeleteFolder(path, false), !isDrive),
             null,
             LodeActions.Pin([path], places, SetPinned),
+            .. RemoveFromRecent(path, node),
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
             LodeActions.Command("compress", () => _ = Zip.CompressInBackground([path], Path.GetDirectoryName(path)!), !isDrive),
             LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
             LodeActions.Command("properties", async () => await ShowProperties(owner, path)),
             .. CodeMenu.Commands(this, settings, [path])
         ];
+    }
+
+    // A Recent entry is a folder Explorer put in Quick access for being used often, which
+    // Remove from Quick access takes out again, as Explorer's own does. Beside Pin, and like it
+    // kept off the menu, or nested, as Options has Pin.
+    IEnumerable<QuickMenu.Command> RemoveFromRecent(string path, TreeNode? node)
+    {
+        if (node is {Parent.Tag: Section {Name: "Recent"}})
+        {
+            yield return LodeActions.Command("pin", () => RemoveFromQuickAccess(path), text: "Remove from Quick access") with
+            {
+                Glyph = Icons.Unpin
+            };
+        }
     }
 
     void PasteInto(string folder)
@@ -2388,6 +2404,12 @@ sealed class FolderTree : TreeView
     /// real list.
     /// </summary>
     internal Action<string, bool> SetPinned;
+
+    /// <summary>
+    /// Takes a Recent folder out of Quick access. Replaced in tests, which must not change the
+    /// real list.
+    /// </summary>
+    internal Action<string> RemoveFromQuickAccess;
 
     /// <summary>
     /// Moves pinned folders to the end of the Pinned list, one after another, completing once

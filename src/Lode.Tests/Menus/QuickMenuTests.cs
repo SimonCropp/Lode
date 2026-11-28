@@ -1284,6 +1284,39 @@ public class QuickMenuTests
         await Assert.That(Said(pinnedFolder!, aboveArchive)).IsEqualTo("Move: Move here");
     }
 
+    // A Recent folder, which Explorer put in Quick access for being used often, can be taken out
+    // of it, as Explorer's Remove from Quick access does, beside Pin, which would keep it there.
+    // A pinned folder is unpinned instead, and a folder under This PC is not in Quick access.
+    // Removing goes through the tree's hook, never the real Quick access.
+    [Test]
+    public async Task ARecentFolderCanBeRemovedFromQuickAccess()
+    {
+        using var fixture = Fixture.Create();
+        var removed = new List<string>();
+        using var tree = CreateTree([fixture.At("Docs")], [fixture.At("Archive")]);
+        tree.RemoveFromQuickAccess = removed.Add;
+        tree.SetPinned = (_, _) => throw new("Removing does not pin or unpin");
+        var recentNode = tree.Nodes[1].Nodes[0];
+        var pinnedNode = tree.Nodes[0].Nodes[0];
+        List<string> Offered(string path, TreeNode? node) =>
+            tree.NodeCommands(path, node: node)
+                .Where(_ => _?.Id == "pin")
+                .Select(_ => _!.Text)
+                .ToList();
+
+        var onRecent = Offered(fixture.At("Archive"), recentNode);
+        var onPinned = Offered(fixture.At("Docs"), pinnedNode);
+        var underThisPC = Offered(fixture.At("Source"), new());
+        tree.NodeCommands(fixture.At("Archive"), node: recentNode)
+            .Single(_ => _?.Text == "Remove from Quick access")!
+            .Action();
+
+        await Assert.That(onRecent).IsEquivalentTo(["Pin to Quick access", "Remove from Quick access"], CollectionOrdering.Matching);
+        await Assert.That(onPinned).IsEquivalentTo(["Unpin from Quick access"]);
+        await Assert.That(underThisPC).IsEquivalentTo(["Pin to Quick access"]);
+        await Assert.That(removed.Select(fixture.Relative)).IsEquivalentTo(["Projects/Archive"]);
+    }
+
     // Recent's header is not a place to pin to; the drop is left to the caller.
     [Test]
     public async Task DroppingElsewhereIsNotHandled()

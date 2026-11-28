@@ -39,6 +39,71 @@ public class ShellContextMenuTests
                 return path;
             });
 
+    // Remove from Quick access, on a Recent folder's menu, takes it out of Quick access as Unpin
+    // does a pinned one, so Quick access is read again after it, for the tree to show it gone,
+    // as it is after Pin and Unpin. Not after anything else. The menu is a stand-in's, so
+    // nothing changes the real Quick access.
+    [Test]
+    public async Task QuickAccessIsReadAgainAfterItsVerbs()
+    {
+        var readings = 0;
+        var places = Places.Remembering(
+            new(),
+            () =>
+            {
+                Interlocked.Increment(ref readings);
+                return ([], []);
+            });
+        await Pump.Until(() => Volatile.Read(ref readings) == 1);
+        var after = new Dictionary<string, bool>();
+        ShellContextMenu.QuickAccessChanged += places.Reread;
+        try
+        {
+            foreach (var verb in new[] {"removefromhome", "pintohome", "unpinfromhome", "open"})
+            {
+                var before = Volatile.Read(ref readings);
+                Choose(verb);
+                // Long enough for the reading to have started, were it going to.
+                var deadline = DateTime.UtcNow.AddSeconds(2);
+                while (Volatile.Read(ref readings) == before &&
+                       DateTime.UtcNow < deadline)
+                {
+                    await Pump.For(TimeSpan.FromMilliseconds(50));
+                }
+
+                after[verb] = Volatile.Read(ref readings) > before;
+            }
+        }
+        finally
+        {
+            ShellContextMenu.QuickAccessChanged -= places.Reread;
+        }
+
+        await Verify(after)
+            .Snapshot(
+                """
+                {
+                  open: false,
+                  pintohome: true,
+                  removefromhome: true,
+                  unpinfromhome: true
+                }
+                """);
+
+        // Chooses the entry from a stand-in's menu, which runs it.
+        static void Choose(string verb)
+        {
+            using var standIn = StandInMenu.Start(verb);
+            using var menu = new ShellContextMenu();
+            menu.Track = (_, _) => standIn.Command(verb);
+            menu.Show(standIn.Menu, IntPtr.Zero, Point.Empty, [], customFirst: false, 0, _ => false, null);
+            if (standIn.Invoked is not [_])
+            {
+                throw new($"{verb} wasn't run");
+            }
+        }
+    }
+
     // Windows adds removable and mapped drives to Send to, which are not in the SendTo folder.
     // However many there are, Send to is still known by what it lists from there.
     [Test]

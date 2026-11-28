@@ -236,6 +236,57 @@ public class PlacesTests
         await Assert.That(places.Pinned).IsEquivalentTo([@"C:\Before", @"C:\Work"], CollectionOrdering.Matching);
     }
 
+    // Remove from Quick access, on a Recent folder, is done as a pin is: off the UI thread, on
+    // one set up for the shell's COM objects, taking its turn with pins, and Recent no longer
+    // has the folder once Quick access has been read again after it. Nothing here removes
+    // anything for real.
+    [Test]
+    public async Task RemovingFromQuickAccessIsDoneOffTheUIThread()
+    {
+        var removeRecent = ShellContextMenu.RemoveRecent;
+        var uiThread = Thread.CurrentThread;
+        var recent = new List<string> {@"C:\Lately", @"C:\Often"};
+        Thread? removedOn = null;
+        var apartment = ApartmentState.Unknown;
+        ShellContextMenu.RemoveRecent = (_, path) =>
+        {
+            removedOn = Thread.CurrentThread;
+            apartment = Thread.CurrentThread.GetApartmentState();
+            lock (recent)
+            {
+                recent.Remove(path);
+            }
+        };
+        var places = Places.Remembering(
+            new()
+            {
+                RecentFolders = [@"C:\Lately", @"C:\Often"]
+            },
+            () =>
+            {
+                lock (recent)
+                {
+                    return ([], recent.ToList());
+                }
+            });
+        ShellContextMenu.QuickAccessChanged += places.Reread;
+        try
+        {
+            var done = ShellContextMenu.RemoveFromQuickAccess(IntPtr.Zero, @"C:\Lately");
+            await Pump.Until(() => done.IsCompleted && !places.Recent.Contains(@"C:\Lately"));
+        }
+        finally
+        {
+            ShellContextMenu.QuickAccessChanged -= places.Reread;
+            ShellContextMenu.RemoveRecent = removeRecent;
+        }
+
+        await Assert.That(removedOn).IsNotNull();
+        await Assert.That(removedOn).IsNotEqualTo(uiThread);
+        await Assert.That(apartment).IsEqualTo(ApartmentState.STA);
+        await Assert.That(places.Recent).IsEquivalentTo([@"C:\Often"]);
+    }
+
     // Folders dropped on Pinned are pinned, then those pinned after where they were dropped
     // moved after them. Each is done on a thread of its own, and they take turns, in the order
     // asked for, each working from what the one before left.

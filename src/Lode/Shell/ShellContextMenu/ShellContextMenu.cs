@@ -38,8 +38,24 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     IContextMenu2? menu2;
     IContextMenu3? menu3;
 
-    public ShellContextMenu() =>
+    /// <summary>
+    /// Shows the menu built, at the point given, and waits for an entry to be chosen, giving its
+    /// command, or zero for none. Tests swap it, to choose an entry, or send what showing the
+    /// menu sends, with no menu on the screen to click.
+    /// </summary>
+    internal Func<IntPtr, Point, uint> Track;
+
+    public ShellContextMenu()
+    {
         CreateHandle(new());
+        Track = (menu, location) => TrackPopupMenuEx(
+            menu,
+            trackReturnCommand | trackRightButton,
+            location.X,
+            location.Y,
+            Handle,
+            IntPtr.Zero);
+    }
 
     public void Dispose() =>
         DestroyHandle();
@@ -397,6 +413,29 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     };
 
     /// <summary>
+    /// Takes a folder out of Quick access that Explorer put there for being used often, one of
+    /// Recent's, as its Remove from Quick access does. Done off the UI thread, as
+    /// <see cref="SetPinned"/> is, and Quick access is read again once it is done, back on the
+    /// calling thread, when the task completes.
+    /// </summary>
+    public static Task RemoveFromQuickAccess(IntPtr owner, string path) =>
+        TakeTurn("Lode removing from Quick access", () => RemoveRecent(owner, path));
+
+    /// <summary>
+    /// Takes the folder out of Quick access, on the thread <see cref="RemoveFromQuickAccess"/>
+    /// does it on. Tests swap it, which must not change the machine's Quick access.
+    /// </summary>
+    internal static Action<IntPtr, string> RemoveRecent = (owner, path) =>
+    {
+        // Like Unpin, offered only by the folder's Quick access entry.
+        var contextMenu = CreateForQuickAccessItem(owner, path);
+        if (contextMenu != null)
+        {
+            InvokeVerb(contextMenu, owner, "removefromhome", invokeNoAsync);
+        }
+    };
+
+    /// <summary>
     /// Moves pinned folders to the end of the Pinned list one after another, so they end up
     /// last in this order: each is unpinned and pinned again, which puts it at the end. Quick
     /// access is read again once, after them all, back on the calling thread, when the task
@@ -638,7 +677,8 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
         }
     }
 
-    void Show(
+    // Internal for tests, which show a stand-in for the shell's menu.
+    internal void Show(
         IContextMenu contextMenu,
         IntPtr owner,
         Point location,
@@ -674,13 +714,7 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             menu2 = contextMenu as IContextMenu2;
             menu3 = contextMenu as IContextMenu3;
 
-            var command = TrackPopupMenuEx(
-                menu,
-                trackReturnCommand | trackRightButton,
-                location.X,
-                location.Y,
-                Handle,
-                IntPtr.Zero);
+            var command = Track(menu, location);
 
             if (command >= firstShellCommand)
             {
@@ -706,7 +740,11 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
             menu2 = null;
             menu3 = null;
             DestroyMenu(menu);
-            Marshal.ReleaseComObject(contextMenu);
+            // The shell's, unlike a test's stand-in for it.
+            if (Marshal.IsComObject(contextMenu))
+            {
+                Marshal.ReleaseComObject(contextMenu);
+            }
         }
 
         if (quickAccessChanged)
@@ -718,15 +756,19 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     }
 
     /// <summary>
-    /// Raised after a menu pinned a folder to Quick access or unpinned one.
+    /// Raised after a menu pinned a folder to Quick access, unpinned one, or took one of Recent's
+    /// out of it.
     /// </summary>
     public static event Action? QuickAccessChanged;
 
+    // Pin to Quick access, Unpin from Quick access on a pinned folder, and Remove from Quick
+    // access on a Recent one, which Explorer put there for being used often.
     static HashSet<string> quickAccessVerbs =
     [
         with(StringComparer.OrdinalIgnoreCase),
         "pintohome",
-        "unpinfromhome"
+        "unpinfromhome",
+        "removefromhome"
     ];
 
     // Entries left out of every menu, by verb, which unlike the text is the same in every
