@@ -927,6 +927,59 @@ public class SettingsTests
         await Assert.That(new FileInfo(Settings.UnreadablePath(path)).Length).IsGreaterThan(0);
     }
 
+    // A repository link opened with Lode not running and its settings corrupt: the code folder
+    // the link is looked for in is read as the start will read it, from the settings saved
+    // before, or none, and the file left for the start, which sets it aside and says why, once,
+    // as any start does. Read for the link by a load of its own, the file was set aside there,
+    // without a word, and the start then found none, and began on the defaults, saying nothing
+    // either. No box is put up meanwhile: one in a test fails it.
+    [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task ALinkLeavesACorruptFileToTheStart(bool savedBefore)
+    {
+        using var fixture = Fixture.Create();
+        var path = fixture.At("settings.json");
+        if (savedBefore)
+        {
+            var settings = Settings.Load(path);
+            settings.CodeDirectory = @"D:\Code";
+            settings.Tabs = [@"C:\Work"];
+            settings.Save();
+            settings.Tabs = [@"C:\Work", @"D:\Code"];
+            settings.Save();
+        }
+
+        await File.WriteAllTextAsync(path, "{ not json");
+
+        var codeFolder = Program.CodeFolderForLinks(path);
+        string? leftAsItWas = null;
+        if (File.Exists(path))
+        {
+            leftAsItWas = await File.ReadAllTextAsync(path);
+        }
+
+        var keptAsideBeforeTheStart = File.Exists(Settings.UnreadablePath(path));
+        var start = Settings.Load(path);
+
+        await Assert.That(codeFolder).IsEqualTo(savedBefore ? @"D:\Code" : null);
+        await Assert.That(leftAsItWas).IsEqualTo("{ not json");
+        await Assert.That(keptAsideBeforeTheStart).IsFalse();
+        await Assert.That(start.LoadProblem).Contains(Settings.UnreadablePath(path));
+        await Assert.That(start.LoadBug).IsNull();
+        await Assert.That(await File.ReadAllTextAsync(Settings.UnreadablePath(path))).IsEqualTo("{ not json");
+        if (savedBefore)
+        {
+            await Assert.That(start.LoadProblem).Contains(Settings.BackupPath(path));
+            await Assert.That(start.Tabs).IsEquivalentTo([@"C:\Work"]);
+            await Assert.That(start.CodeDirectory).IsEqualTo(@"D:\Code");
+        }
+        else
+        {
+            await Assert.That(start.LoadProblem).Contains("the defaults");
+        }
+    }
+
     /// <summary>
     /// Locked by another program, say, and quite possibly fine: not saved over with the defaults.
     /// </summary>

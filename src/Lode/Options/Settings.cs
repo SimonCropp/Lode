@@ -703,6 +703,41 @@ sealed class Settings
         return settings;
     }
 
+    /// <summary>
+    /// The code folder, as <see cref="Load"/> would find it, from the file or, should that be
+    /// corrupt, the settings saved before it, but with nothing set aside and nothing said, which
+    /// is the start's to do. For a launch that needs no more before it knows whether it is the
+    /// start or hands its folders to the Lode running: a load of its own set a corrupt file
+    /// aside without a word, and the start then found none, and began on the defaults. Null
+    /// where there is none, or the file can't be opened.
+    /// </summary>
+    internal static string? CodeDirectoryAt(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            return Read(path)?.CodeDirectory;
+        }
+        catch (Exception exception)
+            when (
+                exception is
+                    IOException or
+                    UnauthorizedAccessException or
+                    SecurityException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            // Corrupt, or something of Lode's own, which the start's load says.
+            return Backup(path)?.CodeDirectory;
+        }
+    }
+
     JsonObject AsJson() =>
         JsonSerializer.SerializeToNode(this, serializerOptions)!.AsObject();
 

@@ -212,7 +212,7 @@ static class Program
     static List<string> RepositoriesOf(IReadOnlyList<string> links)
     {
         Settings.SeedFromInstalled();
-        var codeFolder = Settings.Load(Settings.DefaultPath).CodeDirectory;
+        var codeFolder = CodeFolderForLinks(Settings.DefaultPath);
         var repositoryLinks = RepositoryLinks.ForCurrentUser();
         var found = new List<string>();
         foreach (var text in links)
@@ -252,6 +252,11 @@ static class Program
 
         return found;
     }
+
+    // Read without setting a corrupt file aside or saying so, which is left to the start's load,
+    // should this launch be the start, for the user to be told, once, as at any start.
+    internal static string? CodeFolderForLinks(string settingsPath) =>
+        Settings.CodeDirectoryAt(settingsPath);
 
     // Cloned into the code folder, or handed to the app the link was for, which can clone it
     // elsewhere. The clone, or the file in it the link names, once cloned.
