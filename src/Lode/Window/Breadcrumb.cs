@@ -86,6 +86,9 @@ sealed class Breadcrumb : Control
             true);
         Box.Leave += (_, _) => EndEdit();
         Controls.Add(Box);
+
+        // Files dragged onto a folder go in there. See DraggedOver.
+        AllowDrop = true;
         Height = TextFrame.Height(Font);
         Rebuild();
     }
@@ -1082,6 +1085,104 @@ sealed class Breadcrumb : Control
         {
             Enabled = false
         };
+
+    // Whether what is being dragged over the bar is dragged with the right button, which is up
+    // by the drop.
+    bool rightDrag;
+
+    protected override void OnDragEnter(DragEventArgs args)
+    {
+        base.OnDragEnter(args);
+        DraggedOver(args);
+    }
+
+    protected override void OnDragOver(DragEventArgs args)
+    {
+        base.OnDragOver(args);
+        DraggedOver(args);
+    }
+
+    protected override void OnDragLeave(EventArgs args)
+    {
+        base.OnDragLeave(args);
+        ShadeForDrop(Part.None);
+    }
+
+    protected override void OnDragDrop(DragEventArgs args)
+    {
+        base.OnDragDrop(args);
+        Dropped(args);
+    }
+
+    /// <summary>
+    /// What a drag over the bar would do, as Explorer's address bar takes one: over a folder, it
+    /// goes in there, as it would dropped on that folder in the list, the folder shaded as the
+    /// pointer shades it, and what it would do said beside the drag's picture.
+    /// </summary>
+    internal void DraggedOver(DragEventArgs args)
+    {
+        rightDrag = FileOperations.RightButton(args);
+        var (part, folder) = DropTarget(args);
+        args.Effect = FileOperations.GetDropEffect(args, folder);
+        string? into = null;
+        if (args.Effect == DragDropEffects.None)
+        {
+            part = Part.None;
+        }
+        else
+        {
+            into = Locations.DisplayName(folder!);
+        }
+
+        ShadeForDrop(part);
+        DragImage.Describe(args, args.Effect, into);
+    }
+
+    /// <summary>
+    /// Drops what was dragged into the folder of the bar it was let go over, as the list drops
+    /// into a folder: copied or moved as the drive and the keys held say, asking which with the
+    /// right button, and undoable.
+    /// </summary>
+    internal void Dropped(DragEventArgs args)
+    {
+        var (_, folder) = DropTarget(args);
+        ShadeForDrop(Part.None);
+        FileOperations.Drop(FindForm()?.Handle ?? Handle, args, folder, rightDrag);
+    }
+
+    // The folder of the bar at the drag's point, with where it is drawn. None for This PC or a
+    // machine on the network, which hold no files, or anywhere in a zip, which the list doesn't
+    // drop into either, nor while the path is being typed.
+    (Part Part, string? Folder) DropTarget(DragEventArgs args)
+    {
+        var part = PartAt(PointToClient(new(args.X, args.Y)));
+        if (Editing ||
+            part.Kind != PartKind.Folder)
+        {
+            return (Part.None, null);
+        }
+
+        var location = segments[part.Index].Path;
+        if (Locations.IsThisPC(location) ||
+            Locations.IsServer(location) ||
+            Zip.IsArchivePath(location))
+        {
+            return (Part.None, null);
+        }
+
+        return (part, location);
+    }
+
+    void ShadeForDrop(Part part)
+    {
+        if (part == hovered)
+        {
+            return;
+        }
+
+        hovered = part;
+        Invalidate();
+    }
 
     protected override void Dispose(bool disposing)
     {

@@ -70,6 +70,10 @@ sealed class ClosableTabControl : TabControl
         ApplyPadding();
         SizeMode = TabSizeMode.Fixed;
         ShowToolTips = true;
+
+        // Files dragged over a tab switch to it, and dropped on one go into its folder. See
+        // DraggedOver.
+        AllowDrop = true;
     }
 
     // Set again when the screen's scale changes, so the room left for the cross scales with it.
@@ -804,6 +808,115 @@ sealed class ClosableTabControl : TabControl
         {
             pressedTab = null;
         }
+    }
+
+    /// <summary>
+    /// The folder a drop on a tab goes into, or null for a tab that takes none: Find Results,
+    /// the Diff tab, or a folder nothing can be dropped in, This PC or inside a zip. The window
+    /// says, as it knows what each tab shows.
+    /// </summary>
+    internal Func<TabPage, string?> DropFolder = _ => null;
+
+    /// <summary>
+    /// The time, which tests set.
+    /// </summary>
+    internal TimeProvider Time = TimeProvider.System;
+
+    // How long a drag is held over a tab before it switches to it, as Explorer's does: as long
+    // as the tree holds one over a folder before opening it.
+    static TimeSpan switchAfter = TimeSpan.FromMilliseconds(800);
+
+    // The tab a drag is over, and since when, to switch to it once it has been held there.
+    int draggedOverTab = -1;
+    DateTimeOffset draggedOverSince;
+
+    // Whether what is being dragged over the tabs is dragged with the right button, which is up
+    // by the drop.
+    bool rightDrag;
+
+    protected override void OnDragEnter(DragEventArgs args)
+    {
+        base.OnDragEnter(args);
+        draggedOverTab = -1;
+        DraggedOver(args);
+    }
+
+    protected override void OnDragOver(DragEventArgs args)
+    {
+        base.OnDragOver(args);
+        DraggedOver(args);
+    }
+
+    protected override void OnDragLeave(EventArgs args)
+    {
+        base.OnDragLeave(args);
+        draggedOverTab = -1;
+        SetHovered(-1, -1);
+    }
+
+    protected override void OnDragDrop(DragEventArgs args)
+    {
+        base.OnDragDrop(args);
+        Dropped(args);
+    }
+
+    /// <summary>
+    /// Follows a drag over the tabs, as Explorer's do: held over a tab for a moment, it switches
+    /// to it, whatever is dragged, so it can go on to a folder in that tab's list; and what a
+    /// drop on the tab would do, into the folder it shows, is said beside the drag's picture,
+    /// the tab shaded as the pointer shades it. Windows tells the tabs of the drag over and over
+    /// while it is held still, so the switch needs no timer.
+    /// </summary>
+    internal void DraggedOver(DragEventArgs args)
+    {
+        rightDrag = FileOperations.RightButton(args);
+        var index = TabAt(PointToClient(new(args.X, args.Y)));
+        var now = Time.GetUtcNow();
+        if (index != draggedOverTab)
+        {
+            draggedOverTab = index;
+            draggedOverSince = now;
+        }
+        else if (index >= 0 &&
+                 index != SelectedIndex &&
+                 now - draggedOverSince >= switchAfter)
+        {
+            SelectedIndex = index;
+        }
+
+        var folder = DropFolderAt(index);
+        args.Effect = FileOperations.GetDropEffect(args, folder);
+        string? into = null;
+        if (args.Effect != DragDropEffects.None)
+        {
+            into = Locations.DisplayName(folder!);
+        }
+
+        SetHovered(index, -1);
+        DragImage.Describe(args, args.Effect, into);
+    }
+
+    /// <summary>
+    /// Drops what was dragged into the folder of the tab it was let go over, as the list drops
+    /// into its folder: copied or moved as the drive and the keys held say, asking which with
+    /// the right button, and undoable.
+    /// </summary>
+    internal void Dropped(DragEventArgs args)
+    {
+        var folder = DropFolderAt(TabAt(PointToClient(new(args.X, args.Y))));
+        draggedOverTab = -1;
+        SetHovered(-1, -1);
+        FileOperations.Drop(FindForm()?.Handle ?? Handle, args, folder, rightDrag);
+    }
+
+    string? DropFolderAt(int index)
+    {
+        if (index < 0)
+        {
+            return null;
+        }
+
+        return DropFolder(TabPages[index]);
     }
 
     void SetHovered(int tab, int cross)

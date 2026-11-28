@@ -356,6 +356,73 @@ public class BreadcrumbClickTests
     [DllImport("user32.dll", EntryPoint = "PostMessageW")]
     static extern bool PostMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
+    // Dropped on a folder of the bar, files go into it, as dropped on it in the list: copied,
+    // with Ctrl held, and said so beside the drag's picture. This PC holds no files, so takes
+    // none.
+    [Test]
+    public async Task ADropOnAFolderGoesIntoIt()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("Archive", "dragged.txt"), "");
+        using var host = new Host(fixture.At("Source", "Deep"), new());
+
+        var overThisPC = Drag(host, fixture.At("Archive", "dragged.txt"), Locations.ThisPC, controlHeld);
+        host.Breadcrumb.DraggedOver(overThisPC);
+        var over = Drag(host, fixture.At("Archive", "dragged.txt"), fixture.At("Source"), controlHeld);
+        host.Breadcrumb.DraggedOver(over);
+        host.Breadcrumb.Dropped(Drag(host, fixture.At("Archive", "dragged.txt"), fixture.At("Source"), controlHeld));
+        await Pump.Until(() => File.Exists(fixture.At("Source", "dragged.txt")));
+
+        await Assert.That(overThisPC.Effect).IsEqualTo(DragDropEffects.None);
+        await Assert.That(over.Effect).IsEqualTo(DragDropEffects.Copy);
+        await Assert.That(over.Message?.Replace("%1", over.MessageReplacementToken)).IsEqualTo("Copy to Source");
+        await Assert.That(File.Exists(fixture.At("Archive", "dragged.txt"))).IsTrue();
+    }
+
+    // Dragged with the right button, a drop on a folder of the bar asks what to do, as one on
+    // the list does, moving being what a left drag would do on the same drive. The button is
+    // up by the drop.
+    [Test]
+    [NotInParallel(new[] { "windows", "dropMenu" })]
+    public async Task ARightDragOntoAFolderAsks()
+    {
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("Archive", "dragged.txt"), "");
+        using var host = new Host(fixture.At("Source", "Deep"), new());
+        List<string>? asked = null;
+        var showDropMenu = FileOperations.ShowDropMenu;
+        FileOperations.ShowDropMenu = menu =>
+        {
+            using (menu)
+            {
+                asked = menu.Items
+                    .Cast<ToolStripItem>()
+                    .Select(_ => _ is ToolStripSeparator ? "-" : _.Text + (_.Font.Bold ? "*" : ""))
+                    .ToList();
+            }
+        };
+        try
+        {
+            host.Breadcrumb.DraggedOver(Drag(host, fixture.At("Archive", "dragged.txt"), fixture.At("Source"), rightButton));
+            host.Breadcrumb.Dropped(Drag(host, fixture.At("Archive", "dragged.txt"), fixture.At("Source"), 0));
+        }
+        finally
+        {
+            FileOperations.ShowDropMenu = showDropMenu;
+        }
+
+        await Assert.That(asked).IsEquivalentTo(["Copy here", "Move here*", "Create shortcuts here", "-", "Cancel"], CollectionOrdering.Matching);
+    }
+
+    // A drag of a file, at the middle of the folder of the bar named, with the keys and buttons
+    // given held.
+    static DragEventArgs Drag(Host host, string file, string folder, int keyState)
+    {
+        var bounds = host.Breadcrumb.FolderBounds(folder);
+        var screen = host.Breadcrumb.PointToScreen(Centre(bounds));
+        return new(new DataObject(DataFormats.FileDrop, new[] { file }), keyState, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link, DragDropEffects.None);
+    }
+
     // A bar for the location, in a window out of sight, its menus shown but transparent, so they
     // take the keys and close as menus do, unseen.
     sealed class Host : IDisposable

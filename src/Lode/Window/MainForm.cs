@@ -122,6 +122,19 @@ class MainForm : Form
     static bool HoldsFolder(TabPage page) =>
         page.Controls.OfType<FolderView>().Any();
 
+    // The folder a drop on a tab goes into: the folder it shows, as a drop on its list away from
+    // any folder in it goes into, so none for Find Results, the Diff tab, This PC, a machine on
+    // the network or inside a zip.
+    static string? DropFolder(TabPage page)
+    {
+        if (page.Controls.OfType<FolderView>().FirstOrDefault() is { IsReadOnly: false } view)
+        {
+            return view.CurrentPath;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Find in Files: its strip along the bottom, and the Find Results tab.
     /// </summary>
@@ -339,6 +352,7 @@ class MainForm : Form
         Tree.NewRequested += (folder, type) => _ = CreateFromTree(folder, type);
 
         Tabs.Dock = DockStyle.Fill;
+        Tabs.DropFolder = DropFolder;
         Tabs.CloseRequested += CloseTab;
         Tabs.TabDraggedOff += OnTabDraggedOff;
         Tabs.TabDraggingOff += OnTabDraggingOff;

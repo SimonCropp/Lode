@@ -30,7 +30,10 @@ public class TabStripBenchmarks
         string[] names = ["Lode", "src", "Documents", "Downloads", "Directory.Build.props", "node_modules", "Release 10", "Pictures"];
         tabs = new()
         {
-            Size = new(9000, 300)
+            Size = new(9000, 300),
+            // A drop target is registered with OLE, which needs the thread to be STA, as a
+            // benchmark's isn't. Nothing is dropped here.
+            AllowDrop = false
         };
         var icon = ShellIcons.GetPlaceIcon(Path.GetTempPath());
         for (var index = 0; index < tabCount; index++)

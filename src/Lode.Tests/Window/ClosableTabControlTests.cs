@@ -391,6 +391,37 @@ public class ClosableTabControlTests
         await Assert.That(tabs.ItemSize.Width).IsGreaterThan(width);
     }
 
+    // Held over a tab for a moment, a drag switches to it, as Explorer's tabs do, so it can go
+    // on into a folder in that tab's list: not before, and not to a tab only passed over on the
+    // way.
+    [Test]
+    public async Task HeldOverATabADragSwitchesToIt()
+    {
+        using var tabs = Create(out _);
+        var clock = new Clock(new(2026, 11, 28, 9, 0, 0, TimeSpan.Zero));
+        tabs.Time = clock;
+        DragEventArgs Over(int index)
+        {
+            var tab = tabs.GetTabRect(index);
+            var screen = tabs.PointToScreen(new(tab.Left + 10, tab.Top + tab.Height / 2));
+            return new(new DataObject(DataFormats.FileDrop, new[] { @"C:\dragged.txt" }), 0, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move, DragDropEffects.None);
+        }
+
+        tabs.DraggedOver(Over(1));
+        clock.Now += TimeSpan.FromMilliseconds(500);
+        tabs.DraggedOver(Over(2));
+        var passedOver = tabs.SelectedIndex;
+        clock.Now += TimeSpan.FromMilliseconds(500);
+        tabs.DraggedOver(Over(2));
+        var beforeThePause = tabs.SelectedIndex;
+        clock.Now += TimeSpan.FromMilliseconds(400);
+        tabs.DraggedOver(Over(2));
+
+        await Assert.That(passedOver).IsEqualTo(0);
+        await Assert.That(beforeThePause).IsEqualTo(0);
+        await Assert.That(tabs.SelectedIndex).IsEqualTo(2);
+    }
+
     [DllImport("user32.dll")]
     static extern bool GetUpdateRect(IntPtr window, out NativeMethods.NativeRect rect, bool erase);
 

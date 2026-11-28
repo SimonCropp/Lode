@@ -322,6 +322,41 @@ public class WindowsTests
         await Assert.That(settings.SplitterDistance).IsNull();
     }
 
+    // Dropped on a tab, files go into the folder it shows, as dropped on its list: copied, with
+    // Ctrl held, and said so beside the drag's picture. Find Results shows no folder, so takes
+    // none.
+    [Test]
+    public async Task ADropOnATabGoesIntoItsFolder()
+    {
+        const int controlHeld = 8;
+        using var fixture = Fixture.Create();
+        await File.WriteAllTextAsync(fixture.At("Archive", "dragged.txt"), "");
+        using var form = await Show(fixture, fixture.Root, fixture.At("Docs"));
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Find();
+        await form.FindHost.ResultsView!.Searching;
+        DragEventArgs Over(int index)
+        {
+            var tab = form.Tabs.GetTabRect(index);
+            var screen = form.Tabs.PointToScreen(new(tab.Left + 10, tab.Top + tab.Height / 2));
+            return new(new DataObject(DataFormats.FileDrop, new[] { fixture.At("Archive", "dragged.txt") }), controlHeld, screen.X, screen.Y, DragDropEffects.Copy | DragDropEffects.Move, DragDropEffects.None);
+        }
+
+        var overResults = Over(2);
+        form.Tabs.DraggedOver(overResults);
+        var over = Over(1);
+        form.Tabs.DraggedOver(over);
+        form.Tabs.Dropped(Over(1));
+        await Pump.Until(() => File.Exists(fixture.At("Docs", "dragged.txt")));
+
+        await Assert.That(form.Tabs.TabPages[2].Text).IsEqualTo("Find Results");
+        await Assert.That(overResults.Effect).IsEqualTo(DragDropEffects.None);
+        await Assert.That(over.Effect).IsEqualTo(DragDropEffects.Copy);
+        await Assert.That(over.Message?.Replace("%1", over.MessageReplacementToken)).IsEqualTo("Copy to Docs");
+        await Assert.That(File.Exists(fixture.At("Archive", "dragged.txt"))).IsTrue();
+    }
+
     static SplitContainer TreeSplit(MainForm form) =>
         (SplitContainer) form.Tree.Parent!.Parent!;
 
