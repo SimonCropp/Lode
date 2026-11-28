@@ -98,6 +98,13 @@ static class GitMerging
 
         var text = $"This will update {current} by applying its {GitState.CountOf(ahead, "commit")} on top of {branch}. Should one conflict, the rebase is undone.";
 
+        // Commits origin has that the branch hasn't would go with a push forced, so none is
+        // offered. Counted past them, origin's would be taken for commits it rewrites.
+        if (Unpulled(repo, cancel) is int unpulled and > 0)
+        {
+            return new($"{text}\n\n{NotPulled(unpulled, current)}, so force pushing afterwards isn't offered: pull first, then rebase.", true);
+        }
+
         // The commits rebased that origin has: the branch's own there, past where it meets the
         // other. Rewritten, origin's would have to be overwritten, by a push forced.
         var onOrigin = 0;
@@ -115,6 +122,24 @@ static class GitMerging
 
         return new(text, true, onOrigin);
     }
+
+    // How many commits the branch checked out hasn't of those origin has, where a push would
+    // go, as last fetched: pushed by someone else since it was, fetched, but not pulled. Null
+    // where git can't say, with nowhere to push to, say.
+    static int? Unpulled(string repo, Cancel cancel)
+    {
+        var count = CodeCommands.GitOutput(repo, cancel, ["rev-list", "--count", "HEAD..@{push}"]);
+        if (count.Succeeded &&
+            int.TryParse(count.Output.Trim(), out var unpulled))
+        {
+            return unpulled;
+        }
+
+        return null;
+    }
+
+    static string NotPulled(int unpulled, string branch) =>
+        $"Origin has {GitState.CountOf(unpulled, "commit")} on {branch} not pulled yet, which a force push would delete";
 
     static string FirstLine(string text) =>
         text.Split('\n', 2)[0].Trim();
@@ -531,14 +556,24 @@ static class GitMerging
     /// <summary>
     /// Rebases the branch checked out onto <paramref name="onto"/>: its commits that
     /// <paramref name="onto"/> hasn't, applied on top of it. One that conflicts is undone. With
-    /// <paramref name="forcePush"/>, pushed after, overwriting origin's, though only as it was
-    /// last fetched, so nothing pushed since by anyone else is lost.
+    /// <paramref name="forcePush"/>, pushed after, overwriting origin's, though only where the
+    /// branch had every commit origin has, so nothing pushed by anyone else is lost: not where
+    /// origin has moved on since it was last fetched, nor where it was fetched but not pulled,
+    /// which is refused before rebasing, nor fetched while rebasing, which the push refuses.
     /// </summary>
     public static CodeCommands.RepoResult Rebase(string repo, string onto, bool forcePush, Cancel cancel)
     {
         if (WhyNot(repo, "nothing was rebased") is { } why)
         {
             return new(repo, false, why);
+        }
+
+        // A lease alone, as last fetched, would pass over commits fetched and not pulled.
+        if (forcePush &&
+            Unpulled(repo, cancel) is int unpulled and > 0)
+        {
+            var branch = CodeCommands.Git(repo, "symbolic-ref", "--quiet", "--short", "HEAD").Output;
+            return new(repo, false, $"{NotPulled(unpulled, branch)}, so nothing was rebased: pull first, then rebase.");
         }
 
         var rebase = CodeCommands.GitToItsEnd(repo, cancel, "rebase", onto);
@@ -552,7 +587,9 @@ static class GitMerging
             return rebase;
         }
 
-        var push = CodeCommands.Git(repo, cancel, network: true, "push", "--force-with-lease");
+        // The lease has origin's branch still where it was last fetched; the include check has
+        // that in the branch's history before the rebase, which a fetch since might not be.
+        var push = CodeCommands.Git(repo, cancel, network: true, "push", "--force-with-lease", "--force-if-includes");
         return push with
         {
             Output = $"{rebase.Output}\n{push.Output}".Trim()

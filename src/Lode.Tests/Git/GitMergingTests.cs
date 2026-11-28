@@ -172,12 +172,10 @@ public class GitMergingTests
         await Assert.That(Preview(repo, "behind", "main", GitMerging.Kind.Rebase)).IsEqualTo(new("This will fast-forward behind by 1 commit to match main.", true));
     }
 
-    // Rewriting commits origin has needs a force push, which it says, and does once asked,
-    // overwriting origin's branch with the one rebased.
-    [Test]
-    public async Task RebasingAPushedBranchForcePushes()
+    // feature, with a commit pushed to origin, checked out, and a commit on main it hasn't, to
+    // be rebased onto.
+    static async Task<string> PushedFeature(CodeCommandsTests.Scratch code)
     {
-        using var code = new CodeCommandsTests.Scratch();
         var repo = code.CreateRepo("Repo");
         Git(repo, "switch", "-c", "feature");
         await Commit(repo, "feature.txt", "feature");
@@ -185,6 +183,26 @@ public class GitMergingTests
         Git(repo, "switch", "main");
         await Commit(repo, "main.txt", "main");
         Git(repo, "switch", "feature");
+        return repo;
+    }
+
+    // A commit on origin's feature from another clone, as a teammate would push one.
+    static async Task<string> PushFromAnotherClone(CodeCommandsTests.Scratch code)
+    {
+        var other = code.Clone("Repo", "Other");
+        Git(other, "switch", "feature");
+        await Commit(other, "teammate.txt", "teammate");
+        Git(other, "push", "origin", "feature");
+        return Git(other, "rev-parse", "HEAD");
+    }
+
+    // Rewriting commits origin has needs a force push, which it says, and does once asked,
+    // overwriting origin's branch with the one rebased.
+    [Test]
+    public async Task RebasingAPushedBranchForcePushes()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = await PushedFeature(code);
 
         var preview = Preview(repo, "feature", "main", GitMerging.Kind.Rebase);
         var result = GitMerging.Rebase(repo, "main", forcePush: true, Cancel.None);
@@ -193,6 +211,48 @@ public class GitMergingTests
         await Assert.That(preview.Text).Contains("Origin has 1 commit of feature that this rewrites, so pushing it afterwards needs force");
         await Assert.That(result.Succeeded).IsTrue();
         await Assert.That(Git(code.Origin("Repo"), "rev-parse", "feature")).IsEqualTo(Git(repo, "rev-parse", "HEAD"));
+    }
+
+    // A teammate's commit on origin's branch, fetched but not pulled: origin is where it was last
+    // fetched, so a lease alone would pass, and the push delete it. Force push isn't offered,
+    // and asked for anyway, nothing is rebased, nor pushed.
+    [Test]
+    public async Task RebaseDoesNotForcePushOverCommitsNotPulled()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = await PushedFeature(code);
+        var teammate = await PushFromAnotherClone(code);
+        Git(repo, "fetch", "origin");
+        var head = Git(repo, "rev-parse", "HEAD");
+
+        var preview = Preview(repo, "feature", "main", GitMerging.Kind.Rebase);
+        var result = GitMerging.Rebase(repo, "main", forcePush: true, Cancel.None);
+
+        await Assert.That(preview).IsEqualTo(new("This will update feature by applying its 1 commit on top of main. Should one conflict, the rebase is undone.\n\nOrigin has 1 commit on feature not pulled yet, which a force push would delete, so force pushing afterwards isn't offered: pull first, then rebase.", true));
+        await Assert.That((result.Succeeded, result.Output)).IsEqualTo((false, "Origin has 1 commit on feature not pulled yet, which a force push would delete, so nothing was rebased: pull first, then rebase."));
+        await Assert.That(Git(repo, "rev-parse", "HEAD")).IsEqualTo(head);
+        await Assert.That(Git(code.Origin("Repo"), "rev-parse", "feature")).IsEqualTo(teammate);
+    }
+
+    // Fetched while rebasing, as a fetch in another window could, a teammate's commit would pass
+    // the lease too: the push refuses it, as the branch never had it, leaving the branch rebased
+    // and origin's as the teammate pushed it. The hook fetches once the rebase is done, before
+    // the push.
+    [Test]
+    public async Task RebaseDoesNotForcePushOverCommitsFetchedWhileRebasing()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var repo = await PushedFeature(code);
+        var teammate = await PushFromAnotherClone(code);
+        await File.WriteAllTextAsync(Path.Combine(repo, ".git", "hooks", "post-rewrite"), "#!/bin/sh\ngit fetch --quiet origin\n");
+
+        var result = GitMerging.Rebase(repo, "main", forcePush: true, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("feature -> feature (remote ref updated since checkout)");
+        await Assert.That(Git(repo, "rev-parse", "origin/feature")).IsEqualTo(teammate);
+        await Assert.That(Git(repo, "rev-list", "--count", "HEAD..main")).IsEqualTo("0");
+        await Assert.That(Git(code.Origin("Repo"), "rev-parse", "feature")).IsEqualTo(teammate);
     }
 
     [Test]
