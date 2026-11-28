@@ -1412,6 +1412,56 @@ public class QuickMenuTests
         await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(fixture.At("Source"));
     }
 
+    // A move the shell can't finish, among pins one on a drive since unplugged say, leaves Quick
+    // access in another order than the one asked for, for good. The folder moved is still
+    // selected once Quick access has been read again after the move, so moving it again with
+    // the keyboard carries on from it, but from then on the tree follows the open folder again,
+    // rather than selecting the pin each time it is made again. The move goes through the
+    // tree's hook, and what Quick access is read as is made up: the order it had before.
+    [Test]
+    public async Task AMoveThatDoesntComeOutLeavesTheTreeFollowingTheOpenFolder()
+    {
+        using var fixture = Fixture.Create();
+        string[] pinned = [fixture.At("Archive"), fixture.At("Docs"), fixture.At("Source")];
+        var places = Places.Remembering(
+            new()
+            {
+                PinnedFolders = [.. pinned]
+            },
+            () => ([.. pinned], []),
+            drives: [Path.GetPathRoot(fixture.Root)!]);
+        var open = fixture.At("Source", "Deep");
+        using var form = new QuietForm([open], new(), places)
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000)
+        };
+        form.Show();
+        await Pump.Loaded(form.ActiveView!);
+        var tree = form.Tree;
+        await Pump.Until(() => tree.SelectedNode?.Tag as string == open);
+        // After the window's own, so the tree has been made again by then.
+        var rebuilt = 0;
+        places.Changed += () => rebuilt++;
+        tree.MovePinnedToEnd = _ =>
+        {
+            places.Reread();
+            return Task.CompletedTask;
+        };
+
+        tree.MovePinned(fixture.At("Source"), 0);
+        await Pump.Until(() => rebuilt == 1);
+        var afterTheMove = (tree.SelectedNode?.Tag, tree.SelectedNode?.Parent?.Text);
+        places.Reread();
+        await Pump.Until(() => rebuilt == 2);
+        await Pump.For(TimeSpan.FromMilliseconds(200));
+        var afterThat = (tree.SelectedNode?.Tag, tree.SelectedNode?.Parent?.Text);
+
+        await Assert.That(afterTheMove).IsEqualTo((fixture.At("Source"), "Pinned"));
+        await Assert.That(afterThat).IsEqualTo((open, "Source"));
+    }
+
     static FolderTree CreateTree(string[] pinned, string[] recent)
     {
         var tree = new FolderTree(

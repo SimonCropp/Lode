@@ -485,30 +485,34 @@ sealed class FolderTree : TreeView
     }
 
     // A pinned folder being moved, and the order it is being moved into. Its node is selected
-    // in each rebuild until Quick access has that order.
+    // in each rebuild until Quick access has that order, or the move has ended.
     string? movingPinned;
     IReadOnlyList<string> movingOrder = [];
 
     bool SelectMovedPinned()
     {
-        if (movingPinned == null ||
-            PinnedSection is not { } section)
+        if (movingPinned is not { } moved)
         {
             return false;
         }
 
-        var node = section.Nodes.Cast<TreeNode>().FirstOrDefault(_ => Locations.Same(_.Tag as string, movingPinned));
+        // The first rebuild once the move has ended, with Quick access read again after it, is
+        // the last to select the folder, whatever order Quick access came out in: a pin the
+        // shell couldn't move, on a drive since unplugged say, keeps it from the order asked
+        // for, for good, and every rebuild after would select the folder, not the open one.
+        if (pinnedMove == null ||
+            places.Pinned.SequenceEqual(movingOrder, StringComparer.OrdinalIgnoreCase))
+        {
+            movingPinned = null;
+        }
+
+        var node = PinnedSection?.Nodes.Cast<TreeNode>().FirstOrDefault(_ => Locations.Same(_.Tag as string, moved));
         if (node == null)
         {
             return false;
         }
 
         SelectedNode = node;
-        if (places.Pinned.SequenceEqual(movingOrder, StringComparer.OrdinalIgnoreCase))
-        {
-            movingPinned = null;
-        }
-
         return true;
     }
 
