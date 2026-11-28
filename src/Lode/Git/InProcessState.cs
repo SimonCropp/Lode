@@ -79,7 +79,7 @@ static class InProcessState
 
     /// <summary>
     /// Why a repository couldn't be read here: what isn't read as git would, a file gone part way,
-    /// or cancelled.
+    /// or cancelled. Any of those on threads, as folders are listed ahead, which come wrapped.
     /// </summary>
     internal static bool IsUnreadable(Exception exception) =>
         exception is
@@ -91,7 +91,9 @@ static class InProcessState
             ArgumentException or
             FormatException or
             OverflowException or
-            IndexOutOfRangeException;
+            IndexOutOfRangeException ||
+        (exception is AggregateException aggregate &&
+         aggregate.InnerExceptions.All(IsUnreadable));
 
     // As git status says # branch.upstream: the branch tracks one a refspec fetches, whether it
     // is there or has gone. None detached.

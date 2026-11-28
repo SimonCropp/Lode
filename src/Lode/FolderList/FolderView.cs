@@ -2094,8 +2094,32 @@ sealed class FolderView : UserControl
         return toRead;
     }
 
-    // Shown as each is read, then all of them once they are, so none is missed when it is done.
+    // However the reading ends, failed too, it is no longer under way, and what was asked for
+    // meanwhile is read. Kept as under way after it failed, each read asked for after it only
+    // waited for it to end, Refresh's too, and none was made until the folder was another. Not
+    // one let go of, for another folder, which another may be under way for by now.
     async Task ReadGitStateAsync(List<string> wanted, int version, CancelSource cancel)
+    {
+        try
+        {
+            await ReadAndShowGitStates(wanted, version, cancel);
+        }
+        finally
+        {
+            if (gitCancel == cancel)
+            {
+                gitCancel = null;
+                if (gitPending)
+                {
+                    gitPending = false;
+                    ReadGitState();
+                }
+            }
+        }
+    }
+
+    // Shown as each is read, then all of them once they are, so none is missed when it is done.
+    async Task ReadAndShowGitStates(List<string> wanted, int version, CancelSource cancel)
     {
         using (cancel)
         {
@@ -2137,7 +2161,6 @@ sealed class FolderView : UserControl
                 return;
             }
 
-            gitCancel = null;
             gitReadAt = Stopwatch.GetTimestamp();
             foreach (var state in read)
             {
@@ -2150,12 +2173,6 @@ sealed class FolderView : UserControl
             {
                 gitStatesArriving = false;
                 ShowGitStates();
-            }
-
-            if (gitPending)
-            {
-                gitPending = false;
-                ReadGitState();
             }
         }
     }

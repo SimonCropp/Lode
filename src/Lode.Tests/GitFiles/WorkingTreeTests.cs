@@ -8,11 +8,10 @@ public class WorkingTreeTests
     static void Git(string repo, params string[] arguments) =>
         CodeCommandsTests.Scratch.Git(repo, arguments);
 
-    // Over 500 folders, listed on threads ahead: some files changed, some new, one folder gone.
-    [Test]
-    public async Task ReadsManyFoldersAsGitDoes()
+    // A repository of over 500 folders, each with a file, all committed: enough for them to be
+    // listed on threads ahead.
+    static async Task<string> ManyFolders(CodeCommandsTests.Scratch scratch)
     {
-        using var scratch = new CodeCommandsTests.Scratch();
         var repo = scratch.CreateRepo("Repo");
         for (var index = 0; index < 520; index++)
         {
@@ -23,6 +22,15 @@ public class WorkingTreeTests
 
         Git(repo, "add", ".");
         Git(repo, "commit", "-q", "-m", "Folders");
+        return repo;
+    }
+
+    // Over 500 folders, listed on threads ahead: some files changed, some new, one folder gone.
+    [Test]
+    public async Task ReadsManyFoldersAsGitDoes()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = await ManyFolders(scratch);
         await File.WriteAllTextAsync(Path.Combine(repo, "f3", "g80", "file.txt"), "changed");
         await File.WriteAllTextAsync(Path.Combine(repo, "f7", "g190", "new.txt"), "new");
         Directory.Delete(Path.Combine(repo, "f12", "g315"), true);
@@ -31,6 +39,50 @@ public class WorkingTreeTests
         var state = await GitRun.Agree(repo);
 
         await Assert.That(state.Files.Count).IsGreaterThan(20);
+    }
+
+    // Over 500 folders, one of them now a file, the folder deleted and a file made in its place:
+    // what was in it is gone, and the file is new, as where there are fewer folders, and it is
+    // never listed. Listed ahead, it couldn't be, which stopped the read.
+    [Test]
+    public async Task ReadsManyFoldersWithOneNowAFileAsGitDoes()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = await ManyFolders(scratch);
+        var folder = Path.Combine(repo, "f3", "g80");
+        Directory.Delete(folder, true);
+        await File.WriteAllTextAsync(folder, "a file where a folder was");
+
+        var state = await GitRun.Agree(repo);
+
+        await Assert.That(state.Files.Count).IsEqualTo(2);
+    }
+
+    // Over 500 folders, one of them that can't be listed, as it is in use, or is a cloud
+    // provider's that isn't running: left to git, rather than the read failing.
+    [Test]
+    public async Task LeavesManyFoldersWithOneThatCantBeListedToGit()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = await ManyFolders(scratch);
+        await File.WriteAllTextAsync(Path.Combine(repo, "f3", "g80", "file.txt"), "changed");
+        using var held = HeldAlone(Path.Combine(repo, "f7", "g190"));
+
+        await GitRun.LeftToGit(repo);
+    }
+
+    // A folder opened to list, as nobody else may open it while it is: listing it fails, as in
+    // use. Opened only for its attributes, it would let anyone.
+    static Microsoft.Win32.SafeHandles.SafeFileHandle HeldAlone(string folder)
+    {
+        const uint listDirectory = 0x0001;
+        var handle = NativeMethods.CreateFile(folder, listDirectory, 0, IntPtr.Zero, NativeMethods.OpenExisting, NativeMethods.FlagBackupSemantics, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            throw new System.ComponentModel.Win32Exception();
+        }
+
+        return handle;
     }
 
     // Conflicts of every kind a merge leaves: both added in a folder new to both, one side

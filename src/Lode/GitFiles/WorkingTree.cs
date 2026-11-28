@@ -456,7 +456,11 @@ sealed class WorkingTree
     const int listingThreads = 4;
 
     // Each folder the index has files in, listed before they are looked at, where there are
-    // enough of them. By its path from the top, as the index has it.
+    // enough of them. By its path from the top, as the index has it. One that couldn't be listed
+    // ahead isn't here, and is listed when it is looked at, as where there are fewer folders: a
+    // file now where it was isn't looked at as a folder, so what was in it is gone, and one that
+    // can't be listed then either leaves the repository to git. Failing on the threads, it came
+    // out wrapped, which nothing took as a read that couldn't be made here, and the read failed.
     Dictionary<string, List<DiskEntry>>? listed;
 
     void ListTracked()
@@ -503,7 +507,7 @@ sealed class WorkingTree
         }
 
         folders.Add("");
-        var results = new List<DiskEntry>[folders.Count];
+        var results = new List<DiskEntry>?[folders.Count];
         Parallel.For(
             0,
             folders.Count,
@@ -512,11 +516,27 @@ sealed class WorkingTree
                 CancellationToken = cancel,
                 MaxDegreeOfParallelism = listingThreads
             },
-            _ => results[_] = List(Path.Combine(workTree, folders[_])));
+            _ => results[_] = ListAhead(Path.Combine(workTree, folders[_])));
         listed = new(folders.Count, StringComparer.Ordinal);
         for (var at = 0; at < folders.Count; at++)
         {
-            listed[folders[at]] = results[at];
+            if (results[at] is { } entries)
+            {
+                listed[folders[at]] = entries;
+            }
+        }
+    }
+
+    static List<DiskEntry>? ListAhead(string folder)
+    {
+        try
+        {
+            return List(folder);
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

@@ -3092,6 +3092,46 @@ public class FolderViewTests
         }
     }
 
+    // A read that fails is no longer under way: Refresh reads again. Kept as under way, as it
+    // was, each read asked for only waited for it to end, Refresh's too, and none was made
+    // until the view went to another folder.
+    [Test]
+    public async Task AReadThatFailedIsNoLongerUnderWay()
+    {
+        using var code = Repositories();
+        var failing = true;
+        var readGit = FolderView.ReadGit;
+        FolderView.ReadGit = (repo, cancel) =>
+        {
+            if (Volatile.Read(ref failing))
+            {
+                throw new InvalidOperationException("The read failed.");
+            }
+
+            return readGit(repo, cancel);
+        };
+        try
+        {
+            using var view = await Open(code.Root, InCode(code));
+            await Pump.Until(() => view.GitReading.IsCompleted);
+            var failure = view.GitReading.Exception;
+            Volatile.Write(ref failing, false);
+
+            view.ReloadRows();
+            await Pump.Loaded(view);
+            await Pump.Until(() => GitCells(view).Contains("Changed: main · 1 change"));
+            await GitRead(view);
+
+            await Assert.That(failure).IsNotNull();
+            await Assert.That(GitCells(view))
+                .IsEquivalentTo(["Changed: main · 1 change", "Clean: main", "origins: ", "Plain: "], CollectionOrdering.Matching);
+        }
+        finally
+        {
+            FolderView.ReadGit = readGit;
+        }
+    }
+
     // What a read found is fresh unless something changed in the repository while it was read:
     // that change is then still to be read.
     [Test]

@@ -75,7 +75,7 @@ flowchart TD
 In process, the reader:
 
 - compares HEAD's tree with the index a folder at a time, passing over each folder whose tree the index's cache tree says is HEAD's, which is usually all of them
-- lists each folder the index has files in, once. The listing gives each file's size and times without opening it, as git for Windows' fscache does. A repository of 500 folders or more has them listed on four threads.
+- lists each folder the index has files in, once. The listing gives each file's size and times without opening it, as git for Windows' fscache does. A repository of 500 folders or more has them listed on four threads. One that can't be listed ahead, a file now where it was say, is listed when it is reached, as where there are fewer.
 - hashes only a file whose times aren't those staged, its line endings converted as `core.autocrlf` and `.gitattributes` say, as git would stage it
 - lists what isn't tracked, as `status.showUntrackedFiles` says, by `.gitignore`, `info/exclude` and `core.excludesFile`
 - finds staged renames as git does, by how alike the files are
