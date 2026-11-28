@@ -2025,6 +2025,54 @@ public class GitPanesTests
         await Assert.That(coAuthors.Bottom).IsLessThan(pane.CommitButton.Top);
     }
 
+    // A file git doesn't track can be ignored alone, as before, or, as GitHub Desktop offers it,
+    // with every file of its type, where it has an extension, or with a folder it is in, the
+    // nearest first, where it isn't at the top. Several offer their types, but no folder. Each
+    // writes its line at the end of the repository's .gitignore. A file git tracks offers none.
+    [Test]
+    public async Task IgnoreAllOfATypeOrAFolder()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        var repo = fixture.At("Docs");
+        using var form = await Show(repo, settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var deep = PaneStubs.Files[4];
+        var top = new Change("LICENSE", null, GitChange.Untracked);
+        var dotted = new Change(".env", null, GitChange.Untracked);
+        var log = new Change("out.LOG", null, GitChange.Untracked);
+        var otherLog = new Change("Logs/other.log", null, GitChange.Untracked);
+        var text = new Change("Logs/notes.txt", null, GitChange.Untracked);
+
+        string Ignoring(params Change[] selected) =>
+            MenuText(pane.MenuFor(repo, selected).SkipWhile(_ => _?.Text.StartsWith("Ignore", StringComparison.Ordinal) != true));
+
+        QuickMenu.Command Entry(IReadOnlyList<Change> selected, string entry) =>
+            pane.MenuFor(repo, selected).Single(_ => _?.Text == entry)!;
+
+        await Assert.That(Ignoring(deep)).IsEqualTo("Ignore file, Ignore folder, Ignore all .aleph files");
+        await Assert.That(MenuText(Entry([deep], "Ignore folder").Children!)).IsEqualTo("Source/Deep/, Source/");
+        await Assert.That(Ignoring(top)).IsEqualTo("Ignore file");
+        await Assert.That(Ignoring(dotted)).IsEqualTo("Ignore file");
+        await Assert.That(Ignoring(log, otherLog, text, top)).IsEqualTo("Ignore 4 files, Ignore all .LOG files, Ignore all .txt files");
+        await Assert.That(Ignoring(PaneStubs.Files[0])).IsEqualTo("");
+
+        var gitignore = Path.Combine(repo, ".gitignore");
+        Entry([deep], "Ignore file").Action();
+        Entry([deep], "Ignore folder").Children![0]!.Action();
+        Entry([deep], "Ignore folder").Children![1]!.Action();
+        Entry([deep], "Ignore all .aleph files").Action();
+        Entry([log, text], "Ignore 2 files").Action();
+
+        await Assert.That(await File.ReadAllTextAsync(gitignore)).IsEqualTo("/Source/Deep/new.aleph\n/Source/Deep/\n/Source/\n*.aleph\n/out.LOG\n/Logs/notes.txt\n");
+        await Pump.Until(() => pane.Reading.IsCompleted);
+    }
+
     // The repository, part way through a merge or revert with its conflicts settled, shown in
     // Changes, and committed from there as the summary and description start: what they started
     // as, and the message of the commit made.

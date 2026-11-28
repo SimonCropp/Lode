@@ -5,8 +5,8 @@
 /// commit asks, Amend last commit, putting them in place of the last commit. Ticks and what is
 /// typed are kept for each repository while Lode runs, so going to another and back loses neither. Double-click a file to
 /// see its changes; right-click to discard them, stash every change, open it, show it in its
-/// folder, copy its path, or have git ignore it. The repository's stashes are under the files, to
-/// restore or discard.
+/// folder, copy its path, or have git ignore it, every file of its type, or a folder it is in.
+/// The repository's stashes are under the files, to restore or discard.
 /// </summary>
 sealed class ChangesPane : UserControl
 {
@@ -2245,16 +2245,18 @@ sealed class ChangesPane : UserControl
         FileOperations.Open(this, path);
     }
 
-    void Ignore(IReadOnlyList<Change> ignoring)
+    // Each line at the end of the repository's .gitignore, then what is uncommitted read again,
+    // for what they match to go from the files.
+    void Ignore(IReadOnlyList<string> lines)
     {
         if (repo == null)
         {
             return;
         }
 
-        foreach (var change in ignoring)
+        foreach (var line in lines)
         {
-            GitChanges.Ignore(repo, change.Path);
+            GitChanges.AddIgnoreLine(repo, line);
         }
 
         Reload();
@@ -2379,13 +2381,46 @@ sealed class ChangesPane : UserControl
         if (untracked.Count > 0)
         {
             commands.Add(null);
-            var text = "Ignore file";
-            if (untracked.Count > 1)
-            {
-                text = $"Ignore {untracked.Count:N0} files";
-            }
+            commands.AddRange(IgnoreCommands(untracked));
+        }
 
-            commands.Add(new(text, () => Ignore(untracked)));
+        return commands;
+    }
+
+    /// <summary>
+    /// What git can be told to ignore of files it doesn't track, as GitHub Desktop offers it:
+    /// the files alone; for one, any folder it is in, the nearest first, in a submenu; and every
+    /// file of each of their types, up to five, for those with an extension.
+    /// </summary>
+    List<QuickMenu.Command?> IgnoreCommands(IReadOnlyList<Change> untracked)
+    {
+        var text = "Ignore file";
+        if (untracked.Count > 1)
+        {
+            text = $"Ignore {untracked.Count:N0} files";
+        }
+
+        var commands = new List<QuickMenu.Command?>
+        {
+            new(text, () => Ignore(untracked.Select(_ => GitChanges.IgnoreLine(_.Path)).ToList()))
+        };
+        if (untracked is [var only] &&
+            GitChanges.FoldersOf(only.Path) is { Count: > 0 } folders)
+        {
+            var ignoreFolders = folders
+                .Select(_ => (QuickMenu.Command?) new QuickMenu.Command($"{_}/", () => Ignore([GitChanges.IgnoreFolderLine(_)])))
+                .ToList();
+            commands.Add(QuickMenu.Submenu("Ignore folder", ignoreFolders));
+        }
+
+        var extensions = untracked
+            .Select(_ => GitChanges.ExtensionOf(_.Path))
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(5);
+        foreach (var extension in extensions)
+        {
+            commands.Add(new($"Ignore all {extension} files", () => Ignore([GitChanges.IgnoreExtensionLine(extension)])));
         }
 
         return commands;

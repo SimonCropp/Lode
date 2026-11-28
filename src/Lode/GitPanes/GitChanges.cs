@@ -1265,7 +1265,15 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// Has git ignore <paramref name="path"/>, a file it doesn't track: a line for it alone, from
     /// the top of the repository, at the end of the .gitignore there.
     /// </summary>
-    public static void Ignore(string repo, string path)
+    public static void Ignore(string repo, string path) =>
+        AddIgnoreLine(repo, IgnoreLine(path));
+
+    /// <summary>
+    /// Puts <paramref name="line"/>, as <see cref="IgnoreLine"/>, <see cref="IgnoreExtensionLine"/>
+    /// or <see cref="IgnoreFolderLine"/> write one, at the end of the .gitignore at the top of the
+    /// repository, on a line of its own.
+    /// </summary>
+    public static void AddIgnoreLine(string repo, string line)
     {
         var file = Path.Combine(repo, ".gitignore");
         var existing = "";
@@ -1274,7 +1282,6 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
             existing = File.ReadAllText(file);
         }
 
-        var line = IgnoreLine(path);
         if (existing.Length > 0 &&
             !existing.EndsWith('\n'))
         {
@@ -1289,10 +1296,30 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
     /// the same name elsewhere isn't ignored too, and what a pattern would read as wildcards, or
     /// a space git would trim from the end, escaped.
     /// </summary>
-    internal static string IgnoreLine(string path)
+    internal static string IgnoreLine(string path) =>
+        "/" + EscapeIgnored(path);
+
+    /// <summary>
+    /// The .gitignore line matching every file ending in <paramref name="extension"/>, wherever
+    /// it is, as GitHub Desktop's Ignore all .log files writes it: *.log, escaped as
+    /// <see cref="IgnoreLine"/> escapes.
+    /// </summary>
+    internal static string IgnoreExtensionLine(string extension) =>
+        "*" + EscapeIgnored(extension);
+
+    /// <summary>
+    /// The .gitignore line matching the folder at <paramref name="folder"/>, and all in it: from
+    /// the top, as <see cref="IgnoreLine"/>, so a folder of the same name elsewhere isn't ignored
+    /// too, and a slash after, so only a folder is, not a file of that name.
+    /// </summary>
+    internal static string IgnoreFolderLine(string folder) =>
+        IgnoreLine(folder + "/");
+
+    // What a pattern would read as wildcards escaped, and a space git would trim from the end.
+    static string EscapeIgnored(string text)
     {
-        var line = new StringBuilder("/");
-        foreach (var character in path)
+        var line = new StringBuilder();
+        foreach (var character in text)
         {
             if (character is '\\' or '*' or '?' or '[')
             {
@@ -1304,11 +1331,46 @@ sealed record GitChanges(string? Branch, bool HasCommits, bool Merging, IReadOnl
 
         // Git trims spaces after the last that isn't one, an escaped space counting as one, so
         // escaping the last keeps those before it too.
-        if (line[^1] == ' ')
+        if (line.Length > 0 &&
+            line[^1] == ' ')
         {
             line.Insert(line.Length - 1, "\\");
         }
 
         return line.ToString();
+    }
+
+    /// <summary>
+    /// The extension of the file at <paramref name="path"/>, from the last dot of its name, as
+    /// GitHub Desktop takes it for Ignore all .log files: .gz for archive.tar.gz. None for a name
+    /// whose only dot starts it, .env say, which names one file rather than a type, or ends it.
+    /// </summary>
+    internal static string? ExtensionOf(string path)
+    {
+        var name = path[(path.LastIndexOf('/') + 1)..];
+        var dot = name.LastIndexOf('.');
+        if (dot <= 0 ||
+            dot == name.Length - 1)
+        {
+            return null;
+        }
+
+        return name[dot..];
+    }
+
+    /// <summary>
+    /// The folders the file at <paramref name="path"/> is in, the nearest first, each from the
+    /// top of the repository, as GitHub Desktop offers them to ignore: Source/Deep, then Source,
+    /// for Source/Deep/new.txt. None for a file at the top.
+    /// </summary>
+    internal static List<string> FoldersOf(string path)
+    {
+        var folders = new List<string>();
+        for (var slash = path.LastIndexOf('/'); slash > 0; slash = path.LastIndexOf('/', slash - 1))
+        {
+            folders.Add(path[..slash]);
+        }
+
+        return folders;
     }
 }

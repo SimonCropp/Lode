@@ -155,6 +155,59 @@ public class GitChangesTests
         await Assert.That(GitChanges.IgnoreLine("#hash")).IsEqualTo("/#hash");
     }
 
+    // A line matching every file of a type, wherever it is, and one matching a folder alone,
+    // from the top, and only as a folder, each escaped as a file's line is.
+    [Test]
+    public async Task IgnoreExtensionAndFolderLines()
+    {
+        await Assert.That(GitChanges.IgnoreExtensionLine(".log")).IsEqualTo("*.log");
+        await Assert.That(GitChanges.IgnoreExtensionLine(".[x]*?")).IsEqualTo("*.\\[x]\\*\\?");
+        await Assert.That(GitChanges.IgnoreExtensionLine(".trailing ")).IsEqualTo("*.trailing\\ ");
+        await Assert.That(GitChanges.IgnoreFolderLine("Source/Deep")).IsEqualTo("/Source/Deep/");
+        await Assert.That(GitChanges.IgnoreFolderLine("[x]/sp ace ")).IsEqualTo("/\\[x]/sp ace /");
+    }
+
+    // The extension, from the last dot of the name, as GitHub Desktop takes it, none for a name
+    // whose only dot starts or ends it; and the folders a file is in, the nearest first.
+    [Test]
+    public async Task ExtensionAndFoldersOf()
+    {
+        await Assert.That(GitChanges.ExtensionOf("out.log")).IsEqualTo(".log");
+        await Assert.That(GitChanges.ExtensionOf("Source/archive.tar.gz")).IsEqualTo(".gz");
+        await Assert.That(GitChanges.ExtensionOf("LICENSE")).IsNull();
+        await Assert.That(GitChanges.ExtensionOf(".env")).IsNull();
+        await Assert.That(GitChanges.ExtensionOf("Source/.env")).IsNull();
+        await Assert.That(GitChanges.ExtensionOf("trailing.")).IsNull();
+        await Assert.That(GitChanges.ExtensionOf("folder.d/README")).IsNull();
+
+        await Assert.That(GitChanges.FoldersOf("Source/Deep/new.aleph")).IsEquivalentTo(["Source/Deep", "Source"], CollectionOrdering.Matching);
+        await Assert.That(GitChanges.FoldersOf("top.aleph")).IsEmpty();
+    }
+
+    // Each line as git reads it, at the end of the .gitignore: every .log, wherever it is, but
+    // not a name only ending in log; the folder from the top, and all in it, but neither a folder
+    // of its name elsewhere nor a file of its name.
+    [Test]
+    public async Task IgnoreAllOfATypeOrAFolder()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        await File.WriteAllTextAsync(Path.Combine(repo, ".gitignore"), "bin/");
+        foreach (var path in (string[]) ["out.log", "Logs/deep.log", "catalog", "Source/Deep/new.aleph", "Source/kept.aleph", "Other/Source/Deep/kept.aleph", "Deep"])
+        {
+            var file = Path.Combine(repo, path.Replace('/', '\\'));
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.WriteAllTextAsync(file, path);
+        }
+
+        GitChanges.AddIgnoreLine(repo, GitChanges.IgnoreExtensionLine(".log"));
+        GitChanges.AddIgnoreLine(repo, GitChanges.IgnoreFolderLine("Source/Deep"));
+        GitChanges.AddIgnoreLine(repo, GitChanges.IgnoreFolderLine("Deep"));
+
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, ".gitignore"))).IsEqualTo("bin/\n*.log\n/Source/Deep/\n/Deep/\n");
+        await Assert.That(GitChanges.Read(repo, Cancel.None)!.Files.Select(_ => _.Path)).IsEquivalentTo([".gitignore", "catalog", "Deep", "Other/Source/Deep/kept.aleph", "Source/kept.aleph"]);
+    }
+
     // Only the files ticked go in the commit, a rename both where it went and where it was, a
     // staged deletion, a file in a new folder, and names a pattern would read otherwise. What
     // else is changed stays changed, what else is staged staged.
