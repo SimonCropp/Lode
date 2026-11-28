@@ -223,6 +223,7 @@ sealed class FolderTree : TreeView
         MovePinnedToEnd = _ => ShellContextMenu.MoveToEnd(FindForm()?.Handle ?? Handle, _);
         StartDrag = (data, allowed) => DragImage.Drag(this, data, allowed);
         DeleteFolder = (path, permanent) => FileOperations.Delete(FindForm()?.Handle ?? Handle, [path], permanent);
+        Tell = (caption, text) => MessageBoxes.Show(this, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         HideSelection = false;
         ShowLines = false;
         FullRowSelect = true;
@@ -2012,7 +2013,7 @@ sealed class FolderTree : TreeView
             this,
             location,
             LodeActions.ForMenu(commands, settings),
-            () => ShowShellMenu(owner, path, location, quickAccess, node),
+            async () => await ShowMoreOptions(owner, path, location, quickAccess, node),
             settings.ShowsInMenu(LodeActions.More));
     }
 
@@ -2241,7 +2242,7 @@ sealed class FolderTree : TreeView
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
             LodeActions.Command("compress", () => _ = Zip.CompressInBackground([path], Path.GetDirectoryName(path)!), !isDrive),
             LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
-            LodeActions.Command("properties", () => ShellContextMenu.InvokeVerb(owner, [path], "properties")),
+            LodeActions.Command("properties", async () => await ShowProperties(owner, path)),
             .. CodeMenu.Commands(this, settings, [path])
         ];
     }
@@ -2357,6 +2358,102 @@ sealed class FolderTree : TreeView
     static bool CanRename(string path, TreeNode? node) =>
         !IsDrive(path) &&
         node is {Parent.Tag: not Section};
+
+    /// <summary>
+    /// Whether a folder is on the network, where asking the shell about it asks the machine it is
+    /// on: a machine itself, a share, a folder on one, or on a drive mapped to one. Tests swap
+    /// it, to have a folder of theirs count.
+    /// </summary>
+    internal Func<string, bool> IsRemote = Locations.IsRemote;
+
+    /// <summary>
+    /// Asks the machine a folder on the network is on about it, returning once the machine has
+    /// answered, whatever it answers: the folder there or not, Lode let in or not. The shell,
+    /// asked about the folder then, has its answer as quickly. A machine that is off, or can't
+    /// be reached, off the VPN say, has Windows wait twenty seconds or more before it gives up.
+    /// Never asked on the UI thread. Tests swap it, to see where it is asked, and to stand in for
+    /// a machine that doesn't answer.
+    /// </summary>
+    internal Action<string> AskMachine = path =>
+    {
+        // A machine has no folder of its own to ask about, so is asked what it shares, as
+        // expanding it asks.
+        if (Locations.IsServer(path))
+        {
+            _ = Shares.Answers(path);
+            return;
+        }
+
+        _ = Directory.Exists(path);
+    };
+
+    /// <summary>
+    /// How long a machine has to answer before the tree says it can't be reached. One that is
+    /// there answers in well under a second, over a VPN too. Tests shorten it.
+    /// </summary>
+    internal TimeSpan MachineWait = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Says a machine can't be reached. Tests listen in.
+    /// </summary>
+    internal Action<string, string> Tell;
+
+    /// <summary>
+    /// Show more options: the shell's own menu for the folder, at <paramref name="location"/>,
+    /// once the machine it is on has answered, for one on the network: see
+    /// <see cref="MachineAnswers"/>. Completes once the menu has closed, or the tree has said
+    /// the machine can't be reached.
+    /// </summary>
+    internal async Task ShowMoreOptions(IntPtr owner, string path, Point location, bool quickAccess, TreeNode node)
+    {
+        if (await MachineAnswers(path))
+        {
+            ShowShellMenu(owner, path, location, quickAccess, node);
+        }
+    }
+
+    /// <summary>
+    /// The shell's Properties for the folder, once the machine it is on has answered, for one on
+    /// the network: see <see cref="MachineAnswers"/>.
+    /// </summary>
+    internal async Task ShowProperties(IntPtr owner, string path)
+    {
+        if (await MachineAnswers(path))
+        {
+            ShellContextMenu.InvokeVerb(owner, [path], "properties");
+        }
+    }
+
+    // Whether the shell can be asked about the folder now, on the UI thread, without every
+    // window waiting on it. Asked about a folder on the network, the shell asks the machine it is
+    // on, and waits for it, on the one UI thread all of Lode's windows share: a machine that is
+    // off would have them all stop, for as long as Windows takes to give up on it. The guard on
+    // shell extensions cancels a call one is stuck in, but not what Windows waits on of the
+    // network. So the machine is asked first, off the UI thread, and the shell only once it has
+    // answered; one that hasn't in time is said to be unreachable, and its answer, should it
+    // come later, is left. A folder not on the network is the shell's straight away.
+    async Task<bool> MachineAnswers(string path)
+    {
+        if (!IsRemote(path))
+        {
+            return true;
+        }
+
+        var ask = AskMachine;
+        var asked = Task.Run(() => ask(path));
+        if (await Task.WhenAny(asked, Task.Delay(MachineWait)) == asked)
+        {
+            return !IsDisposed;
+        }
+
+        if (!IsDisposed)
+        {
+            var machine = Locations.Server(path) ?? Path.GetPathRoot(path)?.TrimEnd(Path.DirectorySeparatorChar) ?? path;
+            Tell("Lode", $"{machine} can't be reached. Check that it's on, and on the network, then try again.");
+        }
+
+        return false;
+    }
 
     void ShowShellMenu(IntPtr owner, string path, Point location, bool quickAccess, TreeNode node)
     {

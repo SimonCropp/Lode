@@ -1073,6 +1073,89 @@ public class FolderTreeTests
         await Assert.That(NativeMethods.SendMessage(tree.Handle, getItemHeight, IntPtr.Zero, IntPtr.Zero)).IsEqualTo(height);
     }
 
+    // Show more options and Properties ask the shell about the folder, on the UI thread, and for
+    // one on the network the shell waits on the machine it is on, every window waiting with it
+    // when that machine is off. So the machine is asked first, off the UI thread, and the shell
+    // once it has answered. One not on the network is the shell's straight away. Here folders
+    // of the fixture's that aren't there stand in, one counted as on the network, so the shell,
+    // asked about them, shows nothing.
+    [Test]
+    public async Task TheMachineAFolderIsOnIsAskedOffTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var remote = fixture.At("Remote");
+        var local = fixture.At("Local");
+        var uiThread = Environment.CurrentManagedThreadId;
+        var asked = new List<(string Path, bool OnUIThread)>();
+        var told = new List<string>();
+        tree.IsRemote = _ => _ == remote;
+        tree.AskMachine = path =>
+        {
+            lock (asked)
+            {
+                asked.Add((path, Environment.CurrentManagedThreadId == uiThread));
+            }
+        };
+        tree.Tell = (_, text) => told.Add(text);
+
+        await tree.ShowMoreOptions(tree.Handle, remote, Point.Empty, quickAccess: false, new());
+        await tree.ShowProperties(tree.Handle, remote);
+        await tree.ShowMoreOptions(tree.Handle, local, Point.Empty, quickAccess: false, new());
+        await tree.ShowProperties(tree.Handle, local);
+
+        await Assert.That(asked).IsEquivalentTo(new List<(string Path, bool OnUIThread)> { (remote, false), (remote, false) });
+        await Assert.That(told).IsEmpty();
+    }
+
+    // A machine that doesn't answer in time, one that is off, or off the VPN, has the tree say it
+    // can't be reached, on the UI thread, rather than show the menu or Properties. Meanwhile
+    // every window is free: Properties and Show more options return at once, before the tree
+    // has said anything, and it goes on handling messages while it waits.
+    [Test]
+    public async Task AMachineThatDoesntAnswerCantBeReached()
+    {
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false });
+        var remote = fixture.At("Remote");
+        var uiThread = Environment.CurrentManagedThreadId;
+        using var answer = new ManualResetEventSlim();
+        var told = new List<(string Caption, string Text, bool OnUIThread)>();
+        tree.IsRemote = _ => true;
+        // Not for ever, should the UI thread wait on it after all, so the test fails rather than
+        // holding the run.
+        tree.AskMachine = _ => answer.Wait(TimeSpan.FromSeconds(30));
+        tree.MachineWait = TimeSpan.FromMilliseconds(100);
+        tree.Tell = (caption, text) => told.Add((caption, text, Environment.CurrentManagedThreadId == uiThread));
+
+        int toldAtOnce;
+        bool doneAtOnce;
+        try
+        {
+            tree.NodeCommands(remote).Single(_ => _?.Id == "properties")!.Action();
+            var moreOptions = tree.ShowMoreOptions(tree.Handle, remote, Point.Empty, quickAccess: false, new());
+            toldAtOnce = told.Count;
+            doneAtOnce = moreOptions.IsCompleted;
+            await Pump.Until(() => told.Count == 2);
+            await moreOptions;
+        }
+        finally
+        {
+            answer.Set();
+        }
+
+        var drive = Path.GetPathRoot(remote)!.TrimEnd('\\');
+        await Assert.That(toldAtOnce).IsEqualTo(0);
+        await Assert.That(doneAtOnce).IsFalse();
+        await Assert.That(told.Select(_ => (_.Caption, _.Text.Replace(drive, "{drive}"), _.OnUIThread)))
+            .IsEquivalentTo(
+                new List<(string, string, bool)>
+                {
+                    ("Lode", "{drive} can't be reached. Check that it's on, and on the network, then try again.", true),
+                    ("Lode", "{drive} can't be reached. Check that it's on, and on the network, then try again.", true)
+                });
+    }
+
     static IEnumerable<TreeNode> AllNodes(TreeNodeCollection nodes)
     {
         foreach (TreeNode node in nodes)
