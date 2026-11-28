@@ -3510,6 +3510,89 @@ public class FolderViewTests
                 CollectionOrdering.Matching);
     }
 
+    // A repository nested in a folder the one it is in ignores, a clone in external say, is its
+    // own once it is known, though the one it is in learned before then that git ignores the
+    // folder: a change at its top, to its README or its own .gitignore, is a change to it, as
+    // one further in always was, and none to the one it is in.
+    [Test]
+    public async Task ANestedRepositoryInAFolderLearnedIgnoredIsItsOwn()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+        var outer = code.CreateRepo("Outer");
+        await File.WriteAllTextAsync(Path.Combine(outer, ".gitignore"), "external/\n");
+        CodeCommandsTests.Scratch.Git(outer, "add", ".");
+        CodeCommandsTests.Scratch.Git(outer, "commit", "-m", "Ignore");
+        var inner = Path.Combine(outer, "external");
+        Directory.CreateDirectory(inner);
+        CodeCommandsTests.Scratch.Git(inner, "init", "--initial-branch=main");
+        var readme = Path.Combine(inner, "README.md");
+        await File.WriteAllTextAsync(readme, "inner");
+        GitCache.Watch(code.Root);
+        ReadNow(outer);
+        GitCache.ChangedAt(readme);
+        await Pump.Until(() => GitCache.Ignored(inner) == true);
+
+        ReadNow(inner);
+        var itsReadme = await ChangeAt(readme, outer, inner);
+        var itsGitIgnore = await ChangeAt(Path.Combine(inner, ".gitignore"), outer, inner);
+
+        await Assert.That(itsReadme).IsEqualTo((false, true));
+        await Assert.That(itsGitIgnore).IsEqualTo((false, true));
+    }
+
+    // Nor is what the one it is in finds of the folder kept, asked before the nested one was
+    // known, and found after: it is of git there as it no longer is.
+    [Test]
+    public async Task WhatIsFoundOfANestedRepositoryAsItBecomesKnownIsNotKept()
+    {
+        using var code = new CodeCommandsTests.Scratch();
+
+        // Not repositories, so nothing git left of them is heard meanwhile.
+        var outer = code.At("Outer");
+        var inner = Path.Combine(outer, "external");
+        var bin = Path.Combine(outer, "bin");
+        Directory.CreateDirectory(inner);
+        Directory.CreateDirectory(bin);
+        GitCache.Watch(code.Root);
+        using var asking = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var askIgnored = GitCache.AskIgnored;
+        GitCache.AskIgnored = (_, asked) =>
+        {
+            asking.Set();
+            release.Wait();
+            var found = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var folder in asked)
+            {
+                found[folder] = true;
+            }
+
+            return found;
+        };
+        try
+        {
+            ReadNow(outer);
+            GitCache.ChangedAt(Path.Combine(inner, "README.md"));
+            await Pump.Until(() => asking.IsSet);
+            ReadNow(inner);
+
+            // Found once the folder asked of meanwhile is, which is asked of next.
+            GitCache.ChangedAt(Path.Combine(bin, "output.dll"));
+            release.Set();
+            await Pump.Until(() => GitCache.Ignored(bin) == true);
+            var learned = GitCache.Ignored(inner);
+            var itsReadme = await ChangeAt(Path.Combine(inner, "README.md"), outer, inner);
+
+            await Assert.That(learned).IsNull();
+            await Assert.That(itsReadme).IsEqualTo((false, true));
+        }
+        finally
+        {
+            release.Set();
+            GitCache.AskIgnored = askIgnored;
+        }
+    }
+
     // A change in a folder learned to be ignored leaves the repository fresh. What was learned
     // is forgotten, to be learned again, when what git ignores may be other than it was: a
     // .gitignore changed, or the index, as a file added there by force is tracked from then on.

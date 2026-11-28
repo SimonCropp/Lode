@@ -184,6 +184,8 @@ A folder that is ignored but holds a file git tracks all the same, one added by 
 
 What was learned of a repository is forgotten, and asked again, when what git ignores may have changed: a `.gitignore` in it changes, or its `index`, `config` or `info/exclude`; on Refresh; and when the watch loses track.
 
+A repository nested in another, a clone in a folder the other ignores say, is its own once it is known: what the other learned of folders in it is forgotten then, and what it finds of them after is not kept, so a change at the nested one's top, to its README or its own `.gitignore`, is a change to it rather than dropped as in a folder the other ignores.
+
 Only folders are learned. A single ignored file in a folder that isn't ignored still counts.
 
 

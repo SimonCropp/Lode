@@ -416,10 +416,43 @@ static class GitCache
                 entry = new();
                 known[repo] = entry;
                 Follow(repo, own);
+                TakeOver(repo);
             }
 
             return entry.Changes;
         }
+    }
+
+    // A repository newly known is its own, though it is in another, a clone in a folder that one
+    // ignores say: what that one learned of folders in it, before it was known, is forgotten, as
+    // what git ignores there is this one's. Kept, a change at its top, to its README or its own
+    // .gitignore, was dropped as in a folder the other ignores, and it never went stale. Under
+    // the gate.
+    static void TakeOver(string repo)
+    {
+        foreach (var entry in known.Values)
+        {
+            if (entry.Learned.Any(_ => Locations.IsWithin(_, repo)))
+            {
+                Forget(entry);
+            }
+        }
+    }
+
+    // Whether the folder, in the repository, is in a repository known nested in it, or is one,
+    // which what is in it is of. Under the gate.
+    static bool InNested(string repo, string folder)
+    {
+        var repos = known.GetAlternateLookup<CharSpan>();
+        for (var current = folder.AsSpan(); current.Length > repo.Length; current = Path.GetDirectoryName(current))
+        {
+            if (repos.ContainsKey(current))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Where the git folder of a worktree or a submodule is, which is not in it but in the .git
@@ -597,6 +630,13 @@ static class GitCache
 
                     foreach (var (folder, ignored) in found)
                     {
+                        // Nested in one known since it was asked, it is that one's: see
+                        // TakeOver.
+                        if (InNested(group.Key, folder))
+                        {
+                            continue;
+                        }
+
                         if (folders.TryAdd(folder, ignored))
                         {
                             entry.Learned.Add(folder);
@@ -711,6 +751,7 @@ static class GitCache
             {
                 entry = new(changesBefore);
                 known[repo] = entry;
+                TakeOver(repo);
             }
 
             entry.Read(state, site, changesBefore, Environment.TickCount64);
@@ -920,7 +961,9 @@ static class GitCache
 
             // In a folder git ignores, or one itself, a build's output say, it is no change to
             // the repository: nothing is stale, and nothing read. The folder it is in looked
-            // at and not ignored, none above that is either, so they aren't asked after.
+            // at and not ignored, none above that is either, so they aren't asked after. What is
+            // learned of a folder is the innermost repository known's, so none nested further in
+            // is passed over: see TakeOver.
             var above = !inGit &&
                         folders.Count > 0;
             var folderLooked = false;
