@@ -338,7 +338,10 @@ sealed class FolderTree : TreeView
             {
                 Nodes.Add(computerNode);
                 LoadDrives();
-                computerNode.Expand();
+                if (!RememberedCollapsed(computerNode))
+                {
+                    computerNode.Expand();
+                }
             }
 
             networkNode.Nodes.Clear();
@@ -813,11 +816,34 @@ sealed class FolderTree : TreeView
     protected override void OnAfterExpand(TreeViewEventArgs args)
     {
         base.OnAfterExpand(args);
-        if (args.Node?.Tag is Section section)
+        if (HeadingName(args.Node) is { } heading)
         {
-            settings.CollapsedSections.Remove(section.Name);
+            settings.CollapsedSections.Remove(heading);
         }
     }
+
+    // The name a heading is remembered collapsed by: a section's, This PC's or Network's, which
+    // stay collapsed, as the user left them, when the tree is made again and the next time Lode
+    // starts. Null for a folder.
+    string? HeadingName(TreeNode? node)
+    {
+        if (node?.Tag is Section section)
+        {
+            return section.Name;
+        }
+
+        if (node == computerNode ||
+            node == networkNode)
+        {
+            return node.Text;
+        }
+
+        return null;
+    }
+
+    bool RememberedCollapsed(TreeNode heading) =>
+        HeadingName(heading) is { } name &&
+        settings.CollapsedSections.Contains(name);
 
     /// <summary>
     /// For Refresh: picks up drives plugged in or removed, and reads again, off the UI thread,
@@ -965,7 +991,8 @@ sealed class FolderTree : TreeView
     HashSet<string> knownShares = new(StringComparer.OrdinalIgnoreCase);
 
     // The Network heading and its machines, as places and the shares gone to have them: one
-    // added since shows, and those that show stay as they are, expanded or not.
+    // added since shows, and those that show stay as they are, expanded or not. The heading is
+    // open, unless the user collapsed it.
     void ShowNetwork()
     {
         foreach (var folder in places.Pinned.Concat(places.Recent))
@@ -1007,7 +1034,10 @@ sealed class FolderTree : TreeView
             index++;
         }
 
-        networkNode.Expand();
+        if (!RememberedCollapsed(networkNode))
+        {
+            networkNode.Expand();
+        }
     }
 
     // A machine on the network, shown in Network from now on.
@@ -1637,10 +1667,10 @@ sealed class FolderTree : TreeView
     protected override void OnAfterCollapse(TreeViewEventArgs args)
     {
         base.OnAfterCollapse(args);
-        if (args.Node?.Tag is Section section &&
-            !settings.CollapsedSections.Contains(section.Name))
+        if (HeadingName(args.Node) is { } heading &&
+            !settings.CollapsedSections.Contains(heading))
         {
-            settings.CollapsedSections.Add(section.Name);
+            settings.CollapsedSections.Add(heading);
         }
 
         if (args.Node is { } node &&

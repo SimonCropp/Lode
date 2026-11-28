@@ -369,7 +369,8 @@ sealed class Settings
     // the organizations the code folder has clones from.
     public List<string> AzureDevOpsOrganizations { get; set; } = [];
 
-    // The tree's sections (Pinned, Recent) the user collapsed, so they stay that way.
+    // The tree's headings (Pinned, Recent, This PC, Network) the user collapsed, so they stay that
+    // way.
     public List<string> CollapsedSections { get; set; } = [];
 
     // What Quick access had pinned, and its recent folders, when it was last read. A window

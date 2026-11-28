@@ -808,6 +808,78 @@ public class FolderTreeTests
                 """);
     }
 
+    // This PC collapsed stays collapsed, as a section does: when the tree is built again, for
+    // hidden items shown say, when Pinned and Recent are made again, for a pin, and the next time
+    // Lode starts. Expanded, it is forgotten.
+    [Test]
+    public async Task CollapsingThisPCIsRemembered()
+    {
+        using var fixture = Fixture.Create();
+        var settings = new Settings { ShowHidden = false };
+        using var tree = Create(fixture, settings, fixture.At("Docs"));
+        var computer = tree.Nodes.Cast<TreeNode>().Single(_ => _.Text == Locations.ThisPC);
+
+        computer.Collapse();
+        var remembered = settings.CollapsedSections.ToList();
+        tree.Rebuild();
+        await Pump.Loaded(tree);
+        var rebuilt = computer.IsExpanded;
+        tree.RebuildPlaces();
+        var placesRebuilt = computer.IsExpanded;
+        using var next = Create(fixture, settings, fixture.At("Docs"));
+        var nextComputer = next.Nodes.Cast<TreeNode>().Single(_ => _.Text == Locations.ThisPC);
+        var nextExpanded = nextComputer.IsExpanded;
+        nextComputer.Expand();
+
+        await Assert.That(remembered).IsEquivalentTo([Locations.ThisPC]);
+        await Assert.That(rebuilt).IsFalse();
+        await Assert.That(placesRebuilt).IsFalse();
+        await Assert.That(nextExpanded).IsFalse();
+        await Assert.That(settings.CollapsedSections).IsEmpty();
+    }
+
+    // Network collapsed stays collapsed when Pinned and Recent are made again, for a pin, and
+    // when the tree is built again. Going to a share expands it, as going to a folder on a drive
+    // expands This PC, and as Explorer does, to show where the tab is, and it is then forgotten.
+    [Test]
+    [NotInParallel("shares")]
+    public async Task CollapsingNetworkIsRemembered()
+    {
+        using var fixture = Fixture.Create();
+        var listShares = FolderTree.ListShares;
+        FolderTree.ListShares = _ => [("Docs", false)];
+        try
+        {
+            var settings = new Settings { ShowHidden = false };
+            using var tree = Create(fixture, settings, @"\\lodetest\Docs");
+            tree.MakeWatcher = (_, _) => null;
+            var network = tree.Nodes.Cast<TreeNode>().Single(_ => _.Tag is FolderTree.NetworkHeading);
+            tree.SelectPath(fixture.Root);
+            await Pump.Loaded(tree);
+
+            network.Collapse();
+            var remembered = settings.CollapsedSections.ToList();
+            tree.RebuildPlaces();
+            var placesRebuilt = network.IsExpanded;
+            tree.Rebuild();
+            await Pump.Loaded(tree);
+            var rebuilt = network.IsExpanded;
+            tree.SelectPath(@"\\lodetest2\Docs");
+            await Pump.Loaded(tree);
+
+            await Assert.That(remembered).IsEquivalentTo(["Network"]);
+            await Assert.That(placesRebuilt).IsFalse();
+            await Assert.That(rebuilt).IsFalse();
+            await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(@"\\lodetest2\Docs");
+            await Assert.That(network.IsExpanded).IsTrue();
+            await Assert.That(settings.CollapsedSections).IsEmpty();
+        }
+        finally
+        {
+            FolderTree.ListShares = listShares;
+        }
+    }
+
     // Asked for a folder it has not caught up with, one just made or renamed, the tree settles
     // on the folder it is in, and selects it once it shows up there.
     [Test]
