@@ -206,7 +206,8 @@ static class CodeCommands
     /// Brings in what the branch's own on origin has, as git pull does, merging or rebasing as
     /// the user's git config says. One that would conflict is undone, as Sync fork's merge is, so
     /// that none is left part way through a merge or a rebase; nor is one pulled into that is part
-    /// way through one already.
+    /// way through one already. Cancelled, the fetch stops where it is, but a merge or rebase
+    /// begun is left to its end: see <see cref="GitPull"/>.
     /// </summary>
     public static Task<List<RepoResult>> Pull(IReadOnlyList<string> repos, IProgress<string>? progress = null, Cancel cancel = default) =>
         ForEach(repos, progress, cancel, repo => Pull(repo, cancel, "nothing was pulled"));
@@ -224,7 +225,7 @@ static class CodeCommands
             return new(repo, false, PartWay(before, notDone));
         }
 
-        var pull = Git(repo, cancel, network: true, "pull");
+        var pull = GitPull.Run(repo, cancel);
         if (pull.Succeeded ||
             Unfinished(repo) is not { } unfinished)
         {
@@ -1563,11 +1564,13 @@ static class CodeCommands
         Git(repo, cancel, network, null, arguments);
 
     /// <summary>
-    /// Git changing the repository where it is, a commit, a switch or a reset say: not started
-    /// once cancelled, but, once started, left to finish. Stopped part way it leaves the index
-    /// locked, so that no git works there until the lock is deleted by hand, and the files half
-    /// changed. What it gives is what git did, cancelled meanwhile or not: it is the step after
-    /// that isn't started.
+    /// Git changing the repository where it is, a commit, a switch or a reset say, or the merge
+    /// or rebase of a pull: not started once cancelled, but, once started, left to finish.
+    /// Stopped part way it leaves the index locked, so that no git works there until the lock is
+    /// deleted by hand, and the files half changed, or a rebase part way. What it gives is what
+    /// git did, cancelled meanwhile or not: it is the step after that isn't started. A git that
+    /// does both, going to a remote then changing the repository, as git pull does, is run in its
+    /// two parts, so that the one that can wait on the network can be stopped.
     /// </summary>
     internal static RepoResult GitToItsEnd(string repo, Cancel cancel, params string[] arguments) =>
         GitToItsEnd(repo, cancel, null, arguments);

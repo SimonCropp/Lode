@@ -808,6 +808,218 @@ public class CodeCommandsTests
         await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("settled");
     }
 
+    // Cancelled while it fetches, a pull stops where it is, having changed nothing: not the
+    // branch, nor its files, nor where origin's is known to be. Origin here is slow to answer,
+    // as one over the network can be, saying when it has been asked.
+    [Test]
+    public async Task CancellingAPullWhileItFetchesChangesNothing()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        PushTheirs(code, "theirs.txt");
+        var asked = code.At("asked");
+        // Git runs it in sh, the repository's path after it, which the # leaves out. The shell
+        // is the sleep, rather than its parent, so stopping git stops it too.
+        Scratch.Git(repo, "config", "remote.origin.uploadpack", $"touch '{ForShell(asked)}'; exec sleep 60 #");
+        var ours = Scratch.Git(repo, "rev-parse", "HEAD");
+        var tracked = Scratch.Git(repo, "rev-parse", "origin/main");
+        using var cancel = new CancelSource();
+
+        var pulling = CodeCommands.Pull([repo], cancel: cancel.Token);
+        await Until(() => File.Exists(asked));
+        cancel.Cancel();
+        var result = (await pulling.WaitAsync(TimeSpan.FromSeconds(30))).Single();
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).EndsWith("Cancelled");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "HEAD")).IsEqualTo(ours);
+        await Assert.That(Scratch.Git(repo, "rev-parse", "origin/main")).IsEqualTo(tracked);
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("");
+        await Assert.That(CodeCommands.Unfinished(repo)).IsNull();
+        await Assert.That(File.Exists(Path.Combine(repo, ".git", "index.lock"))).IsFalse();
+    }
+
+    // Once fetched, the merge or rebase is left to its end, cancelled or not: stopped part way,
+    // it left the index locked, or a rebase part way, and the undo's abort could then fail. A hook
+    // git runs part way through each, once the merge is made and before it is committed, and
+    // once the rebase has checked out what it goes onto, says it is there, and is slow to end.
+    [Test]
+    [Arguments("false", "pre-merge-commit")]
+    [Arguments("true", "post-checkout")]
+    public async Task CancellingAPullOnceFetchedLeavesItsMergeOrRebaseToItsEnd(string pullRebase, string hook)
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        PushTheirs(code, "theirs.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, "ours.txt"), "ours");
+        Scratch.Git(repo, "add", "ours.txt");
+        Scratch.Git(repo, "commit", "-m", "Ours");
+        Scratch.Git(repo, "config", "pull.rebase", pullRebase);
+        var reached = code.At("reached");
+        var hooks = Directory.CreateDirectory(Path.Combine(repo, ".git", "hooks")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(hooks, hook), $"#!/bin/sh\ntouch '{ForShell(reached)}'\nsleep 3\n");
+        using var cancel = new CancelSource();
+
+        var pulling = CodeCommands.Pull([repo], cancel: cancel.Token);
+        await Until(() => File.Exists(reached));
+        cancel.Cancel();
+        var result = (await pulling.WaitAsync(TimeSpan.FromSeconds(30))).Single();
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(CodeCommands.Unfinished(repo)).IsNull();
+        await Assert.That(File.Exists(Path.Combine(repo, ".git", "index.lock"))).IsFalse();
+        await Assert.That(Scratch.Git(repo, "branch", "--show-current")).IsEqualTo("main");
+        await Assert.That(Scratch.Git(repo, "merge-base", "--is-ancestor", "origin/main", "HEAD")).IsEqualTo("");
+        await Assert.That(Scratch.Git(repo, "log", "-1", "--format=%s", "--", "ours.txt")).IsEqualTo("Ours");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
+    // Each of the settings git pull reads, alone and together, gives what git pull itself
+    // gives, from the same start, in a clone of the same origin: merging, rebasing, keeping the
+    // branch's merges or not, fast-forwarding only or never, the branch's own setting winning
+    // over pull's, setting aside what is uncommitted or refusing it, refusing a value git
+    // doesn't know, and saying why where there is nothing to pull. The same commits, by their
+    // subjects, in the same shape, the same files, and git's own refusal, where it refuses. Both
+    // are without the system's config, where Git for Windows sets pull.rebase, so that with
+    // nothing set, a branch that has diverged is refused, as git refuses it.
+    [Test]
+    [Arguments("diverged", "")]
+    [Arguments("behind", "")]
+    [Arguments("ahead", "")]
+    [Arguments("diverged", "pull.rebase=false")]
+    [Arguments("diverged", "pull.rebase=true")]
+    [Arguments("diverged", "pull.rebase=interactive")]
+    [Arguments("diverged", "pull.rebase=preserve")]
+    [Arguments("diverged", "pull.ff=only")]
+    [Arguments("diverged", "pull.ff=bogus")]
+    [Arguments("diverged", "pull.rebase=true pull.ff=only")]
+    [Arguments("diverged", "pull.rebase=false branch.main.rebase=true")]
+    [Arguments("diverged", "pull.rebase=true branch.main.rebase=false")]
+    [Arguments("merged", "pull.rebase=true")]
+    [Arguments("merged", "pull.rebase=merges")]
+    [Arguments("behind", "pull.rebase=false")]
+    [Arguments("behind", "pull.rebase=true")]
+    [Arguments("behind", "pull.ff=only")]
+    [Arguments("behind", "pull.ff=false")]
+    [Arguments("ahead", "pull.rebase=false")]
+    [Arguments("ahead", "pull.rebase=true")]
+    [Arguments("dirty", "pull.rebase=false")]
+    [Arguments("dirty", "pull.rebase=true")]
+    [Arguments("dirty", "pull.rebase=true rebase.autoStash=true")]
+    [Arguments("staged", "pull.rebase=true")]
+    [Arguments("detached", "pull.rebase=false")]
+    [Arguments("tracking none", "pull.rebase=true")]
+    public async Task PullDoesWhatGitPullDoes(string start, string settings)
+    {
+        using var code = new Scratch();
+        code.CreateRepo("Repo");
+        var byGit = code.Clone("Repo", "ByGit");
+        var byLode = code.Clone("Repo", "ByLode");
+        if (start != "ahead")
+        {
+            PushTheirs(code, "theirs.txt");
+        }
+
+        foreach (var clone in (string[]) [byGit, byLode])
+        {
+            await Start(clone, start);
+            foreach (var setting in settings.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var equals = setting.IndexOf('=');
+                Scratch.Git(clone, "config", setting[..equals], setting[(equals + 1)..]);
+            }
+        }
+
+        var noSystem = new Dictionary<string, string>
+        {
+            ["GIT_CONFIG_NOSYSTEM"] = "1"
+        };
+        var git = await Task.Run(() => CodeCommands.GitToItsEnd(byGit, Cancel.None, noSystem, "pull"));
+        var lode = await Task.Run(() => GitPull.Run(byLode, Cancel.None, noSystem));
+
+        await Assert.That(lode.Succeeded).IsEqualTo(git.Succeeded);
+        await Assert.That(Shape(byLode)).IsEqualTo(Shape(byGit));
+        await Assert.That(Scratch.Git(byLode, "rev-parse", "HEAD^{tree}")).IsEqualTo(Scratch.Git(byGit, "rev-parse", "HEAD^{tree}"));
+        await Assert.That(Scratch.Git(byLode, "status", "--porcelain")).IsEqualTo(Scratch.Git(byGit, "status", "--porcelain"));
+        await Assert.That(CodeCommands.Unfinished(byLode)).IsEqualTo(CodeCommands.Unfinished(byGit));
+        foreach (var refusal in git.Output.Split('\n').Where(_ => _.StartsWith("fatal:", StringComparison.Ordinal) || _.StartsWith("error:", StringComparison.Ordinal)))
+        {
+            await Assert.That(lode.Output).Contains(refusal.Trim());
+        }
+
+        // The branch's commits, by subject, as a graph, so a merge kept shows as one, and the
+        // branch checked out.
+        static string Shape(string repo) =>
+            $"{Scratch.Git(repo, "branch", "--show-current")}\n{Scratch.Git(repo, "log", "--graph", "--format=%s")}";
+    }
+
+    // Where the branch is as a pull begins: with a commit of its own, as origin has one, or one
+    // of its own merged in from a branch of its own, or none, behind; or ahead, origin having
+    // nothing new; or with a change not staged, or one staged, and a commit of its own; or on no
+    // branch; or on one tracking none.
+    static async Task Start(string clone, string start)
+    {
+        if (start != "behind")
+        {
+            await File.WriteAllTextAsync(Path.Combine(clone, "ours.txt"), "ours");
+            Scratch.Git(clone, "add", "ours.txt");
+            Scratch.Git(clone, "commit", "-m", "Ours");
+        }
+
+        switch (start)
+        {
+            case "merged":
+                Scratch.Git(clone, "switch", "-c", "side", "HEAD~1");
+                await File.WriteAllTextAsync(Path.Combine(clone, "side.txt"), "side");
+                Scratch.Git(clone, "add", "side.txt");
+                Scratch.Git(clone, "commit", "-m", "Side");
+                Scratch.Git(clone, "switch", "main");
+                Scratch.Git(clone, "merge", "--no-ff", "-m", "Merge side", "side");
+                break;
+            case "dirty":
+                await File.WriteAllTextAsync(Path.Combine(clone, "tracked.txt"), "uncommitted");
+                break;
+            case "staged":
+                await File.WriteAllTextAsync(Path.Combine(clone, "tracked.txt"), "staged");
+                Scratch.Git(clone, "add", "tracked.txt");
+                break;
+            case "detached":
+                Scratch.Git(clone, "switch", "--detach");
+                break;
+            case "tracking none":
+                Scratch.Git(clone, "switch", "-c", "local");
+                break;
+        }
+    }
+
+    // Origin given a commit the repository hasn't got, from another clone, adding a file.
+    static void PushTheirs(Scratch code, string file)
+    {
+        var other = code.Clone("Repo", $"Other{Guid.NewGuid():N}");
+        File.WriteAllText(Path.Combine(other, file), "theirs");
+        Scratch.Git(other, "add", file);
+        Scratch.Git(other, "commit", "-m", "Theirs");
+        Scratch.Git(other, "push");
+    }
+
+    // A path as sh takes it, its slashes forward.
+    static string ForShell(string path) =>
+        path.Replace('\\', '/');
+
+    static async Task Until(Func<bool> condition)
+    {
+        var started = Stopwatch.StartNew();
+        while (!condition())
+        {
+            if (started.Elapsed > TimeSpan.FromSeconds(30))
+            {
+                throw new("Never came");
+            }
+
+            await Task.Delay(20);
+        }
+    }
+
     // Push refusing files in conflict says what to do about the merge they are from.
     [Test]
     public async Task PushSaysHowToSettleAMerge()
