@@ -13,7 +13,14 @@ static class GitRun
     // Leaves out what another test may have put in this process's environment for its own git.
     static readonly string[] leftOut = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"];
 
-    public static Result Run(string directory, IReadOnlyDictionary<string, string>? environment, byte[]? input, params string[] arguments)
+    public static Result Run(string directory, IReadOnlyDictionary<string, string>? environment, byte[]? input, params string[] arguments) =>
+        RunWithout(directory, [], environment, input, arguments);
+
+    /// <summary>
+    /// Run with none of the variables <paramref name="unset"/> names, as where they aren't set,
+    /// then those <paramref name="environment"/> gives.
+    /// </summary>
+    public static Result RunWithout(string directory, IReadOnlyCollection<string> unset, IReadOnlyDictionary<string, string>? environment, byte[]? input, params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("git")
         {
@@ -31,7 +38,7 @@ static class GitRun
             startInfo.ArgumentList.Add(argument);
         }
 
-        foreach (var name in leftOut)
+        foreach (var name in leftOut.Concat(unset))
         {
             startInfo.Environment.Remove(name);
         }

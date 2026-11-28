@@ -9,8 +9,9 @@ sealed class GitConfig
     readonly List<(string Key, string? Value, bool Local)> entries = [];
 
     /// <summary>
-    /// Whether an include was conditional on what isn't read here, hasconfig: say, so the config
-    /// may not be what git would have.
+    /// Whether the config may not be what git would have: an include was conditional on what
+    /// isn't read here, hasconfig: say, or HOME is set to nothing, so where git reads the user's
+    /// config isn't known.
     /// </summary>
     public bool Uncertain { get; private set; }
 
@@ -327,21 +328,59 @@ sealed class GitConfig
     }
 
     /// <summary>
-    /// The user's home, as git takes it: HOME where set, otherwise their profile.
+    /// The user's home, as Git for Windows works it out: see <see cref="FindHome"/>. Worked out
+    /// each time, as git works it out each time it starts, so a home share connected since is
+    /// found.
     /// </summary>
     public static string Home =>
-        Environment.GetEnvironmentVariable("HOME") ??
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        FindHome(Environment.GetEnvironmentVariable, Directory.Exists, Environment.SystemDirectory);
+
+    /// <summary>
+    /// The user's home as Git for Windows works it out as it starts: HOME where it is set, even
+    /// to nothing; otherwise HOMEDRIVE and HOMEPATH together, where that is a folder, as a home
+    /// share that isn't connected isn't, and isn't System32, as a service's is; otherwise their
+    /// profile. Taking the profile where HOME wasn't set, on a machine with a home share git read
+    /// H:\.gitconfig and this the profile's, so a core.autocrlf or core.excludesFile there was
+    /// another. Empty where HOME is set to nothing: see <see cref="Uncertain"/>.
+    /// </summary>
+    /// <param name="systemDirectory">System32, as Windows names it, which git compares the home
+    /// share with as it is, whatever the case.</param>
+    internal static string FindHome(Func<string, string?> environment, Func<string, bool> isFolder, string systemDirectory)
+    {
+        if (environment("HOME") is { } home)
+        {
+            return home;
+        }
+
+        if (environment("HOMEDRIVE") is { } drive &&
+            environment("HOMEPATH") is { } path)
+        {
+            var share = drive + path;
+            if (!share.Equals(systemDirectory, StringComparison.OrdinalIgnoreCase) &&
+                isFolder(share))
+            {
+                return share;
+            }
+        }
+
+        // Where Windows gives no profile either, git has no home, and reads no config of the
+        // user's; Windows always gives one, so its own answer is as good.
+        return environment("USERPROFILE") ??
+               Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
 
     /// <summary>
     /// Where git looks for a file of the user's own in the XDG way: git/ignore, git/attributes.
     /// </summary>
-    public static string XdgPath(string name)
+    public static string XdgPath(string name) =>
+        XdgPath(name, Home, Environment.GetEnvironmentVariable);
+
+    static string XdgPath(string name, string home, Func<string, string?> environment)
     {
-        var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+        var xdg = environment("XDG_CONFIG_HOME");
         if (string.IsNullOrEmpty(xdg))
         {
-            xdg = Path.Combine(Home, ".config");
+            xdg = Path.Combine(home, ".config");
         }
 
         return Path.Combine(xdg, "git", name);
@@ -406,10 +445,16 @@ sealed class GitConfig
         {
             config.ReadFile(global, false, context, 0);
         }
+        else if (FindHome(environment, Directory.Exists, Environment.SystemDirectory) is { Length: > 0 } home)
+        {
+            config.ReadFile(XdgPath("config", home, environment), false, context, 0);
+            config.ReadFile(Path.Combine(home, ".gitconfig"), false, context, 0);
+        }
         else
         {
-            config.ReadFile(XdgPath("config"), false, context, 0);
-            config.ReadFile(Path.Combine(Home, ".gitconfig"), false, context, 0);
+            // HOME set to nothing, git reads /.gitconfig, at the top of whichever drive it is run
+            // in, which isn't known here.
+            config.Uncertain = true;
         }
 
         config.ReadFile(Path.Combine(commonDir, "config"), true, context, 0);

@@ -74,6 +74,7 @@ flowchart TD
 
 In process, the reader:
 
+- reads the config as git does: the system's, the user's, in their home as Git for Windows finds it (`HOME`, else `HOMEDRIVE` and `HOMEPATH` where that folder is there, a home share connected say, else the profile), the repository's, and what each includes
 - compares HEAD's tree with the index a folder at a time, passing over each folder whose tree the index's cache tree says is HEAD's, which is usually all of them
 - lists each folder the index has files in, once. The listing gives each file's size and times without opening it, as git for Windows' fscache does. A repository of 500 folders or more has them listed on four threads. One that can't be listed ahead, a file now where it was say, is listed when it is reached, as where there are fewer.
 - hashes only a file whose times aren't those staged, its line endings converted as `core.autocrlf` and `.gitattributes` say, as git would stage it
@@ -91,6 +92,7 @@ It leaves to git a repository with:
 - `core.fileMode` on, or not set, which git takes as on: git for Windows' `git init` sets it off, but a repository made otherwise may leave it out
 - `status.renames`, or `diff.renames` where git status takes it, set to `copies` or `copy`, with a file added that could be a copy, or set to what git refuses
 - a config include on a condition other than `gitdir:` and `onbranch:`
+- `HOME` set to nothing, which has git read the user's config from the top of whichever drive it is run in
 - a folder it can't list, in use or denied by its ACL, where git, unless its `core.fscache` lists the folder too, opens each file by its path and finds it there, or a file deleted between being listed and being hashed
 
 `git status` runs with `--no-optional-locks`, so it never takes the index lock, and a commit made at the same time doesn't fail on it. `--ignore-submodules=dirty` leaves out what is uncommitted inside a submodule; in process, a submodule's commit is all that is compared too.

@@ -63,7 +63,7 @@ sealed class GitRepository : IDisposable
         Config = GitConfig.Read(gitDir, commonDir, Branch);
         if (Config.Uncertain)
         {
-            throw new GitFilesException("The config includes a file on a condition only git can tell");
+            throw new GitFilesException("The config is read where only git can tell, or includes a file on a condition only git can tell");
         }
 
         CheckFormat();

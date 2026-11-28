@@ -424,6 +424,97 @@ public class GitConfigTests
         await Assert.That(GitConfig.SystemAttributes).IsEqualTo(Path.Combine(Path.GetDirectoryName(file)!, "gitattributes"));
     }
 
+    // The home folder as Git for Windows works it out, git itself the oracle, told the same, as
+    // git var says where it reads the user's config: HOME where set, even to nothing; where it
+    // isn't, HOMEDRIVE and HOMEPATH together where that is a folder, a home share connected say,
+    // and isn't System32, as a service's is; otherwise the profile. The user's config is read
+    // from there, as git reads it, but for HOME set to nothing, which has git read /.gitconfig
+    // at the top of the drive it is run in, so the repository is left to git.
+    [Test]
+    public async Task FindsTheHomeAsGitForWindowsDoes()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var home = scratch.At("home");
+        var share = scratch.At("share");
+        var profile = scratch.At("profile");
+        foreach (var folder in new[] { home, share, profile })
+        {
+            Directory.CreateDirectory(folder);
+            await File.WriteAllTextAsync(Path.Combine(folder, ".gitconfig"), $"[home]\n\tis = {Path.GetFileName(folder)}\n");
+        }
+
+        var system = System.Environment.SystemDirectory;
+        var drive = share[..2];
+        var cases = new Dictionary<string, Dictionary<string, string>>
+        {
+            ["HOME"] = new()
+            {
+                ["HOME"] = home,
+                ["HOMEDRIVE"] = drive,
+                ["HOMEPATH"] = share[2..],
+                ["USERPROFILE"] = profile
+            },
+            ["the home share"] = new()
+            {
+                ["HOMEDRIVE"] = drive,
+                ["HOMEPATH"] = share[2..],
+                ["USERPROFILE"] = profile
+            },
+            ["a home share not there"] = new()
+            {
+                ["HOMEDRIVE"] = drive,
+                ["HOMEPATH"] = scratch.At("disconnected")[2..],
+                ["USERPROFILE"] = profile
+            },
+            ["System32"] = new()
+            {
+                ["HOMEDRIVE"] = system[..2],
+                ["HOMEPATH"] = system[2..],
+                ["USERPROFILE"] = profile
+            },
+            ["a drive alone"] = new()
+            {
+                ["HOMEDRIVE"] = drive,
+                ["USERPROFILE"] = profile
+            },
+            ["the profile alone"] = new()
+            {
+                ["USERPROFILE"] = profile
+            },
+            ["HOME set to nothing"] = new()
+            {
+                ["HOME"] = "",
+                ["HOMEDRIVE"] = drive,
+                ["HOMEPATH"] = share[2..],
+                ["USERPROFILE"] = profile
+            }
+        };
+
+        string[] unset = ["HOME", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"];
+        foreach (var (name, environment) in cases)
+        {
+            environment["GIT_CONFIG_NOSYSTEM"] = "1";
+            var said = GitRun.RunWithout(repo, unset, environment, null, "var", "GIT_CONFIG_GLOBAL");
+            var user = said.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last();
+            var gits = user[..^"/.gitconfig".Length];
+            var gitsIs = GitRun.RunWithout(repo, unset, environment, null, "config", "home.is").Output.Trim();
+
+            var found = GitConfig.FindHome(environment.GetValueOrDefault, Directory.Exists, system);
+            var config = Read(repo, environment);
+
+            await Assert.That((name, found.Replace('\\', '/'))).IsEqualTo((name, gits));
+            if (found.Length == 0)
+            {
+                await Assert.That((name, config.Uncertain)).IsEqualTo((name, true));
+                continue;
+            }
+
+            await Assert.That((name, config.Get("home.is"))).IsEqualTo((name, gitsIs));
+            await Assert.That((name, config.Uncertain)).IsEqualTo((name, false));
+        }
+    }
+
     // ~ is the home folder, by itself or before a slash either way; nothing else is expanded.
     [Test]
     public async Task ExpandsTheHomeFolder()
