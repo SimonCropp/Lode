@@ -395,11 +395,15 @@ sealed class WorkingTree
         }
     }
 
+    // A folder Lode is denied listing throws, as one in use does, rather than listing nothing,
+    // which had every file tracked in it deleted: git with core.fscache off opens each file by
+    // its path, which an ACL on the folder doesn't stop, and finds them as they were, and only
+    // with it on lists the folder, as Lode does, and finds them gone.
     static readonly EnumerationOptions listing = new()
     {
         RecurseSubdirectories = false,
         AttributesToSkip = 0,
-        IgnoreInaccessible = true,
+        IgnoreInaccessible = false,
         ReturnSpecialDirectories = false,
         BufferSize = 16 * 1024
     };
@@ -408,7 +412,7 @@ sealed class WorkingTree
     // link is a file, as git for Windows has one, not a folder to go into; a junction, or any
     // other reparse point, is what its attributes say, as git for Windows takes those. None
     // for a folder since gone, listed ahead and deleted before it is looked at; one that can't be
-    // listed is left to git.
+    // listed, in use or denied, is left to git.
     static List<DiskEntry> List(string folder)
     {
         try

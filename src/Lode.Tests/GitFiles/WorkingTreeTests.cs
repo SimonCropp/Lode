@@ -71,6 +71,74 @@ public class WorkingTreeTests
         await GitRun.LeftToGit(repo);
     }
 
+    // A tracked folder Lode isn't allowed to list, as an ACL denies it: left to git, rather than
+    // read as empty, which had every file in it deleted. Without git for Windows' fscache, git
+    // opens each file by its path, and finds nothing changed; with it, it lists the folder as
+    // Lode does, and finds the files gone. Over 500 folders it is listed ahead, on threads, and
+    // then again when it is reached, as one that couldn't be listed ahead is.
+    [Test]
+    [Arguments(false, false)]
+    [Arguments(false, true)]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    public async Task LeavesAFolderItIsDeniedToGit(bool manyFolders, bool fscache)
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        string repo;
+        string folder;
+        if (manyFolders)
+        {
+            repo = await ManyFolders(scratch);
+            folder = Path.Combine(repo, "f7", "g190");
+        }
+        else
+        {
+            repo = scratch.CreateRepo("Repo");
+            folder = Path.Combine(repo, "kept");
+            Directory.CreateDirectory(folder);
+            await File.WriteAllTextAsync(Path.Combine(folder, "file.txt"), "kept");
+            Git(repo, "add", ".");
+            Git(repo, "commit", "-q", "-m", "Kept");
+        }
+
+        Git(repo, "config", "core.fscache", fscache ? "true" : "false");
+        using var denied = new DeniedListing(folder);
+        await Assert.That(() => Directory.EnumerateFileSystemEntries(folder).Any()).Throws<UnauthorizedAccessException>();
+
+        await GitRun.LeftToGit(repo);
+        if (!fscache)
+        {
+            await Assert.That(GitState.FromGit(repo, Cancel.None)!.Files).IsEmpty();
+        }
+    }
+
+    // A folder the user running the tests is denied listing, by an ACL of its own on it alone,
+    // taken off again once disposed, so the folder can be deleted.
+    sealed class DeniedListing : IDisposable
+    {
+        readonly DirectoryInfo folder;
+        readonly System.Security.AccessControl.FileSystemAccessRule rule;
+
+        public DeniedListing(string path)
+        {
+            folder = new(path);
+            rule = new(
+                System.Security.Principal.WindowsIdentity.GetCurrent().User!,
+                System.Security.AccessControl.FileSystemRights.ListDirectory,
+                System.Security.AccessControl.AccessControlType.Deny);
+            var security = folder.GetAccessControl();
+            security.AddAccessRule(rule);
+            folder.SetAccessControl(security);
+        }
+
+        public void Dispose()
+        {
+            var security = folder.GetAccessControl();
+            security.RemoveAccessRule(rule);
+            folder.SetAccessControl(security);
+        }
+    }
+
     // A folder opened to list, as nobody else may open it while it is: listing it fails, as in
     // use. Opened only for its attributes, it would let anyone.
     static Microsoft.Win32.SafeHandles.SafeFileHandle HeldAlone(string folder)

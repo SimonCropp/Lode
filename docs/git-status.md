@@ -89,7 +89,7 @@ It leaves to git a repository with:
 - objects replaced, or grafts
 - `core.fileMode` on, or `status.renames` set to copies
 - a config include on a condition other than `gitdir:` and `onbranch:`
-- a folder it isn't allowed to list, or a file deleted between being listed and being hashed
+- a folder it can't list, in use or denied by its ACL, where git, unless its `core.fscache` lists the folder too, opens each file by its path and finds it there, or a file deleted between being listed and being hashed
 
 `git status` runs with `--no-optional-locks`, so it never takes the index lock, and a commit made at the same time doesn't fail on it. `--ignore-submodules=dirty` leaves out what is uncommitted inside a submodule; in process, a submodule's commit is all that is compared too.
 
