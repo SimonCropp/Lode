@@ -245,13 +245,7 @@ class MainForm : Form
             return active;
         }
 
-        var view = lastView;
-        if (view == null ||
-            !Views.Contains(view))
-        {
-            view = Views.MaxBy(_ => _.LastShown);
-        }
-
+        var view = ViewBeforeNoFolder();
         if (view == null)
         {
             return AddTab(path, true);
@@ -262,6 +256,19 @@ class MainForm : Form
         view.Navigate(path);
         Tabs.SelectedTab = (TabPage)view.Parent!;
         return view;
+    }
+
+    // With the Diff tab or Find Results showing, the folder's tab that showed before it: or,
+    // that tab closed since, the folder's tab looked at last. None with no folder's tab left.
+    FolderView? ViewBeforeNoFolder()
+    {
+        if (lastView != null &&
+            Views.Contains(lastView))
+        {
+            return lastView;
+        }
+
+        return Views.MaxBy(_ => _.LastShown);
     }
 
     Control BuildContent()
@@ -1205,7 +1212,8 @@ class MainForm : Form
     /// With closing unused tabs on, in Options, closes the tabs nobody has looked at for the hours
     /// it gives: those that have not, for that long, been the tab showing in a window that is
     /// itself showing, rather than minimized or in the tray. Never the tab the window shows, or
-    /// shows again when it comes back, so never the last one. The tab looked at longest ago
+    /// shows again when it comes back, so never the last one; with the Diff tab or Find Results
+    /// showing, never the folder's tab that showed before it. The tab looked at longest ago
     /// closes first, so Reopen closed tab brings back the most recent first.
     /// </summary>
     internal void CloseUnusedTabs()
@@ -1219,10 +1227,14 @@ class MainForm : Form
         // every tab the moment it stopped showing.
         var limit = TimeSpan.FromHours(Math.Max(1, settings.UnusedTabHours));
         var now = Time.GetUtcNow();
-        var active = ActiveView;
+
+        // The Diff tab and Find Results have no folder, and no folder's tab is marked showing
+        // while one of them is, so the one the tree would go to stays: else, left showing for the
+        // hours given, every folder's tab would close, leaving the window nothing but that tab.
+        var kept = ActiveView ?? ViewBeforeNoFolder();
         CloseTabs(
             Views
-                .Where(_ => _ != active &&
+                .Where(_ => _ != kept &&
                             now - _.LastShown >= limit)
                 .OrderBy(_ => _.LastShown)
                 .Select(_ => (TabPage)_.Parent!));

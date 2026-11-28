@@ -612,6 +612,72 @@ public class WindowsTests
         }
     }
 
+    // With Find Results showing, which has no folder, the folder's tab that showed before it
+    // stays however long ago it was looked at, as the tree goes to it, rather than every folder's
+    // tab closing and leaving Find Results alone in the window. The rest close as they would.
+    [Test]
+    public async Task TheTabBeforeFindResultsStays()
+    {
+        using var fixture = Fixture.Create();
+        var clock = new Clock(new(2026, 11, 19, 9, 0, 0, TimeSpan.Zero));
+        MainForm.Time = clock;
+        try
+        {
+            var settings = new Settings
+            {
+                CloseUnusedTabs = true,
+                UnusedTabHours = 8
+            };
+            using var form = await Show(fixture, settings, fixture.Root, fixture.At("Docs"), fixture.At("Source"));
+
+            // 10:00, Docs looked at, then Find Results opened over it.
+            clock.Now = clock.Now.AddHours(1);
+            var docs = form.Views.ElementAt(1);
+            Pick(docs);
+            await Pump.Loaded(docs);
+            form.FindHost.Open();
+            form.FindHost.Panel.FindBox.Text = "alpha";
+            form.FindHost.Find();
+            await form.FindHost.ResultsView!.Searching;
+
+            // 19:00: every folder's tab 9 hours or more unused.
+            clock.Now = clock.Now.AddHours(9);
+            form.CloseUnusedTabs();
+            var closed = Describe(form);
+
+            form.CloseTab((TabPage)form.FindHost.ResultsView!.Parent!);
+
+            await Verify(
+                new
+                {
+                    closed,
+                    findResultsClosed = Describe(form)
+                })
+                .Snapshot(
+                    """
+                    {
+                      closed: {
+                        title: Find Results,
+                        tabs: [
+                          Docs
+                        ]
+                      },
+                      findResultsClosed: {
+                        title: Docs,
+                        tabs: [
+                          Docs
+                        ],
+                        active: {TempPath}LodeTests\WindowsTests.TheTabBeforeFindResultsStays\Projects\Docs
+                      }
+                    }
+                    """);
+        }
+        finally
+        {
+            MainForm.Time = TimeProvider.System;
+        }
+    }
+
     // When each tab was last looked at is saved with the tabs, so after a restart, an update's
     // say, each is as unused as it was rather than starting the hours again. The tab that was
     // active stays, however long ago it was looked at, and is saved as looked at until the
