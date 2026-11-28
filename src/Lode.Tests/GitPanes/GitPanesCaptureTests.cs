@@ -37,6 +37,18 @@ public class GitPanesCaptureTests
             PaneLayout.Medium,
             arrange: form => form.GitPanes.ChangesPane.ShowDescription(true, focus: false));
 
+    // The co-authors shown, from the button in the description's corner, which shows them on.
+    [Test]
+    public Task ChangesCoAuthors() =>
+        Capture(
+            PaneLayout.Medium,
+            arrange: form =>
+            {
+                var pane = form.GitPanes.ChangesPane;
+                pane.ShowDescription(true, focus: false);
+                pane.ShowCoAuthors(true, focus: false);
+            });
+
     // A merge left part way by conflicts: the bar over the files, each in conflict saying how it
     // is left to settle, the summary as git's message, and Commit merge held back.
     [Test]

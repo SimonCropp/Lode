@@ -1,9 +1,9 @@
 /// <summary>
 /// The Changes pane, laid out as GitHub Desktop's Changes tab: what is uncommitted in the
-/// repository, file by file, each ticked to go in the next commit, and the commit's summary and
-/// description beneath, with Commit to the branch, or, once History's Amend commit asks, Amend
-/// last commit, putting them in place of the last commit. Ticks and what is typed are kept for each
-/// repository while Lode runs, so going to another and back loses neither. Double-click a file to
+/// repository, file by file, each ticked to go in the next commit, and the commit's summary,
+/// description and co-authors beneath, with Commit to the branch, or, once History's Amend
+/// commit asks, Amend last commit, putting them in place of the last commit. Ticks and what is
+/// typed are kept for each repository while Lode runs, so going to another and back loses neither. Double-click a file to
 /// see its changes; right-click to discard them, stash every change, open it, show it in its
 /// folder, copy its path, or have git ignore it. The repository's stashes are under the files, to
 /// restore or discard.
@@ -41,6 +41,38 @@ sealed class ChangesPane : UserControl
     Panel descriptionSpacer = Spacer();
     bool describing;
 
+    // Who else wrote the commit, as GitHub Desktop's co-authors, under the description: hidden
+    // until the button in the description's corner asks for them, or they hold someone.
+    FramedTextBox coAuthorsFrame = new();
+    Panel coAuthorsSpacer = Spacer();
+    bool coAuthoring;
+
+    GlyphButton coAuthorsButton = new()
+    {
+        Dock = DockStyle.Bottom,
+        Height = 24,
+        TabStop = false,
+        Text = Icons.CoAuthor.ToString()
+    };
+
+    // Over the co-authors, as one is typed, the history's authors it matches, to pick from.
+    ListBox suggestionList = new()
+    {
+        Name = "coAuthorSuggestions",
+        Visible = false,
+        TabStop = false,
+        IntegralHeight = false,
+        BorderStyle = BorderStyle.FixedSingle
+    };
+
+    // Who has committed to the repository lately, read once the co-authors show, and those of
+    // them suggested, for the text from Start to End.
+    IReadOnlyList<CoAuthors.Author> authors = [];
+    bool authorsRead;
+    IReadOnlyList<CoAuthors.Author> suggestions = [];
+    (int Start, int End) suggestingFor;
+    bool picking;
+
     // Amending, as GitHub Desktop's notice has it above the button: the commit goes in place of
     // the last, with a link back to a new one.
     LinkLabel amendNotice = new()
@@ -57,6 +89,9 @@ sealed class ChangesPane : UserControl
     Panel amendSpacer = Spacer();
     bool amendShown;
     AccentButton commitButton = new();
+
+    // What the commit area holds, top to bottom.
+    Control[] commitParts;
     ToolTip tip = new();
 
     // Part way through a merge, as GitHub Desktop's banner has it: what is being merged, how many
@@ -286,6 +321,33 @@ sealed class ChangesPane : UserControl
         descriptionFrame.Box.AccessibleName = "Description";
         descriptionFrame.Box.TextChanged += (_, _) => OnDescriptionTyped();
         ShowDescriptionTip();
+
+        // The button in the description's corner, as Desktop has its, the text beside it.
+        var coAuthorsCorner = new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 24,
+            BackColor = ExplorerStyle.Window
+        };
+        coAuthorsCorner.Controls.Add(coAuthorsButton);
+        descriptionFrame.Controls.Add(coAuthorsCorner);
+        coAuthorsButton.Click += (_, _) => ToggleCoAuthors();
+        ShowCoAuthorsTip();
+        coAuthorsFrame.Dock = DockStyle.Top;
+        coAuthorsFrame.Desktop = true;
+        coAuthorsFrame.Visible = false;
+        coAuthorsSpacer.Visible = false;
+        coAuthorsFrame.Box.PlaceholderText = "Co-authors: Name <email>, …";
+        coAuthorsFrame.Box.AccessibleName = "Co-authors";
+        coAuthorsFrame.Box.TextChanged += (_, _) => OnCoAuthorsTyped();
+        coAuthorsFrame.Box.GotFocus += (_, _) => ShowCoAuthorsValid();
+        coAuthorsFrame.Box.LostFocus += (_, _) => AfterCoAuthorsLeft();
+        tip.SetToolTip(coAuthorsFrame.Box, "Who else wrote the commit, each as Name <email>, apart by commas: type a name to pick one who has committed here");
+        suggestionList.BackColor = ExplorerStyle.Window;
+        suggestionList.ForeColor = DesktopStyle.Text;
+        suggestionList.AccessibleName = "Suggested co-authors";
+        suggestionList.MouseClick += (_, args) => PickSuggestion(suggestionList.IndexFromPoint(args.Location));
+        suggestionList.LostFocus += (_, _) => AfterCoAuthorsLeft();
         commitButton.Dock = DockStyle.Top;
         commitButton.Height = 28;
         commitButton.Click += (_, _) => Commit();
@@ -307,13 +369,11 @@ sealed class ChangesPane : UserControl
         amendSpacer.Visible = false;
 
         // Docked from the last added: so the summary is at the top, the button at the bottom.
-        commitArea.Controls.Add(commitButton);
-        commitArea.Controls.Add(amendSpacer);
-        commitArea.Controls.Add(amendNotice);
-        commitArea.Controls.Add(Spacer());
-        commitArea.Controls.Add(descriptionFrame);
-        commitArea.Controls.Add(descriptionSpacer);
-        commitArea.Controls.Add(summaryRow);
+        commitParts = [summaryRow, descriptionSpacer, descriptionFrame, coAuthorsSpacer, coAuthorsFrame, Spacer(), amendNotice, amendSpacer, commitButton];
+        for (var index = commitParts.Length - 1; index >= 0; index--)
+        {
+            commitArea.Controls.Add(commitParts[index]);
+        }
 
         mergeBar.Padding = new(inset, 6, inset, 6);
         mergeBar.BackColor = DesktopStyle.AltBackground;
@@ -336,7 +396,9 @@ sealed class ChangesPane : UserControl
         stashList.DiscardRequested += DiscardStash;
 
         // The list fills what the rest leave, or, with nothing uncommitted, what says so; the
-        // stashes under it, over the commit.
+        // stashes under it, over the commit. The co-authors' suggestions, docked nowhere, go in
+        // front of them all.
+        Controls.Add(suggestionList);
         Controls.Add(noChanges);
         Controls.Add(list);
         Controls.Add(stashList);
@@ -441,6 +503,7 @@ sealed class ChangesPane : UserControl
             describing = show;
             descriptionFrame.Visible = show;
             descriptionSpacer.Visible = show;
+            KeepCommitOrder();
             describeButton.Checked = show;
             ShowDescriptionTip();
             PerformLayout();
@@ -489,12 +552,344 @@ sealed class ChangesPane : UserControl
         tip.SetToolTip(describeButton, describeButton.AccessibleDescription);
     }
 
+    /// <summary>
+    /// Whether the co-authors show. For tests.
+    /// </summary>
+    internal bool CoAuthoring => coAuthoring;
+
+    internal GlyphButton CoAuthorsButton => coAuthorsButton;
+
+    internal TextBox CoAuthorsBox => coAuthorsFrame.Box;
+
+    /// <summary>
+    /// The authors suggested for what is being typed in the co-authors, none while the list of
+    /// them is hidden. For tests.
+    /// </summary>
+    internal IReadOnlyList<string> Suggestions
+    {
+        get
+        {
+            if (!suggestionList.Visible)
+            {
+                return [];
+            }
+
+            return suggestions
+                .Select(_ => _.Text)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// The suggestion picked, Enter or a click to take it. For tests.
+    /// </summary>
+    internal int SuggestionPicked => suggestionList.SelectedIndex;
+
+    internal ListBox SuggestionList => suggestionList;
+
+    /// <summary>
+    /// The history's authors being read, for tests to wait on.
+    /// </summary>
+    internal Task ReadingAuthors { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Reads who has committed to the repository lately, to suggest as co-authors. Tests answer
+    /// for git.
+    /// </summary>
+    internal static Func<string, Cancel, IReadOnlyList<CoAuthors.Author>> ReadAuthors { get; set; } = CoAuthors.Read;
+
+    // The button in the description's corner: the co-authors shown, with the focus in them, or,
+    // shown and empty, put away again. Shown with someone in them, the button only puts the
+    // focus there: hidden, they would go into the commit unseen.
+    void ToggleCoAuthors()
+    {
+        if (coAuthoring &&
+            coAuthorsFrame.Box.TextLength == 0)
+        {
+            ShowCoAuthors(false);
+            return;
+        }
+
+        ShowCoAuthors(true);
+    }
+
+    /// <summary>
+    /// Shows the co-authors, the focus going into them when <paramref name="focus"/>, and the
+    /// history's authors read to suggest, or hides them, the focus going back to the description,
+    /// or the summary, if it was in them.
+    /// </summary>
+    internal void ShowCoAuthors(bool show, bool focus = true)
+    {
+        if (coAuthoring != show)
+        {
+            var focused = coAuthorsFrame.ContainsFocus;
+            coAuthoring = show;
+            coAuthorsFrame.Visible = show;
+            coAuthorsSpacer.Visible = show;
+            KeepCommitOrder();
+            coAuthorsButton.Checked = show;
+            ShowCoAuthorsTip();
+            if (!show)
+            {
+                HideSuggestions();
+            }
+
+            PerformLayout();
+            if (!show &&
+                focused)
+            {
+                if (describing)
+                {
+                    descriptionFrame.Box.Focus();
+                }
+                else
+                {
+                    summaryFrame.Box.Focus();
+                }
+            }
+        }
+
+        if (!show)
+        {
+            return;
+        }
+
+        ReadAuthorsOnce();
+        if (focus)
+        {
+            coAuthorsFrame.Box.Focus();
+        }
+    }
+
+    // Typed into, or filled from the draft: shown whenever they hold someone, and, typed, the
+    // history's authors what is being typed matches suggested.
+    void OnCoAuthorsTyped()
+    {
+        if (coAuthorsFrame.Box.TextLength > 0)
+        {
+            ShowCoAuthors(true, focus: false);
+        }
+
+        ShowCoAuthorsTip();
+        ShowCoAuthorsValid();
+        if (!loadingDraft &&
+            !picking &&
+            coAuthorsFrame.Box.Focused)
+        {
+            Suggest();
+        }
+        else
+        {
+            HideSuggestions();
+        }
+
+        OnTyped();
+    }
+
+    void ShowCoAuthorsTip()
+    {
+        coAuthorsButton.AccessibleName = "Add co-authors";
+        coAuthorsButton.AccessibleDescription = "Add co-authors";
+        if (coAuthoring &&
+            coAuthorsFrame.Box.TextLength == 0)
+        {
+            coAuthorsButton.AccessibleName = "Hide the co-authors";
+            coAuthorsButton.AccessibleDescription = "Hide the co-authors (Esc)";
+        }
+        else if (coAuthoring)
+        {
+            coAuthorsButton.AccessibleName = "Co-authors";
+            coAuthorsButton.AccessibleDescription = "The co-authors go in the commit: clear them to hide them";
+        }
+
+        tip.SetToolTip(coAuthorsButton, coAuthorsButton.AccessibleDescription);
+    }
+
+    // Someone typed who isn't Name <email>, once the focus has gone elsewhere, in red, as Commit
+    // waits for them to be, rather than leave them out.
+    void ShowCoAuthorsValid()
+    {
+        var box = coAuthorsFrame.Box;
+        if (!box.Focused &&
+            CoAuthors.Parse(box.Text) == null)
+        {
+            box.ForeColor = DesktopStyle.StatusColor(GitChange.Deleted);
+            return;
+        }
+
+        // Back to the box's own colour.
+        box.ForeColor = Color.Empty;
+    }
+
+    // The focus gone from the co-authors, or the suggestions: once it has landed, and not on
+    // either, the suggestions go, as a menu would.
+    void AfterCoAuthorsLeft()
+    {
+        if (!IsHandleCreated ||
+            IsDisposed ||
+            Disposing)
+        {
+            return;
+        }
+
+        BeginInvoke(
+            () =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (!coAuthorsFrame.Box.Focused &&
+                    !suggestionList.Focused)
+                {
+                    HideSuggestions();
+                }
+
+                ShowCoAuthorsValid();
+            });
+    }
+
+    // The history's authors, read off the UI thread, as History reads, once the co-authors show
+    // in the repository bound.
+    void ReadAuthorsOnce()
+    {
+        if (authorsRead ||
+            repo is not { } reading)
+        {
+            return;
+        }
+
+        authorsRead = true;
+        ReadingAuthors = ReadAuthorsAsync(reading);
+    }
+
+    async Task ReadAuthorsAsync(string reading)
+    {
+        var read = await Task.Run(() => ReadAuthors(reading, Cancel.None));
+        if (IsDisposed ||
+            !SameRepo(repo, reading))
+        {
+            return;
+        }
+
+        authors = read;
+        if (coAuthorsFrame.Box.Focused)
+        {
+            Suggest();
+        }
+    }
+
+    // The history's authors that what is being typed at the caret matches, over the co-authors,
+    // the first picked, for Enter to take.
+    void Suggest()
+    {
+        var box = coAuthorsFrame.Box;
+        var (start, end, matches) = CoAuthors.Suggest(authors, box.Text, box.SelectionStart);
+        suggestingFor = (start, end);
+        suggestions = matches;
+        if (matches.Count == 0)
+        {
+            HideSuggestions();
+            return;
+        }
+
+        suggestionList.BeginUpdate();
+        suggestionList.Items.Clear();
+        foreach (var author in matches)
+        {
+            suggestionList.Items.Add(author.Text);
+        }
+
+        suggestionList.SelectedIndex = 0;
+        suggestionList.EndUpdate();
+        suggestionList.Visible = true;
+        suggestionList.BringToFront();
+        PlaceSuggestions();
+    }
+
+    void HideSuggestions()
+    {
+        suggestionList.Visible = false;
+        suggestions = [];
+    }
+
+    // Over the co-authors, as wide, and as tall as its rows, up to the foot of the header.
+    void PlaceSuggestions()
+    {
+        if (!suggestionList.Visible)
+        {
+            return;
+        }
+
+        var location = Point.Empty;
+        for (Control? control = coAuthorsFrame; control != null && control != this; control = control.Parent)
+        {
+            location.Offset(control.Location);
+        }
+
+        var border = suggestionList.Height - suggestionList.ClientSize.Height;
+        var height = suggestionList.ItemHeight * suggestionList.Items.Count + border;
+        var top = Math.Max(header.Bottom, location.Y - height);
+        suggestionList.SetBounds(location.X, top, coAuthorsFrame.Width, location.Y - top);
+    }
+
+    void MoveSuggestion(int by)
+    {
+        var count = suggestionList.Items.Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        suggestionList.SelectedIndex = Math.Clamp(suggestionList.SelectedIndex + by, 0, count - 1);
+    }
+
+    /// <summary>
+    /// The suggestion at <paramref name="index"/> put in place of what was being typed, with a
+    /// comma after, for the next, the caret after it.
+    /// </summary>
+    internal void PickSuggestion(int index)
+    {
+        if (index < 0 ||
+            index >= suggestions.Count)
+        {
+            return;
+        }
+
+        var box = coAuthorsFrame.Box;
+        var (text, caret) = CoAuthors.Pick(box.Text, suggestingFor.Start, suggestingFor.End, suggestions[index]);
+        HideSuggestions();
+        picking = true;
+        box.Text = text;
+        picking = false;
+        box.Focus();
+        box.SelectionStart = caret;
+    }
+
     static Panel Spacer() =>
         new()
         {
             Dock = DockStyle.Top,
             Height = 8
         };
+
+    // The commit area's parts put back in their order, top to bottom, once one hidden till now
+    // shows. WinForms moves a control to where its window lands among the others' as the window
+    // is made, which a hidden control's is only as it first shows, and docks them in that order:
+    // the co-authors shown after the description went over it.
+    void KeepCommitOrder()
+    {
+        for (var index = 0; index < commitParts.Length; index++)
+        {
+            var part = commitParts[index];
+            var order = commitParts.Length - 1 - index;
+            if (commitArea.Controls.GetChildIndex(part) != order)
+            {
+                commitArea.Controls.SetChildIndex(part, order);
+            }
+        }
+    }
 
     static int RowHeight(Font font) =>
         DesktopStyle.RowHeight(font);
@@ -519,6 +914,7 @@ sealed class ChangesPane : UserControl
         {
             if (control != descriptionFrame &&
                 (control != descriptionSpacer || describing) &&
+                (coAuthoring || (control != coAuthorsFrame && control != coAuthorsSpacer)) &&
                 (amendShown || (control != amendNotice && control != amendSpacer)))
             {
                 height += control.Height;
@@ -555,6 +951,7 @@ sealed class ChangesPane : UserControl
         }
 
         base.OnLayout(args);
+        PlaceSuggestions();
     }
 
     /// <summary>
@@ -576,11 +973,16 @@ sealed class ChangesPane : UserControl
         changes = GitChanges.Empty;
         stashes = [];
         draft = DraftOf(repo);
+        authors = [];
+        authorsRead = false;
+        HideSuggestions();
         loadingDraft = true;
         summaryFrame.Box.Text = draft.Summary;
         descriptionFrame.Box.Text = draft.Description;
+        coAuthorsFrame.Box.Text = draft.CoAuthors;
         loadingDraft = false;
         ShowDescription(draft.Description.Length > 0, focus: false);
+        ShowCoAuthors(draft.CoAuthors.Length > 0, focus: false);
         ShowAmending();
         filterFrame.Box.Text = "";
         ShowRows();
@@ -638,6 +1040,7 @@ sealed class ChangesPane : UserControl
     {
         draft.Summary = summaryFrame.Box.Text;
         draft.Description = descriptionFrame.Box.Text;
+        draft.CoAuthors = coAuthorsFrame.Box.Text;
     }
 
     void OnTyped()
@@ -1134,7 +1537,8 @@ sealed class ChangesPane : UserControl
     // couldn't read the files, which are hidden then. Part way through a rebase, going on with
     // it needs neither, the commit being replayed keeping its own message, and taking whatever
     // there is, nothing where the conflicts were settled as what it goes onto had it; and so
-    // part way through a cherry-pick.
+    // part way through a cherry-pick. A co-author typed who isn't Name <email> yet holds the
+    // commit back, rather than go in as no trailer git reads, or be left out.
     bool CanCommit =>
         repo != null &&
         !committing.Any(_ => SameRepo(_, repo)) &&
@@ -1142,6 +1546,7 @@ sealed class ChangesPane : UserControl
         !changes.Conflicted &&
         (Continued(changes) != null ||
          (summaryFrame.Box.Text.Trim().Length > 0 &&
+          CoAuthors.Parse(coAuthorsFrame.Box.Text) != null &&
           (Amending || changes.Files.Any(IsTicked))));
 
     /// <summary>
@@ -1155,16 +1560,19 @@ sealed class ChangesPane : UserControl
     internal LinkLabel AmendNotice => amendNotice;
 
     /// <summary>
-    /// A commit's message put in the summary and description of <paramref name="messageRepo"/>,
-    /// in place of what was typed: a commit undone, to commit again, or, with
-    /// <paramref name="amending"/>, the last commit, to amend, which Commit then does.
+    /// A commit's message put in the summary, description and co-authors of
+    /// <paramref name="messageRepo"/>, in place of what was typed: a commit undone, to commit
+    /// again, or, with <paramref name="amending"/>, the last commit, to amend, which Commit then
+    /// does. Its Co-authored-by trailers go in the co-authors, which Commit puts back.
     /// </summary>
     public void TakeMessage(string messageRepo, string message, string? amending)
     {
-        var (summary, description) = GitChanges.SplitMessage(message);
+        var (summary, whole) = GitChanges.SplitMessage(message);
+        var (description, coAuthors) = CoAuthors.Take(whole);
         var taking = DraftOf(messageRepo);
         taking.Summary = summary;
         taking.Description = description;
+        taking.CoAuthors = coAuthors;
         taking.Amending = amending;
         if (!SameRepo(repo, messageRepo))
         {
@@ -1174,8 +1582,10 @@ sealed class ChangesPane : UserControl
         loadingDraft = true;
         summaryFrame.Box.Text = summary;
         descriptionFrame.Box.Text = description;
+        coAuthorsFrame.Box.Text = coAuthors;
         loadingDraft = false;
         ShowDescription(description.Length > 0, focus: false);
+        ShowCoAuthors(coAuthors.Length > 0, focus: false);
         ShowAmending();
         ShowCommitButton();
     }
@@ -1209,12 +1619,13 @@ sealed class ChangesPane : UserControl
         amendShown = amending;
         amendNotice.Visible = amending;
         amendSpacer.Visible = amending;
+        KeepCommitOrder();
         PerformLayout();
     }
 
     /// <summary>
-    /// Commits the ticked files with the summary and description, in the Actions panel. What is
-    /// typed is cleared once it has gone in, but for what was typed over while it was under way,
+    /// Commits the ticked files with the summary and description, and a Co-authored-by trailer
+    /// for each co-author, in the Actions panel. What is typed is cleared once it has gone in, but for what was typed over while it was under way,
     /// which is kept. Part way through a rebase or a cherry-pick, goes on with it, what is typed
     /// kept, as it doesn't go in. A commit under way holds back Commit in its repository only.
     /// </summary>
@@ -1255,7 +1666,8 @@ sealed class ChangesPane : UserControl
         var hasCommits = changes.HasCommits;
         var summary = summaryFrame.Box.Text;
         var description = descriptionFrame.Box.Text;
-        var message = GitChanges.Message(summary, description);
+        var coAuthors = coAuthorsFrame.Box.Text;
+        var message = CoAuthors.WithTrailers(GitChanges.Message(summary, description), CoAuthors.Parse(coAuthors) ?? []);
 
         // Files only some of whose lines are picked go in as the patch of those lines; part way
         // through a merge, git commits everything.
@@ -1297,13 +1709,14 @@ sealed class ChangesPane : UserControl
             if (entry.State == ActionLog.State.Succeeded &&
                 continued == null)
             {
-                // The summary and description stay open to typing while the commit is under way,
-                // a slow pre-commit hook say, so either may hold the next message by now, begun
-                // meanwhile: only one still as it went in is cleared. The draft has what is in
-                // them, here or, gone to another repository since, as they were left.
+                // The summary, description and co-authors stay open to typing while the commit is
+                // under way, a slow pre-commit hook say, so any may hold the next message by now,
+                // begun meanwhile: only one still as it went in is cleared. The draft has what is
+                // in them, here or, gone to another repository since, as they were left.
                 var committed = DraftOf(committingIn);
                 var summaryWentIn = committed.Summary == summary;
                 var descriptionWentIn = committed.Description == description;
+                var coAuthorsWentIn = committed.CoAuthors == coAuthors;
                 if (summaryWentIn)
                 {
                     committed.Summary = "";
@@ -1312,6 +1725,11 @@ sealed class ChangesPane : UserControl
                 if (descriptionWentIn)
                 {
                     committed.Description = "";
+                }
+
+                if (coAuthorsWentIn)
+                {
+                    committed.CoAuthors = "";
                 }
 
                 committed.Amending = null;
@@ -1333,10 +1751,20 @@ sealed class ChangesPane : UserControl
                         descriptionFrame.Box.Text = "";
                     }
 
+                    if (coAuthorsWentIn)
+                    {
+                        coAuthorsFrame.Box.Text = "";
+                    }
+
                     loadingDraft = false;
                     if (descriptionFrame.Box.TextLength == 0)
                     {
                         ShowDescription(false);
+                    }
+
+                    if (coAuthorsFrame.Box.TextLength == 0)
+                    {
+                        ShowCoAuthors(false);
                     }
 
                     ShowAmending();
@@ -1992,15 +2420,46 @@ sealed class ChangesPane : UserControl
     protected override bool ProcessCmdKey(ref Message message, Keys keyData)
     {
         if (keyData == (Keys.Control | Keys.Enter) &&
-            (summaryFrame.Box.Focused || descriptionFrame.Box.Focused))
+            (summaryFrame.Box.Focused || descriptionFrame.Box.Focused || coAuthorsFrame.Box.Focused))
         {
             Commit();
             return true;
         }
 
+        // In the co-authors, with authors suggested, the arrows go through them, and Enter or Tab
+        // takes the one picked, as a drop-down's do.
+        if (suggestionList.Visible &&
+            coAuthorsFrame.Box.Focused)
+        {
+            switch (keyData)
+            {
+                case Keys.Down:
+                    MoveSuggestion(1);
+                    return true;
+                case Keys.Up:
+                    MoveSuggestion(-1);
+                    return true;
+                case Keys.Enter:
+                case Keys.Tab:
+                    PickSuggestion(suggestionList.SelectedIndex);
+                    return true;
+                case Keys.Escape:
+                    HideSuggestions();
+                    return true;
+            }
+        }
+
+        // A line of its own, the co-authors have nothing for Enter to do but sound.
+        if (keyData == Keys.Enter &&
+            coAuthorsFrame.Box.Focused)
+        {
+            return true;
+        }
+
         if (keyData == Keys.Escape)
         {
-            // In the filter, Escape puts it away first, and so in the description, empty.
+            // In the filter, Escape puts it away first, and so in the description, or the
+            // co-authors, empty.
             if (filtering &&
                 filterFrame.ContainsFocus)
             {
@@ -2012,6 +2471,13 @@ sealed class ChangesPane : UserControl
                 descriptionFrame is { ContainsFocus: true, Box.TextLength: 0 })
             {
                 ShowDescription(false);
+                return true;
+            }
+
+            if (coAuthoring &&
+                coAuthorsFrame is { ContainsFocus: true, Box.TextLength: 0 })
+            {
+                ShowCoAuthors(false);
                 return true;
             }
 

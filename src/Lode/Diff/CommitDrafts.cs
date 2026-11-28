@@ -1,7 +1,7 @@
 /// <summary>
 /// What is being got ready to commit in each repository while Lode runs: the files left
-/// unticked, the lines picked of the files only partly to go in, and the summary and description
-/// typed. Shared by the Changes pane and the diff, wherever it shows, so lines picked in the one
+/// unticked, the lines picked of the files only partly to go in, and the summary, description and
+/// co-authors typed. Shared by the Changes pane and the diff, wherever it shows, so lines picked in the one
 /// show in the other, and going to another repository and back loses none of it.
 /// </summary>
 static class CommitDrafts
@@ -17,6 +17,11 @@ static class CommitDrafts
 
         public string Summary { get; set; } = "";
         public string Description { get; set; } = "";
+
+        /// <summary>
+        /// The co-authors typed, each Name &lt;email&gt;, apart by commas.
+        /// </summary>
+        public string CoAuthors { get; set; } = "";
 
         /// <summary>
         /// The commit being amended, the last on the branch, which the commit goes in place of;

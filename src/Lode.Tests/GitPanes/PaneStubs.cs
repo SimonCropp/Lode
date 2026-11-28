@@ -10,6 +10,7 @@ sealed class PaneStubs : IDisposable
     GitState.Reader readGit = FolderView.ReadGit;
     Func<string, Cancel, GitChanges> readChanges = ChangesPane.Read;
     Func<string, Cancel, IReadOnlyList<GitStashes.Stash>> readStashes = ChangesPane.ReadStashes;
+    Func<string, Cancel, IReadOnlyList<CoAuthors.Author>> readAuthors = ChangesPane.ReadAuthors;
     Func<string, int, int, HistoryWalk, Cancel, List<GitCommit>?> readCommits = HistoryPane.ReadCommits;
     Func<string, GitCommit, Cancel, List<Change>?> readFiles = HistoryPane.ReadFiles;
     Func<string, Cancel, HashSet<string>> readUnpushed = HistoryPane.ReadUnpushed;
@@ -56,6 +57,17 @@ sealed class PaneStubs : IDisposable
         Commit("f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9", "Initial commit", "Alan Turing", TimeSpan.FromDays(40))
     ];
 
+    /// <summary>
+    /// Who has committed lately, newest first, as the history's authors are read to suggest as
+    /// co-authors.
+    /// </summary>
+    public static IReadOnlyList<CoAuthors.Author> Authors { get; } =
+    [
+        new("Grace Hopper", "grace@example.com"),
+        new("Alan Turing", "alan@example.com"),
+        new("Ada Lovelace", "ada@example.com")
+    ];
+
     public static List<Change> CommitFiles { get; } =
     [
         new("src/Lode/FolderList/FolderView.cs", null, GitChange.Modified),
@@ -75,6 +87,7 @@ sealed class PaneStubs : IDisposable
         };
         ChangesPane.Read = (_, _) => new("main", true, false, Files);
         ChangesPane.ReadStashes = (_, _) => [];
+        ChangesPane.ReadAuthors = (_, _) => Authors;
         HistoryPane.ReadCommits = (_, skip, count, _, _) => History.Skip(skip).Take(count).ToList();
         HistoryPane.ReadFiles = (_, _, _) => CommitFiles;
         HistoryPane.ReadUnpushed = (_, _) => [History[0].Sha];
@@ -90,6 +103,7 @@ sealed class PaneStubs : IDisposable
         FolderView.ReadGit = readGit;
         ChangesPane.Read = readChanges;
         ChangesPane.ReadStashes = readStashes;
+        ChangesPane.ReadAuthors = readAuthors;
         HistoryPane.ReadCommits = readCommits;
         HistoryPane.ReadFiles = readFiles;
         HistoryPane.ReadUnpushed = readUnpushed;

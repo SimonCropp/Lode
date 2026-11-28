@@ -1792,6 +1792,239 @@ public class GitPanesTests
         }
     }
 
+    // The co-authors are hidden until the button in the description's corner shows them, with
+    // the focus in them, as GitHub Desktop's. Typing suggests the history's authors it matches,
+    // read off the UI thread once they show: the arrows go through them, Enter takes the one
+    // picked, with a comma after for the next, and Escape puts them away. Someone typed who isn't
+    // Name <email> yet holds Commit back. Empty, the button or Escape hides them.
+    [Test]
+    public async Task CoAuthorsSuggestTheHistorysAuthors()
+    {
+        using var stubs = new PaneStubs();
+        var window = Environment.CurrentManagedThreadId;
+        var readOn = new ConcurrentQueue<int>();
+        ChangesPane.ReadAuthors = (_, _) =>
+        {
+            readOn.Enqueue(Environment.CurrentManagedThreadId);
+            return PaneStubs.Authors;
+        };
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var box = pane.CoAuthorsBox;
+        try
+        {
+            await Assert.That((pane.CoAuthoring, box.Visible, pane.CoAuthorsButton.Visible)).IsEqualTo((false, false, false));
+            await Assert.That(readOn).IsEmpty();
+
+            pane.DescribeButton.PerformClick();
+            await Assert.That(pane.CoAuthorsButton.Visible).IsTrue();
+            pane.CoAuthorsButton.PerformClick();
+            await Pump.Until(() => pane.ReadingAuthors.IsCompleted);
+
+            await Assert.That((pane.CoAuthoring, pane.CoAuthorsButton.Checked, box.Focused)).IsEqualTo((true, true, true));
+            await Assert.That(readOn.Single()).IsNotEqualTo(window);
+
+            box.AppendText("gr");
+            await Assert.That(pane.Suggestions).IsEquivalentTo(["Grace Hopper <grace@example.com>"]);
+
+            // Over the co-authors, as wide, in front of the files.
+            var suggested = pane.SuggestionList;
+            var frame = box.Parent!;
+            var frameTop = pane.PointToClient(frame.PointToScreen(Point.Empty)).Y;
+            await Assert.That((suggested.Bottom, suggested.Width, pane.Controls.GetChildIndex(suggested))).IsEqualTo((frameTop, frame.Width, 0));
+            await Assert.That(suggested.Height).IsEqualTo(suggested.ItemHeight + suggested.Height - suggested.ClientSize.Height);
+
+            await KeyIn(box, Keys.Enter);
+            await Assert.That(box.Text).IsEqualTo("Grace Hopper <grace@example.com>, ");
+            await Assert.That((box.SelectionStart, pane.Suggestions.Count)).IsEqualTo((box.TextLength, 0));
+
+            // By any word of the name or email, but for those in already.
+            box.AppendText("a");
+            await Assert.That(pane.Suggestions).IsEquivalentTo(["Alan Turing <alan@example.com>", "Ada Lovelace <ada@example.com>"], CollectionOrdering.Matching);
+            await KeyIn(box, Keys.Down);
+            await Assert.That(pane.SuggestionPicked).IsEqualTo(1);
+            await KeyIn(box, Keys.Enter);
+            await Assert.That(box.Text).IsEqualTo("Grace Hopper <grace@example.com>, Ada Lovelace <ada@example.com>, ");
+
+            pane.SummaryBox.Text = "Summary";
+            await Assert.That(pane.CommitButton.Enabled).IsTrue();
+            box.AppendText("Alan");
+            await Assert.That(pane.Suggestions).IsEquivalentTo(["Alan Turing <alan@example.com>"]);
+            await KeyIn(box, Keys.Escape);
+            await Assert.That((pane.Suggestions.Count, pane.CoAuthoring)).IsEqualTo((0, true));
+            await Assert.That(pane.CommitButton.Enabled).IsFalse();
+
+            box.Text = "Grace Hopper <grace@example.com>";
+            await Assert.That(pane.CommitButton.Enabled).IsTrue();
+
+            // Holding someone, the button only puts the focus there.
+            pane.SummaryBox.Focus();
+            pane.CoAuthorsButton.PerformClick();
+            await Assert.That((pane.CoAuthoring, box.Focused)).IsEqualTo((true, true));
+
+            box.Text = "";
+            pane.CoAuthorsButton.PerformClick();
+            await Assert.That(pane.CoAuthoring).IsFalse();
+
+            pane.CoAuthorsButton.PerformClick();
+            await Assert.That(box.Focused).IsTrue();
+            await KeyIn(box, Keys.Escape);
+            await Assert.That(pane.CoAuthoring).IsFalse();
+            await Assert.That(readOn.Count).IsEqualTo(1);
+        }
+        finally
+        {
+            pane.SummaryBox.Text = "";
+            box.Text = "";
+        }
+    }
+
+    // A key as the box gets it, through the keys of each control it is in.
+    static async Task KeyIn(TextBox box, Keys key)
+    {
+        await Pump.NoModifiersHeld();
+        var message = Message.Create(box.Handle, 0x0100, (IntPtr) key, IntPtr.Zero);
+        box.PreProcessMessage(ref message);
+    }
+
+    // The co-authors go in the commit as Co-authored-by trailers, as git reads them, and are
+    // cleared with the summary once it is in. Kept for each repository while Lode runs, as the
+    // summary is: another's are its own. A commit's message taken back, to amend say, has its
+    // co-authors put back in them.
+    [Test]
+    public async Task CoAuthorsGoInTheCommitAndAreKeptForEachRepository()
+    {
+        using var stubs = new PaneStubs();
+        using var scratch = new CodeCommandsTests.Scratch();
+        using var fixture = Repositories();
+        var docs = fixture.At("Docs");
+        var source = fixture.At("Source");
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(docs, settings);
+        await PaneStubs.Settled(form);
+        var panes = form.GitPanes;
+        var pane = panes.ChangesPane;
+        var box = pane.CoAuthorsBox;
+        var messages = new ConcurrentQueue<string>();
+        var makeCommit = ChangesPane.MakeCommit;
+        ChangesPane.MakeCommit = (repo, _, _, _, _, message, _, _) =>
+        {
+            messages.Enqueue(message);
+            return (new(repo, true, ""), null);
+        };
+        try
+        {
+            pane.SummaryBox.Text = "In Docs";
+            pane.ShowCoAuthors(true);
+            box.Text = "Grace Hopper <grace@example.com>, Alan Turing <alan@example.com>";
+
+            form.ActiveView!.Navigate(source);
+            await Pump.Until(() => panes.Repo == source);
+            await PaneStubs.Settled(form);
+
+            await Assert.That((box.Text, pane.CoAuthoring)).IsEqualTo(("", false));
+            pane.ShowCoAuthors(true);
+            box.Text = "Ada Lovelace <ada@example.com>";
+
+            form.ActiveView.Navigate(docs);
+            await Pump.Until(() => panes.Repo == docs);
+            await PaneStubs.Settled(form);
+
+            await Assert.That((box.Text, pane.CoAuthoring)).IsEqualTo(("Grace Hopper <grace@example.com>, Alan Turing <alan@example.com>", true));
+            await Assert.That(CommitDrafts.Of(source).CoAuthors).IsEqualTo("Ada Lovelace <ada@example.com>");
+
+            pane.Commit();
+            await Pump.Until(() => pane.Committing.IsCompleted);
+
+            var message = messages.Single();
+            await Assert.That(message).IsEqualTo("In Docs\n\nCo-authored-by: Grace Hopper <grace@example.com>\nCo-authored-by: Alan Turing <alan@example.com>");
+            var file = scratch.At("message.txt");
+            await File.WriteAllTextAsync(file, message);
+            await Assert.That(CodeCommandsTests.Scratch.Git(scratch.Root, "interpret-trailers", "--parse", file)).IsEqualTo("Co-authored-by: Grace Hopper <grace@example.com>\nCo-authored-by: Alan Turing <alan@example.com>");
+            await Assert.That((pane.SummaryBox.Text, box.Text, pane.CoAuthoring)).IsEqualTo(("", "", false));
+            await Assert.That((CommitDrafts.Of(docs).Summary, CommitDrafts.Of(docs).CoAuthors)).IsEqualTo(("", ""));
+            await Assert.That(CommitDrafts.Of(source).CoAuthors).IsEqualTo("Ada Lovelace <ada@example.com>");
+
+            pane.TakeMessage(docs, message.Replace("In Docs", "In Docs\n\nWhy."), PaneStubs.History[0].Sha);
+
+            await Assert.That((pane.SummaryBox.Text, pane.DescriptionBox.Text, box.Text, pane.CoAuthoring)).IsEqualTo(("In Docs", "Why.", "Grace Hopper <grace@example.com>, Alan Turing <alan@example.com>", true));
+        }
+        finally
+        {
+            ChangesPane.MakeCommit = makeCommit;
+            pane.StopAmending();
+            pane.SummaryBox.Text = "";
+            pane.DescriptionBox.Text = "";
+            box.Text = "";
+            CommitDrafts.Of(source).CoAuthors = "";
+            ActionLog.Reset();
+        }
+    }
+
+    // The summary, then the description, then the co-authors, then Commit, whichever of the two
+    // shows first, and shown before the window is: WinForms moved the co-authors, shown after the
+    // description, over it, as it first made their window.
+    [Test]
+    [Arguments(false, false)]
+    [Arguments(false, true)]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    public async Task CoAuthorsGoUnderTheDescription(bool coAuthorsFirst, bool beforeShown)
+    {
+        using var stubs = new PaneStubs();
+        using var form = new Form();
+        form.Size = new(500, 700);
+        form.ShowInTaskbar = false;
+        form.StartPosition = FormStartPosition.Manual;
+        form.Location = new(-20000, -20000);
+        var pane = new ChangesPane(new())
+        {
+            Dock = DockStyle.Fill
+        };
+        form.Controls.Add(pane);
+
+        void ShowBoth()
+        {
+            if (coAuthorsFirst)
+            {
+                pane.ShowCoAuthors(true, focus: false);
+            }
+
+            pane.ShowDescription(true, focus: false);
+            pane.ShowCoAuthors(true, focus: false);
+        }
+
+        if (beforeShown)
+        {
+            ShowBoth();
+        }
+
+        form.Show();
+        Application.DoEvents();
+        if (!beforeShown)
+        {
+            ShowBoth();
+        }
+
+        Application.DoEvents();
+        var summary = pane.SummaryBox.Parent!.Parent!;
+        var description = pane.DescriptionBox.Parent!;
+        var coAuthors = pane.CoAuthorsBox.Parent!;
+
+        await Assert.That(summary.Bottom).IsLessThan(description.Top);
+        await Assert.That(description.Bottom).IsLessThan(coAuthors.Top);
+        await Assert.That(coAuthors.Bottom).IsLessThan(pane.CommitButton.Top);
+    }
+
     // The repository, part way through a merge or revert with its conflicts settled, shown in
     // Changes, and committed from there as the summary and description start: what they started
     // as, and the message of the commit made.

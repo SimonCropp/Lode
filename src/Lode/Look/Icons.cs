@@ -128,6 +128,8 @@ static class Icons
     public const char Stash = '\uE81E';
     // Lines of text, for a commit's description.
     public const char Description = '\uE8E4';
+    // A person with a plus, as GitHub Desktop's, for who else wrote a commit.
+    public const char CoAuthor = '\uE8FA';
     // A cross, for putting away the diff shown over the folder list.
     public const char Close = '\uE711';
 
