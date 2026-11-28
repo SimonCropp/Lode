@@ -124,7 +124,11 @@ sealed class ChangesPane : UserControl
     bool stale = true;
     bool reading;
     bool readAgain;
-    bool committing;
+
+    // The repositories a commit is under way in, where Commit waits till it lands. The pane
+    // shows one repository at a time, so a commit in one, held by a slow hook say, doesn't hold
+    // back Commit in another gone to meanwhile.
+    List<string> committing = [];
     int version;
     bool loadingDraft;
 
@@ -200,6 +204,11 @@ sealed class ChangesPane : UserControl
     /// The stash being restored, discarded or made, for tests to wait on.
     /// </summary>
     internal Task Stashing { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// The commit last begun, for tests to wait on.
+    /// </summary>
+    internal Task Committing { get; private set; } = Task.CompletedTask;
 
     internal StashList StashList => stashList;
 
@@ -1128,7 +1137,7 @@ sealed class ChangesPane : UserControl
     // part way through a cherry-pick.
     bool CanCommit =>
         repo != null &&
-        !committing &&
+        !committing.Any(_ => SameRepo(_, repo)) &&
         failure == null &&
         !changes.Conflicted &&
         (Continued(changes) != null ||
@@ -1205,16 +1214,28 @@ sealed class ChangesPane : UserControl
 
     /// <summary>
     /// Commits the ticked files with the summary and description, in the Actions panel. What is
-    /// typed is cleared once it has gone in. Part way through a rebase or a cherry-pick, goes on
-    /// with it, what is typed kept, as it doesn't go in.
+    /// typed is cleared once it has gone in, but for what was typed over while it was under way,
+    /// which is kept. Part way through a rebase or a cherry-pick, goes on with it, what is typed
+    /// kept, as it doesn't go in. A commit under way holds back Commit in its repository only.
     /// </summary>
-    internal async void Commit()
+    internal void Commit()
     {
         if (!CanCommit)
         {
             return;
         }
 
+        Committing = CommitAsync();
+    }
+
+    /// <summary>
+    /// Makes the commit, as <see cref="CommitPicked"/> does, off the UI thread. Tests hold it, as
+    /// a slow pre-commit hook would, to type while it is under way.
+    /// </summary>
+    internal static Func<string, IReadOnlyList<Change>, IReadOnlyList<(Change File, LinePicks Picks)>, bool, bool, string, string?, Cancel, (CodeCommands.RepoResult Result, Change? Stale)> MakeCommit { get; set; } = CommitPicked;
+
+    async Task CommitAsync()
+    {
         var committingIn = repo!;
         var ticked = Ticked();
         var merging = changes.Merging;
@@ -1232,7 +1253,9 @@ sealed class ChangesPane : UserControl
         }
 
         var hasCommits = changes.HasCommits;
-        var message = GitChanges.Message(summaryFrame.Box.Text, descriptionFrame.Box.Text);
+        var summary = summaryFrame.Box.Text;
+        var description = descriptionFrame.Box.Text;
+        var message = GitChanges.Message(summary, description);
 
         // Files only some of whose lines are picked go in as the patch of those lines; part way
         // through a merge, git commits everything.
@@ -1252,7 +1275,7 @@ sealed class ChangesPane : UserControl
             .Where(_ => picked.All(partial => partial.File != _))
             .ToList();
         Change? changedSincePicked = null;
-        committing = true;
+        committing.Add(committingIn);
         ShowCommitButton();
         try
         {
@@ -1261,7 +1284,7 @@ sealed class ChangesPane : UserControl
                 [committingIn],
                 async (_, cancel) =>
                 {
-                    var (result, changed) = await Task.Run(() => CommitPicked(committingIn, whole, picked, hasCommits, merging, message, amending, cancel), cancel);
+                    var (result, changed) = await Task.Run(() => MakeCommit(committingIn, whole, picked, hasCommits, merging, message, amending, cancel), cancel);
                     changedSincePicked = changed;
                     GitCache.MarkStale([committingIn]);
                     return CodeCommands.GitOutcome([result]);
@@ -1274,9 +1297,23 @@ sealed class ChangesPane : UserControl
             if (entry.State == ActionLog.State.Succeeded &&
                 continued == null)
             {
+                // The summary and description stay open to typing while the commit is under way,
+                // a slow pre-commit hook say, so either may hold the next message by now, begun
+                // meanwhile: only one still as it went in is cleared. The draft has what is in
+                // them, here or, gone to another repository since, as they were left.
                 var committed = DraftOf(committingIn);
-                committed.Summary = "";
-                committed.Description = "";
+                var summaryWentIn = committed.Summary == summary;
+                var descriptionWentIn = committed.Description == description;
+                if (summaryWentIn)
+                {
+                    committed.Summary = "";
+                }
+
+                if (descriptionWentIn)
+                {
+                    committed.Description = "";
+                }
+
                 committed.Amending = null;
                 foreach (var (file, _) in picked)
                 {
@@ -1286,17 +1323,29 @@ sealed class ChangesPane : UserControl
                 if (SameRepo(committingIn, repo))
                 {
                     loadingDraft = true;
-                    summaryFrame.Box.Text = "";
-                    descriptionFrame.Box.Text = "";
+                    if (summaryWentIn)
+                    {
+                        summaryFrame.Box.Text = "";
+                    }
+
+                    if (descriptionWentIn)
+                    {
+                        descriptionFrame.Box.Text = "";
+                    }
+
                     loadingDraft = false;
-                    ShowDescription(false);
+                    if (descriptionFrame.Box.TextLength == 0)
+                    {
+                        ShowDescription(false);
+                    }
+
                     ShowAmending();
                 }
             }
         }
         finally
         {
-            committing = false;
+            committing.Remove(committingIn);
             if (!IsDisposed)
             {
                 ShowCommitButton();

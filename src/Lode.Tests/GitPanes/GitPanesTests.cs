@@ -1655,6 +1655,143 @@ public class GitPanesTests
         await Assert.That(CodeCommandsTests.Scratch.Git(repo, "rev-list", "--parents", "-n", "1", "HEAD").Split(' ').Length).IsEqualTo(3);
     }
 
+    // What is typed while a commit is under way, held by a slow pre-commit hook say, is the next
+    // message begun, which the commit landing keeps: only what still holds what went in is
+    // cleared, here the summary, the description having been typed over meanwhile, where both
+    // were cleared, the next message lost. With nothing typed meanwhile, the next commit clears
+    // both.
+    [Test]
+    public async Task TypedWhileCommittingIsKept()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(fixture.At("Docs"), settings);
+        await PaneStubs.Settled(form);
+        var pane = form.GitPanes.ChangesPane;
+        var draft = CommitDrafts.Of(form.GitPanes.Repo);
+        using var held = new ManualResetEventSlim();
+        var messages = new ConcurrentQueue<string>();
+        var makeCommit = ChangesPane.MakeCommit;
+        ChangesPane.MakeCommit = (repo, _, _, _, _, message, _, _) =>
+        {
+            messages.Enqueue(message);
+            held.Wait(TimeSpan.FromSeconds(30));
+            return (new(repo, true, ""), null);
+        };
+        try
+        {
+            pane.SummaryBox.Text = "First";
+            pane.DescriptionBox.Text = "Why the first.";
+            pane.Commit();
+            var first = pane.Committing;
+            await Pump.Until(() => messages.Count == 1);
+
+            await Assert.That((first.IsCompleted, pane.CommitButton.Enabled)).IsEqualTo((false, false));
+            await Assert.That((pane.SummaryBox.ReadOnly, pane.DescriptionBox.ReadOnly)).IsEqualTo((false, false));
+            pane.DescriptionBox.Text = "Why the second.";
+            held.Set();
+            await Pump.Until(() => first.IsCompleted);
+
+            await Assert.That(messages).IsEquivalentTo(["First\n\nWhy the first."]);
+            await Assert.That((pane.SummaryBox.Text, pane.DescriptionBox.Text, pane.Describing)).IsEqualTo(("", "Why the second.", true));
+            await Assert.That((draft.Summary, draft.Description)).IsEqualTo(("", "Why the second."));
+
+            pane.SummaryBox.Text = "Second";
+            pane.Commit();
+            await Pump.Until(() => pane.Committing.IsCompleted);
+
+            await Assert.That(messages.Last()).IsEqualTo("Second\n\nWhy the second.");
+            await Assert.That((pane.SummaryBox.Text, pane.DescriptionBox.Text, pane.Describing)).IsEqualTo(("", "", false));
+            await Assert.That((draft.Summary, draft.Description)).IsEqualTo(("", ""));
+        }
+        finally
+        {
+            held.Set();
+            ChangesPane.MakeCommit = makeCommit;
+            pane.SummaryBox.Text = "";
+            pane.DescriptionBox.Text = "";
+            ActionLog.Reset();
+        }
+    }
+
+    // A commit under way in one repository, held by a slow pre-commit hook say, doesn't hold
+    // back Commit in another, which waited for it, the pane showing one repository at a time:
+    // gone to the other, its commit is made, and clears what went in, while the first is still
+    // under way, whose summary is kept for it, and cleared once it lands.
+    [Test]
+    public async Task ACommitInOneRepositoryDoesNotHoldBackAnother()
+    {
+        using var stubs = new PaneStubs();
+        using var fixture = Repositories();
+        var docs = fixture.At("Docs");
+        var source = fixture.At("Source");
+        var settings = new Settings
+        {
+            CodeDirectory = fixture.Root
+        };
+        using var form = await Show(docs, settings);
+        await PaneStubs.Settled(form);
+        var panes = form.GitPanes;
+        var pane = panes.ChangesPane;
+        using var held = new ManualResetEventSlim();
+        var messages = new ConcurrentQueue<string>();
+        var makeCommit = ChangesPane.MakeCommit;
+        ChangesPane.MakeCommit = (repo, _, _, _, _, message, _, _) =>
+        {
+            messages.Enqueue(message);
+            if (ChangesPane.SameRepo(repo, docs))
+            {
+                held.Wait(TimeSpan.FromSeconds(30));
+            }
+
+            return (new(repo, true, ""), null);
+        };
+        try
+        {
+            pane.SummaryBox.Text = "In Docs";
+            pane.Commit();
+            var inDocs = pane.Committing;
+            await Pump.Until(() => messages.Count == 1);
+
+            form.ActiveView!.Navigate(source);
+            await Pump.Until(() => panes.Repo == source);
+            await PaneStubs.Settled(form);
+            pane.SummaryBox.Text = "In Source";
+
+            await Assert.That((inDocs.IsCompleted, pane.CommitButton.Enabled)).IsEqualTo((false, true));
+
+            pane.Commit();
+            var inSource = pane.Committing;
+            await Pump.Until(() => inSource.IsCompleted);
+
+            await Assert.That(messages).IsEquivalentTo(["In Docs", "In Source"]);
+            await Assert.That((inDocs.IsCompleted, pane.SummaryBox.Text, CommitDrafts.Of(source).Summary)).IsEqualTo((false, "", ""));
+            await Assert.That(CommitDrafts.Of(docs).Summary).IsEqualTo("In Docs");
+
+            form.ActiveView.Navigate(docs);
+            await Pump.Until(() => panes.Repo == docs);
+            await PaneStubs.Settled(form);
+
+            await Assert.That((pane.SummaryBox.Text, pane.CommitButton.Enabled)).IsEqualTo(("In Docs", false));
+
+            held.Set();
+            await Pump.Until(() => inDocs.IsCompleted);
+
+            await Assert.That((pane.SummaryBox.Text, CommitDrafts.Of(docs).Summary)).IsEqualTo(("", ""));
+        }
+        finally
+        {
+            held.Set();
+            ChangesPane.MakeCommit = makeCommit;
+            pane.SummaryBox.Text = "";
+            ActionLog.Reset();
+        }
+    }
+
     // The repository, part way through a merge or revert with its conflicts settled, shown in
     // Changes, and committed from there as the summary and description start: what they started
     // as, and the message of the commit made.
