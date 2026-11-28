@@ -4584,6 +4584,56 @@ public class FolderViewTests
         }
     }
 
+    // A read that finds nothing, git refusing the repository for a moment say, has it known no
+    // longer, and what was learned of it is forgotten with it: while it isn't known no change
+    // to its .gitignore is heard, so bin, unignored meanwhile, is a folder git doesn't ignore
+    // once it is read again, and a change in it a change. Kept, changes in bin were dropped
+    // until Lode started again.
+    [Test]
+    public async Task WhatWasLearnedIsForgottenWithARepositoryReadAsNone()
+    {
+        using var code = Repositories();
+
+        // Not a repository, so nothing git left of it is heard meanwhile.
+        var repo = code.At("Plain");
+        var bin = Path.Combine(repo, "bin");
+        var output = Path.Combine(bin, "output.dll");
+        GitCache.Watch(code.Root);
+        var ignored = true;
+        var askIgnored = GitCache.AskIgnored;
+        GitCache.AskIgnored = (_, asked) =>
+        {
+            var found = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var folder in asked)
+            {
+                found[folder] = ignored;
+            }
+
+            return found;
+        };
+        try
+        {
+            ReadNow(repo);
+            GitCache.ChangedAt(output);
+            await Pump.Until(() => GitCache.Ignored(bin) == true);
+
+            GitCache.Store(repo, null, null, GitCache.Changes(repo));
+            ignored = false;
+            ReadNow(repo);
+            var learned = GitCache.Ignored(bin);
+            var inBin = await ChangeAt(output, repo, repo);
+            var fresh = IsFresh(repo);
+
+            await Assert.That(learned).IsNull();
+            await Assert.That(inBin).IsEqualTo((true, true));
+            await Assert.That(fresh).IsFalse();
+        }
+        finally
+        {
+            GitCache.AskIgnored = askIgnored;
+        }
+    }
+
     // Too many changes at once for the watch to keep track of, twice over, every repository is
     // stale at once, but the views are told once, when that has settled, not as each comes.
     [Test]

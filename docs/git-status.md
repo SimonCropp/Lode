@@ -186,7 +186,7 @@ A build writes thousands of files to `bin` and `obj`, none of which change the s
 
 A folder that is ignored but holds a file git tracks all the same, one added by force say, is not treated as ignored, as a change to that file is a real change. A folder in it that holds no such file is: with `bin/` ignored and `bin/keep.txt` tracked, the first change in `bin\Debug` learns that `bin` isn't ignored and `bin\Debug` is, so later changes in `bin\Debug` are dropped, while those in `bin` itself, or in a folder in it holding a tracked file, still count.
 
-What was learned of a repository is forgotten, and asked again, when what git ignores may have changed: a `.gitignore` in it changes, or its `index`, `config` or `info/exclude`; on Refresh; and when the watch loses track.
+What was learned of a repository is forgotten, and asked again, when what git ignores may have changed: a `.gitignore` in it changes, or its `index`, `config` or `info/exclude`; on Refresh; when the watch loses track; and when a read of it finds nothing, git refusing it for a moment say, which has it known no longer, so that no change to it is heard until it is read again.
 
 A repository nested in another, a clone in a folder the other ignores say, is its own once it is known: what the other learned of folders in it is forgotten then, and what it finds of them after is not kept, so a change at the nested one's top, to its README or its own `.gitignore`, is a change to it rather than dropped as in a folder the other ignores.
 

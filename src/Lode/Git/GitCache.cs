@@ -767,7 +767,14 @@ static class GitCache
         {
             if (state == null)
             {
-                known.Remove(repo);
+                // What was learned of it goes with it: known no longer, no change to its
+                // .gitignore is heard, so kept, a folder unignored meanwhile was taken for
+                // ignored, and changes in it dropped, until Lode started again.
+                if (known.Remove(repo, out var gone))
+                {
+                    Forget(gone);
+                }
+
                 return;
             }
 
