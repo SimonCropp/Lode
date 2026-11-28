@@ -139,10 +139,12 @@ public class ShellWindowsTests
         Marshal.Release(Marshal.GetIDispatchForObject(found));
         var browser = (ShellWindows.IWebBrowserApp)found;
         browser.get_HWND(out var handle);
-        browser.get_Document(out var document);
+        browser.get_Document(out var documentPointer);
+        var document = Marshal.GetObjectForIUnknown(documentPointer);
+        Marshal.Release(documentPointer);
         var folderView = new Guid("CDE725B0-CCC9-4519-917E-325D72FAB4CE");
         var shellViewId = new Guid("000214E3-0000-0000-C000-000000000046");
-        var served = ((ShellWindows.IComServiceProvider)document!).QueryService(ref folderView, ref shellViewId, out var shellView);
+        var served = ((ShellWindows.IComServiceProvider)document).QueryService(ref folderView, ref shellViewId, out var shellView);
         Marshal.Release(shellView);
 
         await Assert.That(handle).IsEqualTo(form.Handle);
@@ -200,6 +202,267 @@ public class ShellWindowsTests
                   report2.beta
                 ]
                 """);
+    }
+
+    // What a script finding the folder a window shows, through Shell.Application's Windows(),
+    // asks of it, by name, through the IDispatch the list was given, as Explorer's list hands it
+    // on: where it is, as Explorer gives it, and its document's Folder, the shell's own object
+    // for the folder. Path is, as Explorer's, the program's folder, not the window's. A folder
+    // with a space and a # in its name is escaped in its url as Explorer escapes it. A share
+    // isn't in the list, as naming it to the shell waits on the network, so is asked of a window
+    // made for it; its Folder, which would ask the network, isn't asked. The type information
+    // is the type library's, which names them as it names Explorer's.
+    [Test]
+    public async Task AScriptFindsTheFolderAWindowShows()
+    {
+        using var fixture = Fixture.Create();
+        var odd = fixture.At("My Folder #1");
+        Directory.CreateDirectory(odd);
+        var list = new FakeList(fixture);
+        using var replaced = Replace(list);
+        using var form = await Show(fixture, fixture.Root, odd, Locations.ThisPC);
+        var share = new ShellWindows.ShellWindow(null!, IntPtr.Zero, null!, 0, @"\\server\share\My Folder #1", []);
+        var shareDispatch = TypedDispatch.DispatchOf(share);
+        // Whatever the temp folder's path, a space in the user's name say, escaped.
+        var rootUrl = ShellWindows.LocationUrl(fixture.Root);
+        var program = Path.GetDirectoryName(Environment.ProcessPath)! + Path.DirectorySeparatorChar;
+        string Described(IntPtr window, bool folder = true)
+        {
+            var lines = new List<string>
+            {
+                $"LocationURL: {LateBound.Text(window, "LocationURL")}",
+                $"LocationName: {LateBound.Text(window, "LocationName")}",
+                $"Path: {LateBound.Text(window, "Path")}"
+            };
+            if (folder)
+            {
+                using var document = LateBound.Object(window, "Document");
+                using var shellFolder = LateBound.Object(document.Pointer, "Folder");
+                using var self = LateBound.Object(shellFolder.Pointer, "Self");
+                lines.Add($"Document.Folder.Self.Path: {LateBound.Text(self.Pointer, "Path")}");
+                lines.Add($"Document.Folder.Title: {LateBound.Text(shellFolder.Pointer, "Title")}");
+            }
+
+            return string.Join(" | ", lines)
+                .Replace(rootUrl, "{root url}")
+                .Replace(fixture.Root, "{root}")
+                .Replace(program, "{program}");
+        }
+
+        string typeNames;
+        using (var document = LateBound.Object(list.DispatchShowing(fixture.Root), "Document"))
+        {
+            typeNames = $"{LateBound.TypeName(list.DispatchShowing(fixture.Root))}, {LateBound.TypeName(document.Pointer)}";
+        }
+
+        await Verify(
+            new
+            {
+                root = Described(list.DispatchShowing(fixture.Root)),
+                spaceAndHash = Described(list.DispatchShowing(odd)),
+                thisPC = Described(list.DispatchShowing(Locations.ThisPCParsingName)),
+                share = Described(shareDispatch, folder: false),
+                typeNames
+            })
+            .Snapshot(
+                """
+                {
+                  root: LocationURL: {root url} | LocationName: Projects | Path: {program} | Document.Folder.Self.Path: {root} | Document.Folder.Title: Projects,
+                  spaceAndHash: LocationURL: {root url}/My%20Folder%20%231 | LocationName: My Folder #1 | Path: {program} | Document.Folder.Self.Path: {root}\My Folder #1 | Document.Folder.Title: My Folder #1,
+                  thisPC: LocationURL:  | LocationName: This PC | Path: {program} | Document.Folder.Self.Path: ::{20D04FE0-3AEA-1069-A2D8-08002B30309D} | Document.Folder.Title: This PC,
+                  share: LocationURL: file://server/share/My%20Folder%20%231 | LocationName: My Folder #1 | Path: {program},
+                  typeNames: IWebBrowserApp, IShellFolderViewDual
+                }
+                """);
+        Marshal.Release(shareDispatch);
+    }
+
+    // As a script in PowerShell has it, in another process, from what the list hands it: the
+    // properties by name, with the type information PowerShell reads them by, which without it
+    // it saw none of.
+    [Test]
+    public async Task PowerShellFindsTheFolderAWindowShows()
+    {
+        using var fixture = Fixture.Create();
+        var odd = fixture.At("My Folder #1");
+        Directory.CreateDirectory(odd);
+        var list = new FakeList(fixture);
+        using var replaced = Replace(list);
+        using var form = await Show(fixture, odd);
+
+        // In the running object table, under a class of this run's own, for PowerShell to find
+        // it, as it would find a window in Shell.Application's Windows().
+        var classId = Guid.NewGuid();
+        Marshal.ThrowExceptionForHR(RegisterActiveObject(list.DispatchShowing(odd), ref classId, 0, out var registration));
+        string output;
+        try
+        {
+            var script =
+                $$"""
+                  $ProgressPreference = 'SilentlyContinue'
+                  Add-Type -TypeDefinition @'
+                  using System; using System.Runtime.InteropServices;
+                  public static class RunningObjects {
+                      [DllImport("oleaut32.dll", PreserveSig = false)]
+                      [return: MarshalAs(UnmanagedType.IUnknown)]
+                      public static extern object GetActiveObject(ref Guid classId, IntPtr reserved);
+                  }
+                  '@
+                  $classId = [Guid]'{{classId}}'
+                  $window = [RunningObjects]::GetActiveObject([ref]$classId, [IntPtr]::Zero)
+                  "LocationURL: $($window.LocationURL)"
+                  "LocationName: $($window.LocationName)"
+                  "Document.Folder.Self.Path: $($window.Document.Folder.Self.Path)"
+                  "Listed: $(($window | Get-Member -MemberType Property | Where-Object Name -in 'LocationURL', 'LocationName').Count)"
+                  """;
+            var startInfo = new ProcessStartInfo("powershell.exe")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-EncodedCommand");
+            startInfo.ArgumentList.Add(PowerShell.Encode(script));
+            using var process = Process.Start(startInfo)!;
+            var reading = process.StandardOutput.ReadToEndAsync();
+            // What went wrong, should anything, shown with what it wrote.
+            var errors = process.StandardError.ReadToEndAsync();
+
+            // Its calls arrive as messages, for this thread to dispatch while it waits.
+            await Pump.Until(() => process.HasExited);
+            output = (await reading + await errors).Trim();
+        }
+        finally
+        {
+            RevokeActiveObject(registration, IntPtr.Zero);
+        }
+
+        // Whatever the temp folder's path, a space in the user's name say, escaped.
+        var rootUrl = ShellWindows.LocationUrl(fixture.Root);
+        await Verify(output.Replace(rootUrl, "{root url}").Replace(fixture.Root, "{root}"))
+            .Snapshot(
+                """
+                LocationURL: {root url}/My%20Folder%20%231
+                LocationName: My Folder #1
+                Document.Folder.Self.Path: {root}\My Folder #1
+                Listed: 2
+                """);
+    }
+
+    [DllImport("oleaut32.dll")]
+    static extern int RegisterActiveObject(IntPtr unknown, ref Guid classId, int flags, out int registration);
+
+    [DllImport("oleaut32.dll")]
+    static extern int RevokeActiveObject(int registration, IntPtr reserved);
+
+    /// <summary>
+    /// IDispatch called as a script calls it: a name looked up, then its value got, through the
+    /// interface's own methods, as another process's calls arrive, rather than through .NET,
+    /// which, handed one of Lode's own objects, would call it as .NET.
+    /// </summary>
+    static class LateBound
+    {
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate int GetTypeInfoMethod(IntPtr self, int index, int locale, out IntPtr typeInfo);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate int GetIDsOfNamesMethod(IntPtr self, ref Guid reserved, [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)] string[] names, int count, int locale, [Out] int[] ids);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate int InvokeMethod(IntPtr self, int id, ref Guid reserved, int locale, ushort flags, ref Parameters parameters, IntPtr result, IntPtr exception, IntPtr argumentError);
+
+        // DISPPARAMS, with no arguments.
+        [StructLayout(LayoutKind.Sequential)]
+        struct Parameters
+        {
+            public IntPtr Arguments;
+            public IntPtr NamedArguments;
+            public int Count;
+            public int NamedCount;
+        }
+
+        const ushort propertyGet = 2;
+        const short textType = 8;
+        const short dispatchType = 9;
+
+        // IDispatch's methods, after IUnknown's three.
+        static T Method<T>(IntPtr dispatch, int slot) =>
+            Marshal.GetDelegateForFunctionPointer<T>(Marshal.ReadIntPtr(Marshal.ReadIntPtr(dispatch), slot * IntPtr.Size));
+
+        public static string Text(IntPtr dispatch, string name) =>
+            Get(dispatch, name, textType, _ => Marshal.PtrToStringBSTR(_));
+
+        public static Counted Object(IntPtr dispatch, string name) =>
+            Get(
+                dispatch,
+                name,
+                dispatchType,
+                _ =>
+                {
+                    Marshal.AddRef(_);
+                    return new Counted(_);
+                });
+
+        static T Get<T>(IntPtr dispatch, string name, short expected, Func<IntPtr, T> read)
+        {
+            var reserved = Guid.Empty;
+            var ids = new int[1];
+            Marshal.ThrowExceptionForHR(Method<GetIDsOfNamesMethod>(dispatch, 5)(dispatch, ref reserved, [name], 1, 0, ids));
+            var parameters = new Parameters();
+            // A VARIANT, cleared.
+            var result = Marshal.AllocCoTaskMem(32);
+            try
+            {
+                for (var offset = 0; offset < 32; offset += 8)
+                {
+                    Marshal.WriteInt64(result, offset, 0);
+                }
+
+                Marshal.ThrowExceptionForHR(Method<InvokeMethod>(dispatch, 6)(dispatch, ids[0], ref reserved, 0, propertyGet, ref parameters, result, IntPtr.Zero, IntPtr.Zero));
+                var type = Marshal.ReadInt16(result);
+                if (type != expected)
+                {
+                    throw new InvalidOperationException($"{name} is of type {type}, not {expected}");
+                }
+
+                return read(Marshal.ReadIntPtr(result, 8));
+            }
+            finally
+            {
+                VariantClear(result);
+                Marshal.FreeCoTaskMem(result);
+            }
+        }
+
+        public static string TypeName(IntPtr dispatch)
+        {
+            Marshal.ThrowExceptionForHR(Method<GetTypeInfoMethod>(dispatch, 4)(dispatch, 0, 0, out var pointer));
+            try
+            {
+                var typeInfo = (System.Runtime.InteropServices.ComTypes.ITypeInfo)Marshal.GetObjectForIUnknown(pointer);
+                typeInfo.GetDocumentation(-1, out var typeName, out _, out _, out _);
+                return typeName;
+            }
+            finally
+            {
+                Marshal.Release(pointer);
+            }
+        }
+
+        [DllImport("oleaut32.dll")]
+        static extern int VariantClear(IntPtr variant);
+    }
+
+    // An object a script was handed, released once it is done with it.
+    sealed class Counted(IntPtr pointer) : IDisposable
+    {
+        public IntPtr Pointer { get; } = pointer;
+
+        public void Dispose() =>
+            Marshal.Release(Pointer);
     }
 
     static void Select(FakeList list, string path, uint flags)
@@ -271,6 +534,9 @@ public class ShellWindowsTests
             public required string Folder { get; set; }
             public int Window { get; set; }
             public object? Registered { get; set; }
+
+            // What the list was given, as Explorer's hands it to a script.
+            public IntPtr Dispatch { get; set; }
         }
 
         SortedDictionary<int, Entry> entries = [];
@@ -284,7 +550,17 @@ public class ShellWindowsTests
             windowNames[unchecked((int)form.Handle.ToInt64())] = name;
 
         public object WindowShowing(string folder) =>
-            entries.Values.First(_ => string.Equals(_.Folder, folder, StringComparison.OrdinalIgnoreCase)).Registered!;
+            EntryShowing(folder).Registered!;
+
+        /// <summary>
+        /// The IDispatch the list was given for the window showing the folder, as Explorer's list
+        /// hands it to a script asking Shell.Application for its windows.
+        /// </summary>
+        public IntPtr DispatchShowing(string folder) =>
+            EntryShowing(folder).Dispatch;
+
+        Entry EntryShowing(string folder) =>
+            entries.Values.First(_ => string.Equals(_.Folder, folder, StringComparison.OrdinalIgnoreCase));
 
         public List<string> Describe() =>
             entries.Values
@@ -310,12 +586,14 @@ public class ShellWindowsTests
             return 0;
         }
 
-        public int Register(object window, int handle, int windowClass, out int cookie)
+        public int Register(IntPtr window, int handle, int windowClass, out int cookie)
         {
             cookie = pending;
             var entry = entries[cookie];
             entry.Window = handle;
-            entry.Registered = window;
+            entry.Registered = Marshal.GetObjectForIUnknown(window);
+            Marshal.AddRef(window);
+            entry.Dispatch = window;
             Calls.Add($"Register {cookie}, class {windowClass}");
             return 0;
         }
@@ -330,7 +608,12 @@ public class ShellWindowsTests
 
         public int Revoke(int cookie)
         {
-            entries.Remove(cookie);
+            if (entries.Remove(cookie, out var entry) &&
+                entry.Dispatch != IntPtr.Zero)
+            {
+                Marshal.Release(entry.Dispatch);
+            }
+
             Calls.Add($"Revoke {cookie}");
             return 0;
         }

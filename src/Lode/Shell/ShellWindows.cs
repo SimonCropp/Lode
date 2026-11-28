@@ -11,7 +11,10 @@
 /// What the shell asks of a window it finds, as Explorer++ found: the object registered for it,
 /// as <see cref="IWebBrowserApp"/>, for its window handle, to bring that to the front, and for its
 /// document; the document, as <see cref="IComServiceProvider"/>, for the IFolderView service as
-/// <see cref="IShellView"/>; and that, to select each item. <see cref="ShellWindow"/> is all three.
+/// <see cref="IShellView"/>; and that, to select each item. <see cref="ShellWindow"/> is the first
+/// and the last, <see cref="ShellFolderView"/> the document. A script finding the folders Explorer
+/// shows, through Shell.Application's Windows(), finds Lode's tabs there too, and asks the same of
+/// them: LocationURL, LocationName, and Document.Folder.Self.Path.
 /// Every tab of a window is registered under the window's handle, each with its own cookie, so
 /// a folder in a tab in the background is found too, and selecting in it picks the tab. A tab in
 /// a window in the tray is taken out, since another launch would not open in it either (see
@@ -222,13 +225,21 @@ public static partial class ShellWindows
 
         var shellWindow = new ShellWindow(view, window, target, cookie, view.CurrentPath, folder);
         var done = false;
+        var dispatch = IntPtr.Zero;
         try
         {
-            // The handle as a long, as the list keeps it: only its lower 32 bits mean anything.
-            done = target.Register(shellWindow, unchecked((int)window.ToInt64()), browserWindow, out _) >= 0;
+            // The IDispatch a script calls by name: see TypedDispatch. The handle as a long, as
+            // the list keeps it: only its lower 32 bits mean anything.
+            dispatch = TypedDispatch.DispatchOf(shellWindow);
+            done = target.Register(dispatch, unchecked((int)window.ToInt64()), browserWindow, out _) >= 0;
         }
         finally
         {
+            if (dispatch != IntPtr.Zero)
+            {
+                Marshal.Release(dispatch);
+            }
+
             // A pending window left in the list is one SHOpenFolderAndSelectItems waits the full
             // 20 seconds for, for that folder, every time, until Explorer restarts.
             if (!done)
@@ -387,8 +398,11 @@ public static partial class ShellWindows
     }
 
     /// <summary>
-    /// A tab in the list: what the shell finds for it, its view, its document and its window all
-    /// at once.
+    /// A tab in the list: what the shell finds for it, its view and its window all at once, and
+    /// what a script finds for it in Shell.Application's Windows(), as it would one of Explorer's:
+    /// where it is, LocationURL and LocationName, and its <see cref="ShellFolderView"/> document,
+    /// whose Folder is the folder itself. A script calls these by name, through the IDispatch
+    /// <see cref="TypedDispatch"/> gives it, as Explorer's own type library names them.
     /// </summary>
     /// <remarks>
     /// Public, as is <see cref="IWebBrowserApp"/>, only because .NET gives an object IDispatch,
@@ -400,11 +414,17 @@ public static partial class ShellWindows
     public sealed class ShellWindow :
         IWebBrowserApp,
         IComServiceProvider,
-        IShellView
+        IShellView,
+        ICustomQueryInterface
     {
         // Null once out of the list: the app that found it may still hold it.
         FolderView? view;
         SynchronizationContext? context = SynchronizationContext.Current;
+
+        // Made the first time each is asked for, and kept, as an app holds on to what it found.
+        ShellFolderView? document;
+        TypedDispatch? dispatch;
+        bool dispatchMade;
 
         // What an app has asked to have selected, since it asked for the others to be
         // deselected, and whether showing them is on its way.
@@ -509,9 +529,26 @@ public static partial class ShellWindows
             }
         }
 
-        int IWebBrowserApp.get_Document(out object? document)
+        CustomQueryInterfaceResult ICustomQueryInterface.GetInterface(ref Guid interfaceId, out IntPtr result)
         {
-            document = this;
+            result = IntPtr.Zero;
+            if (!TypedDispatch.IsDispatch(interfaceId))
+            {
+                return CustomQueryInterfaceResult.NotHandled;
+            }
+
+            if (!dispatchMade)
+            {
+                dispatchMade = true;
+                dispatch = TypedDispatch.Create(this, typeof(IWebBrowserApp), internetControlsLibrary, 1, 1);
+            }
+
+            return dispatch?.QueryInterface(out result) ?? CustomQueryInterfaceResult.NotHandled;
+        }
+
+        int IWebBrowserApp.get_Document(out IntPtr document)
+        {
+            document = TypedDispatch.DispatchOf(this.document ??= new(this));
             return 0;
         }
 
@@ -521,7 +558,65 @@ public static partial class ShellWindows
             return 0;
         }
 
-        // The rest of a browser window's and a shell view's, which the shell doesn't ask for.
+        // As Explorer gives it, file:///C:/My%20Folder, or file://server/share for a share, and
+        // nothing for This PC, which is no file.
+        int IWebBrowserApp.get_LocationURL(out IntPtr url)
+        {
+            url = Marshal.StringToBSTR(LocationUrl(Path));
+            return 0;
+        }
+
+        // As Explorer shows it, and names its window: Downloads, Local Disk (C:), This PC.
+        int IWebBrowserApp.get_LocationName(out IntPtr name)
+        {
+            name = Marshal.StringToBSTR(LocationName(Path, Folder));
+            return 0;
+        }
+
+        // Not the folder, which Explorer gives as LocationURL, and as its document's Folder, but,
+        // as Explorer's is C:\Windows\, the folder of the program the window is.
+        int IWebBrowserApp.get_Path(out IntPtr folder)
+        {
+            folder = Marshal.StringToBSTR(ProgramFolder());
+            return 0;
+        }
+
+        /// <summary>
+        /// The shell's own Folder object for the folder the tab shows, as Shell.Application's
+        /// NameSpace gives a script, counted: the same kind of object Explorer's document gives as
+        /// its Folder, with its Self, its Title, its Items and the rest. Zero where the shell has
+        /// none for it.
+        /// </summary>
+        internal IntPtr ShellFolder()
+        {
+            var parsingName = Locations.IsThisPC(Path) ? Locations.ThisPCParsingName : Path;
+            object? shell = null;
+            try
+            {
+                shell = Activator.CreateInstance(Type.GetTypeFromCLSID(shellApplication)!);
+                if (shell is not IShellDispatch application ||
+                    application.NameSpace(parsingName, out var folder) < 0)
+                {
+                    return IntPtr.Zero;
+                }
+
+                return folder;
+            }
+            catch (COMException)
+            {
+                return IntPtr.Zero;
+            }
+            finally
+            {
+                if (shell != null)
+                {
+                    Marshal.ReleaseComObject(shell);
+                }
+            }
+        }
+
+        // The rest of a browser window's and a shell view's, which neither the shell nor a script
+        // finding a window's folder asks for.
         int IWebBrowserApp.GoBack() => notImplemented;
         int IWebBrowserApp.GoForward() => notImplemented;
         int IWebBrowserApp.GoHome() => notImplemented;
@@ -543,8 +638,6 @@ public static partial class ShellWindows
         int IWebBrowserApp.put_Width(int width) => notImplemented;
         int IWebBrowserApp.get_Height(out int height) => NotImplemented(out height);
         int IWebBrowserApp.put_Height(int height) => notImplemented;
-        int IWebBrowserApp.get_LocationName(out IntPtr name) => NotImplemented(out name);
-        int IWebBrowserApp.get_LocationURL(out IntPtr url) => NotImplemented(out url);
         int IWebBrowserApp.get_Busy(out short busy) => NotImplemented(out busy);
         int IWebBrowserApp.Quit() => notImplemented;
         int IWebBrowserApp.ClientToWindow(ref int width, ref int height) => notImplemented;
@@ -552,7 +645,6 @@ public static partial class ShellWindows
         int IWebBrowserApp.GetProperty(string property, out object? value) => NotImplemented(out value);
         int IWebBrowserApp.get_Name(out IntPtr name) => NotImplemented(out name);
         int IWebBrowserApp.get_FullName(out IntPtr fullName) => NotImplemented(out fullName);
-        int IWebBrowserApp.get_Path(out IntPtr folder) => NotImplemented(out folder);
         int IWebBrowserApp.get_Visible(out short visible) => NotImplemented(out visible);
         int IWebBrowserApp.put_Visible(short visible) => notImplemented;
         int IWebBrowserApp.get_StatusBar(out short statusBar) => NotImplemented(out statusBar);
@@ -585,6 +677,211 @@ public static partial class ShellWindows
         }
     }
 
+    /// <summary>
+    /// A tab's document, as the shell finds it from the tab and a script from its window's
+    /// Document: to the shell, the way to the view, to select in it; to a script, the folder, as
+    /// Folder, the shell's own object for it, so <c>Document.Folder.Self.Path</c> is the path of
+    /// the folder the tab shows, as it is of the folder Explorer's window shows.
+    /// </summary>
+    /// <remarks>
+    /// Public, as <see cref="ShellWindow"/> is, for its IDispatch.
+    /// </remarks>
+    [ComVisible(true)]
+    [ClassInterface(ClassInterfaceType.None)]
+    [ComDefaultInterface(typeof(IShellFolderViewDual))]
+    public sealed class ShellFolderView :
+        IShellFolderViewDual,
+        IComServiceProvider,
+        ICustomQueryInterface
+    {
+        static Guid folderViewDualId = typeof(IShellFolderViewDual).GUID;
+
+        readonly ShellWindow window;
+        TypedDispatch? dispatch;
+        bool dispatchMade;
+
+        internal ShellFolderView(ShellWindow window) =>
+            this.window = window;
+
+        int IComServiceProvider.QueryService(ref Guid service, ref Guid interfaceId, out IntPtr result) =>
+            ((IComServiceProvider)window).QueryService(ref service, ref interfaceId, out result);
+
+        CustomQueryInterfaceResult ICustomQueryInterface.GetInterface(ref Guid interfaceId, out IntPtr result)
+        {
+            result = IntPtr.Zero;
+
+            // A script's, through IDispatch, of which Folder alone does anything. Asked for as
+            // itself, it is turned down, as it was before the document had it, so the shell,
+            // should it ask, still selects through the view rather than its SelectItem, which
+            // does nothing.
+            if (interfaceId == folderViewDualId)
+            {
+                return CustomQueryInterfaceResult.Failed;
+            }
+
+            if (!TypedDispatch.IsDispatch(interfaceId))
+            {
+                return CustomQueryInterfaceResult.NotHandled;
+            }
+
+            if (!dispatchMade)
+            {
+                dispatchMade = true;
+                dispatch = TypedDispatch.Create(this, typeof(IShellFolderViewDual), shellLibrary, 1, 0);
+            }
+
+            return dispatch?.QueryInterface(out result) ?? CustomQueryInterfaceResult.NotHandled;
+        }
+
+        int IShellFolderViewDual.get_Folder(out IntPtr folder)
+        {
+            folder = window.ShellFolder();
+            return folder == IntPtr.Zero ? failed : 0;
+        }
+
+        // The rest of a view's, which a script finding the folder doesn't ask for.
+        int IShellFolderViewDual.get_Application(out IntPtr application) => NotImplemented(out application);
+        int IShellFolderViewDual.get_Parent(out IntPtr parent) => NotImplemented(out parent);
+        int IShellFolderViewDual.SelectedItems(out IntPtr items) => NotImplemented(out items);
+        int IShellFolderViewDual.get_FocusedItem(out IntPtr item) => NotImplemented(out item);
+        int IShellFolderViewDual.SelectItem(IntPtr item, int flags) => notImplemented;
+        int IShellFolderViewDual.PopupItemMenu(IntPtr item, object x, object y, out IntPtr chosen) => NotImplemented(out chosen);
+        int IShellFolderViewDual.get_Script(out IntPtr script) => NotImplemented(out script);
+        int IShellFolderViewDual.get_ViewOptions(out int options) => NotImplemented(out options);
+
+        static int NotImplemented<T>(out T? value)
+        {
+            value = default;
+            return notImplemented;
+        }
+    }
+
+    // The type libraries Explorer's window and its document are described by: Microsoft Internet
+    // Controls (SHDocVw), for IWebBrowserApp, and Microsoft Shell Controls And Automation, for
+    // IShellFolderViewDual.
+    static Guid internetControlsLibrary = new("EAB22AC0-30C1-11CF-A7EB-0000C05BAE0B");
+    static Guid shellLibrary = new("50A7E9B0-70EF-11D1-B75A-00A0C90564FE");
+
+    // Shell.Application.
+    static Guid shellApplication = new("13709620-C279-11CE-A49E-444553540000");
+
+    /// <summary>
+    /// A folder as Explorer gives it as a window's LocationURL: escaped as the shell escapes a
+    /// path into a url, file:///C:/My%20Folder%23, a share's file://server/share, and nothing
+    /// for This PC, which is no file.
+    /// </summary>
+    internal static string LocationUrl(string path)
+    {
+        if (Locations.IsThisPC(path))
+        {
+            return "";
+        }
+
+        // Each character escaped as three at most, and file:/// before them.
+        var buffer = new char[path.Length * 3 + 16];
+        var length = (uint)buffer.Length;
+        if (UrlCreateFromPathW(path, buffer, ref length, 0) < 0)
+        {
+            return "";
+        }
+
+        return new(buffer, 0, (int)length);
+    }
+
+    /// <summary>
+    /// A folder as Explorer names it, as a window's LocationName: as the shell shows it, for a
+    /// folder on this machine, Downloads, Local Disk (C:), This PC, from <paramref name="folder"/>,
+    /// its pidl. Somewhere on the network, which asking the shell about would wait on, is named
+    /// as Lode names it, which is as Explorer does: a share as share (\\server).
+    /// </summary>
+    internal static string LocationName(string path, byte[] folder)
+    {
+        if (Locations.IsRemote(path) ||
+            folder.Length == 0)
+        {
+            return Locations.DisplayName(path);
+        }
+
+        var pidl = Marshal.AllocCoTaskMem(folder.Length);
+        try
+        {
+            Marshal.Copy(folder, 0, pidl, folder.Length);
+            if (SHGetNameFromIDList(pidl, normalDisplay, out var name) < 0)
+            {
+                return Locations.DisplayName(path);
+            }
+
+            try
+            {
+                return Marshal.PtrToStringUni(name) ?? Locations.DisplayName(path);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(name);
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(pidl);
+        }
+    }
+
+    // The folder of the program running, with the separator after it, as Explorer gives its own,
+    // C:\Windows\.
+    static string ProgramFolder() =>
+        Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory) + Path.DirectorySeparatorChar;
+
+    // IShellFolderViewDual, what Explorer's document is to a script, with every method in its
+    // place, as the standard IDispatch calls them by their places in the vtable.
+    [ComImport]
+    [Guid("E7A1AF80-4D96-11CF-960C-0080C7F4EE85")]
+    [InterfaceType(ComInterfaceType.InterfaceIsDual)]
+    public interface IShellFolderViewDual
+    {
+        [PreserveSig]
+        int get_Application(out IntPtr application);
+
+        [PreserveSig]
+        int get_Parent(out IntPtr parent);
+
+        [PreserveSig]
+        int get_Folder(out IntPtr folder);
+
+        [PreserveSig]
+        int SelectedItems(out IntPtr items);
+
+        [PreserveSig]
+        int get_FocusedItem(out IntPtr item);
+
+        [PreserveSig]
+        int SelectItem(IntPtr item, int flags);
+
+        [PreserveSig]
+        int PopupItemMenu(IntPtr item, [MarshalAs(UnmanagedType.Struct)] object x, [MarshalAs(UnmanagedType.Struct)] object y, out IntPtr chosen);
+
+        [PreserveSig]
+        int get_Script(out IntPtr script);
+
+        [PreserveSig]
+        int get_ViewOptions(out int options);
+    }
+
+    // Shell.Application's IShellDispatch, as far as NameSpace, the one method of it Lode calls.
+    [ComImport]
+    [Guid("D8F015C0-C278-11CE-A49E-444553540000")]
+    [InterfaceType(ComInterfaceType.InterfaceIsDual)]
+    internal interface IShellDispatch
+    {
+        [PreserveSig]
+        int get_Application(out IntPtr application);
+
+        [PreserveSig]
+        int get_Parent(out IntPtr parent);
+
+        [PreserveSig]
+        int NameSpace([MarshalAs(UnmanagedType.Struct)] object folder, out IntPtr result);
+    }
+
     [ComImport]
     [Guid("85CB6900-4D95-11CF-960C-0080C7F4EE85")]
     [InterfaceType(ComInterfaceType.InterfaceIsDual)]
@@ -599,8 +896,9 @@ public static partial class ShellWindows
         [PreserveSig]
         int _NewEnum([MarshalAs(UnmanagedType.IUnknown)] out object? enumerator);
 
+        // The window's IDispatch as Lode asks for it, rather than as .NET's marshalling would.
         [PreserveSig]
-        int Register([MarshalAs(UnmanagedType.IDispatch)] object window, int handle, int windowClass, out int cookie);
+        int Register(IntPtr window, int handle, int windowClass, out int cookie);
 
         [PreserveSig]
         int RegisterPending(int threadId, ref object location, ref object? root, int windowClass, out int cookie);
@@ -722,7 +1020,7 @@ public static partial class ShellWindows
         int get_Container(out IntPtr container);
 
         [PreserveSig]
-        int get_Document([MarshalAs(UnmanagedType.IDispatch)] out object? document);
+        int get_Document(out IntPtr document);
 
         [PreserveSig]
         int get_TopLevelContainer(out short topLevel);
@@ -824,7 +1122,12 @@ public static partial class ShellWindows
         int put_FullScreen(short fullScreen);
     }
 
+    // SIGDN_DESKTOPABSOLUTEPARSING, and SIGDN_NORMALDISPLAY, what the shell shows.
     const uint desktopAbsoluteParsing = 0x80028000;
+    const uint normalDisplay = 0x00000000;
+
+    [LibraryImport("shlwapi.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int UrlCreateFromPathW(string path, [Out] char[] url, ref uint length, uint reserved);
 
     [LibraryImport("kernel32.dll")]
     private static partial int GetCurrentThreadId();

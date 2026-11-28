@@ -76,6 +76,7 @@ Also buttons on the **File Explorer** page of **Options**. Replacing makes Lode 
  * Explorer's own **Open** stays on folders' right-click menus.
  * Apps that ask to *explore* a folder, as Electron apps do (GitHub Desktop's **Show in Explorer**), get Lode too. Folders Lode can't show (Control Panel, the Recycle Bin, libraries) go to Explorer.
  * Apps that show a file selected (a browser's **Show in folder**, VS Code's **Reveal in File Explorer**) get it selected in Lode, in the tab showing its folder, or a new one.
+ * Scripts and tools that find the folder Explorer shows through `Shell.Application`'s `Windows()` find Lode's tabs there too, with `LocationURL`, `LocationName` and `Document.Folder.Self.Path` as Explorer's windows have them, so PowerShell's `(New-Object -ComObject Shell.Application).Windows()` lists them. A tab on the network isn't there, as naming it to the shell can wait on the network.
  * The taskbar's File Explorer button, and apps that start `explorer.exe` themselves, still open Explorer.
  * Run `lode --restore-explorer` before uninstalling the tool.
 
