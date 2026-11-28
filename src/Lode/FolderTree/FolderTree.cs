@@ -802,15 +802,28 @@ sealed class FolderTree : TreeView
 
     SortedSet<string> servers = new(StringComparer.OrdinalIgnoreCase);
 
+    // The shares Lode knows of on those machines: those of the folders pinned or recent, and
+    // every share gone to since Lode started. Each is under its machine whether the machine
+    // lists it or not: one of its administrative shares, c$ say, which a machine never lists,
+    // or a share on one that won't say what it shares at all, as some NASes won't. Left to what
+    // the machine lists, the tree would stop on the machine, short of where the tab is.
+    HashSet<string> knownShares = new(StringComparer.OrdinalIgnoreCase);
+
     // The Network heading and its machines, as places and the shares gone to have them: one
     // added since shows, and those that show stay as they are, expanded or not.
     void ShowNetwork()
     {
         foreach (var folder in places.Pinned.Concat(places.Recent))
         {
-            if (Locations.Server(folder) is { } server)
+            if (Locations.Server(folder) is not { } server)
             {
-                servers.Add(server);
+                continue;
+            }
+
+            servers.Add(server);
+            if (Locations.ChildToward(folder, server) is { } share)
+            {
+                knownShares.Add(share);
             }
         }
 
@@ -866,6 +879,12 @@ sealed class FolderTree : TreeView
     /// </summary>
     internal static Func<string, List<(string Name, bool Hidden)>> ListShares = Shares.List;
 
+    /// <summary>
+    /// Finds the folders in a folder on a share, off the UI thread, as those anywhere else are
+    /// found. Tests swap it, having no network to ask.
+    /// </summary>
+    internal static Func<string, EnumerationOptions, SystemItems?, IEnumerable<(string Name, string FullPath)>> FindSharedSubfolders = FindSubfolders;
+
     static bool IsShortcut(TreeNode node) =>
         node.Parent?.Tag is Section;
 
@@ -908,7 +927,10 @@ sealed class FolderTree : TreeView
             // across the network into each one to see whether it should.
             var lookInside = !Locations.IsRemote(path);
             var directories = new List<Subfolder>();
-            foreach (var (name, fullPath) in FindSubfolders(path, options, hiddenSystem))
+            var found = Locations.IsNetwork(path)
+                ? FindSharedSubfolders(path, options, hiddenSystem)
+                : FindSubfolders(path, options, hiddenSystem);
+            foreach (var (name, fullPath) in found)
             {
                 var hasSubfolders = !lookInside || HasSubfolders(fullPath, options, hiddenSystem);
                 directories.Add(new(name, fullPath, hasSubfolders));
@@ -964,11 +986,11 @@ sealed class FolderTree : TreeView
     // Reads folders' subfolders off the UI thread, by the settings as they are now. One result
     // for each folder, in the same order. The watches given, that failed and could not be
     // started again then, watch again first, so nothing after the read is missed.
-    Task<List<List<Subfolder>?>> ReadAsync(IReadOnlyList<string> paths, IReadOnlyList<FolderWatcher?>? reviving = null)
+    async Task<List<List<Subfolder>?>> ReadAsync(IReadOnlyList<string> paths, IReadOnlyList<FolderWatcher?>? reviving = null)
     {
         var showHidden = settings.ShowHidden;
         var hiddenSystem = settings.HiddenSystemItems();
-        return Task.Run(() =>
+        var read = await Task.Run(() =>
         {
             foreach (var watcher in reviving ?? [])
             {
@@ -979,6 +1001,62 @@ sealed class FolderTree : TreeView
                 .Select(_ => ReadSubfolders(_, showHidden, hiddenSystem))
                 .ToList();
         });
+
+        for (var index = 0; index < paths.Count; index++)
+        {
+            read[index] = WithKnownShares(paths[index], read[index]);
+        }
+
+        return read;
+    }
+
+    // A machine's shares as it listed them, with those known on it that it didn't list, and
+    // those alone where it couldn't be asked: a machine that won't say what it shares still
+    // expands, to the shares gone to on it, and is asked again the next time it is expanded.
+    List<Subfolder>? WithKnownShares(string path, List<Subfolder>? read)
+    {
+        if (!Locations.IsServer(path))
+        {
+            return read;
+        }
+
+        var unlisted = knownShares
+            .Where(_ => Locations.Same(Locations.Server(_), path) &&
+                        read?.Any(listed => Locations.Same(listed.FullPath, _)) != true)
+            .Select(_ => new Subfolder(Locations.ShareName(_), _, true))
+            .ToList();
+        if (unlisted.Count == 0)
+        {
+            return read;
+        }
+
+        return (read ?? [])
+            .Concat(unlisted)
+            .OrderBy(_ => _.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    // Puts a share known on a machine among the shares it shows, in their order: for a machine
+    // that was read before the share was known.
+    static TreeNode AddShare(TreeNode machine, string share)
+    {
+        // One whose shares have not been read has only the stand-in for them, which goes.
+        if (NeedsLoading(machine))
+        {
+            machine.Nodes.Clear();
+        }
+
+        var name = Locations.ShareName(share);
+        var index = 0;
+        while (index < machine.Nodes.Count &&
+               StringComparer.CurrentCultureIgnoreCase.Compare(machine.Nodes[index].Text, name) < 0)
+        {
+            index++;
+        }
+
+        var node = CreateNode(share, name, ShellIcons.FolderIcon);
+        machine.Nodes.Insert(index, node);
+        return node;
     }
 
     // Still in the tree, rather than taken out of it while its folder was being read.
@@ -1691,13 +1769,17 @@ sealed class FolderTree : TreeView
             .MaxBy(_ => ((string) _.Tag!).Length);
 
         // On a share, under the machine it is on, in Network, as Explorer has it: the machine
-        // added there, if it isn't yet.
+        // added there, if it isn't yet, and the share known on it from now on, listed or not.
         if (current == null &&
             places.ShowComputer &&
             Locations.Server(path) is { } server)
         {
             AddServer(server);
             current = ServerNode(server);
+            if (Locations.ChildToward(path, server) is { } share)
+            {
+                knownShares.Add(share);
+            }
         }
 
         if (current == null)
@@ -1733,11 +1815,19 @@ sealed class FolderTree : TreeView
                 var child = current.Nodes
                     .Cast<TreeNode>()
                     .FirstOrDefault(_ => Locations.Same(_.Tag as string, currentPath));
+
+                // The share, known now, on a machine read before it was.
+                if (child == null &&
+                    Locations.IsServer((string) current.Tag!))
+                {
+                    child = AddShare(current, currentPath);
+                }
+
                 if (child == null)
                 {
-                    // A share that can't be listed, its machine offline say, is selected by a
-                    // Pinned or Recent entry for it, where there is one, as it was before
-                    // Network: better than its machine.
+                    // A folder on a share that can't be read, its machine offline say, is
+                    // selected by a Pinned or Recent entry for it, where there is one, as it
+                    // was before Network: better than the share.
                     if (ShortcutFor(path) is { } shortcut &&
                         Locations.IsNetwork(path))
                     {

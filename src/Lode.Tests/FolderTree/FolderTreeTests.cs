@@ -1435,8 +1435,8 @@ public class FolderTreeTests
     }
 
     // A folder pinned on a machine puts the machine in Network from the start. One whose shares
-    // can't be listed, offline say, has its share selected by its pinned entry, as before there
-    // was Network.
+    // can't be listed, offline say, has the pinned share under it all the same, selected there
+    // as the tab's folder.
     [Test]
     [NotInParallel("shares")]
     public async Task APinnedShareOnAMachineOffline()
@@ -1456,12 +1456,113 @@ public class FolderTreeTests
 
             await Assert.That(network.Text).IsEqualTo("Network");
             await Assert.That(machines).IsEquivalentTo(["lodetest"]);
-            await Assert.That(tree.SelectedNode?.Parent?.Text).IsEqualTo("Pinned");
+            await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(@"\\lodetest\Projects");
+            await Assert.That(tree.SelectedNode?.Parent?.Text).IsEqualTo("lodetest");
         }
         finally
         {
             FolderTree.ListShares = listShares;
         }
+    }
+
+    // A share its machine doesn't list is gone into all the same: one of its administrative
+    // shares, c$ say, which a machine never lists. The share is put under the machine, among the
+    // shares it does list, read already for one of those gone to first, and the tree goes on
+    // down to where the tab is, rather than stopping on the machine.
+    [Test]
+    [NotInParallel("shares")]
+    public async Task AShareItsMachineDoesNotListIsGoneInto()
+    {
+        using var fixture = Fixture.Create();
+        var listShares = FolderTree.ListShares;
+        var findSharedSubfolders = FolderTree.FindSharedSubfolders;
+        FolderTree.ListShares = _ => [("Docs", false)];
+        FolderTree.FindSharedSubfolders = FindOnLodetest;
+        try
+        {
+            using var tree = Create(fixture, new() { ShowHidden = false });
+            tree.MakeWatcher = (_, _) => null;
+            tree.SelectPath(@"\\lodetest\Docs");
+            await Pump.Loaded(tree);
+
+            tree.SelectPath(@"\\lodetest\c$\Temp");
+            await Pump.Loaded(tree);
+            var machine = tree.Nodes.Cast<TreeNode>().Last().Nodes.Cast<TreeNode>().Single();
+
+            await Assert.That(machine.Nodes.Cast<TreeNode>().Select(_ => _.Text)).IsEquivalentTo(["c$", "Docs"], CollectionOrdering.Matching);
+            await Assert.That(tree.SelectedNode?.Tag).IsEqualTo(@"\\lodetest\c$\Temp");
+        }
+        finally
+        {
+            FolderTree.ListShares = listShares;
+            FolderTree.FindSharedSubfolders = findSharedSubfolders;
+        }
+    }
+
+    // A machine that won't say what it shares at all, as WSL's and some NASes won't, still has
+    // the share gone to under it, and the tree goes on down to where the tab is. Collapsed and
+    // expanded again, it is asked again what it shares, the share gone to staying meanwhile,
+    // so once it says, the rest show too.
+    [Test]
+    [NotInParallel("shares")]
+    public async Task AMachineThatWontSayWhatItSharesHasTheShareGoneTo()
+    {
+        using var fixture = Fixture.Create();
+        var listShares = FolderTree.ListShares;
+        var findSharedSubfolders = FolderTree.FindSharedSubfolders;
+        var answers = false;
+        FolderTree.ListShares = _ => answers ? [("Docs", false)] : throw new System.ComponentModel.Win32Exception(5);
+        FolderTree.FindSharedSubfolders = FindOnLodetest;
+        try
+        {
+            using var tree = Create(fixture, new() { ShowHidden = false });
+            tree.MakeWatcher = (_, _) => null;
+
+            tree.SelectPath(@"\\lodetest\c$\Temp");
+            await Pump.Loaded(tree);
+            var reached = tree.SelectedNode?.Tag;
+            var machine = tree.Nodes.Cast<TreeNode>().Last().Nodes.Cast<TreeNode>().Single();
+            List<string> Shares() =>
+                machine.Nodes.Cast<TreeNode>().Select(_ => _.Text).ToList();
+            var refusing = Shares();
+
+            // Somewhere else, so the machine is no longer kept up to date for being on the way
+            // to what is selected.
+            tree.SelectPath(fixture.Root);
+            await Pump.Loaded(tree);
+            machine.Collapse();
+            machine.Expand();
+            await Pump.Loaded(tree);
+            var expandedAgain = machine.IsExpanded;
+            var stillRefusing = Shares();
+
+            answers = true;
+            machine.Collapse();
+            machine.Expand();
+            await Pump.Loaded(tree);
+
+            await Assert.That(reached).IsEqualTo(@"\\lodetest\c$\Temp");
+            await Assert.That(refusing).IsEquivalentTo(["c$"]);
+            await Assert.That(expandedAgain).IsTrue();
+            await Assert.That(stillRefusing).IsEquivalentTo(["c$"]);
+            await Assert.That(Shares()).IsEquivalentTo(["c$", "Docs"], CollectionOrdering.Matching);
+        }
+        finally
+        {
+            FolderTree.ListShares = listShares;
+            FolderTree.FindSharedSubfolders = findSharedSubfolders;
+        }
+    }
+
+    // What \\lodetest's c$ has: Temp, with nothing in it.
+    static IEnumerable<(string Name, string FullPath)> FindOnLodetest(string path, EnumerationOptions options, SystemItems? hiddenSystem)
+    {
+        if (Locations.Same(path, @"\\lodetest\c$"))
+        {
+            return [("Temp", @"\\lodetest\c$\Temp")];
+        }
+
+        return [];
     }
 
     static FolderTree Create(Fixture fixture, Settings settings, params string[] pinned) =>
