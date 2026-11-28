@@ -104,14 +104,48 @@ sealed class ClosableTabControl : TabControl
         QueueFit();
     }
 
+    // A tab that comes, or goes, can change which name is widest; its name changing too, which
+    // it does without a layout, as its folder is renamed or gone into. One moving along the row
+    // changes none of that.
+    protected override void OnControlAdded(ControlEventArgs args)
+    {
+        base.OnControlAdded(args);
+        if (args.Control is TabPage page)
+        {
+            page.TextChanged += OnTabTextChanged;
+            if (!moving)
+            {
+                QueueFit();
+            }
+        }
+    }
+
     protected override void OnControlRemoved(ControlEventArgs args)
     {
         base.OnControlRemoved(args);
-        if (!moving &&
-            args.Control is TabPage page)
+        if (args.Control is not TabPage page)
+        {
+            return;
+        }
+
+        page.TextChanged -= OnTabTextChanged;
+        if (!moving)
         {
             icons.Remove(page);
+            nameWidths.Remove(page);
+            QueueFit();
         }
+    }
+
+    void OnTabTextChanged(object? sender, EventArgs args) =>
+        QueueFit();
+
+    // Each name drawn in another font is as wide again only once it is measured in it.
+    protected override void OnFontChanged(EventArgs args)
+    {
+        base.OnFontChanged(args);
+        nameWidths.Clear();
+        QueueFit();
     }
 
     protected override void Dispose(bool disposing)
@@ -154,11 +188,23 @@ sealed class ClosableTabControl : TabControl
         }
     }
 
+    /// <summary>
+    /// How wide a tab's name is drawn, in pixels. Tests wrap it, to count the names measured.
+    /// </summary>
+    internal Func<string, Font, int> MeasureName = static (text, font) =>
+        TextRenderer.MeasureText(text, font, Size.Empty, TextFormatFlags.NoPrefix).Width;
+
+    // How wide each tab's name is drawn, for the name it had when it was measured, so fitting
+    // the tabs again measures only those renamed since. Forgotten as the font changes.
+    Dictionary<TabPage, (string Text, int Width)> nameWidths = [];
+
     // Windows would size each tab from its text, but it measures text its own way, which at
     // some display scales comes out narrower than the text as drawn here. So every tab gets the
     // same width, worked out here from the widest name as it is drawn, as browser tabs do.
-    // Depends only on the names and whether there are icons, so setting it never makes it need
-    // setting again.
+    // Depends only on the names, the font, the scale and whether there are icons, so setting it
+    // never makes it need setting again, and it is done again only when one of them changes,
+    // never as the tabs are painted, which the pointer moving along them has them be over and
+    // over.
     void FitTabs()
     {
         if (!IsHandleCreated || TabCount == 0)
@@ -169,7 +215,7 @@ sealed class ClosableTabControl : TabControl
         var widest = 0;
         for (var index = 0; index < TabCount; index++)
         {
-            widest = Math.Max(widest, TextRenderer.MeasureText(TabPages[index].Text, Font, Size.Empty, TextFormatFlags.NoPrefix).Width);
+            widest = Math.Max(widest, NameWidth(TabPages[index]));
         }
 
         var size = new Size(
@@ -180,6 +226,20 @@ sealed class ClosableTabControl : TabControl
             ItemSize = size;
             ScrollToSelected();
         }
+    }
+
+    int NameWidth(TabPage page)
+    {
+        var text = page.Text;
+        if (nameWidths.TryGetValue(page, out var known) &&
+            known.Text == text)
+        {
+            return known.Width;
+        }
+
+        var width = MeasureName(text, Font);
+        nameWidths[page] = (text, width);
+        return width;
     }
 
     protected override void OnSizeChanged(EventArgs args)
@@ -239,8 +299,9 @@ sealed class ClosableTabControl : TabControl
         SendMessage(Handle, horizontalScrollMessage, (target << 16) | scrollToPosition, IntPtr.Zero);
     }
 
-    // Checked on every paint, since a tab's text changes without a layout. Resizing tabs from
-    // inside a paint is asking for trouble, so that waits until painting is over.
+    // Fitted once whatever changed it is done, once for a run of changes, such as a start
+    // putting its tabs back: not from inside a paint, or a change part way through, as resizing
+    // tabs then is asking for trouble.
     bool fitQueued;
 
     void QueueFit()
@@ -259,10 +320,14 @@ sealed class ClosableTabControl : TabControl
             });
     }
 
+    // At another scale the room round each name, and its icon, are another size, and so, with
+    // the window's font scaled for the monitor, is each name.
     protected override void OnDpiChangedAfterParent(EventArgs args)
     {
         base.OnDpiChangedAfterParent(args);
         ApplyPadding();
+        nameWidths.Clear();
+        QueueFit();
     }
 
     Rectangle CrossBounds(int index)
@@ -401,11 +466,8 @@ sealed class ClosableTabControl : TabControl
         }
     }
 
-    protected override void OnPaint(PaintEventArgs args)
-    {
-        QueueFit();
+    protected override void OnPaint(PaintEventArgs args) =>
         PaintTabs(args.Graphics);
-    }
 
     /// <summary>
     /// Paints the row of tabs, and the line they sit on.
@@ -752,8 +814,29 @@ sealed class ClosableTabControl : TabControl
             return;
         }
 
+        // Only the tab the pointer left and the one it is over look any different, so only they
+        // are painted again, not the whole row at every tab the pointer crosses.
+        InvalidateTab(hoveredTab);
+        if (tab != hoveredTab)
+        {
+            InvalidateTab(tab);
+        }
+
         hoveredTab = tab;
         hoveredCross = cross;
-        Invalidate();
+    }
+
+    // A tab's part of the row, and the divider either side of it, which shows only while neither
+    // tab beside it is under the pointer.
+    void InvalidateTab(int index)
+    {
+        if (index < 0 ||
+            index >= TabCount)
+        {
+            return;
+        }
+
+        var tab = GetTabRect(index);
+        Invalidate(Rectangle.FromLTRB(tab.Left - 1, 0, tab.Right + 1, TabRow.Bottom));
     }
 }

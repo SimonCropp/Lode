@@ -321,6 +321,104 @@ public class ClosableTabControlTests
                 """);
     }
 
+    // The tabs are fitted to the widest name, measured once as a tab comes and again only when
+    // its own name changes: not as the strip is painted, which the pointer moving along it has
+    // it do at every tab crossed, measuring every name each time. Nor is the whole strip painted
+    // again for that: only the tab the pointer left and the one it is over.
+    [Test]
+    public async Task MovingAlongTheTabsMeasuresNoName()
+    {
+        using var tabs = Create(out _);
+        for (var index = 0; index < 27; index++)
+        {
+            tabs.TabPages.Add($"Tab {index}");
+        }
+
+        using var form = Shown(tabs);
+        var measured = new List<string>();
+        var measure = tabs.MeasureName;
+        tabs.MeasureName = (text, font) =>
+        {
+            measured.Add(text);
+            return measure(text, font);
+        };
+        // From the first tab to the second, with nothing between, as the pointer is off screen:
+        // let the window have its messages, and it would hear that the pointer has left it.
+        var first = tabs.GetTabRect(0);
+        var second = tabs.GetTabRect(1);
+        var third = tabs.GetTabRect(2);
+        Send(tabs, mouseMove, first.Left + 10, first.Top + first.Height / 2);
+        ValidateRect(tabs.Handle, IntPtr.Zero);
+        Send(tabs, mouseMove, second.Left + 10, second.Top + second.Height / 2);
+        GetUpdateRect(tabs.Handle, out var repainting, false);
+        ValidateRect(tabs.Handle, IntPtr.Zero);
+
+        // Painted after each move, as Windows paints a strip on screen, which one off screen
+        // isn't: to a bitmap.
+        using var bitmap = new Bitmap(tabs.Width, tabs.Height);
+        void MoveTo(Rectangle tab)
+        {
+            Send(tabs, mouseMove, tab.Left + 10, tab.Top + tab.Height / 2);
+            tabs.DrawToBitmap(bitmap, new(Point.Empty, tabs.Size));
+            Application.DoEvents();
+        }
+
+        for (var index = 0; index < tabs.TabCount; index++)
+        {
+            var tab = tabs.GetTabRect(index);
+            if (tab.Right > tabs.Width)
+            {
+                break;
+            }
+
+            MoveTo(tab);
+        }
+
+        var whileMoving = measured.ToList();
+        var width = tabs.ItemSize.Width;
+        tabs.TabPages[1].Text = "Second, named at length";
+        Application.DoEvents();
+
+        await Assert.That(whileMoving).IsEmpty();
+
+        // The two tabs, and the dividers beside them, give or take the pixel Windows rounds the
+        // region out by for a process unaware of the screen's scale, as tests are, but none of
+        // the third.
+        await Assert.That(repainting.Left).IsLessThanOrEqualTo(first.Left);
+        await Assert.That(repainting.Right).IsGreaterThanOrEqualTo(second.Right);
+        await Assert.That(repainting.Right).IsLessThan(third.Left + third.Width / 2);
+        await Assert.That(measured).IsEquivalentTo(["Second, named at length"]);
+        await Assert.That(tabs.ItemSize.Width).IsGreaterThan(width);
+    }
+
+    [DllImport("user32.dll")]
+    static extern bool GetUpdateRect(IntPtr window, out NativeMethods.NativeRect rect, bool erase);
+
+    [DllImport("user32.dll")]
+    static extern bool ValidateRect(IntPtr window, IntPtr rect);
+
+    // In a window, off screen, so it is painted.
+    static Form Shown(ClosableTabControl tabs)
+    {
+        var form = new QuietForm
+        {
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-20000, -20000),
+            FormBorderStyle = FormBorderStyle.None,
+            ClientSize = tabs.Size
+        };
+        form.Controls.Add(tabs);
+        form.Show();
+        Application.DoEvents();
+        return form;
+    }
+
+    sealed class QuietForm : Form
+    {
+        protected override bool ShowWithoutActivation => true;
+    }
+
     static ClosableTabControl Create(out List<string> closed)
     {
         var tabs = new ClosableTabControl { Size = new(600, 300) };
