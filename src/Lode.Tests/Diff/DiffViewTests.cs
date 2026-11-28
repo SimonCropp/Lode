@@ -449,6 +449,7 @@ public class DiffViewTests
             DiffView.LinesDiscarded -= Told;
             DiffView.Recycler = recycler;
             ChangesPane.AskDiscard = ask;
+            ActionLog.Reset();
         }
     }
 

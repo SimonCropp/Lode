@@ -326,6 +326,7 @@ public class DiffPlacementTests
             DiffView.Read = readDiff;
             DiffView.DiscardLines = discardLines;
             ChangesPane.AskDiscard = ask;
+            ActionLog.Reset();
         }
     }
 
