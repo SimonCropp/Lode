@@ -60,12 +60,19 @@ sealed class IndexFile
     /// </summary>
     public (long Seconds, long Nanoseconds) Timestamp { get; }
 
-    IndexFile(byte[] paths, Entry[] entries, CacheTree? tree, (long, long) timestamp)
+    /// <summary>
+    /// How long the index's file is, which with <see cref="Timestamp"/> tells one written since
+    /// from this one, as git writes it anew whatever it changes. 0 where there is none.
+    /// </summary>
+    public long Length { get; }
+
+    IndexFile(byte[] paths, Entry[] entries, CacheTree? tree, (long, long) timestamp, long length)
     {
         Paths = paths;
         Entries = entries;
         Tree = tree;
         Timestamp = timestamp;
+        Length = length;
     }
 
     public ByteSpan PathOf(int index) =>
@@ -96,7 +103,7 @@ sealed class IndexFile
                     FileNotFoundException or
                     DirectoryNotFoundException)
         {
-            return new([], [], null, (0, 0));
+            return new([], [], null, (0, 0), 0);
         }
 
         return Parse(bytes, UnixTime(written));
@@ -240,7 +247,7 @@ sealed class IndexFile
             position += 8 + size;
         }
 
-        return new(paths, entries, tree, timestamp);
+        return new(paths, entries, tree, timestamp, bytes.Length);
     }
 
     static long DecodeVarint(ByteSpan span, ref int position)

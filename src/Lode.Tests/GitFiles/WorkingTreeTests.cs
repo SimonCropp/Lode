@@ -467,6 +467,133 @@ public class WorkingTreeTests
         File.WriteAllBytes(path, bytes);
     }
 
+    // A file whose time isn't that staged, but whose content is, as npm install, a formatter or
+    // a build leaves one it writes again unchanged: hashed once, and found unchanged on each read
+    // after without being read again, as nothing writes the index.
+    [Test]
+    public async Task HashesAFileTouchedButUnchangedOnce()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var tracked = Path.Combine(repo, "tracked.txt");
+        File.SetLastWriteTimeUtc(tracked, DateTime.UtcNow.AddMinutes(-5));
+        using var hashed = new HashCount(tracked);
+
+        for (var read = 0; read < 3; read++)
+        {
+            await Assert.That((await GitRun.Agree(repo)).Files).IsEmpty();
+        }
+
+        await Assert.That(hashed.Count).IsEqualTo(1);
+    }
+
+    // A file found unchanged, then changed, to the same length: hashed again, as its time isn't
+    // what it was, and found changed; changed back, found unchanged, and not hashed again.
+    [Test]
+    public async Task SeesAChangeToAFileFoundUnchanged()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var tracked = Path.Combine(repo, "tracked.txt");
+        File.SetLastWriteTimeUtc(tracked, DateTime.UtcNow.AddMinutes(-5));
+        using var hashed = new HashCount(tracked);
+        await GitRun.Agree(repo);
+
+        await File.WriteAllTextAsync(tracked, "changed!");
+        File.SetLastWriteTimeUtc(tracked, DateTime.UtcNow.AddMinutes(-4));
+        var changed = await GitRun.Agree(repo);
+        await Assert.That(changed.Files).IsEquivalentTo([new GitFile("tracked.txt", GitChange.Modified)]);
+        await Assert.That(hashed.Count).IsEqualTo(2);
+
+        await File.WriteAllTextAsync(tracked, "original");
+        File.SetLastWriteTimeUtc(tracked, DateTime.UtcNow.AddMinutes(-3));
+        await Assert.That((await GitRun.Agree(repo)).Files).IsEmpty();
+        await Assert.That((await GitRun.Agree(repo)).Files).IsEmpty();
+        await Assert.That(hashed.Count).IsEqualTo(3);
+    }
+
+    // Staging another file, which writes the index, forgets what was found of every file, as
+    // what the index has of them may have changed with it: the file is hashed again.
+    [Test]
+    public async Task ForgetsFilesFoundUnchangedOnceTheIndexChanges()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        var tracked = Path.Combine(repo, "tracked.txt");
+        File.SetLastWriteTimeUtc(tracked, DateTime.UtcNow.AddMinutes(-5));
+        using var hashed = new HashCount(tracked);
+        await GitRun.Agree(repo);
+        await GitRun.Agree(repo);
+        await Assert.That(hashed.Count).IsEqualTo(1);
+
+        await File.WriteAllTextAsync(Path.Combine(repo, "new.txt"), "new");
+        Git(repo, "add", "new.txt");
+        var staged = await GitRun.Agree(repo);
+
+        await Assert.That(staged.Files).IsEquivalentTo([new GitFile("new.txt", GitChange.Added)]);
+        await Assert.That(hashed.Count).IsEqualTo(2);
+    }
+
+    // How a file found unchanged is hashed changing, it is hashed again, as git would hash it
+    // now: a .gitattributes making its CRLFs LFs has it changed, and a filter for it, once the
+    // config gives it one to run, leaves the repository to git.
+    [Test]
+    public async Task HashesAFileFoundUnchangedAgainOnceHowItIsHashedChanges()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "config", "core.autocrlf", "false");
+        var lines = Path.Combine(repo, "lines.txt");
+        await File.WriteAllTextAsync(lines, "one\r\ntwo\r\n");
+        Git(repo, "add", "lines.txt");
+        Git(repo, "commit", "-q", "-m", "Lines");
+        File.SetLastWriteTimeUtc(lines, DateTime.UtcNow.AddMinutes(-5));
+        using var hashed = new HashCount(lines);
+        await Assert.That((await GitRun.Agree(repo)).Files).IsEmpty();
+
+        var attributes = Path.Combine(repo, ".gitattributes");
+        await File.WriteAllTextAsync(attributes, "*.txt text\n");
+        var text = await GitRun.Agree(repo);
+        await Assert.That(text.Files).Contains(new GitFile("lines.txt", GitChange.Modified));
+        await Assert.That(hashed.Count).IsEqualTo(2);
+
+        await File.WriteAllTextAsync(attributes, "*.txt filter=upper\n");
+        await Assert.That((await GitRun.Agree(repo)).Files).IsEquivalentTo([new GitFile(".gitattributes", GitChange.Untracked)]);
+        await GitRun.Agree(repo);
+        await Assert.That(hashed.Count).IsEqualTo(3);
+
+        // Read in process twice, as FromFiles, then FromFaster.
+        Git(repo, "config", "filter.upper.clean", "tr a-z A-Z");
+        await GitRun.LeftToGit(repo);
+        await Assert.That(hashed.Count).IsEqualTo(5);
+    }
+
+    // The times a file is read to be hashed, in process, by this test or any other running.
+    sealed class HashCount : IDisposable
+    {
+        readonly string path;
+        int count;
+
+        public HashCount(string path)
+        {
+            this.path = Path.GetFullPath(path);
+            WorkingTree.Hashing += Counted;
+        }
+
+        public int Count => Volatile.Read(ref count);
+
+        void Counted(string hashed)
+        {
+            if (string.Equals(Path.GetFullPath(hashed), path, StringComparison.OrdinalIgnoreCase))
+            {
+                Interlocked.Increment(ref count);
+            }
+        }
+
+        public void Dispose() =>
+            WorkingTree.Hashing -= Counted;
+    }
+
     // An index cut short, of a version not known, flagged extended in version 2, a path without
     // its end, or a version 4 path dropping more than the one before had, is refused.
     [Test]

@@ -4,7 +4,8 @@
 /// index, then what git doesn't track, a folder of it one path unless status.showUntrackedFiles
 /// says all. A folder's files are looked at by one listing of it, which gives each file's size
 /// and times, as git for Windows' fscache does; only a file whose times aren't those staged is
-/// read, and hashed as git would stage it.
+/// read, and hashed as git would stage it, and one found unchanged only once while it stays as
+/// it was, as <see cref="KnownContent"/> keeps it.
 /// </summary>
 sealed class WorkingTree
 {
@@ -21,7 +22,7 @@ sealed class WorkingTree
     readonly Dictionary<string, Status> statuses = new(StringComparer.Ordinal);
     readonly List<Renames.File> deleted = [];
     readonly List<Renames.File> added = [];
-    readonly List<(int Entry, string Path)> toHash = [];
+    readonly List<(int Entry, string Path, DiskEntry File)> toHash = [];
     readonly List<string> untrackedPaths = [];
 
     enum Untracked
@@ -87,6 +88,7 @@ sealed class WorkingTree
 
     List<GitFile> Read()
     {
+        var started = DateTime.UtcNow.Ticks;
         if (repository.Head is { } head)
         {
             CompareStaged(HeadTree(head), index.Tree, 0, index.Entries.Length, []);
@@ -100,13 +102,7 @@ sealed class WorkingTree
         ListTracked();
         Scan(workTree, new(null, "", this), 0, index.Entries.Length, 0);
         cancel.ThrowIfCancellationRequested();
-        foreach (var (entry, path) in toHash)
-        {
-            if (!SameContent(entry, path))
-            {
-                StatusOf(index.PathText(entry)).Unstaged = 'M';
-            }
-        }
+        HashChanged(started);
 
         var files = new List<GitFile>(statuses.Count + untrackedPaths.Count);
         foreach (var (path, status) in statuses)
@@ -893,24 +889,71 @@ sealed class WorkingTree
             return;
         }
 
-        toHash.Add((start, Path.Combine(folder, file.Name)));
+        toHash.Add((start, Path.Combine(folder, file.Name), file));
+    }
+
+    /// <summary>
+    /// Raised with the full path of each file read to be hashed, for tests to count them.
+    /// </summary>
+    internal static event Action<string>? Hashing;
+
+    // Each file whose times aren't those staged, hashed to see whether it has changed, but for
+    // one found unchanged before and as it was then. One found unchanged now is kept for the
+    // next read, unless it was written within a second of the read starting: written again
+    // after it was listed, in the same tick of the clock its times come from, it would keep the
+    // times it was listed with, and be taken as unchanged whatever it held.
+    void HashChanged(long started)
+    {
+        var settled = started - TimeSpan.TicksPerSecond;
+        var known = KnownContent.Of(repository.GitDir, index, repository.Config);
+        var unchanged = new Dictionary<string, KnownContent.Unchanged>(StringComparer.Ordinal);
+        foreach (var (entry, path, file) in toHash)
+        {
+            var pathText = index.PathText(entry);
+            var id = index.Entries[entry].Id;
+            var fileAttributes = Attributes().For(pathText);
+            if (known != null &&
+                known.TryGetValue(pathText, out var before) &&
+                KnownContent.IsAsItWas(before, file.Length, file.CreationTicks, file.WriteTicks, id, fileAttributes))
+            {
+                unchanged[pathText] = before;
+                continue;
+            }
+
+            if (!SameContent(entry, path, fileAttributes))
+            {
+                StatusOf(pathText).Unstaged = 'M';
+                continue;
+            }
+
+            if (file.WriteTicks < settled)
+            {
+                unchanged[pathText] = new(file.Length, file.CreationTicks, file.WriteTicks, id, fileAttributes);
+            }
+        }
+
+        KnownContent.Keep(repository.GitDir, index, repository.Config, unchanged);
     }
 
     // Whether the file's content, staged as git would stage it, is the blob staged. One deleted
     // since it was listed is left to git, to say it is gone.
-    bool SameContent(int entry, string path) =>
-        CleanFilter.BlobId(CleanContent(entry, File.ReadAllBytes(path))) == index.Entries[entry].Id;
+    bool SameContent(int entry, string path, Dictionary<string, string> fileAttributes)
+    {
+        Hashing?.Invoke(path);
+        return CleanFilter.BlobId(CleanContent(entry, File.ReadAllBytes(path), fileAttributes)) == index.Entries[entry].Id;
+    }
 
     AttributeRules? attributes;
 
-    ByteSpan CleanContent(int entry, byte[] content)
-    {
+    AttributeRules Attributes() =>
         attributes ??= new(repository, workTree, StagedBlob);
-        var path = index.PathText(entry);
+
+    ByteSpan CleanContent(int entry, byte[] content, Dictionary<string, string> fileAttributes)
+    {
         var id = index.Entries[entry].Id;
         return CleanFilter.ToGit(
             content,
-            attributes.For(path),
+            fileAttributes,
             repository.Config,
             () => objects.TryRead(id) is { Type: GitObjectType.Blob } blob && CleanFilter.IsTextWithCrlf(blob.Data));
     }

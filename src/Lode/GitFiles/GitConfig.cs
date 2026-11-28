@@ -58,6 +58,14 @@ sealed class GitConfig
             .Select(_ => _.Value!);
 
     /// <summary>
+    /// Whether another read of the config found what this one did: every key and value, in the
+    /// same order.
+    /// </summary>
+    public bool SameAs(GitConfig other) =>
+        Uncertain == other.Uncertain &&
+        entries.SequenceEqual(other.entries);
+
+    /// <summary>
     /// Each value of either key, in the order git reads them, null for one set without a value:
     /// for a setting git takes from one key over the other however they are ordered.
     /// </summary>
