@@ -500,6 +500,28 @@ public class FolderTreeTests
         await Assert.That(tree.HasWatcher(fixture.At("Docs"))).IsTrue();
     }
 
+    // A known folder has its own icon under This PC, Downloads' arrow, as it has where it is
+    // pinned, rather than the plain folder's the folders beside it have.
+    [Test]
+    public async Task AKnownFolderHasItsOwnIconUnderThisPC()
+    {
+        var downloads = ShellIconsTests.Downloads();
+        using var tree = new FolderTree(
+            new() { ShowHidden = false },
+            new([downloads], [], ShowComputer: true, _ => "", [Path.GetDirectoryName(downloads)!]));
+        _ = tree.Handle;
+
+        tree.SelectPath(downloads);
+        await Pump.Loaded(tree);
+        var pinned = tree.Nodes[0].Nodes[0];
+        var underThisPC = tree.SelectedNode!;
+
+        await Assert.That(underThisPC.Parent?.Parent?.Text).IsEqualTo(Locations.ThisPC);
+        await Assert.That(underThisPC.ImageIndex).IsEqualTo(pinned.ImageIndex);
+        await Assert.That(underThisPC.SelectedImageIndex).IsEqualTo(pinned.SelectedImageIndex);
+        await Assert.That(underThisPC.ImageIndex).IsNotEqualTo(ShellIcons.FolderIcon);
+    }
+
     static List<string> Expanded(FolderTree tree)
     {
         var expanded = new List<string>();

@@ -1220,7 +1220,7 @@ sealed class FolderTree : TreeView
             node.Nodes.Clear();
             foreach (var directory in directories)
             {
-                node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
+                node.Nodes.Add(CreateNode(directory.FullPath, directory.Name, ShellIcons.GetFolderIcon(directory.FullPath), directory.HasSubfolders));
             }
         }
 
@@ -1345,7 +1345,7 @@ sealed class FolderTree : TreeView
                     continue;
                 }
 
-                nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.FolderIcon, directory.HasSubfolders));
+                nodes.Insert(i, CreateNode(directory.FullPath, directory.Name, ShellIcons.GetFolderIcon(directory.FullPath), directory.HasSubfolders));
                 if (wanted != null &&
                     Locations.IsWithin(wanted, directory.FullPath))
                 {

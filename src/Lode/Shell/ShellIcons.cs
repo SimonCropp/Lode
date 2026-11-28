@@ -37,6 +37,9 @@ static class ShellIcons
         new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
             .GetAlternateLookup<CharSpan>();
 
+    // The types whose files the shell reads each one's own icon from, known without asking the
+    // registry: programs, shortcuts, icons and cursors, and screen savers, which are programs,
+    // though their type names no icon at all.
     static HashSet<string>.AlternateLookup<CharSpan> perFileIconExtensions =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -50,6 +53,81 @@ static class ShellIcons
             ".appref-ms"
         }
             .GetAlternateLookup<CharSpan>();
+
+    // Whether each file of every other extension asked about has its own icon, as its type is
+    // registered, read from the registry once for each.
+    static ConcurrentDictionary<string, bool>.AlternateLookup<CharSpan> ownIconsByExtension =
+        new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
+            .GetAlternateLookup<CharSpan>();
+
+    // What the user chose to open each extension with, which the shell takes a type's icon from.
+    const string choicesPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
+
+    // The folders Windows gives an icon of their own, as Explorer shows them wherever they are:
+    // the user's, and the public ones.
+    static Guid[] knownFolderIds =
+    [
+        // Desktop, Documents, Downloads, Music, Pictures, Videos.
+        new("B4BFCC3A-DB2C-424C-B029-7FE99A87C641"),
+        new("FDD39AD0-238F-46AF-ADB4-6C85480369C7"),
+        new("374DE290-123F-4565-9164-39C4925E467B"),
+        new("4BD8D571-6D19-48D3-BE97-422220080E43"),
+        new("33E28130-4E1E-4676-835A-98395C3BC3BB"),
+        new("18989B1D-99B5-455B-841C-AB7C74E4DDFC"),
+        // Favorites, Links, Contacts, Saved Games, Searches, 3D Objects.
+        new("1777F761-68AD-4D8A-87BD-30B759FA33DD"),
+        new("BFB9D5E0-C6A9-404C-B2B2-AE6DB6AF4968"),
+        new("56784854-C6CB-462B-8169-88E350ACB882"),
+        new("4C5C32FF-BB9D-43B0-B5B4-2D72E54EAAA4"),
+        new("7D1D3A04-DEBB-4115-95CF-2F29DA2920DA"),
+        new("31C0DD25-9439-4F12-BF41-7FF4EDA38722"),
+        // OneDrive, Camera Roll, Saved Pictures, Screenshots.
+        new("A52BBA46-E9E1-435F-B3D9-28DAA648C0F6"),
+        new("AB5FB87B-7CE2-4F83-915D-550846C9537B"),
+        new("3B193882-D3AD-4EAB-965A-69829D1FB59F"),
+        new("B7BEDE81-DF94-4682-A7D8-57A52620B86F"),
+        // Public Desktop, Documents, Downloads, Music, Pictures, Videos.
+        new("C4AA340D-F20F-4863-AFEF-F87EF2E6BA25"),
+        new("ED4824AF-DCE4-45A8-81E2-FC7965083634"),
+        new("3D644C9B-1FB8-4F30-9B45-F670235F79C0"),
+        new("3214FAB5-9757-4298-BB61-92A9DEAA44FF"),
+        new("B6EBFB86-6907-413C-9AF7-4FC2ABF07CC5"),
+        new("2400183A-6185-49FB-A2D8-4A392A602BA3"),
+        // Fonts.
+        new("FD228CB7-AE11-4AE3-864C-16F3910AB8FE")
+    ];
+
+    // KF_FLAG_DONT_VERIFY: where a known folder is, as the registry has it, without looking for
+    // it there, which for one redirected to a share would wait on the network.
+    const uint knownFolderDontVerify = 0x4000;
+
+    // Where each known folder is, asked once, and again on Refresh, as one can be moved.
+    static Lazy<HashSet<string>> knownFolders = new(FindKnownFolders);
+
+    static HashSet<string> FindKnownFolders()
+    {
+        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in knownFolderIds)
+        {
+            var result = SHGetKnownFolderPath(id, knownFolderDontVerify, IntPtr.Zero, out var path);
+            try
+            {
+                // Not one this Windows has, or the user hasn't: OneDrive not set up, say.
+                if (result == 0 &&
+                    Marshal.PtrToStringUni(path) is { Length: > 0 } folder)
+                {
+                    found.Add(folder);
+                }
+            }
+            finally
+            {
+                // Freed whether the folder was found or not, as SHGetKnownFolderPath asks.
+                Marshal.FreeCoTaskMem(path);
+            }
+        }
+
+        return found;
+    }
 
     public static IntPtr SmallImageList { get; }
     public static int FolderIcon { get; }
@@ -250,6 +328,104 @@ static class ShellIcons
         return bitmap;
     }
 
+    // Whether each file of the extension has an icon of its own, which the shell reads from the
+    // file, rather than the one its type gives every file.
+    static bool EachFileHasItsOwnIcon(CharSpan extension)
+    {
+        if (perFileIconExtensions.Contains(extension))
+        {
+            return true;
+        }
+
+        if (ownIconsByExtension.TryGetValue(extension, out var ownIcons))
+        {
+            return ownIcons;
+        }
+
+        using var choices = Registry.CurrentUser.OpenSubKey(choicesPath);
+        ownIcons = EachFileHasItsOwnIcon(extension.ToString(), Registry.ClassesRoot, choices);
+        ownIconsByExtension[extension] = ownIcons;
+        return ownIcons;
+    }
+
+    /// <summary>
+    /// Whether each file of the type <paramref name="extension"/> names has an icon of its own,
+    /// by how the type is registered in <paramref name="classes"/>: its icon is "%1", the file
+    /// itself, as a console's (.msc) is, or an icon handler gives it, as a shortcut's does. Asked,
+    /// as the shell looks for a type's icon, of what the extension is registered as, of the
+    /// extension itself, of what the user chose to open it with, in <paramref name="choices"/>,
+    /// and of what Windows registers for the extension whatever opens it. Tests register types
+    /// of their own.
+    /// </summary>
+    internal static bool EachFileHasItsOwnIcon(string extension, RegistryKey classes, RegistryKey? choices)
+    {
+        if (extension.Length < 2)
+        {
+            return false;
+        }
+
+        foreach (var type in TypeKeys(extension, classes, choices))
+        {
+            using var key = classes.OpenSubKey(type);
+            if (key == null)
+            {
+                continue;
+            }
+
+            if (IconIsTheFile(key) ||
+                HasIconHandler(key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // The keys a type's icon can be registered under, for an extension.
+    static List<string> TypeKeys(string extension, RegistryKey classes, RegistryKey? choices)
+    {
+        var keys = new List<string>();
+        using (var extensionKey = classes.OpenSubKey(extension))
+        {
+            if (extensionKey?.GetValue(null) is string { Length: > 0 } type)
+            {
+                keys.Add(type);
+            }
+        }
+
+        keys.Add(extension);
+        if (choices != null)
+        {
+            // Where Windows has kept the user's choice, and where Windows 11 now keeps it too.
+            foreach (var choicePath in (string[]) [$@"{extension}\UserChoice", $@"{extension}\UserChoiceLatest\ProgId"])
+            {
+                using var choice = choices.OpenSubKey(choicePath);
+                if (choice?.GetValue("ProgId") is string { Length: > 0 } chosen)
+                {
+                    keys.Add(chosen);
+                }
+            }
+        }
+
+        keys.Add($@"SystemFileAssociations\{extension}");
+        return keys;
+    }
+
+    // An icon of "%1", quoted or not: each file's own.
+    static bool IconIsTheFile(RegistryKey type)
+    {
+        using var icon = type.OpenSubKey("DefaultIcon");
+        return icon?.GetValue(null) is string location &&
+               location.TrimStart(' ', '"').StartsWith("%1", StringComparison.Ordinal);
+    }
+
+    static bool HasIconHandler(RegistryKey type)
+    {
+        using var handler = type.OpenSubKey(@"shellex\IconHandler");
+        return handler?.GetValue(null) is string { Length: > 0 };
+    }
+
     public static int GetIcon(string path, bool isDirectory) =>
         GetIcon(path, isDirectory, null);
 
@@ -264,11 +440,11 @@ static class ShellIcons
     {
         if (isDirectory)
         {
-            return FolderIcon;
+            return GetFolderIcon(path);
         }
 
         var extension = Path.GetExtension(path.AsSpan());
-        if (perFileIconExtensions.Contains(extension))
+        if (EachFileHasItsOwnIcon(extension))
         {
             if (modified is not { } written)
             {
@@ -291,6 +467,22 @@ static class ShellIcons
         }
 
         return ExtensionIcon(extension);
+    }
+
+    /// <summary>
+    /// A folder's icon, as a folder's list and the tree show it: a known folder's own, Downloads'
+    /// arrow, as Pinned shows it, and the plain folder icon for any other, which asks nothing of
+    /// the disk. Any folder can have its own, from its desktop.ini, but finding out would read
+    /// every folder listed.
+    /// </summary>
+    public static int GetFolderIcon(string path)
+    {
+        if (knownFolders.Value.Contains(path))
+        {
+            return GetPlaceIcon(path);
+        }
+
+        return FolderIcon;
     }
 
     /// <summary>
@@ -595,10 +787,13 @@ static class ShellIcons
     internal static int PlaceIconsRead => Volatile.Read(ref placeIconsRead);
 
     /// <summary>
-    /// Asks the shell again for places' icons, for Refresh.
+    /// Asks the shell again for places' icons, and where the known folders are, for Refresh.
     /// </summary>
-    public static void ForgetPlaceIcons() =>
+    public static void ForgetPlaceIcons()
+    {
         placeIcons.Clear();
+        knownFolders = new(FindKnownFolders);
+    }
 
     // Drives as the shell describes them, or is still describing them. The shell reads the drive
     // for its name and icon: one mapped to a share asks the share, which waits on the network,
