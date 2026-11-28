@@ -148,8 +148,8 @@ sealed class DiffView : UserControl
     }
 
     /// <summary>
-    /// Shows the diff of <paramref name="file"/>, read from git, keeping the place when it is the
-    /// file already shown, read again.
+    /// Shows the diff of <paramref name="file"/>, read from git, or from the file for a preview
+    /// of a replace, keeping the place when it is the file already shown, read again.
     /// </summary>
     public void Show(DiffSource file)
     {
@@ -188,7 +188,7 @@ sealed class DiffView : UserControl
     // asked to be shown anyway, parses it, rather than reading it again. Everything that takes
     // as long as the diff is big is done off the UI thread: reading it, parsing it, laying it
     // out, and, for lines to be picked, hashing it. What a later read asked for shows, whichever
-    // ends first.
+    // ends first. A preview of a replace is read from the file as it is, its lines with it.
     async Task ReadAsync(DiffSource file, bool keepPlace, bool evenIfLarge, string? largePatch = null)
     {
         var asked = ++version;
@@ -197,7 +197,12 @@ sealed class DiffView : UserControl
         var read = await Task.Run(() =>
         {
             FileDiff diff;
-            if (largePatch == null)
+            IReadOnlyList<string>? lines = null;
+            if (file.Preview is { } preview)
+            {
+                (diff, lines) = preview.Read(evenIfLarge || largePatch != null);
+            }
+            else if (largePatch == null)
             {
                 diff = Read(file, hideWhitespace, evenIfLarge, Cancel.None);
             }
@@ -217,7 +222,12 @@ sealed class DiffView : UserControl
                 _ = text.PatchHash;
             }
 
-            return new Prepared(diff, LayOut(text, ReadNewLines(file), split));
+            if (file.Preview == null)
+            {
+                lines = ReadNewLines(file);
+            }
+
+            return new Prepared(diff, LayOut(text, lines, split));
         });
         if (asked != version ||
             IsDisposed)
@@ -266,6 +276,12 @@ sealed class DiffView : UserControl
                 return;
             case UnrenderableDiff:
                 ShowMessageOnly("This diff is too big to show.", null);
+                return;
+            case FailedDiff failed when file.Preview != null:
+                ShowMessageOnly($"Replace would leave this file as it is.\n\n{failed.Error}", null);
+                return;
+            case EmptyDiff when file.Preview != null:
+                ShowMessageOnly("Replace would change nothing in this file.", null);
                 return;
             case FailedDiff failed:
                 ShowMessageOnly($"Git couldn't show the changes.\n\n{failed.Error}", null);

@@ -293,6 +293,292 @@ public class ReplaceInFilesTests
                 """);
     }
 
+    // In a regular expression's replacement, \n, \t, \r and \\ are what they stand for, as in
+    // VS Code: \n, and \r\n, the line ending most of the file's lines end with, Windows' in a
+    // file with none. Anything else after a backslash, and plain text, as typed.
+    [Test]
+    public Task EscapesInARegexReplacement()
+    {
+        static string Replaced(string text, string find, string replacement, bool regex = true) =>
+            ReplaceInFiles.Replace(text, Matcher.Create(new(find, "", Regex: regex), out _)!, replacement, false).Text
+                .Replace("\r", "<CR>")
+                .Replace("\n", "<LF>")
+                .Replace("\t", "<TAB>");
+
+        return Verify(
+            new Dictionary<string, string>
+            {
+                ["line feed, lines ended as Windows ends them"] = Replaced("a;b\r\nc\r\n", ";", @";\n"),
+                ["line feed, lines ended with line feeds"] = Replaced("a;b\nc\n", ";", @";\n"),
+                ["line feed, mostly line feeds"] = Replaced("a;b\nc\nd\r\n", ";", @"\n"),
+                ["line feed, no lines ended"] = Replaced("a;b", ";", @"\n"),
+                ["carriage return and line feed, lines ended with line feeds"] = Replaced("a;b\nc\n", ";", @"\r\n"),
+                ["carriage return"] = Replaced("a;b\n", ";", @"\r"),
+                ["tab"] = Replaced("a;b", ";", @"\t"),
+                ["backslash"] = Replaced("a;b", ";", @"\\"),
+                ["backslash then n"] = Replaced("a;b", ";", @"\\n"),
+                ["groups"] = Replaced("key=value", @"(\w+)=(\w+)", @"$1:\t$2"),
+                ["anything else"] = Replaced("a;b", ";", @"\d\"),
+                ["plain text"] = Replaced("a;b", ";", @"\n\t", regex: false)
+            })
+            .Snapshot(
+                """
+                {
+                  anything else: a\d\b,
+                  backslash: a\b,
+                  backslash then n: a\nb,
+                  carriage return: a<CR>b<LF>,
+                  carriage return and line feed, lines ended with line feeds: a<LF>b<LF>c<LF>,
+                  groups: key:<TAB>value,
+                  line feed, lines ended as Windows ends them: a;<CR><LF>b<CR><LF>c<CR><LF>,
+                  line feed, lines ended with line feeds: a;<LF>b<LF>c<LF>,
+                  line feed, mostly line feeds: a<LF>b<LF>c<LF>d<CR><LF>,
+                  line feed, no lines ended: a<CR><LF>b,
+                  plain text: a\n\tb,
+                  tab: a<TAB>b
+                }
+                """);
+    }
+
+    // \n in what replaces ends the line as the file's lines end: as Windows ends them in a file
+    // whose lines end so, with a line feed in one whose lines end with one.
+    [Test]
+    public async Task ANewLineReplacedEndsTheLineAsTheFileDoes()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var windows = scratch.At("windows.txt");
+        var unix = scratch.At("unix.txt");
+        await File.WriteAllTextAsync(windows, "one, two\r\nthree\r\n");
+        await File.WriteAllTextAsync(unix, "one, two\nthree\n");
+
+        var outcome = Replace([windows, unix], new(", ", "", Regex: true), @",\n\t");
+
+        await Assert.That(outcome.Replaced).IsEqualTo(2);
+        await Assert.That(await File.ReadAllTextAsync(windows)).IsEqualTo("one,\r\n\ttwo\r\nthree\r\n");
+        await Assert.That(await File.ReadAllTextAsync(unix)).IsEqualTo("one,\n\ttwo\nthree\n");
+    }
+
+    // \n in the pattern matches a line ended as Windows ends it, as in VS Code: two lines are
+    // found as one, joined, or swapped, the line between them ended as the file ends its lines.
+    [Test]
+    public async Task ANewLineInThePatternMatchesAWindowsLineEnding()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var braces = scratch.At("braces.cs");
+        var swapped = scratch.At("swapped.txt");
+        await File.WriteAllTextAsync(braces, "if (ready)\r\n{\r\n    go();\r\n}\r\n");
+        await File.WriteAllTextAsync(swapped, "first\r\nsecond\r\n");
+
+        var joined = Replace([braces], new(@"\)\n\{", "", Regex: true), ") {");
+        var swap = Replace([swapped], new(@"^(\w+)\n(\w+)$", "", Regex: true), @"$2\n$1");
+
+        await Assert.That(joined.Replaced).IsEqualTo(1);
+        await Assert.That(await File.ReadAllTextAsync(braces)).IsEqualTo("if (ready) {\r\n    go();\r\n}\r\n");
+        await Assert.That(swap.Replaced).IsEqualTo(1);
+        await Assert.That(await File.ReadAllTextAsync(swapped)).IsEqualTo("second\r\nfirst\r\n");
+    }
+
+    // A line taken out of the results is left as it is, every match on it, the rest of its file
+    // replaced.
+    [Test]
+    public async Task ALineTakenOutIsLeftAsItWas()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var file = scratch.At("notes.txt");
+        await File.WriteAllTextAsync(file, "alpha one\nalpha two, alpha\nalpha three\n");
+        var results = await ContentSearchTests.Find(new("alpha", ""), scratch.Root);
+        results.RemoveLine(0, 1);
+
+        var outcome = Replace(results, "omega");
+
+        await Assert.That(results.FileAt(0).MatchCount).IsEqualTo(2);
+        await Assert.That(outcome.Replaced).IsEqualTo(2);
+        await Assert.That(outcome.Failed).IsEmpty();
+        await Assert.That(await File.ReadAllTextAsync(file)).IsEqualTo("omega one\nalpha two, alpha\nomega three\n");
+    }
+
+    // A file edited since it was searched, so that a line taken out of the results isn't where
+    // it was, is left as it is, and said so: by its number, another line would be left in its
+    // place, and it replaced.
+    [Test]
+    public async Task AFileWhoseLineTakenOutHasMovedIsLeft()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var file = scratch.At("notes.txt");
+        await File.WriteAllTextAsync(file, "alpha one\nalpha two\n");
+        var results = await ContentSearchTests.Find(new("alpha", ""), scratch.Root);
+        results.RemoveLine(0, 1);
+        await File.WriteAllTextAsync(file, "alpha zero\nalpha one\nalpha two\n");
+
+        var outcome = Replace(results, "omega");
+
+        await Assert.That(outcome.Replaced).IsEqualTo(0);
+        await Assert.That(outcome.Failed.Single().Error).IsEqualTo("It has changed since it was searched: line 2, taken out of the results, isn't as it was.");
+        await Assert.That(await File.ReadAllTextAsync(file)).IsEqualTo("alpha zero\nalpha one\nalpha two\n");
+    }
+
+    // The preview, as the diff view lays it out: the file as it is against the file as Replace
+    // would leave it, the line taken out of the results left as it is, \n ending the line as the
+    // file's lines end, a hunk to each change far from the other, three lines either side.
+    // Nothing is written.
+    [Test]
+    public async Task ThePreviewShowsWhatReplaceWouldDo()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        var file = scratch.At("notes.txt");
+        var lines = Enumerable.Range(1, 14).Select(_ => $"line {_}").ToList();
+        lines[1] = "alpha two";
+        lines[3] = "alpha four";
+        lines[10] = "alpha eleven";
+        var text = string.Join("\r\n", lines) + "\r\n";
+        await File.WriteAllTextAsync(file, text);
+        var results = await ContentSearchTests.Find(new(@"alpha (\w+)", "", Regex: true), scratch.Root);
+        results.RemoveLine(0, results.FileAt(0).Lines.ToList().FindIndex(_ => _.Number == 4));
+        var preview = new ReplacePreview(results.FileAt(0), Matcher.Create(results.Query, out _)!, @"$1\nbeta", false);
+
+        var (diff, newLines) = preview.Read(evenIfLarge: false);
+        var shown = (TextDiff) diff;
+        var layout = DiffLayout.Of(shown, newLines, split: false);
+
+        await Verify(
+            new
+            {
+                hunks = shown.Hunks.Select(_ => _.Heading),
+                rows = layout.Rows.Select(Describe),
+                newLines = newLines!.Count,
+                untouched = await File.ReadAllTextAsync(file) == text
+            })
+            .Snapshot(
+                """
+                {
+                  hunks: [
+                    @@ -1,5 +1,6 @@,
+                    @@ -8,7 +9,8 @@
+                  ],
+                  rows: [
+                    Hunk,
+                    Context 1 line 1 | 1 line 1,
+                    Deleted 2 alpha two |,
+                    Added | 2 two,
+                    Added | 3 beta,
+                    Context 3 line 3 | 4 line 3,
+                    Context 4 alpha four | 5 alpha four,
+                    Context 5 line 5 | 6 line 5,
+                    Hunk,
+                    Context 8 line 8 | 9 line 8,
+                    Context 9 line 9 | 10 line 9,
+                    Context 10 line 10 | 11 line 10,
+                    Deleted 11 alpha eleven |,
+                    Added | 12 eleven,
+                    Added | 13 beta,
+                    Context 12 line 12 | 14 line 12,
+                    Context 13 line 13 | 15 line 13,
+                    Context 14 line 14 | 16 line 14
+                  ],
+                  newLines: 16,
+                  untouched: true
+                }
+                """);
+    }
+
+    // The patch the preview writes, as git would write it: a line taken away whole, the last
+    // line of a file without a line ending, the line ending at the end taken away, a line added
+    // at the end, a replacement that changes nothing, an empty file.
+    [Test]
+    public Task PreviewPatches()
+    {
+        static string PatchOf(string before, string find, string replacement)
+        {
+            var replaced = new List<(int Start, int Length)>();
+            var (after, ranges) = ReplaceInFiles.Replace(before, Matcher.Create(new(find, "", Regex: true), out _)!, replacement, false, null, replaced);
+            return ReplacePreview.Patch("file.txt", before, after, replaced, ranges);
+        }
+
+        return Verify(
+            new Dictionary<string, string>
+            {
+                ["a line taken away"] = PatchOf("one\nfoo\ntwo\n", @"foo\n", ""),
+                ["the last line without a line ending"] = PatchOf("one\ntwo", "two", "three"),
+                ["the last line ending taken away"] = PatchOf("one\ntwo\n", @"\n\z", ""),
+                ["a line added at the end"] = PatchOf("one\n", @"\z", "two"),
+                ["nothing changed"] = PatchOf("same\n", "same", "same"),
+                ["an empty file"] = PatchOf("", "^", "first")
+            })
+            .Snapshot(
+                """
+                {
+                  a line added at the end:
+                --- a/file.txt
+                +++ b/file.txt
+                @@ -1,1 +1,2 @@
+                 one
+                +two
+                \ No newline at end of file
+                ,
+                  a line taken away:
+                --- a/file.txt
+                +++ b/file.txt
+                @@ -1,3 +1,2 @@
+                 one
+                -foo
+                 two
+                ,
+                  an empty file:
+                --- a/file.txt
+                +++ b/file.txt
+                @@ -0,0 +1,1 @@
+                +first
+                \ No newline at end of file
+                ,
+                  nothing changed:
+                --- a/file.txt
+                +++ b/file.txt
+                ,
+                  the last line ending taken away:
+                --- a/file.txt
+                +++ b/file.txt
+                @@ -1,2 +1,2 @@
+                 one
+                -two
+                +two
+                \ No newline at end of file
+                ,
+                  the last line without a line ending:
+                --- a/file.txt
+                +++ b/file.txt
+                @@ -1,2 +1,2 @@
+                 one
+                -two
+                \ No newline at end of file
+                +three
+                \ No newline at end of file
+
+                }
+                """);
+    }
+
+    static string Describe(DiffRow row)
+    {
+        if (row.Kind == DiffRowKind.Hunk)
+        {
+            return "Hunk";
+        }
+
+        var before = "";
+        if (row.Before is { } old)
+        {
+            before = $" {old.OldNumber} {old.Content}";
+        }
+
+        var after = "";
+        if (row.After is { } line)
+        {
+            after = $" {line.NewNumber} {line.Content}";
+        }
+
+        return $"{row.Kind}{before} |{after}";
+    }
+
     [Test]
     public Task InCaseOf() =>
         Verify(
@@ -316,5 +602,8 @@ public class ReplaceInFilesTests
                 """);
 
     static ReplaceInFiles.Outcome Replace(IReadOnlyList<string> files, FindQuery query, string replacement) =>
-        ReplaceInFiles.Run(files, Matcher.Create(query, out _)!, replacement, false, 0, null, Cancel.None);
+        ReplaceInFiles.Run(files.Select(_ => new FileResult(_, 0, [])).ToList(), Matcher.Create(query, out _)!, replacement, false, 0, null, Cancel.None);
+
+    static ReplaceInFiles.Outcome Replace(FindResults results, string replacement) =>
+        ReplaceInFiles.Run(results.Files.ToList(), Matcher.Create(results.Query, out _)!, replacement, false, 0, null, Cancel.None);
 }

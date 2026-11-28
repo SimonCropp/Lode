@@ -124,6 +124,55 @@ public class ContentSearchTests
         await Assert.That(Found("r.*")).IsEquivalentTo(["7:r foo"]);
     }
 
+    // \n in a pattern matches a line ended as Windows ends it too, as in VS Code: foo\nbar finds
+    // foo at one line's end and bar at the next's start however the file ends its lines, and
+    // [^\n]* stops before the carriage return. \\n is a backslash and an n.
+    [Test]
+    public async Task ANewLineMatchesEitherLineEnding()
+    {
+        const string text = "foo\r\nbar\nfoo\nbar\r\nfoo\r\n\r\nbar x\\ny";
+
+        static List<string> Found(string pattern)
+        {
+            var matcher = Matcher.Create(new(pattern, "", Regex: true), out _)!;
+            var matches = new List<(int Start, int Length)>();
+            matcher.Find(text, matches);
+            return matches
+                .Select(_ => $"{_.Start}:{text.Substring(_.Start, _.Length).Replace("\r", "<CR>").Replace("\n", "<LF>")}")
+                .ToList();
+        }
+
+        await Assert.That(Found(@"foo\nbar")).IsEquivalentTo(["0:foo<CR><LF>bar", "9:foo<LF>bar"], CollectionOrdering.Matching);
+        await Assert.That(Found(@"foo\n+bar")).IsEquivalentTo(["0:foo<CR><LF>bar", "9:foo<LF>bar", "18:foo<CR><LF><CR><LF>bar"], CollectionOrdering.Matching);
+        await Assert.That(Found(@"bar[^\n]*")).IsEquivalentTo(["5:bar", "13:bar", "25:bar x\\ny"], CollectionOrdering.Matching);
+        await Assert.That(Found(@"x\\ny")).IsEquivalentTo(["29:x\\ny"]);
+        await Verify(
+            new Dictionary<string, string>
+            {
+                ["line feed"] = Matcher.EitherLineEnding(@"foo\nbar"),
+                ["quantified"] = Matcher.EitherLineEnding(@"\n+"),
+                ["in a class"] = Matcher.EitherLineEnding(@"[^\n]"),
+                ["] first in a class"] = Matcher.EitherLineEnding(@"[]\n]"),
+                ["subtracted"] = Matcher.EitherLineEnding(@"[\s-[\n]]\n"),
+                ["backslash"] = Matcher.EitherLineEnding(@"\\n"),
+                ["escaped bracket"] = Matcher.EitherLineEnding(@"\[\n\]"),
+                ["none"] = Matcher.EitherLineEnding(@"\r\t")
+            })
+            .Snapshot(
+                """
+                {
+                  backslash: \\n,
+                  escaped bracket: \[(?:\r?\n)\],
+                  in a class: [^\r\n],
+                  line feed: foo(?:\r?\n)bar,
+                  none: \r\t,
+                  quantified: (?:\r?\n)+,
+                  subtracted: [\s-[\r\n]](?:\r?\n),
+                  ] first in a class: []\r\n]
+                }
+                """);
+    }
+
     // Lines either side of each match, ".." where lines are left out between them, and a match
     // over two lines putting both in.
     [Test]
@@ -803,6 +852,97 @@ public class ContentSearchTests
 
                 1 match across 1 file
 
+                }
+                """);
+    }
+
+    // A line that matches taken out: the context shown for it alone goes with it, the matches
+    // count one fewer, and the file goes once none of its lines that match are left. A match
+    // over two lines goes whole, from either. A line of context has nothing to take out.
+    [Test]
+    public async Task TakingALineOut()
+    {
+        using var scratch = new CodeCommandsTests.Scratch();
+        Write(scratch.Root, "a.txt", "one\nneedle a\nthree\nneedle b\nfive\nsix\nseven\nneedle c\nnine");
+        Write(scratch.Root, "b.txt", "needle");
+        var results = await Find(new("needle", "", ContextLines: 1), scratch.Root);
+
+        var fromContext = results.RemoveLine(0, 0);
+        results.RemoveLine(0, 3);
+        var oneOut = Text(results, scratch.Root);
+        var skipped = results.FileAt(0).Skipped.Select(_ => $"{_.Number}: {_.Text}").ToList();
+        results.RemoveLine(0, 1);
+        results.RemoveLine(0, results.FileAt(0).Lines.ToList().FindIndex(_ => _.Text == "needle c"));
+        var fileOut = Text(results, scratch.Root);
+
+        using var overLines = new CodeCommandsTests.Scratch();
+        Write(overLines.Root, "c.txt", "start\nneedle\nend\nneedle again\n");
+        var over = await Find(new(@"needle(\nend)?", "", Regex: true, ContextLines: 0), overLines.Root);
+        var before = Text(over, overLines.Root);
+        over.RemoveLine(0, 1);
+
+        await Verify(
+            new
+            {
+                fromContext,
+                oneOut,
+                skipped,
+                fileOut,
+                before,
+                afterTheSecondLine = Text(over, overLines.Root),
+                over.FileAt(0).MatchCount
+            })
+            .Snapshot(
+                """
+                {
+                  fromContext: false,
+                  oneOut:
+                Searched 2 files for "needle"
+
+                {root}\a.txt:
+                    1  one
+                    2: needle a
+                    3  three
+                   ..
+                    7  seven
+                    8: needle c
+                    9  nine
+
+                {root}\b.txt:
+                    1: needle
+
+                3 matches across 2 files
+                ,
+                  skipped: [
+                    4: needle b
+                  ],
+                  fileOut:
+                Searched 2 files for "needle"
+
+                {root}\b.txt:
+                    1: needle
+
+                1 match across 1 file
+                ,
+                  before:
+                Searched 1 file for "needle(\nend)?" (regex)
+
+                {root}\c.txt:
+                    2: needle
+                    3: end
+                    4: needle again
+
+                2 matches across 1 file
+                ,
+                  afterTheSecondLine:
+                Searched 1 file for "needle(\nend)?" (regex)
+
+                {root}\c.txt:
+                    4: needle again
+
+                1 match across 1 file
+                ,
+                  MatchCount: 1
                 }
                 """);
     }

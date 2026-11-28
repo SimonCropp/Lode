@@ -137,6 +137,155 @@ public class FindInFilesWindowTests
                 """);
     }
 
+    // A line that matches taken out of the results with Delete is left as it is by Replace,
+    // which asks to replace one fewer.
+    [Test]
+    public async Task ReplaceLeavesALineTakenOut()
+    {
+        using var fixture = Fixture.Create();
+        var file = fixture.At("Docs", "notes.txt");
+        await File.WriteAllTextAsync(file, "alpha\nbeta alpha\ngamma alpha\n");
+        using var form = await Show(fixture, new(), fixture.Root);
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Panel.ReplaceBox.Text = "omega";
+        form.FindHost.Find();
+        var view = form.FindHost.ResultsView!;
+        await view.Searching;
+        view.Select(view.Results.RowOfFile(0) + 2);
+        view.Key(Keys.Delete);
+        var asked = new List<string>();
+        form.FindHost.ConfirmReplace = (matches, files, find, replacement) =>
+        {
+            asked.Add($"{matches} in {files}: {find} -> {replacement}");
+            return true;
+        };
+
+        try
+        {
+            await form.FindHost.Replace();
+        }
+        finally
+        {
+            // Replace runs in the Actions panel: cleared, so windows captured after this in the
+            // same run don't show its entry.
+            ActionLog.Reset();
+        }
+
+        await Verify(
+            new
+            {
+                asked,
+                file = await File.ReadAllTextAsync(file)
+            })
+            .Snapshot(
+                """
+                {
+                  asked: [
+                    2 in 1: alpha -> omega
+                  ],
+                  file:
+                omega
+                beta alpha
+                gamma omega
+
+                }
+                """);
+    }
+
+    // Preview replace, from Find Results, by Space or its menu: in the Diff tab beside it, the
+    // file as it is against the file as Replace would leave it, with what the Replace box says,
+    // a line taken out of the results left as it is. Nothing is written. A line that matches
+    // offers to take it out, a file's row the file.
+    [Test]
+    public async Task PreviewFromTheResults()
+    {
+        using var fixture = Fixture.Create();
+        var file = fixture.At("Docs", "notes.txt");
+        const string text = "alpha\nbeta alpha\ngamma alpha\n";
+        await File.WriteAllTextAsync(file, text);
+        using var form = await Show(fixture, new(), fixture.Root);
+        form.FindHost.Open();
+        form.FindHost.Panel.FindBox.Text = "alpha";
+        form.FindHost.Panel.ReplaceBox.Text = "omega";
+        form.FindHost.Find();
+        var view = form.FindHost.ResultsView!;
+        await view.Searching;
+        var fileRow = view.Results.RowOfFile(0);
+        var lineMenu = MenuAt(view, fileRow + 2);
+        var fileMenu = MenuAt(view, fileRow);
+        view.RemoveAt(fileRow + 2);
+        view.Select(fileRow);
+
+        view.Key(Keys.Space);
+        var diff = form.DiffHost.TabView!;
+        await Pump.Until(() => diff.Reading.IsCompleted);
+        await diff.Reading;
+
+        await Verify(
+            new
+            {
+                lineMenu,
+                fileMenu,
+                tab = form.DiffHost.Page!.Text,
+                title = form.Text,
+                rows = diff.Canvas.Rows.Select(_ => $"{_.Kind} {_.Before?.Content}|{_.After?.Content}"),
+                written = await File.ReadAllTextAsync(file) != text,
+                findResults = form.FindHost.ResultsView != null
+            })
+            .Snapshot(
+                """
+                {
+                  lineMenu: [
+                    Open (Enter),
+                    Show in folder,
+                    Copy path,
+                    Copy line (Ctrl+C),
+                    Copy all results,
+                    -,
+                    Preview replace (Space),
+                    Remove line from results (Delete),
+                    Remove file from results
+                  ],
+                  fileMenu: [
+                    Open (Enter),
+                    Show in folder,
+                    Copy path,
+                    Copy all results,
+                    -,
+                    Preview replace (Space),
+                    Remove from results (Delete)
+                  ],
+                  tab: Preview: notes.txt,
+                  title: Diff,
+                  rows: [
+                    Hunk |,
+                    Deleted alpha|,
+                    Added |omega,
+                    Context beta alpha|beta alpha,
+                    Deleted gamma alpha|,
+                    Added |gamma omega
+                  ],
+                  written: false,
+                  findResults: true
+                }
+                """);
+    }
+
+    static List<string> MenuAt(FindResultsView view, int index)
+    {
+        using var menu = view.MenuAt(index);
+        return menu.Items
+            .Cast<ToolStripItem>()
+            .Select(_ => _ switch
+            {
+                ToolStripSeparator => "-",
+                ToolStripMenuItem { ShortcutKeyDisplayString: { } keys } item => $"{item.Text} ({keys})",
+                var other => other.Text ?? ""
+            })
+            .ToList();
+    }
+
     // A filter matching no names offers to search inside the files instead, which runs Find in
     // Files on the tab's folder for it, as text, whatever the strip had.
     [Test]

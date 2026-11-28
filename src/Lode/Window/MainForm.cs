@@ -174,6 +174,7 @@ class MainForm : Form
         DiffHost = new(this, settings, Tabs, () => ActiveView, () => ActiveView?.FocusList());
         GitPanes.DiffRequested += DiffHost.Request;
         GitPanes.ChangesRead += DiffHost.ChangesRead;
+        FindHost.PreviewRequested += DiffHost.Preview;
         GitPanes.StripLabelsChanged += ApplyStripLabelsInAllWindows;
         Commands = new(this, settings, places);
         // Behind the tab showing, as the tree and the list open folders in new tabs. A zip on the
@@ -1118,6 +1119,11 @@ class MainForm : Form
             {
                 Text = "Find Results" + TitleSuffix;
                 UpdateResultsStatus();
+            }
+            else if (DiffHost.TabShowing)
+            {
+                // A preview of a replace, which is of no repository.
+                Text = "Diff" + TitleSuffix;
             }
 
             return;

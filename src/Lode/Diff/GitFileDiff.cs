@@ -7,7 +7,17 @@
 /// </summary>
 sealed record DiffSource(string Repo, Change File, GitCommit? Commit = null, bool HasCommits = true, bool Merging = false)
 {
-    public bool IsUncommitted => Commit == null;
+    /// <summary>
+    /// For Find in Files' preview, what Replace would make of a file, which the diff is read
+    /// from in place of git: <see cref="Repo"/> is then the folder the file is in.
+    /// </summary>
+    public ReplacePreview? Preview { get; init; }
+
+    /// <summary>
+    /// Whether it is a change git has yet to commit, whose lines can be picked and discarded: a
+    /// preview of a replace is none.
+    /// </summary>
+    public bool IsUncommitted => Commit == null && Preview == null;
 
     /// <summary>
     /// Whether this is the same file of the same change as <paramref name="other"/>, to keep the
@@ -17,7 +27,8 @@ sealed record DiffSource(string Repo, Change File, GitCommit? Commit = null, boo
         other != null &&
         Locations.Same(Repo, other.Repo) &&
         File.Path == other.File.Path &&
-        Commit?.Sha == other.Commit?.Sha;
+        Commit?.Sha == other.Commit?.Sha &&
+        (Preview == null) == (other.Preview == null);
 }
 
 /// <summary>

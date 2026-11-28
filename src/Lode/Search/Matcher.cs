@@ -1,8 +1,9 @@
 /// <summary>
 /// Finds what Find in Files looks for in a file's text: plain text, in any case unless asked
 /// otherwise, looked for with what the processor can do many characters of at once, or a .NET
-/// regular expression, with ^ and $ at each line's start and end, however the file ends its
-/// lines. Whole word wants neither a letter, a digit nor an underscore either side.
+/// regular expression, with ^ and $ at each line's start and end, and \n either line ending,
+/// however the file ends its lines. Whole word wants neither a letter, a digit nor an underscore
+/// either side.
 /// </summary>
 sealed class Matcher
 {
@@ -128,7 +129,7 @@ sealed class Matcher
 
         if (query.Regex)
         {
-            var pattern = query.Find;
+            var pattern = EitherLineEnding(query.Find);
             if (query.WholeWord)
             {
                 pattern = $@"\b(?:{pattern})\b";
@@ -162,6 +163,82 @@ sealed class Matcher
         }
 
         return new(query.Find, query.WholeWord, anyCase, null);
+    }
+
+    /// <summary>
+    /// <paramref name="pattern"/> with each \n in it matching a line ended as Windows ends it as
+    /// well as one ended with a line feed alone, as VS Code's search does: \r?\n, so foo\nbar
+    /// finds foo at the end of one line and bar at the start of the next, however the file ends
+    /// its lines. In a class, [^\n] say, a carriage return goes beside it, so [^\n]* stops
+    /// before a Windows line ending rather than taking its carriage return. \\n is a backslash
+    /// and an n, and is left as it is.
+    /// </summary>
+    internal static string EitherLineEnding(string pattern)
+    {
+        if (!pattern.Contains(@"\n", StringComparison.Ordinal))
+        {
+            return pattern;
+        }
+
+        var builder = new StringBuilder(pattern.Length + 16);
+
+        // How deep in classes it is: .NET's subtraction, [a-z-[aeiou]], puts one in another.
+        var depth = 0;
+        for (var index = 0; index < pattern.Length; index++)
+        {
+            var character = pattern[index];
+            if (character == '\\' &&
+                index + 1 < pattern.Length)
+            {
+                index++;
+                var escaped = pattern[index];
+                if (escaped != 'n')
+                {
+                    builder.Append(character).Append(escaped);
+                }
+                else if (depth > 0)
+                {
+                    builder.Append(@"\r\n");
+                }
+                else
+                {
+                    // In a group of its own, so a quantifier after it, \n+ say, is of both.
+                    builder.Append(@"(?:\r?\n)");
+                }
+
+                continue;
+            }
+
+            builder.Append(character);
+            if (character == '[' &&
+                (depth == 0 || pattern[index - 1] == '-'))
+            {
+                depth++;
+
+                // A ] first in a class, or first after its ^, is one of its characters rather
+                // than its end.
+                if (index + 1 < pattern.Length &&
+                    pattern[index + 1] == '^')
+                {
+                    index++;
+                    builder.Append('^');
+                }
+
+                if (index + 1 < pattern.Length &&
+                    pattern[index + 1] == ']')
+                {
+                    index++;
+                    builder.Append(']');
+                }
+            }
+            else if (character == ']' &&
+                     depth > 0)
+            {
+                depth--;
+            }
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>

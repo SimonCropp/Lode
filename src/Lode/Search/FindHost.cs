@@ -71,6 +71,12 @@ sealed class FindHost
     public event Action? ProgressChanged;
 
     /// <summary>
+    /// Preview replace, from Find Results: what Replace would make of a file, for the diff view
+    /// to show.
+    /// </summary>
+    public event Action<DiffSource>? PreviewRequested;
+
+    /// <summary>
     /// What the status bar says while Find Results shows: what was found so far.
     /// </summary>
     public string Progress
@@ -163,6 +169,7 @@ sealed class FindHost
             };
             ResultsView.StateChanged += OnResultsChanged;
             ResultsView.ShowInFolderRequested += showInFolder;
+            ResultsView.PreviewRequested += Preview;
             page = new()
             {
                 Padding = Padding.Empty,
@@ -285,7 +292,7 @@ sealed class FindHost
         }
 
         var results = view.Results;
-        var files = results.Files.Select(_ => _.Path).ToList();
+        var files = results.Files.ToList();
         if (files.Count == 0 ||
             Matcher.Create(query, out _) is not { } matcher)
         {
@@ -331,6 +338,23 @@ sealed class FindHost
         }
 
         ResultsView?.ShowReplaced(shown);
+    }
+
+    /// <summary>
+    /// What Replace would make of a file Find Results found, the lines taken out of the results
+    /// left as they are, with what the Replace box says now, for the diff view: of what the
+    /// results are of, rather than what the strip says, as it is a file of them.
+    /// </summary>
+    internal void Preview(FileResult file)
+    {
+        if (ResultsView?.Results is not { Replaced: null, Error: null } results ||
+            Matcher.Create(results.Query, out _) is not { } matcher)
+        {
+            return;
+        }
+
+        var preview = new ReplacePreview(file, matcher, Panel.ReplaceBox.Text, Panel.PreserveCase);
+        PreviewRequested?.Invoke(preview.ToSource());
     }
 
     static ActionLog.Outcome ReplaceOutcome(ReplaceInFiles.Outcome done)

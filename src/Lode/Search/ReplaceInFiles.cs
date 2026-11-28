@@ -1,13 +1,15 @@
 /// <summary>
 /// Find in Files' Replace: in each file found, every match of what was looked for, as the file
-/// is now rather than as it was found, replaced. With a regular expression, the replacement
-/// can name its groups, $1 or ${name}. With Preserve case, it takes each match's case: all
-/// capitals, all small, or a capital first. Each file is written back in the encoding it was
-/// read in, byte order mark and all, and where it is, so it keeps its links and attributes. One
-/// whose text wouldn't come back to the same bytes, a UTF-16 file with a broken pair say, is
-/// left alone. What each was is kept in %Temp%\Lode\Replace for Undo, which puts back each file
-/// still as Replace left it, and Redo, each still as it was before. One whose write fails part
-/// way is put back as it was.
+/// is now rather than as it was found, replaced, but for those on lines taken out of the
+/// results. With a regular expression, the replacement can name its groups, $1 or ${name}, and
+/// \n, \t, \r and \\ in it are a line break, a tab, a carriage return and a backslash, as in
+/// VS Code, \n ending the line as the file's lines end. With Preserve case, it takes each
+/// match's case: all capitals, all small, or a capital first. Each file is written back in the
+/// encoding it was read in, byte order mark and all, and where it is, so it keeps its links and
+/// attributes. One whose text wouldn't come back to the same bytes, a UTF-16 file with a broken
+/// pair say, is left alone. What each was is kept in %Temp%\Lode\Replace for Undo, which puts
+/// back each file still as Replace left it, and Redo, each still as it was before. One whose
+/// write fails part way is put back as it was.
 /// </summary>
 static class ReplaceInFiles
 {
@@ -24,10 +26,11 @@ static class ReplaceInFiles
 
     /// <summary>
     /// Replaces what <paramref name="matcher"/> finds in each of <paramref name="files"/> with
-    /// <paramref name="replacement"/>.
+    /// <paramref name="replacement"/>, leaving what is on each file's
+    /// <see cref="FileResult.Skipped"/> lines as it is.
     /// </summary>
     public static Outcome Run(
-        IReadOnlyList<string> files,
+        IReadOnlyList<FileResult> files,
         Matcher matcher,
         string replacement,
         bool preserveCase,
@@ -48,14 +51,15 @@ static class ReplaceInFiles
                 break;
             }
 
-            var path = files[index];
+            var found = files[index];
+            var path = found.Path;
             progress?.Report($"{index + 1:N0} of {files.Count:N0} files");
             try
             {
                 // Numbered by the file, not by how many are written: one that fails keeps what it
                 // was where the next would otherwise keep its own over it, and that copy may be
                 // all there is of it.
-                if (ReplaceIn(path, matcher, replacement, preserveCase, context, kept, index) is not { } done)
+                if (ReplaceIn(found, matcher, replacement, preserveCase, context, kept, index) is not { } done)
                 {
                     continue;
                 }
@@ -65,18 +69,9 @@ static class ReplaceInFiles
                 replaced += done.Shown.MatchCount;
             }
             catch (Exception exception)
-                when (
-                    exception is
-                        IOException or
-                        UnauthorizedAccessException or
-                        SecurityException or
-                        RegexMatchTimeoutException)
+                when (WhyLeft(exception) is { } why)
             {
-                failed.Add(new(path, Describe(exception)));
-            }
-            catch (CantWriteBack exception)
-            {
-                failed.Add(new(path, exception.Message));
+                failed.Add(new(path, why));
             }
         }
 
@@ -97,14 +92,35 @@ static class ReplaceInFiles
             _ => exception.Message
         };
 
+    // Why a file is left alone where it is no failing of Windows': it is binary, say.
     sealed class CantWriteBack(string message) : Exception(message);
 
     // A file Replace wrote: where it kept what the file was, and what it wrote, to put either
     // back, and the hash of each, to tell whether the file is still that.
     sealed record Written(string Path, string Before, string After, byte[] BeforeHash, byte[] AfterHash);
 
-    static (FileResult Shown, Written Written)? ReplaceIn(string path, Matcher matcher, string replacement, bool preserveCase, int context, string kept, int number)
+    /// <summary>
+    /// What Replace would do to a file, worked out without writing anything, for Replace and for
+    /// its preview both: the bytes the file is, and the text they are, in the encoding it was
+    /// read in; the text it would write, where each replacement is in that, and where each match
+    /// it replaces is in the text as it is; and the bytes it would write, null when it would
+    /// change nothing.
+    /// </summary>
+    internal sealed record Planned(
+        byte[] Bytes,
+        string Before,
+        string After,
+        List<(int Start, int Length)> Ranges,
+        List<(int Start, int Length)> Replaced,
+        byte[]? AfterBytes);
+
+    /// <summary>
+    /// Reads <paramref name="found"/> as it is now and works out what Replace would make of it.
+    /// Throws why it would be left alone instead, which <see cref="WhyLeft"/> says.
+    /// </summary>
+    internal static Planned Plan(FileResult found, Matcher matcher, string replacement, bool preserveCase)
     {
+        var path = found.Path;
         if ((File.GetAttributes(path) & FileAttributes.ReadOnly) != 0)
         {
             throw new CantWriteBack("It is read-only.");
@@ -116,27 +132,26 @@ static class ReplaceInFiles
             throw new CantWriteBack($"It is over {TextFile.MostBytes / 1024 / 1024} MB.");
         }
 
-        string text;
-        TextFile.Encoding kind;
         var file = TextFile.Decode(bytes, out _);
         if (file == null)
         {
             throw new CantWriteBack("It is binary.");
         }
 
-        text = file.Text.ToString();
-        kind = file.Kind;
-
+        var text = file.Text.ToString();
+        var kind = file.Kind;
         if (!TextFile.Encode(text, kind).AsSpan().SequenceEqual(bytes))
         {
             throw new CantWriteBack("Its text wouldn't be written back as the same bytes it was read from.");
         }
 
-        var (newText, ranges) = Replace(text, matcher, replacement, preserveCase);
+        var leave = LinesLeft(found, text, matcher);
+        var replaced = new List<(int Start, int Length)>();
+        var (newText, ranges) = Replace(text, matcher, replacement, preserveCase, leave, replaced);
         if (ranges.Count == 0 ||
             newText == text)
         {
-            return null;
+            return new(bytes, text, text, [], [], null);
         }
 
         // What was read went back to the same bytes, checked above, but what replaces it may
@@ -148,6 +163,58 @@ static class ReplaceInFiles
             throw new CantWriteBack("What replaces it has characters the file's encoding has none for.");
         }
 
+        return new(bytes, text, newText, ranges, replaced, after);
+    }
+
+    /// <summary>
+    /// Why Replace leaves a file alone, for what <see cref="Plan"/> or the write throws, or null
+    /// for what is Lode's own failing, which is thrown on.
+    /// </summary>
+    internal static string? WhyLeft(Exception exception) =>
+        exception is
+            IOException or
+            UnauthorizedAccessException or
+            SecurityException or
+            RegexMatchTimeoutException or
+            CantWriteBack
+            ? Describe(exception)
+            : null;
+
+    // The numbers of the lines taken out of the results, whose matches are left as they are,
+    // each checked first to be still as it was found: the file edited since it was searched,
+    // one could have moved, and its number be another line's now, which would be replaced in
+    // its place, so the file is left alone.
+    static IReadOnlySet<int>? LinesLeft(FileResult found, string text, Matcher matcher)
+    {
+        if (found.Skipped.Count == 0)
+        {
+            return null;
+        }
+
+        var matches = new List<(int Start, int Length)>();
+        matcher.Find(text, matches);
+        var now = FileResult.From(found.Path, text, matches, 0).Lines;
+        foreach (var skipped in found.Skipped)
+        {
+            if (!now.Any(_ => _.Number == skipped.Number && _.Text == skipped.Text))
+            {
+                throw new CantWriteBack($"It has changed since it was searched: line {skipped.Number}, taken out of the results, isn't as it was.");
+            }
+        }
+
+        return found.Skipped.Select(_ => _.Number).ToHashSet();
+    }
+
+    static (FileResult Shown, Written Written)? ReplaceIn(FileResult found, Matcher matcher, string replacement, bool preserveCase, int context, string kept, int number)
+    {
+        var path = found.Path;
+        var plan = Plan(found, matcher, replacement, preserveCase);
+        if (plan.AfterBytes is not { } after)
+        {
+            return null;
+        }
+
+        var bytes = plan.Bytes;
         Directory.CreateDirectory(kept);
         var before = Path.Combine(kept, $"{number}.before");
         var afterCopy = Path.Combine(kept, $"{number}.after");
@@ -155,29 +222,46 @@ static class ReplaceInFiles
         File.WriteAllBytes(afterCopy, after);
         WriteInPlace(path, after, bytes, before);
         return (
-            FileResult.From(path, newText, ranges, context),
+            FileResult.From(path, plan.After, plan.Ranges, context),
             new(path, before, afterCopy, SHA256.HashData(bytes), SHA256.HashData(after)));
     }
 
     /// <summary>
-    /// <paramref name="text"/> with every match replaced, and where each replacement is in it.
+    /// <paramref name="text"/> with every match replaced, but those on a line, numbered from 1,
+    /// in <paramref name="leave"/>, and where each replacement is in it. Where each match
+    /// replaced was in <paramref name="text"/> is added to <paramref name="replaced"/>, given
+    /// one, in the same order.
     /// </summary>
-    internal static (string Text, List<(int Start, int Length)> Ranges) Replace(string text, Matcher matcher, string replacement, bool preserveCase)
+    internal static (string Text, List<(int Start, int Length)> Ranges) Replace(
+        string text,
+        Matcher matcher,
+        string replacement,
+        bool preserveCase,
+        IReadOnlySet<int>? leave = null,
+        List<(int Start, int Length)>? replaced = null)
     {
         var builder = new StringBuilder(text.Length);
         var ranges = new List<(int Start, int Length)>();
+        var lines = new LineCount(text);
         if (matcher.Regex is { } regex)
         {
+            var escaped = Escaped(replacement, text);
             var last = 0;
             foreach (Match match in regex.Matches(text))
             {
+                if (lines.IsOnAny(match.Index, match.Length, leave))
+                {
+                    continue;
+                }
+
                 builder.Append(text, last, match.Index - last);
-                var value = match.Result(replacement);
+                var value = match.Result(escaped);
                 if (preserveCase)
                 {
                     value = InCaseOf(match.Value, value);
                 }
 
+                replaced?.Add((match.Index, match.Length));
                 ranges.Add((builder.Length, value.Length));
                 builder.Append(value);
                 last = match.Index + match.Length;
@@ -192,6 +276,11 @@ static class ReplaceInFiles
         var position = 0;
         foreach (var (start, length) in matches)
         {
+            if (lines.IsOnAny(start, length, leave))
+            {
+                continue;
+            }
+
             builder.Append(text, position, start - position);
             var value = replacement;
             if (preserveCase)
@@ -199,6 +288,7 @@ static class ReplaceInFiles
                 value = InCaseOf(text.Substring(start, length), value);
             }
 
+            replaced?.Add((start, length));
             ranges.Add((builder.Length, value.Length));
             builder.Append(value);
             position = start + length;
@@ -206,6 +296,116 @@ static class ReplaceInFiles
 
         builder.Append(text, position, text.Length - position);
         return (builder.ToString(), ranges);
+    }
+
+    // Which lines the matches are on, counted on from the last as they come in order: a match
+    // is on the line its first character is on through the line its last is, a line's ending
+    // being the line's, as Find Results shows them.
+    sealed class LineCount(string text)
+    {
+        int line = 1;
+        int counted;
+
+        int LineAt(int position)
+        {
+            line += text.AsSpan(counted, position - counted).Count('\n');
+            counted = position;
+            return line;
+        }
+
+        public bool IsOnAny(int start, int length, IReadOnlySet<int>? lines)
+        {
+            if (lines == null)
+            {
+                return false;
+            }
+
+            var first = LineAt(start);
+            var last = LineAt(start + Math.Max(0, length - 1));
+            for (var number = first; number <= last; number++)
+            {
+                if (lines.Contains(number))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A regular expression's replacement with \n, \t, \r and \\ in it the characters they
+    /// stand for, as VS Code reads them, where .NET's would leave them as typed: \n, and \r\n,
+    /// as the line ending most of <paramref name="text"/>'s lines end with, so a line broken in
+    /// a file whose lines end as Windows ends them ends as the rest do. A backslash before
+    /// anything else is left as typed.
+    /// </summary>
+    internal static string Escaped(string replacement, string text)
+    {
+        if (!replacement.Contains('\\'))
+        {
+            return replacement;
+        }
+
+        string? ending = null;
+        var builder = new StringBuilder(replacement.Length);
+        for (var index = 0; index < replacement.Length; index++)
+        {
+            var character = replacement[index];
+            if (character != '\\' ||
+                index + 1 == replacement.Length)
+            {
+                builder.Append(character);
+                continue;
+            }
+
+            switch (replacement[index + 1])
+            {
+                case 'n':
+                    builder.Append(ending ??= LineEndingOf(text));
+                    index++;
+                    break;
+                case 'r' when replacement.AsSpan(index + 2).StartsWith(@"\n"):
+                    builder.Append(ending ??= LineEndingOf(text));
+                    index += 3;
+                    break;
+                case 'r':
+                    builder.Append('\r');
+                    index++;
+                    break;
+                case 't':
+                    builder.Append('\t');
+                    index++;
+                    break;
+                case '\\':
+                    builder.Append('\\');
+                    index++;
+                    break;
+                default:
+                    builder.Append(character);
+                    break;
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// The line ending most of <paramref name="text"/>'s lines end with: a line feed, or a
+    /// carriage return and a line feed, as Windows ends them, where as many end each way, or
+    /// none end yet, as VS Code ends a new line on Windows.
+    /// </summary>
+    internal static string LineEndingOf(CharSpan text)
+    {
+        var windows = text.Count("\r\n");
+        var lineFeeds = text.Count('\n') - windows;
+        if (lineFeeds > windows)
+        {
+            return "\n";
+        }
+
+        return "\r\n";
     }
 
     /// <summary>

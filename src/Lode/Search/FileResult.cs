@@ -7,7 +7,11 @@
 /// match when it is long, a line of minified script say, with "…" where it was cut.</param>
 /// <param name="Column">Where the first match starts in the whole line, from 1: where an editor
 /// opening the file there puts the cursor.</param>
-sealed record ResultLine(int Number, string Text, IReadOnlyList<(int Start, int Length)> Matches, int Column)
+/// <param name="FirstMatch">Which of the file's matches, counted in order from 0, is the first on
+/// it, and <paramref name="LastMatch"/> the last, however many a long line cut down shows: a
+/// match over several lines is on each of them, and is counted once when they are all taken out
+/// of the replace. -1 for a line of context.</param>
+sealed record ResultLine(int Number, string Text, IReadOnlyList<(int Start, int Length)> Matches, int Column, int FirstMatch = -1, int LastMatch = -1)
 {
     public bool IsContext => Matches.Count == 0;
 }
@@ -15,9 +19,17 @@ sealed record ResultLine(int Number, string Text, IReadOnlyList<(int Start, int 
 /// <summary>
 /// A file Find in Files found what it looks for in: how many times, and the lines to show.
 /// </summary>
+/// <param name="MatchCount">How many matches Replace would replace: those on lines taken out of
+/// the results aren't counted.</param>
 /// <param name="LinesLeftOut">Too much had been found already for its lines to be kept.</param>
 sealed record FileResult(string Path, int MatchCount, IReadOnlyList<ResultLine> Lines, bool LinesLeftOut = false)
 {
+    /// <summary>
+    /// The lines taken out of the results, as they were found, whose matches Replace leaves as
+    /// they are.
+    /// </summary>
+    public IReadOnlyList<ResultLine> Skipped { get; init; } = [];
+
     // The longest line kept whole. Past it, a window round the first match is kept.
     const int longestLine = 300;
 
@@ -30,9 +42,11 @@ sealed record FileResult(string Path, int MatchCount, IReadOnlyList<ResultLine> 
     /// </summary>
     public static FileResult From(string path, CharSpan text, IReadOnlyList<(int Start, int Length)> matches, int context)
     {
-        // The start of each line a match is on, and where the matches on it are, by line.
+        // The start of each line a match is on, where the matches on it are, by line, and which
+        // of the matches they are.
         var lineStarts = new List<int> {0};
         var onLine = new SortedDictionary<int, List<(int Start, int Length)>>();
+        var which = new Dictionary<int, (int First, int Last)>();
         var scanned = 0;
 
         static int LineOf(CharSpan text, List<int> lineStarts, ref int scanned, int position)
@@ -59,8 +73,9 @@ sealed record FileResult(string Path, int MatchCount, IReadOnlyList<ResultLine> 
             return index;
         }
 
-        foreach (var (start, length) in matches)
+        for (var match = 0; match < matches.Count; match++)
         {
+            var (start, length) = matches[match];
             var first = LineOf(text, lineStarts, ref scanned, start);
             var last = LineOf(text, lineStarts, ref scanned, Math.Max(start, start + length - 1));
             for (var line = first; line <= last; line++)
@@ -80,6 +95,7 @@ sealed record FileResult(string Path, int MatchCount, IReadOnlyList<ResultLine> 
                 }
 
                 list.Add((from - lineStart, to - from));
+                which[line] = which.TryGetValue(line, out var known) ? (known.First, match) : (match, match);
             }
         }
 
@@ -114,7 +130,17 @@ sealed record FileResult(string Path, int MatchCount, IReadOnlyList<ResultLine> 
 
             var whole = text[start..end].TrimEnd("\r\n");
             onLine.TryGetValue(line, out var ranges);
-            lines.Add(Line(line + 1, whole, ranges ?? []));
+            var shownLine = Line(line + 1, whole, ranges ?? []);
+            if (which.TryGetValue(line, out var on))
+            {
+                shownLine = shownLine with
+                {
+                    FirstMatch = on.First,
+                    LastMatch = on.Last
+                };
+            }
+
+            lines.Add(shownLine);
         }
 
         return new(path, matches.Count, lines);

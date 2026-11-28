@@ -3,8 +3,8 @@
 /// a heading saying what was looked for, each file's full path, then its lines, each numbered,
 /// a colon after the number of one that matches, ".." where lines are left out between them,
 /// and at the end how many matches across how many files. Added to as the search goes, and
-/// never otherwise changed but for a file taken out, so the list showing it only ever has rows
-/// added at the end. Used on the UI thread.
+/// never otherwise changed but for a file or a line taken out, so the list showing it only ever
+/// has rows added at the end while it searches. Used on the UI thread.
 /// </summary>
 sealed class FindResults(FindQuery query)
 {
@@ -81,6 +81,15 @@ sealed class FindResults(FindQuery query)
 
     public void Add(FileResult result)
     {
+        var found = Rows(result);
+        starts.Add(headingRows + fileRows);
+        files.Add(found);
+        matches += result.MatchCount;
+        fileRows += RowsOf(found);
+    }
+
+    static Found Rows(FileResult result)
+    {
         var rows = new List<int>(result.Lines.Count + 2);
         for (var index = 0; index < result.Lines.Count; index++)
         {
@@ -93,13 +102,12 @@ sealed class FindResults(FindQuery query)
             rows.Add(index);
         }
 
-        starts.Add(headingRows + fileRows);
-        files.Add(new(result, [.. rows]));
-        matches += result.MatchCount;
-
-        // Its own row, its lines and gaps, and a blank after.
-        fileRows += rows.Count + 2;
+        return new(result, [.. rows]);
     }
+
+    // Its own row, its lines and gaps, and a blank after.
+    static int RowsOf(Found found) =>
+        found.Rows.Length + 2;
 
     /// <summary>
     /// Takes a file out, so it isn't shown, nor replaced in.
@@ -108,13 +116,104 @@ sealed class FindResults(FindQuery query)
     {
         matches -= files[file].Result.MatchCount;
         files.RemoveAt(file);
+        Restart();
+    }
+
+    // Where each file's rows start, worked out again once one has fewer.
+    void Restart()
+    {
         starts.Clear();
         fileRows = 0;
         foreach (var found in files)
         {
             starts.Add(headingRows + fileRows);
-            fileRows += found.Rows.Length + 2;
+            fileRows += RowsOf(found);
         }
+    }
+
+    /// <summary>
+    /// Takes a line that matches out of a file's lines, so it isn't shown, and Replace leaves
+    /// what is on it as it is, the rest of the file replaced. A match over several lines is on
+    /// each, so is left whole, and the others it is on go too, where nothing else on them is
+    /// replaced; as do the lines of context shown for them alone. The file goes once none of
+    /// its lines that match are left. False for a line of context, which has nothing to leave.
+    /// </summary>
+    public bool RemoveLine(int file, int line)
+    {
+        var result = files[file].Result;
+        var taken = result.Lines[line];
+        if (taken.IsContext)
+        {
+            return false;
+        }
+
+        IReadOnlyList<ResultLine> skipped = [.. result.Skipped, taken];
+
+        bool IsLeft(int match, IReadOnlyList<ResultLine> left) =>
+            left.Any(_ => match >= _.FirstMatch && match <= _.LastMatch);
+
+        bool IsAllLeft(ResultLine shown)
+        {
+            for (var match = shown.FirstMatch; match <= shown.LastMatch; match++)
+            {
+                if (!IsLeft(match, skipped))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        var matching = result.Lines
+            .Where(_ => !_.IsContext && !IsAllLeft(_))
+            .Select(_ => _.Number)
+            .ToList();
+        if (matching.Count == 0)
+        {
+            Remove(file);
+            return true;
+        }
+
+        var lines = new List<ResultLine>(result.Lines.Count);
+        foreach (var shown in result.Lines)
+        {
+            if (shown.IsContext)
+            {
+                if (matching.Any(_ => Math.Abs(_ - shown.Number) <= Query.ContextLines))
+                {
+                    lines.Add(shown);
+                }
+
+                continue;
+            }
+
+            if (matching.Contains(shown.Number))
+            {
+                lines.Add(shown);
+            }
+        }
+
+        // Counted once, whichever line a match is on is taken out first.
+        var leaving = 0;
+        for (var match = taken.FirstMatch; match <= taken.LastMatch; match++)
+        {
+            if (!IsLeft(match, result.Skipped))
+            {
+                leaving++;
+            }
+        }
+
+        var kept = result with
+        {
+            Lines = lines,
+            MatchCount = result.MatchCount - leaving,
+            Skipped = skipped
+        };
+        matches -= leaving;
+        files[file] = Rows(kept);
+        Restart();
+        return true;
     }
 
     public Row RowAt(int index)

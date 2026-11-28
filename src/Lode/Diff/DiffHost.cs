@@ -91,6 +91,20 @@ sealed class DiffHost : IDisposable
         }
     }
 
+    /// <summary>
+    /// Shows what Replace would make of a file, from Find Results: in the Diff tab, beside it,
+    /// wherever Options says changes show, as Find Results is a tab itself, with no folder list
+    /// to show over. Of no repository, it keeps the panes on none.
+    /// </summary>
+    public void Preview(DiffSource source)
+    {
+        TabRepo = null;
+        var view = ShowTab();
+        view.Show(source);
+        page!.Text = $"Preview: {source.File.Path}";
+        page.ToolTipText = Path.Combine(source.Repo, source.File.Path);
+    }
+
     DiffView ShowTab()
     {
         if (tabView == null ||

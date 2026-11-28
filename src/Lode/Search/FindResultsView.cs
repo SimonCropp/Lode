@@ -2,10 +2,12 @@
 /// The Find Results tab: what Find in Files has found, laid out as Sublime's Find Results are
 /// (see <see cref="FindResults"/>), each match marked. Enter, or a double-click, opens the file
 /// in the text editor at the line; F4 and Shift+F4 go to the next match and the one before and
-/// open it there; Delete takes a file out of the results, and so out of Replace. Like the file
-/// list, the list holds no rows: it is told how many there are, and draws each as it shows, so
-/// any number found costs it only the rows on screen. What the search finds is taken in every
-/// tenth of a second, added at the end.
+/// open it there; Delete takes a line that matches out of the results, and so out of Replace,
+/// which leaves it as it is, and on any other row of a file, the file; Space previews what
+/// Replace would make of the file, in the diff view. Like the file list, the list holds no
+/// rows: it is told how many there are, and draws each as it shows, so any number found costs
+/// it only the rows on screen. What the search finds is taken in every tenth of a second, added
+/// at the end.
 /// </summary>
 sealed class FindResultsView : UserControl
 {
@@ -46,6 +48,11 @@ sealed class FindResultsView : UserControl
     /// A search started or finished, for the tab's title.
     /// </summary>
     public event Action? StateChanged;
+
+    /// <summary>
+    /// Preview replace, on a file's row or one of its lines: what Replace would make of the file.
+    /// </summary>
+    public event Action<FileResult>? PreviewRequested;
 
     public FindResults Results => results;
 
@@ -279,7 +286,10 @@ sealed class FindResultsView : UserControl
         }
     }
 
-    void Select(int index)
+    /// <summary>
+    /// Picks a row, and gives it the focus, which the keys act on.
+    /// </summary>
+    internal void Select(int index)
     {
         if (index < 0 ||
             index >= list.VirtualListSize)
@@ -383,6 +393,67 @@ sealed class FindResultsView : UserControl
         Select(Math.Min(index, results.RowCount - 1));
     }
 
+    /// <summary>
+    /// Delete: a line that matches taken out of the results, so Replace leaves it as it is; on
+    /// any other row of a file, the file.
+    /// </summary>
+    internal void RemoveAt(int index)
+    {
+        if (!IsMatchingLine(index))
+        {
+            RemoveFileAt(index);
+            return;
+        }
+
+        var row = results.RowAt(index);
+        results.RemoveLine(row.File, row.Line);
+        ShowRows();
+        Select(Math.Min(index, results.RowCount - 1));
+    }
+
+    bool IsMatchingLine(int index)
+    {
+        if (index < 0 ||
+            index >= results.RowCount)
+        {
+            return false;
+        }
+
+        var row = results.RowAt(index);
+        return row.Kind == FindResults.RowKind.Line &&
+               !results.FileAt(row.File).Lines[row.Line].IsContext;
+    }
+
+    // Whether what Replace would make of the files can be previewed: not once it has replaced,
+    // nor with nothing searched for.
+    bool CanPreview =>
+        results is
+        {
+            Replaced: null,
+            Error: null
+        };
+
+    /// <summary>
+    /// Space: what Replace would make of the file a row is of, in the diff view.
+    /// </summary>
+    internal void PreviewAt(int index)
+    {
+        if (!CanPreview ||
+            index < 0 ||
+            index >= results.RowCount)
+        {
+            return;
+        }
+
+        var row = results.RowAt(index);
+        if (row.File < 0)
+        {
+            return;
+        }
+
+        PreviewRequested?.Invoke(results.FileAt(row.File));
+    }
+
     // What Copy takes from a row: a file's path, a line's text.
     string CopyText(int index)
     {
@@ -422,31 +493,45 @@ sealed class FindResultsView : UserControl
 
     void OnListKeyDown(object? sender, KeyEventArgs args)
     {
-        switch (args.KeyData)
+        if (!Key(args.KeyData))
+        {
+            return;
+        }
+
+        args.Handled = true;
+        args.SuppressKeyPress = true;
+    }
+
+    /// <summary>
+    /// A key pressed in the list, on the row with the focus: whether it was one of the results'.
+    /// </summary>
+    internal bool Key(Keys keyData)
+    {
+        switch (keyData)
         {
             case Keys.Delete:
-                RemoveFileAt(FocusedRow);
-                break;
+                RemoveAt(FocusedRow);
+                return true;
+            case Keys.Space:
+                PreviewAt(FocusedRow);
+                return true;
             case Keys.Control | Keys.C:
                 if (FocusedRow >= 0)
                 {
                     Copy(CopyText(FocusedRow));
                 }
 
-                break;
+                return true;
             case Keys.Apps:
             case Keys.Shift | Keys.F10:
             {
                 var bounds = list.GetItemRect(Math.Max(0, FocusedRow));
                 ShowMenu(FocusedRow, new(bounds.Left + 20, bounds.Bottom));
-                break;
+                return true;
             }
             default:
-                return;
+                return false;
         }
-
-        args.Handled = true;
-        args.SuppressKeyPress = true;
     }
 
     void OnListMouseUp(object? sender, MouseEventArgs args)
@@ -467,6 +552,16 @@ sealed class FindResultsView : UserControl
     }
 
     void ShowMenu(int index, Point location)
+    {
+        var menu = MenuAt(index);
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.Show(list, location);
+    }
+
+    /// <summary>
+    /// The right-click menu of a row, or of none, -1, for below the last.
+    /// </summary>
+    internal ExplorerMenu MenuAt(int index)
     {
         var menu = new ExplorerMenu();
         var row = default(FindResults.Row);
@@ -499,11 +594,23 @@ sealed class FindResultsView : UserControl
         if (ofFile)
         {
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Remove from results", null, (_, _) => RemoveFileAt(index)) { ShortcutKeyDisplayString = "Delete" });
+            if (CanPreview)
+            {
+                menu.Items.Add(new ToolStripMenuItem("Preview replace", null, (_, _) => PreviewAt(index)) { ShortcutKeyDisplayString = "Space" });
+            }
+
+            if (IsMatchingLine(index))
+            {
+                menu.Items.Add(new ToolStripMenuItem("Remove line from results", null, (_, _) => RemoveAt(index)) { ShortcutKeyDisplayString = "Delete" });
+                menu.Items.Add("Remove file from results", null, (_, _) => RemoveFileAt(index));
+            }
+            else
+            {
+                menu.Items.Add(new ToolStripMenuItem("Remove from results", null, (_, _) => RemoveFileAt(index)) { ShortcutKeyDisplayString = "Delete" });
+            }
         }
 
-        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
-        menu.Show(list, location);
+        return menu;
     }
 
     const TextFormatFlags textFlags =

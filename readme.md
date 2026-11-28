@@ -304,8 +304,9 @@ Each has **Open in Lode**, and **Revert** to give the links back.
    * **Find**: text, or a regular expression (**.\***), case (**Aa**) and whole word (**ab**) as wanted.
    * **Where**: folders and files, `<open folders>`, and patterns: `*.cs` to include, `-*.min.js` or `-node_modules\` to exclude, `**\` for any number of folders, none among them (`src\**\*.cs`), and braces for alternatives (`*.{ts,tsx}`). A folder with a comma in its name goes in quotes.
    * In a repository only what git doesn't ignore is searched, unless **Git-ignored** is on. `.git` never is, nor binary files.
-   * **Find Results** opens in a tab: each file's matching lines, with context. Enter opens the file in the editor at the line; F4 and Shift+F4 go through the matches.
-   * **Replace** replaces in every file found, asking first, keeping each file's encoding and line endings, and can be undone.
+   * **Find Results** opens in a tab: each file's matching lines, with context. Enter opens the file in the editor at the line; F4 and Shift+F4 go through the matches. Delete takes a matching line out of the results, and so out of Replace, which leaves it as it is; on the file's own row, the whole file.
+   * **Replace** replaces in every file found, asking first, keeping each file's encoding and line endings, and can be undone. With a regular expression, `$1` or `${name}` puts in a group, and `\n`, `\t`, `\r` and `\\` are a line break, a tab, a carriage return and a backslash, as in VS Code, the line break ended as the file's lines end. `\n` in what is looked for matches a line ended as Windows ends it too.
+   * **Preview replace** (Space, or the right-click menu) on a file in the results shows, in the Diff tab, the file as it is against the file as Replace would leave it, before anything is replaced.
 
    ![Find Results](src/Lode.Tests/Window/MainFormTests.FindResults.verified.png)
 
@@ -334,6 +335,8 @@ Each has **Open in Lode**, and **Revert** to give the links back.
 | Ctrl+Shift+F                      | Find in Files                 |
 | Ctrl+Enter (search box)           | Search inside the files       |
 | F4, Shift+F4 (Find Results)       | Next match, previous match    |
+| Space (Find Results)              | Preview replace               |
+| Delete (Find Results)             | Take a line or file out       |
 | F5                                | Refresh                       |
 | F2                                | Rename                        |
 | Delete, Shift+Delete              | Recycle, delete permanently   |
