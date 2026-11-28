@@ -17,12 +17,23 @@ static class ChangeRows
         change.Kind switch
         {
             GitChange.Added => $"{change.Path}, added",
-            GitChange.Deleted => $"{change.Path}, deleted",
+            GitChange.Deleted => $"{change.Path}, deleted{RenamedFrom(change)}",
             GitChange.Renamed => $"{change.Path}, renamed from {change.OldPath}",
             GitChange.Untracked => $"{change.Path}, not tracked",
             GitChange.Conflicted => $"{change.Path}, conflicted",
-            _ => $"{change.Path}, modified"
+            _ => $"{change.Path}, modified{RenamedFrom(change)}"
         };
+
+    // A file renamed, then edited or deleted.
+    static string RenamedFrom(Change change)
+    {
+        if (change.OldPath is { } old)
+        {
+            return $", renamed from {old}";
+        }
+
+        return "";
+    }
 
     /// <summary>
     /// What the status icon stands for, for its tooltip.
@@ -108,12 +119,9 @@ static class ChangeRows
             room = Rectangle.FromLTRB(room.Left, room.Top, room.Right - noteWidth - control.LogicalToDeviceUnits(10), room.Bottom);
         }
 
-        // A renamed file: where it was, an arrow, then where it is, as Desktop shows one.
-        if (change is
-            {
-                Kind: GitChange.Renamed,
-                OldPath: { } old
-            })
+        // A renamed file: where it was, an arrow, then where it is, as Desktop shows one. Edited
+        // since, it is Modified, and still renamed.
+        if (change.OldPath is { } old)
         {
             var oldWidth = Math.Min(room.Width / 2, TextRenderer.MeasureText(graphics, old, font, Size.Empty, flags).Width);
             DrawPath(graphics, font, new(room.Left, room.Top, oldWidth, room.Height), old, text, secondary);

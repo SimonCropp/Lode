@@ -243,7 +243,9 @@ sealed class DiffView : UserControl
             return (null, "Part way through a merge, everything is committed.");
         }
 
-        if (file.File.Kind == GitChange.Renamed)
+        // Edited since, a renamed file is Modified, and still renamed.
+        if (file.File.Kind == GitChange.Renamed ||
+            file.File.OldPath != null)
         {
             return (null, "A renamed file is committed whole: tick or untick it in Changes.");
         }

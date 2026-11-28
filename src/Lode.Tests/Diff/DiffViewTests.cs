@@ -74,6 +74,11 @@ public class DiffViewTests
         var (renamedPicks, renamedHint) = DiffView.PicksFor(new(Unique(), DiffSample.File with { Kind = GitChange.Renamed, OldPath = "old.cs" }), DiffSample.Diff, hideWhitespace: false);
         await Assert.That(renamedPicks).IsNull();
         await Assert.That(renamedHint).IsNotNull();
+
+        // Edited since, it is Modified, and still renamed.
+        var (editedPicks, editedHint) = DiffView.PicksFor(new(Unique(), DiffSample.File with { Kind = GitChange.Modified, OldPath = "old.cs" }), DiffSample.Diff, hideWhitespace: false);
+        await Assert.That(editedPicks).IsNull();
+        await Assert.That(editedHint).IsEqualTo(renamedHint);
     }
 
     // Unified or split, kept for every diff after.

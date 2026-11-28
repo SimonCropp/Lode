@@ -413,6 +413,50 @@ public class GitChangesTests
         await Assert.That(File.Exists(renamedTo)).IsFalse();
     }
 
+    // Renamed, by git mv or an editor, then edited, a file is Modified, as what is on disk says
+    // most of it, and still a rename: committed, where it was goes from the commit, not left in
+    // beside it, a copy, its deletion still staged.
+    [Test]
+    public async Task ARenamedFileEditedSinceIsCommittedAsARename()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "mv", "tracked.txt", "renamed.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, "renamed.txt"), "edited");
+        var renamed = GitChanges.Read(repo, Cancel.None)!.Files.Single();
+
+        var result = GitChanges.Commit(repo, [renamed], merging: false, "Renamed and edited", Cancel.None);
+
+        await Assert.That(renamed).IsEqualTo(new Change("renamed.txt", "tracked.txt", GitChange.Modified));
+        await Assert.That(ChangeRows.Describe(renamed)).IsEqualTo("renamed.txt, modified, renamed from tracked.txt");
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(Git(repo, "ls-tree", "-r", "--name-only", "HEAD")).IsEqualTo("renamed.txt");
+        await Assert.That(Git(repo, "show", "HEAD:renamed.txt")).IsEqualTo("edited");
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
+    // Discarded, it is back where it was, as committed, not deleted.
+    [Test]
+    public async Task ARenamedFileEditedSinceIsDiscardedBackWhereItWas()
+    {
+        using var scratch = new Scratch();
+        var repo = scratch.CreateRepo("Repo");
+        Git(repo, "mv", "tracked.txt", "renamed.txt");
+        await File.WriteAllTextAsync(Path.Combine(repo, "renamed.txt"), "edited");
+        var renamed = GitChanges.Read(repo, Cancel.None)!.Files.Single();
+        foreach (var file in GitChanges.OnDisk(repo, [renamed]))
+        {
+            File.Delete(file);
+        }
+
+        var result = GitChanges.Restore(repo, [renamed], hasCommits: true, Cancel.None);
+
+        await Assert.That(result.Succeeded).IsTrue();
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(repo, "tracked.txt"))).IsEqualTo("original");
+        await Assert.That(File.Exists(Path.Combine(repo, "renamed.txt"))).IsFalse();
+        await Assert.That(Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
     [Test]
     public async Task Ignore()
     {

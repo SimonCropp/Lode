@@ -15,13 +15,14 @@ sealed record Change(string Path, string? OldPath, GitChange Kind, Conflict? Con
 
     /// <summary>
     /// The paths a commit of it takes in: a rename both where it is and where it was, so the old
-    /// path goes in the same commit.
+    /// path goes in the same commit. Edited since, or deleted, it is Modified or Deleted, as what
+    /// is on disk says most of a file, and still a rename: committing where it is alone would
+    /// leave where it was in the commit, a copy.
     /// </summary>
     public IEnumerable<string> Paths()
     {
         yield return Path;
-        if (OldPath != null &&
-            Kind == GitChange.Renamed)
+        if (OldPath != null)
         {
             yield return OldPath;
         }
