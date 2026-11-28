@@ -38,6 +38,10 @@ static class GitBranches
     // How a stash is marked once putting it back has clashed: no longer one to put back.
     internal const string ClashedMarker = "Lode clashed:";
 
+    // How a stash is marked that git made for a switch but couldn't finish, whose changes
+    // couldn't all be put back in the folder: not left on the branch, so not one to put back.
+    internal const string KeptMarker = "Lode kept:";
+
     /// <summary>
     /// The repository's branches, as git has them now, without going to origin: the list is
     /// shown as it opens.
@@ -290,7 +294,8 @@ static class GitBranches
             "--include-untracked",
             "-m",
             StashMarker + current);
-        var stashed = StashTip(repo) != before;
+        var tip = StashTip(repo);
+        var stashed = tip != before;
         if (!stash.Succeeded)
         {
             var failed = stash with
@@ -300,9 +305,10 @@ static class GitBranches
 
             // Git keeps the stash before it clears what it stashed from the folder, and has
             // kept it though the clearing then failed, on a file another program has open say.
-            if (stashed)
+            if (stashed &&
+                tip != null)
             {
-                return PutBack(repo, failed);
+                return Unstash(repo, tip, current, failed);
             }
 
             return failed;
@@ -339,6 +345,129 @@ static class GitBranches
         {
             Output = $"{failed.Output}\nThe changes couldn't be put back, so are still stashed:\n{restored.Output}"
         };
+    }
+
+    // A stash git made for a switch, then couldn't finish. Git keeps the stash, then clears what
+    // it stashed from the folder, the files it doesn't track first, then those it does, put back
+    // as the last commit has them, and stops at the first it can't, one another program has open
+    // say. So some of the changes are only in the stash, and the rest still in the folder, which
+    // the stash can't be popped over. Left marked as the branch's, it would be put back on coming
+    // back to the branch later, onto whatever is there by then, though the branch was never left.
+    // Dropped as it is, what the folder lost would go with it. So what the folder lost is put
+    // back from the stash, the index first, then the files git tracks, then those it doesn't,
+    // each only where it differs, so a file another program has open, still as it was, isn't
+    // touched. With the folder as it was, the stash, a copy of it now, is dropped. Should
+    // something not go back, the stash is kept, under a name nothing puts back, for Stashed
+    // changes to restore once whatever stopped it has gone. The stash is given as its commit,
+    // which, unlike its name, a stash made meanwhile in another worktree doesn't move along.
+    internal static CodeCommands.RepoResult Unstash(string repo, string stash, string branch, CodeCommands.RepoResult failed)
+    {
+        var index = $"{stash}^2";
+
+        // Git makes the commit of the files it doesn't track only when there are some.
+        var untracked = $"{stash}^3";
+        if (!CodeCommands.Git(repo, "rev-parse", "--verify", "--quiet", untracked).Succeeded)
+        {
+            untracked = null;
+        }
+
+        // Even cancelled since: the changes would otherwise be left part in the folder, part in
+        // the stash.
+        var errors = new List<string>();
+        Restore(repo, index, "--staged", Differing(repo, "--cached", index), errors);
+        Restore(repo, stash, "--worktree", Differing(repo, stash), errors);
+        if (untracked != null)
+        {
+            Restore(repo, untracked, "--worktree", Missing(repo, untracked), errors);
+        }
+
+        var name = GitStashes.NameOf(repo, stash);
+        if (Holds(repo, stash, index, untracked))
+        {
+            if (name == null ||
+                CodeCommands.Git(repo, "stash", "drop", name).Succeeded)
+            {
+                return failed with
+                {
+                    Output = $"{failed.Output}\nNothing is left stashed: the changes are here, as they were."
+                };
+            }
+
+            return failed with
+            {
+                Output = $"{failed.Output}\nThe changes are here, as they were, but git couldn't drop the stash it made of them, {name}."
+            };
+        }
+
+        var kept = $"the commit {stash}";
+        if (name != null)
+        {
+            kept = StoreAs(repo, name, stash, $"On {branch}: {KeptMarker}{branch}");
+        }
+
+        return failed with
+        {
+            Output = $"{failed.Output}\nThe changes couldn't all be put back, so they are still stashed, in {kept}:\n{string.Join('\n', errors)}".TrimEnd()
+        };
+    }
+
+    // Whether the folder has all the stash has: the index as git stashed it, the files git
+    // tracks as they were, and every file it doesn't.
+    static bool Holds(string repo, string stash, string index, string? untracked) =>
+        Differing(repo, "--cached", index) is [] &&
+        Differing(repo, stash) is [] &&
+        (untracked == null ||
+         Missing(repo, untracked) is []);
+
+    // The paths where what is here differs from what is in the commit: the index, with --cached,
+    // otherwise the files git tracks. Null where git can't tell. Renames aren't looked for, as
+    // only where a file went would be named, not where it went from.
+    static List<string>? Differing(string repo, params string[] against)
+    {
+        var listed = CodeCommands.GitOutput(repo, Cancel.None, ["diff", "--no-renames", "--name-only", "-z", .. against, "--"]);
+        if (!listed.Succeeded)
+        {
+            return null;
+        }
+
+        return [.. listed.Output.Split('\0', StringSplitOptions.RemoveEmptyEntries)];
+    }
+
+    // The files the stash has that git doesn't track, in its third commit, that aren't in the
+    // folder now. Null where git can't list them.
+    static List<string>? Missing(string repo, string untracked)
+    {
+        var listed = CodeCommands.GitOutput(repo, Cancel.None, ["ls-tree", "-r", "-z", "--name-only", "--full-tree", untracked]);
+        if (!listed.Succeeded)
+        {
+            return null;
+        }
+
+        return listed.Output
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Where(_ => !File.Exists(Path.Combine(repo, _.Replace('/', '\\'))))
+            .ToList();
+    }
+
+    // Puts the paths back as source has them, in the index alone with --staged, in the folder
+    // alone with --worktree: from a list, as a command line holds only so many, and literal, so a
+    // name like [x].txt isn't taken as a pattern. What git says goes in errors, should it fail.
+    static void Restore(string repo, string source, string where, List<string>? paths, List<string> errors)
+    {
+        if (paths is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var restored = CodeCommands.GitOutput(
+            repo,
+            Cancel.None,
+            ["--literal-pathspecs", "restore", $"--source={source}", where, "--pathspec-from-file=-", "--pathspec-file-nul"],
+            string.Concat(paths.Select(_ => $"{_}\0")));
+        if (!restored.Succeeded)
+        {
+            errors.Add(restored.Error);
+        }
     }
 
     // The commit the newest stash is, or null with none.
@@ -453,20 +582,31 @@ static class GitBranches
         }
 
         var commit = CodeCommands.Git(repo, "rev-parse", "--verify", "--quiet", stash);
-        if (!commit.Succeeded ||
-            !CodeCommands.Git(repo, "stash", "drop", stash).Succeeded)
+        if (!commit.Succeeded)
         {
             return stash;
         }
 
-        var stored = CodeCommands.Git(repo, "stash", "store", "-m", $"On {branch}: {ClashedMarker}{branch}", commit.Output);
+        return StoreAs(repo, stash, commit.Output, $"On {branch}: {ClashedMarker}{branch}");
+    }
+
+    // The stash named, its commit, stored again under message: the same stash, its changes as
+    // they were, now under a name nothing puts back. Gives where it is kept, as git names it.
+    static string StoreAs(string repo, string name, string commit, string message)
+    {
+        if (!CodeCommands.Git(repo, "stash", "drop", name).Succeeded)
+        {
+            return name;
+        }
+
+        var stored = CodeCommands.Git(repo, "stash", "store", "-m", message, commit);
         if (stored.Succeeded)
         {
             return "stash@{0}";
         }
 
         // No longer among the stashes, but still in the repository, by its commit.
-        return $"the commit {commit.Output}";
+        return $"the commit {commit}";
     }
 
     /// <summary>

@@ -35,6 +35,11 @@ static class GitStashes
                     return $"Changes left on {message[GitBranches.ClashedMarker.Length..]} that clashed coming back";
                 }
 
+                if (message.StartsWith(GitBranches.KeptMarker, StringComparison.Ordinal))
+                {
+                    return $"Changes on {message[GitBranches.KeptMarker.Length..]} a switch couldn't stash, not all put back";
+                }
+
                 if (message.StartsWith(GitBranches.StashMarker, StringComparison.Ordinal))
                 {
                     return $"Changes left on {message[GitBranches.StashMarker.Length..]}";
@@ -223,7 +228,7 @@ static class GitStashes
     }
 
     // The stash's name now, stash@{2} say, by its commit; null where it is no longer stashed.
-    static string? NameOf(string repo, string commit)
+    internal static string? NameOf(string repo, string commit)
     {
         var listed = CodeCommands.GitOutput(repo, Cancel.None, ["stash", "list", "--format=%gd%x00%H"]);
         if (!listed.Succeeded)

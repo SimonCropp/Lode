@@ -379,17 +379,28 @@ public class GitBranchesTests
         await Assert.That(Stashes(repo)).IsEqualTo("On feature: Lode clashed:feature");
     }
 
-    // Git keeps the stash before it clears what it stashed from the folder. With a file there
-    // that another program has open, the clearing fails, and so does the stash, though the
-    // changes are in it by then: that is said, rather than only that they couldn't be stashed.
+    // Git keeps the stash before it clears what it stashed from the folder, the files it doesn't
+    // track first. With one of those that another program has open, sharing reading but not
+    // deleting, as an editor might, the clearing fails, and so does the stash, though the changes
+    // are in it by then: the other new files are gone from the folder, and the changes to the
+    // files git tracks are still there, as git stopped before them. Not switched, the folder is
+    // as it was, the new files back, and no stash is left, to be put back on coming back to the
+    // branch later, onto whatever is there then. Open sharing nothing, git couldn't read it to
+    // stash it, and nothing changes at all.
     [Test]
-    public async Task AStashGitKeptButCouldNotFinishIsSaid()
+    public async Task AStashGitCouldNotFinishLeavesTheChangesAsTheyWere()
     {
         using var code = new Scratch();
         var repo = code.CreateRepo("Repo");
         Scratch.Git(repo, "switch", "-c", "feature");
         Write(repo, "tracked.txt", "changed");
+        Write(repo, "staged.txt", "staged");
+        Scratch.Git(repo, "add", "staged.txt");
+        Write(repo, "new.txt", "new");
+        Directory.CreateDirectory(Path.Combine(repo, "folder"));
+        Write(repo, @"folder\deep.txt", "deep");
         Write(repo, "open.txt", "open");
+        var status = Scratch.Git(repo, "status", "--porcelain");
         CodeCommands.RepoResult result;
         await using (new FileStream(Path.Combine(repo, "open.txt"), FileMode.Open, FileAccess.Read, FileShare.Read))
         {
@@ -398,9 +409,93 @@ public class GitBranchesTests
 
         await Assert.That(result.Succeeded).IsFalse();
         await Assert.That(result.Output).Contains("Couldn't stash the changes, so not switched");
-        await Assert.That(result.Output).Contains("so are still stashed");
+        await Assert.That(result.Output).Contains("Nothing is left stashed: the changes are here, as they were.");
         await Assert.That(Branch(repo)).IsEqualTo("feature");
-        await Assert.That(Stashes(repo)).IsEqualTo("On feature: Lode:feature");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo(status);
+        await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("changed");
+        await Assert.That(Read(repo, "new.txt")).IsEqualTo("new");
+        await Assert.That(Read(repo, @"folder\deep.txt")).IsEqualTo("deep");
+        await Assert.That(Read(repo, "open.txt")).IsEqualTo("open");
+        await Assert.That(Stashes(repo)).IsEqualTo("");
+
+        // The changes discarded since, and feature left and come back to, they aren't put back.
+        Scratch.Git(repo, "reset", "--hard");
+        Scratch.Git(repo, "clean", "-fd");
+        GitBranches.Switch(repo, "feature", Local("main"), leave: true, Cancel.None);
+        var back = GitBranches.Switch(repo, "main", Local("feature"), leave: false, Cancel.None);
+
+        await Assert.That(back.Succeeded).IsTrue();
+        await Assert.That(back.Output).DoesNotContain("Put back");
+        await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("original");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo("");
+    }
+
+    // A file git tracks that another program has open, as a spreadsheet open in Excel is: git
+    // stashes it, reading it, clears the new files from the folder, then puts back the files it
+    // tracks as the last commit has them, every one but that, which it can't replace, and fails.
+    // Not switched, the folder is as it was, what is staged staged still, and no stash is left.
+    [Test]
+    public async Task AStashGitCouldNotFinishOverAnOpenTrackedFileLeavesTheChangesAsTheyWere()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Write(repo, "open.txt", "original");
+        Write(repo, "staged.txt", "original");
+        Scratch.Git(repo, "add", "open.txt", "staged.txt");
+        Scratch.Git(repo, "commit", "-m", "More");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        Write(repo, "tracked.txt", "changed");
+        Write(repo, "open.txt", "changed");
+        Write(repo, "staged.txt", "staged");
+        Scratch.Git(repo, "add", "staged.txt");
+        Write(repo, "staged.txt", "staged, then changed");
+        Write(repo, "new.txt", "new");
+        var status = Scratch.Git(repo, "status", "--porcelain");
+        CodeCommands.RepoResult result;
+        await using (new FileStream(Path.Combine(repo, "open.txt"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            result = GitBranches.Switch(repo, "feature", Local("main"), leave: true, Cancel.None);
+        }
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("Couldn't stash the changes, so not switched");
+        await Assert.That(result.Output).Contains("Nothing is left stashed: the changes are here, as they were.");
+        await Assert.That(Branch(repo)).IsEqualTo("feature");
+        await Assert.That(Scratch.Git(repo, "status", "--porcelain")).IsEqualTo(status);
+        await Assert.That(Read(repo, "tracked.txt")).IsEqualTo("changed");
+        await Assert.That(Read(repo, "open.txt")).IsEqualTo("changed");
+        await Assert.That(Read(repo, "staged.txt")).IsEqualTo("staged, then changed");
+        await Assert.That(Scratch.Git(repo, "show", ":staged.txt")).IsEqualTo("staged");
+        await Assert.That(Read(repo, "new.txt")).IsEqualTo("new");
+        await Assert.That(Stashes(repo)).IsEqualTo("");
+    }
+
+    // Should a change of a stash git couldn't finish not go back, a file another program opened
+    // since, say, the stash is kept, but not as changes left on the branch, which coming back to
+    // it would put back: Stashed changes has it, to restore.
+    [Test]
+    public async Task AStashGitCouldNotFinishThatCantAllGoBackIsKeptButNotAsTheBranchs()
+    {
+        using var code = new Scratch();
+        var repo = code.CreateRepo("Repo");
+        Scratch.Git(repo, "switch", "-c", "feature");
+        Write(repo, "tracked.txt", "changed");
+        Write(repo, "new.txt", "new");
+        Scratch.Git(repo, "stash", "push", "--include-untracked", "-m", GitBranches.StashMarker + "feature");
+        var stash = Scratch.Git(repo, "rev-parse", "refs/stash");
+        CodeCommands.RepoResult result;
+        await using (new FileStream(Path.Combine(repo, "tracked.txt"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            result = GitBranches.Unstash(repo, stash, "feature", new(repo, false, "Couldn't stash the changes, so not switched"));
+        }
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(result.Output).Contains("The changes couldn't all be put back, so they are still stashed, in stash@{0}");
+        await Assert.That(Read(repo, "new.txt")).IsEqualTo("new");
+        await Assert.That(Stashes(repo)).IsEqualTo("On feature: Lode kept:feature");
+        await Assert.That(Scratch.Git(repo, "rev-parse", "refs/stash")).IsEqualTo(stash);
+        await Assert.That(GitBranches.Read(repo, Cancel.None).Recent.Single(_ => _.Name == "feature").Stashed).IsFalse();
+        await Assert.That(GitStashes.Read(repo, Cancel.None).Single().Text).IsEqualTo("Changes on feature a switch couldn't stash, not all put back");
     }
 
     // Changes brought to a branch that has some left on it already: those left stay stashed,
