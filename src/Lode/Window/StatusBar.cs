@@ -111,6 +111,10 @@ sealed class StatusBar : IDisposable
     // would open them again.
     long branchesClosedAt = long.MinValue / 2;
 
+    // The scale the bar's sizes are for, as a DPI: its window's as it is made, then the
+    // monitor's it is on.
+    int dpi;
+
     /// <param name="window">The window the bar is along the bottom of, whose font and scale it has.</param>
     /// <param name="updates">Whether there is a newer Lode, which the bar follows.</param>
     /// <param name="activeView">The tab showing's view, null while there is none.</param>
@@ -134,8 +138,7 @@ sealed class StatusBar : IDisposable
         {
             Renderer = new ExplorerRenderer(),
             SizingGrip = false,
-            Font = window.Font,
-            Padding = new(window.LogicalToDeviceUnits(10), window.LogicalToDeviceUnits(2), window.LogicalToDeviceUnits(10), window.LogicalToDeviceUnits(2))
+            Font = window.Font
         };
         Strip.Items.Add(textLabel);
         Strip.Items.Add(searchInsideLabel);
@@ -157,18 +160,19 @@ sealed class StatusBar : IDisposable
         Strip.Items.Add(siteLabel);
         Strip.Items.Add(spaceLabel);
 
-        // On the bar now, so the chevron's room is scaled as the bar is. A branch before the
-        // name, as GitHub Desktop has.
-        gitButton.Padding = gitButton.Padding with
-        {
-            Right = gitButton.Padding.Right + gitButton.ChevronWidth
-        };
+        // A branch before the name, as GitHub Desktop has, and a tag before the tag.
         gitButton.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
         gitButton.TextImageRelation = TextImageRelation.ImageBeforeText;
-        gitButton.Image = Icons.Bitmap(Icons.Branch, window.LogicalToDeviceUnits(16), SystemColors.ControlText, window.LogicalToDeviceUnits(4));
         tagLabel.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
         tagLabel.TextImageRelation = TextImageRelation.ImageBeforeText;
-        tagLabel.Image = Icons.Bitmap(Icons.Tag, window.LogicalToDeviceUnits(16), SystemColors.ControlText, window.LogicalToDeviceUnits(4));
+        dpi = window.DeviceDpi;
+        ShowAtScale();
+        // The bar's icons are drawn at a size, and its spacing is in pixels, neither of which the
+        // strip scales itself. So on a monitor at another scale than the window was made at, the
+        // window opening there or moved there, they are made again for it, as the text beside
+        // them is scaled for it.
+        Strip.HandleCreated += (_, _) => ScaleTo(Strip.DeviceDpi);
+        Strip.DpiChangedAfterParent += (_, _) => ScaleTo(Strip.DeviceDpi);
         gitButton.MouseDown += (_, args) => branchPressed = args.Button;
         gitButton.Click += (_, _) =>
         {
@@ -205,6 +209,38 @@ sealed class StatusBar : IDisposable
     /// The strip the bar is, for the window to dock along its bottom.
     /// </summary>
     public StatusStrip Strip { get; }
+
+    /// <summary>
+    /// Shows the bar at the scale of <paramref name="dpi"/>, the monitor's it is on. Tests call
+    /// it, as they run unaware of scale.
+    /// </summary>
+    internal void ScaleTo(int dpi)
+    {
+        if (this.dpi == dpi)
+        {
+            return;
+        }
+
+        this.dpi = dpi;
+        ShowAtScale();
+        // The room after the branch and after the last part, which they are given as they show.
+        ShowGitParts(gitRepo, gitState);
+    }
+
+    // A size at 100%, in pixels at the bar's scale, as LogicalToDeviceUnits gives it.
+    int Scaled(int logical) =>
+        (int)Math.Round(dpi / 96.0 * logical);
+
+    // The bar's spacing, and the branch's and the tag's icons, at its scale. The branch's
+    // padding is the room for its chevron, which is on the bar by now, so is scaled as the bar
+    // is.
+    void ShowAtScale()
+    {
+        Strip.Padding = new(Scaled(10), Scaled(2), Scaled(10), Scaled(2));
+        gitButton.Padding = new(0, 0, gitButton.ChevronWidth, 0);
+        gitButton.Image = Icons.Bitmap(Icons.Branch, Scaled(16), SystemColors.ControlText, Scaled(4));
+        tagLabel.Image = Icons.Bitmap(Icons.Tag, Scaled(16), SystemColors.ControlText, Scaled(4));
+    }
 
     /// <summary>
     /// Shows what the tab showing has: what is selected in it, or what it holds, the search
@@ -275,8 +311,8 @@ sealed class StatusBar : IDisposable
 
         // Windows draws tooltips in the status font, with a margin round the text.
         var font = SystemFonts.StatusFont ?? window.Font;
-        var height = TextRenderer.MeasureText(text, font).Height + window.LogicalToDeviceUnits(12);
-        tip.Show(text, Strip, TipLocation(item.Bounds, height, window.LogicalToDeviceUnits(4)), tip.AutoPopDelay);
+        var height = TextRenderer.MeasureText(text, font).Height + Scaled(12);
+        tip.Show(text, Strip, TipLocation(item.Bounds, height, Scaled(4)), tip.AutoPopDelay);
     }
 
     /// <summary>
@@ -577,11 +613,11 @@ sealed class StatusBar : IDisposable
             var right = 0;
             if (item == last)
             {
-                right = window.LogicalToDeviceUnits(12);
+                right = Scaled(12);
             }
             else if (item == gitButton)
             {
-                right = window.LogicalToDeviceUnits(4);
+                right = Scaled(4);
             }
 
             item.Margin = item.Margin with

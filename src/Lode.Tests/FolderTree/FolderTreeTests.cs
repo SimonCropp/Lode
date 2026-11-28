@@ -1032,6 +1032,98 @@ public class FolderTreeTests
         await Assert.That(style & doubleBuffer).IsEqualTo(doubleBuffer);
     }
 
+    // On a monitor at another scale than the one Windows started at, the tree's icons, its rows
+    // and its step in from one level to the next are for that scale, rather than the system
+    // image list's, which is at Windows'. Every node's icon is drawn in the list for that scale,
+    // at the index it has, so the nodes keep theirs. Back at Windows' own scale, the tree shows
+    // the system list again.
+    [Test]
+    public async Task IconsFollowTheMonitorsScale()
+    {
+        const int getItemHeight = 0x111C;
+        const int getIndent = 0x1106;
+        using var fixture = Fixture.Create();
+        using var tree = Create(fixture, new() { ShowHidden = false }, fixture.At("Docs"));
+        await Projects(tree);
+        var dpi = tree.DeviceDpi;
+        var system = tree.RowImages;
+        var height = NativeMethods.SendMessage(tree.Handle, getItemHeight, IntPtr.Zero, IntPtr.Zero);
+        var indent = NativeMethods.SendMessage(tree.Handle, getIndent, IntPtr.Zero, IntPtr.Zero);
+        NativeMethods.ImageList_GetIconSize(system, out var width, out _);
+
+        tree.UseImagesFor(dpi * 2);
+        var doubled = tree.RowImages;
+        NativeMethods.ImageList_GetIconSize(doubled, out var doubledWidth, out _);
+        var nodes = AllNodes(tree.Nodes).ToList();
+        var notDrawn = nodes.Where(_ => !Drawn(doubled, _.ImageIndex)).Select(_ => _.Text).ToList();
+        var doubledHeight = NativeMethods.SendMessage(tree.Handle, getItemHeight, IntPtr.Zero, IntPtr.Zero);
+        var doubledIndent = NativeMethods.SendMessage(tree.Handle, getIndent, IntPtr.Zero, IntPtr.Zero);
+
+        tree.UseImagesFor(dpi);
+
+        await Assert.That(system).IsEqualTo(ShellIcons.SmallImageList);
+        await Assert.That(doubled).IsNotEqualTo(system);
+        await Assert.That(doubledWidth).IsEqualTo(width * 2);
+        await Assert.That(doubledHeight).IsEqualTo(height * 2);
+        await Assert.That(doubledIndent).IsEqualTo(indent * 2);
+        // A heading, a folder pinned, This PC, its drive and a folder on it.
+        await Assert.That(nodes.Count).IsEqualTo(5);
+        await Assert.That(notDrawn).IsEmpty();
+        await Assert.That(tree.RowImages).IsEqualTo(system);
+        await Assert.That(NativeMethods.SendMessage(tree.Handle, getItemHeight, IntPtr.Zero, IntPtr.Zero)).IsEqualTo(height);
+    }
+
+    static IEnumerable<TreeNode> AllNodes(TreeNodeCollection nodes)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            // Not a placeholder, there for an expander, which is never shown.
+            if (node.Tag is not (string or FolderTree.Section or FolderTree.NetworkHeading))
+            {
+                continue;
+            }
+
+            yield return node;
+            foreach (var child in AllNodes(node.Nodes))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    // Whether the image list has something drawn at the index, rather than nothing, or no
+    // image there at all.
+    static bool Drawn(IntPtr imageList, int index)
+    {
+        var handle = NativeMethods.ImageList_GetIcon(imageList, index, 0);
+        if (handle == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var icon = Icon.FromHandle(handle);
+            using var bitmap = icon.ToBitmap();
+            for (var y = 0; y < bitmap.Height; y++)
+            {
+                for (var x = 0; x < bitmap.Width; x++)
+                {
+                    if (bitmap.GetPixel(x, y).A > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            NativeMethods.DestroyIcon(handle);
+        }
+    }
+
     // Delete, sent to the tree's window as pressing it would be, sends the selected folder to the
     // Recycle Bin, as it does in the list. A section heading and This PC are not folders, and
     // pressing it on them does nothing.

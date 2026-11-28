@@ -20,13 +20,113 @@ sealed class FolderTree : TreeView
 
     static object placeholder = new();
 
+    /// <summary>
+    /// The tree's icons at each scale it has been on. A node holds its icon's index in the system
+    /// image list, which is at the scale Windows started at, and which the tree shows on a
+    /// monitor at that scale. On a monitor at another, the tree shows a list of its own for that
+    /// scale, with each icon a tree shows at that same index, so the nodes keep theirs, and the
+    /// rest of the list blank. Every tree on a monitor of a scale shares the one list, and only
+    /// the icons trees show are drawn into it, rather than every icon the system list has.
+    /// </summary>
+    static class ScaledIcons
+    {
+        static Lock gate = new();
+        static HashSet<int> shown = [];
+        static Dictionary<int, Set> sets = [];
+        static int systemDpi = (int)GetDpiForSystem();
+
+        sealed class Set
+        {
+            ImageList images = new() { ColorDepth = ColorDepth.Depth32Bit };
+            Bitmap blank;
+
+            public Set(int iconSize)
+            {
+                images.ImageSize = new(iconSize, iconSize);
+                blank = new(iconSize, iconSize, PixelFormat.Format32bppArgb);
+
+                // Created now so that each image is copied in as it is added. Until an image
+                // list has its handle it only keeps a reference to what it is given.
+                Handle = images.Handle;
+                foreach (var icon in shown)
+                {
+                    Add(icon);
+                }
+            }
+
+            public IntPtr Handle { get; }
+
+            // At the system list's index for it, the indexes before it blank until a tree shows
+            // the icon that is at one of them.
+            public void Add(int icon)
+            {
+                while (images.Images.Count <= icon)
+                {
+                    images.Images.Add(blank);
+                }
+
+                var size = images.ImageSize;
+                using var image = ShellIcons.Render(icon, size, Point.Empty, 0, size.Width);
+                images.Images[icon] = image;
+            }
+        }
+
+        /// <summary>
+        /// How big an icon is at the scale of <paramref name="dpi"/>, in pixels: as big as the
+        /// system list's are at the scale Windows started at, scaled.
+        /// </summary>
+        public static int Size(int dpi) =>
+            ShellIcons.SmallIconSize.Width * dpi / systemDpi;
+
+        // Tests make trees on more than one UI thread; the app has one.
+        public static IntPtr Handle(int dpi)
+        {
+            if (dpi == systemDpi)
+            {
+                return ShellIcons.SmallImageList;
+            }
+
+            lock (gate)
+            {
+                if (!sets.TryGetValue(dpi, out var set))
+                {
+                    set = new(Size(dpi));
+                    sets[dpi] = set;
+                }
+
+                return set.Handle;
+            }
+        }
+
+        /// <summary>
+        /// The system list's <paramref name="icon"/>, for a node to show: drawn into the list for
+        /// each scale, and into one made later, as the node may be on its monitor by then.
+        /// </summary>
+        public static int Shown(int icon)
+        {
+            lock (gate)
+            {
+                if (icon >= 0 &&
+                    shown.Add(icon))
+                {
+                    foreach (var set in sets.Values)
+                    {
+                        set.Add(icon);
+                    }
+                }
+            }
+
+            return icon;
+        }
+    }
+
     Settings settings;
     Places places;
 
     TreeNode computerNode = new(Locations.ThisPC)
     {
         Tag = Locations.ThisPC,
-        ImageIndex = ShellIcons.ComputerIcon,
+        ImageIndex = ScaledIcons.Shown(ShellIcons.ComputerIcon),
         SelectedImageIndex = ShellIcons.ComputerIcon
     };
 
@@ -137,8 +237,7 @@ sealed class FolderTree : TreeView
         // start editing, as it would by default.
         LabelEdit = true;
 
-        // Explorer's spacing between rows, scaled the same way as the icons.
-        ItemHeight = unscaledRowHeight * ShellIcons.SmallIconSize.Height / unscaledIconSize;
+        ItemHeight = RowHeight(DeviceDpi);
         changes = new(300, SyncChanged);
         Rebuild();
     }
@@ -168,11 +267,44 @@ sealed class FolderTree : TreeView
         base.OnHandleCreated(args);
         BackColor = ExplorerStyle.Window;
         SetWindowTheme(Handle, ExplorerStyle.ControlTheme, null);
-        SendMessage(Handle, TreeViewSetImageList, IntPtr.Zero, ShellIcons.SmallImageList);
+        UseImagesFor(DeviceDpi);
+    }
+
+    // Moved to a monitor at another scale: the icons, and the spacing they set, for it.
+    protected override void OnDpiChangedAfterParent(EventArgs args)
+    {
+        base.OnDpiChangedAfterParent(args);
+        UseImagesFor(DeviceDpi);
+    }
+
+    /// <summary>
+    /// The image list the nodes are showing. For tests.
+    /// </summary>
+    internal IntPtr RowImages =>
+        SendMessage(Handle, TreeViewGetImageList, IntPtr.Zero, IntPtr.Zero);
+
+    /// <summary>
+    /// Shows the icons at the scale of <paramref name="dpi"/>, the monitor's the tree is on, with
+    /// the spacing they set. Tests call it, as they run unaware of scale.
+    /// </summary>
+    internal void UseImagesFor(int dpi)
+    {
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        SendMessage(Handle, TreeViewSetImageList, IntPtr.Zero, ScaledIcons.Handle(dpi));
+        ItemHeight = RowHeight(dpi);
         // Explorer's step in from one level to the next, scaled the same way as the icons: far
         // less than the tree's own, which is a little wider than an icon.
-        Indent = unscaledIndent * ShellIcons.SmallIconSize.Width / unscaledIconSize;
+        Indent = unscaledIndent * ScaledIcons.Size(dpi) / unscaledIconSize;
     }
+
+    // Explorer's spacing between rows, scaled the same way as the icons. Always even, as an odd
+    // height has the tree made again.
+    static int RowHeight(int dpi) =>
+        unscaledRowHeight * ScaledIcons.Size(dpi) / unscaledIconSize;
 
     /// <summary>
     /// Builds the tree again from the settings and places, for what it lists having changed:
@@ -657,7 +789,7 @@ sealed class FolderTree : TreeView
         var section = new TreeNode(name)
         {
             Tag = new Section(name),
-            ImageIndex = icon,
+            ImageIndex = ScaledIcons.Shown(icon),
             SelectedImageIndex = icon
         };
         foreach (var folder in folders)
@@ -767,7 +899,7 @@ sealed class FolderTree : TreeView
                 }
             });
         node.Text = displayName;
-        node.ImageIndex = icon;
+        node.ImageIndex = ScaledIcons.Shown(icon);
         node.SelectedImageIndex = icon;
     }
 
@@ -776,7 +908,7 @@ sealed class FolderTree : TreeView
         var node = new TreeNode(text)
         {
             Tag = path,
-            ImageIndex = icon,
+            ImageIndex = ScaledIcons.Shown(icon),
             SelectedImageIndex = icon
         };
 
@@ -834,7 +966,7 @@ sealed class FolderTree : TreeView
         }
 
         var icon = ShellIcons.NetworkIcon;
-        networkNode.ImageIndex = icon;
+        networkNode.ImageIndex = ScaledIcons.Shown(icon);
         networkNode.SelectedImageIndex = icon;
         if (!Nodes.Contains(networkNode))
         {

@@ -16,6 +16,7 @@ static partial class NativeMethods
     public const int ListViewSetItemState = 0x102B;
     public const int ListViewItemSelected = 0x0002;
 
+    public const int TreeViewGetImageList = 0x1108;
     public const int TreeViewSetImageList = 0x1109;
     public const int TreeViewSetInsertMark = 0x111A;
     public const int TreeViewSetItem = 0x113F;

@@ -18,7 +18,7 @@ sealed class Breadcrumb : Control
     const string ellipsis = "…";
 
     Settings settings;
-    Font chevronFont = new("Segoe MDL2 Assets", 7f);
+    Font chevronFont = ChevronFontFor(DefaultFont);
     ToolTip toolTip = new();
     string path = Locations.ThisPC;
     List<(string Path, string Name)> segments = [];
@@ -85,6 +85,18 @@ sealed class Breadcrumb : Control
     }
 
     public bool Editing => Box.Visible;
+
+    /// <summary>
+    /// What the chevrons are drawn in, for tests.
+    /// </summary>
+    internal Font ChevronFont => chevronFont;
+
+    // The chevrons' glyphs, two thirds the size of the folders' names: 7 points beside the
+    // window's 10.5. Made from the bar's font, which the window scales for the monitor it is on,
+    // as it does every font in it, rather than a size of their own: Windows draws a font's points
+    // at the scale it started at, whatever monitor the window is on.
+    static Font ChevronFontFor(Font font) =>
+        new("Segoe MDL2 Assets", font.SizeInPoints * 2 / 3);
 
     /// <summary>
     /// The folder shown. Setting it redraws the folders and, unless editing, the box's text.
@@ -292,6 +304,8 @@ sealed class Breadcrumb : Control
     protected override void OnFontChanged(EventArgs args)
     {
         base.OnFontChanged(args);
+        chevronFont.Dispose();
+        chevronFont = ChevronFontFor(Font);
         Height = TextFrame.Height(Font);
         Rebuild();
     }

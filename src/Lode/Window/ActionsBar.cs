@@ -6,7 +6,6 @@
 /// </summary>
 sealed class ActionsBar
 {
-    Form window;
     Settings settings;
     Func<FolderView?> activeView;
     Action<string> showOptions;
@@ -35,28 +34,37 @@ sealed class ActionsBar
     // Icons drawn for the open drop-down's entries.
     List<Image> dropDownImages = [];
 
-    /// <param name="window">The window the bar is in, whose scale its sizes are at.</param>
+    // The scale the bar's sizes are for, as a DPI: its window's as it is made, then the
+    // monitor's it is on.
+    int dpi;
+
+    /// <param name="window">The window the bar is in, whose scale its sizes are at until it is
+    /// on a monitor.</param>
     /// <param name="activeView">The view the actions act on, null while there is none.</param>
     /// <param name="showOptions">Opens Options at the page named.</param>
     /// <param name="applyToAllWindows">Shows a change to the settings in every window.</param>
     public ActionsBar(Form window, Settings settings, Func<FolderView?> activeView, Action<string> showOptions, Action<SettingsChange> applyToAllWindows)
     {
-        this.window = window;
         this.settings = settings;
         this.activeView = activeView;
         this.showOptions = showOptions;
         this.applyToAllWindows = applyToAllWindows;
+        dpi = window.DeviceDpi;
         strip.Dock = DockStyle.Top;
         strip.GripStyle = ToolStripGripStyle.Hidden;
         // In a menu's font, which a tool strip takes unless told otherwise: smaller than the rest
         // of the window, as Explorer's command bar is.
         strip.Renderer = new ExplorerRenderer();
-        // Roomy, and as tall as Explorer's command bar.
-        strip.Padding = new(0, window.LogicalToDeviceUnits(6), 0, window.LogicalToDeviceUnits(6));
         // Buttons that don't fit go under See more rather than a chevron of the strip's own.
         strip.CanOverflow = false;
         strip.SizeChanged += (_, _) => Fit();
         strip.MenuRequested += ShowMenu;
+        // The bar's icons are drawn at a size, and its spacing is in pixels, neither of which the
+        // strip scales itself. So on a monitor at another scale than the window was made at, the
+        // window opening there or moved there, the bar is made again for it, as the text beside
+        // it is scaled for it.
+        strip.HandleCreated += (_, _) => ScaleTo(strip.DeviceDpi);
+        strip.DpiChangedAfterParent += (_, _) => ScaleTo(strip.DeviceDpi);
         Rebuild();
     }
 
@@ -64,6 +72,25 @@ sealed class ActionsBar
     /// The strip the bar is, for the window to dock under its address bar.
     /// </summary>
     public ToolStrip Strip => strip;
+
+    /// <summary>
+    /// Makes the bar again at the scale of <paramref name="dpi"/>, the monitor's it is on. Tests
+    /// call it, as they run unaware of scale.
+    /// </summary>
+    internal void ScaleTo(int dpi)
+    {
+        if (this.dpi == dpi)
+        {
+            return;
+        }
+
+        this.dpi = dpi;
+        Rebuild();
+    }
+
+    // A size at 100%, in pixels at the bar's scale, as LogicalToDeviceUnits gives it.
+    int Scaled(int logical) =>
+        (int)Math.Round(dpi / 96.0 * logical);
 
     void ShowMenu(Point screen) =>
         ShowMenu(screen, MenuCommands(strip.GetItemAt(strip.PointToClient(screen))));
@@ -245,8 +272,10 @@ sealed class ActionsBar
         actionButtons.Clear();
         parentButtons.Clear();
         barItems.Clear();
+        // Roomy, and as tall as Explorer's command bar.
+        strip.Padding = new(0, Scaled(6), 0, Scaled(6));
         // Explorer's size for its command bar's icons.
-        var iconSize = window.LogicalToDeviceUnits(16);
+        var iconSize = Scaled(16);
         strip.ImageScalingSize = new(iconSize, iconSize);
         int? group = null;
         foreach (var action in LodeActions.Offered().Where(_ => settings.ShowsAsButton(_.Id)))
@@ -291,7 +320,7 @@ sealed class ActionsBar
         seeMoreSeparator = Separator();
         strip.Items.Add(seeMoreSeparator);
         // Larger than the rest: at their size the dots are smaller than Explorer's.
-        seeMore = CreateOverflowButton(window.LogicalToDeviceUnits(20));
+        seeMore = CreateOverflowButton(Scaled(20));
         strip.Items.Add(seeMore);
         strip.Visible = barItems.Count > 0 || otherActions;
 
@@ -381,8 +410,8 @@ sealed class ActionsBar
             DisplayStyle = ToolStripItemDisplayStyle.Image,
             ShowDropDownArrow = false,
             ToolTipText = "See more",
-            Padding = new(window.LogicalToDeviceUnits(8), window.LogicalToDeviceUnits(5), window.LogicalToDeviceUnits(8), window.LogicalToDeviceUnits(5)),
-            Margin = new(window.LogicalToDeviceUnits(2), 0, window.LogicalToDeviceUnits(2), 0)
+            Padding = new(Scaled(8), Scaled(5), Scaled(8), Scaled(5)),
+            Margin = new(Scaled(2), 0, Scaled(2), 0)
         };
         // Without an item it would not open; filled with the real ones as it opens.
         button.DropDownItems.Add("See more");
@@ -400,7 +429,7 @@ sealed class ActionsBar
 
         dropDownImages.Clear();
         button.DropDownItems.Clear();
-        var iconSize = window.LogicalToDeviceUnits(16);
+        var iconSize = Scaled(16);
         button.DropDown.ImageScalingSize = new(iconSize, iconSize);
         var below = strip.PointToScreen(new(button.Bounds.Left, button.Bounds.Bottom));
         QuickMenu.AddItems(button.DropDownItems, OverflowCommands(below), RunOnList, iconSize, dropDownImages);
@@ -500,8 +529,8 @@ sealed class ActionsBar
     void SpaceButton(ToolStripItem item)
     {
         item.ImageScaling = ToolStripItemImageScaling.None;
-        item.Padding = new(window.LogicalToDeviceUnits(13), window.LogicalToDeviceUnits(7), window.LogicalToDeviceUnits(13), window.LogicalToDeviceUnits(7));
-        item.Margin = new(window.LogicalToDeviceUnits(2), 0, window.LogicalToDeviceUnits(2), 0);
+        item.Padding = new(Scaled(13), Scaled(7), Scaled(13), Scaled(7));
+        item.Margin = new(Scaled(2), 0, Scaled(2), 0);
     }
 
     // A drop-down on the bar, for a submenu action (New, Open with) or a parent of nested
@@ -518,7 +547,7 @@ sealed class ActionsBar
             ToolTipText = toolTip,
             AutoToolTip = false,
             // Its name as far from its icon as Explorer's New is.
-            Image = Icons.Bitmap(glyph, iconSize, SystemColors.ControlText, window.LogicalToDeviceUnits(6))
+            Image = Icons.Bitmap(glyph, iconSize, SystemColors.ControlText, Scaled(6))
         };
         if (nested != null)
         {
@@ -544,7 +573,7 @@ sealed class ActionsBar
     ToolStripSeparator Separator() =>
         new()
         {
-            Margin = new(window.LogicalToDeviceUnits(4), 0, window.LogicalToDeviceUnits(4), 0)
+            Margin = new(Scaled(4), 0, Scaled(4), 0)
         };
 
     // A submenu action's drop-down lists the submenu the right-click menu would show now.
@@ -568,7 +597,7 @@ sealed class ActionsBar
 
         dropDownImages.Clear();
         dropDown.DropDownItems.Clear();
-        var iconSize = window.LogicalToDeviceUnits(16);
+        var iconSize = Scaled(16);
         dropDown.DropDown.ImageScalingSize = new(iconSize, iconSize);
         QuickMenu.AddItems(dropDown.DropDownItems, entries, RunOnList, iconSize, dropDownImages);
     }
