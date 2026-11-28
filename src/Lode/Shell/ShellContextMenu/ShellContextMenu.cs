@@ -371,6 +371,22 @@ sealed partial class ShellContextMenu : NativeWindow, IDisposable
     }
 
     /// <summary>
+    /// Runs a shell verb against the items as <see cref="InvokeVerb(IntPtr, IReadOnlyList{string}, string)"/>
+    /// does, but returns only once the shell has done it, rather than once it has started it: for
+    /// a thread of Lode's own, which would otherwise end with the verb still under way on it.
+    /// </summary>
+    public static void InvokeVerbAndWait(IntPtr owner, IReadOnlyList<string> paths, string verb)
+    {
+        var contextMenu = CreateForItems(owner, paths);
+        if (contextMenu == null)
+        {
+            return;
+        }
+
+        InvokeVerb(contextMenu, owner, verb, invokeNoAsync, ItemsFolder(paths));
+    }
+
+    /// <summary>
     /// Runs a verb of a folder's empty area, such as Add a network location on This PC's,
     /// without showing a menu.
     /// </summary>

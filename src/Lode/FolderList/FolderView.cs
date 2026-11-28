@@ -5343,6 +5343,13 @@ sealed class FolderView : UserControl
 
     internal void OnBeforeLabelEdit(object? sender, LabelEditEventArgs args)
     {
+        if (args.Item < displayed.Count &&
+            displayed[args.Item] is {IsDrive: true} drive)
+        {
+            BeginDriveRename(args, drive);
+            return;
+        }
+
         if (args.Item >= displayed.Count ||
             displayed[args.Item] is {IsPlace: true} or {InArchive: true} ||
             // Renaming one renames every item selected, which a file promoted to a repository's
@@ -5368,6 +5375,30 @@ sealed class FolderView : UserControl
             list.SelectEditText(stem == 0 ? name.Length : stem);
         }
     }
+
+    // A drive, selected on its own, has its label edited, as in Explorer, rather than the name
+    // the list shows it by, which has its letter too.
+    void BeginDriveRename(LabelEditEventArgs args, FileEntry drive)
+    {
+        if (SelectedEntries() is not [{ } selected] ||
+            selected != drive ||
+            !Drives.CanRename(drive.FullPath) ||
+            Drives.Label(this, drive.FullPath) is not { } label)
+        {
+            args.CancelEdit = true;
+            return;
+        }
+
+        editing = true;
+        edited = drive;
+        list.SetEditText(label);
+    }
+
+    /// <summary>
+    /// What a drive's menu offers beyond a folder's, and how it asks Windows. Tests swap what is
+    /// in it, so they never eject, disconnect or rename a real drive.
+    /// </summary>
+    internal DriveCommands Drives = new();
 
     // Shortcut extensions are hidden, matching Explorer's NeverShowExt behaviour.
     static string[] hiddenExtensions = [".lnk", ".url"];
@@ -5437,6 +5468,19 @@ sealed class FolderView : UserControl
 
         var entry = displayed[index];
         var newName = args.Label?.Trim();
+
+        // Every window shows the drive by its new label once it has it: see DriveCommands.Renamed.
+        if (entry.IsDrive)
+        {
+            args.CancelEdit = true;
+            if (!string.IsNullOrEmpty(newName))
+            {
+                _ = Drives.Rename(this, entry.FullPath, newName);
+            }
+
+            return;
+        }
+
         if (string.IsNullOrEmpty(newName) || newName == DisplayName(entry))
         {
             args.CancelEdit = true;
@@ -5692,17 +5736,23 @@ sealed class FolderView : UserControl
         // renamed or deleted from there. Nor is a shortcut made to it, or a zip of it, which
         // would go beside the file, out of sight of the root.
         var changeable = !anyPlace && !anyPromoted;
+
+        // A drive, on its own, offers what Explorer's menu does for it: Eject, Disconnect, and
+        // Rename, for its label.
+        var drive = selection is [{IsDrive: true} only] ? only.FullPath : null;
+        var renamesDrive = drive != null && Drives.CanRename(drive);
         commands.AddRange(
         [
             null,
             LodeActions.Command("cut", () => Copy(true), changeable),
             LodeActions.Command("copy", () => Copy(false), !anyPlace),
-            LodeActions.Command("rename", BeginRename, selection.Count > 0 && changeable),
+            LodeActions.Command("rename", BeginRename, selection.Count > 0 && (changeable || renamesDrive)),
             LodeActions.Command("delete", () => Delete(false), changeable),
             null,
             LodeActions.Command("createShortcut", () => CreateShortcuts(selection), changeable),
             LodeActions.Command("compress", () => Compress(selection), changeable),
             LodeActions.Command("copyAsPath", () => CopyAsPath(selection.Select(_ => _.FullPath))),
+            .. drive == null ? [] : Drives.Commands(Owner, drive),
             LodeActions.Command("properties", ShowProperties)
         ]);
         commands.AddRange(CodeMenu.Commands(this, settings, folders, KnownGitState));

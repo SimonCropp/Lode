@@ -28,6 +28,8 @@ static class Icons
     public const char Manage = '\uE912';
     public const char MapDrive = '\uE8CE';
     public const char DisconnectDrive = '\uE8CD';
+    // A triangle over a bar, as an eject button has.
+    public const char Eject = '\uF847';
     public const char Open = '\uE8E5';
     public const char OpenInNewTab = '\uE8A7';
     public const char Edit = '\uE70F';

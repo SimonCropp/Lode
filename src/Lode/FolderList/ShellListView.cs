@@ -1130,4 +1130,23 @@ sealed class ShellListView : ListView
                 SendMessage(edit, EditSetSelection, IntPtr.Zero, length);
             }
         });
+
+    // WM_SETTEXT.
+    const int setText = 0x000C;
+
+    /// <summary>
+    /// Puts <paramref name="text"/> in the box an item's name is being edited in, all of it
+    /// selected, in place of the name the list shows: a drive's label, rather than its name with
+    /// its letter.
+    /// </summary>
+    public void SetEditText(string text) =>
+        BeginInvoke(() =>
+        {
+            var edit = SendMessage(Handle, ListViewGetEditControl, IntPtr.Zero, IntPtr.Zero);
+            if (edit != IntPtr.Zero)
+            {
+                SendMessage(edit, setText, IntPtr.Zero, text);
+                SendMessage(edit, EditSetSelection, IntPtr.Zero, -1);
+            }
+        });
 }

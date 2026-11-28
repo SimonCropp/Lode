@@ -212,6 +212,7 @@ class MainForm : Form
         places.Changed += RebuildPlaces;
         UndoHistory.Instance.Changed += OnUndoChanged;
         ActionLog.Changed += ReadGitState;
+        DriveCommands.Renamed += OnDriveRenamed;
         trayTimer.Tick += (_, _) =>
         {
             trayTimer.Stop();
@@ -1856,6 +1857,13 @@ class MainForm : Form
         Interval = 300
     };
 
+    // A drive given a new label, in this window or another, which Windows tells no window of.
+    void OnDriveRenamed()
+    {
+        drivesTimer.Stop();
+        drivesTimer.Start();
+    }
+
     // The drives in the tree, and in the tabs showing This PC, read and described again, as on
     // F5: another disk can be under a letter now. Only those that came or went are added or
     // taken away.
@@ -1923,6 +1931,7 @@ class MainForm : Form
             places.Changed -= RebuildPlaces;
             UndoHistory.Instance.Changed -= OnUndoChanged;
             ActionLog.Changed -= ReadGitState;
+            DriveCommands.Renamed -= OnDriveRenamed;
             GitPanes.Dispose();
             DiffHost.Dispose();
             StatusBar.Dispose();

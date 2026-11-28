@@ -1029,12 +1029,14 @@ public class QuickMenuTests
         }
     }
 
-    // A drive can't be cut, renamed, deleted or given a shortcut.
+    // A drive can't be cut, deleted or given a shortcut. One of the machine's own disks can have
+    // its label renamed, but only in place, which needs its row in the tree.
     [Test]
     public async Task TreeMenuOnADrive()
     {
         using var fixture = Fixture.Create();
         using var tree = CreateTree([fixture.Root], []);
+        tree.Drives.TypeOf = _ => DriveType.Fixed;
 
         await Verify(Describe(tree.NodeCommands(Path.GetPathRoot(fixture.Root)!, canPaste: true, newTypes: newTypes)))
             .Snapshot(

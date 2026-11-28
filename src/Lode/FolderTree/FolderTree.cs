@@ -2262,7 +2262,9 @@ sealed class FolderTree : TreeView
 
     /// <summary>
     /// The fixed right-click menu for a folder in the tree, the same a folder gets in the list.
-    /// A drive cannot be cut, renamed, deleted or given a shortcut. Rename edits
+    /// A drive cannot be cut, deleted or given a shortcut, but offers what Explorer's menu does
+    /// for it: Eject, for a removable or optical one, Disconnect, for one mapped to a share, and
+    /// Rename, for one of the machine's own disks, which renames its label. Rename edits
     /// <paramref name="node"/>'s label, so is only offered for a folder under This PC, not a
     /// Pinned or Recent entry. New and Paste put things in the folder: New as the list's own New
     /// does, with the folder open in the tab, which a machine on the network can't have, having
@@ -2300,6 +2302,7 @@ sealed class FolderTree : TreeView
             LodeActions.Command("createShortcut", () => CreateShortcut(path), !isDrive),
             LodeActions.Command("compress", () => _ = Zip.CompressInBackground([path], Path.GetDirectoryName(path)!), !isDrive),
             LodeActions.Command("copyAsPath", () => FolderView.CopyAsPath([path])),
+            .. Drives.Commands(owner, path),
             LodeActions.Command("properties", async () => await ShowProperties(owner, path)),
             .. CodeMenu.Commands(this, settings, [path])
         ];
@@ -2318,6 +2321,12 @@ sealed class FolderTree : TreeView
             };
         }
     }
+
+    /// <summary>
+    /// What a drive's menu offers beyond a folder's, and how it asks Windows. Tests swap what is
+    /// in it, so they never eject, disconnect or rename a real drive.
+    /// </summary>
+    internal DriveCommands Drives = new();
 
     void PasteInto(string folder)
     {
@@ -2351,6 +2360,19 @@ sealed class FolderTree : TreeView
             return;
         }
 
+        // A drive's label is what is edited, as in Explorer, not the name the tree shows it by,
+        // which has its letter too, so the node shows the label while it is edited.
+        if (node.Tag is string path &&
+            DriveCommands.IsDrive(path))
+        {
+            if (Drives.Label(this, path) is not { } label)
+            {
+                return;
+            }
+
+            node.Text = label;
+        }
+
         renaming = node;
         SelectedNode = node;
         node.BeginEdit();
@@ -2373,6 +2395,20 @@ sealed class FolderTree : TreeView
         base.OnAfterLabelEdit(args);
         renaming = null;
         args.CancelEdit = true;
+        if (args.Node is {Tag: string drive} driveNode &&
+            DriveCommands.IsDrive(drive))
+        {
+            // Named as it was again, once the tree is done with the edit, which leaves the
+            // label shown, then by its new label once it has one: see DriveCommands.Renamed.
+            BeginInvoke(() => DescribeDrive(driveNode));
+            if (args.Label?.Trim() is {Length: > 0} label)
+            {
+                _ = Drives.Rename(this, drive, label);
+            }
+
+            return;
+        }
+
         if (args.Node is not {Tag: string path, Parent: { } parent} ||
             args.Label?.Trim() is not {Length: > 0} newName ||
             newName == Path.GetFileName(path))
@@ -2432,10 +2468,11 @@ sealed class FolderTree : TreeView
         Locations.IsThisPC(Locations.Parent(path) ?? "") ||
         Locations.IsShare(path);
 
-    // Not a drive, nor a Pinned or Recent entry, which is Quick access's, not a folder's.
-    static bool CanRename(string path, TreeNode? node) =>
-        !IsDrive(path) &&
-        node is {Parent.Tag: not Section};
+    // Not a Pinned or Recent entry, which is Quick access's, not a folder's, nor a drive, but
+    // one of the machine's own disks, whose label is renamed.
+    bool CanRename(string path, TreeNode? node) =>
+        node is {Parent.Tag: not Section} &&
+        (!IsDrive(path) || Drives.CanRename(path));
 
     /// <summary>
     /// Whether a folder is on the network, where asking the shell about it asks the machine it is
