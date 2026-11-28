@@ -45,6 +45,12 @@ sealed class DiffHost : IDisposable
     /// </summary>
     public string? TabRepo { get; private set; }
 
+    /// <summary>
+    /// The Diff tab shows a file, and says which, for the address bar to say too: the tab is
+    /// already showing when another file is picked, so its showing isn't news.
+    /// </summary>
+    public event Action? TabRetitled;
+
     internal DiffView? TabView => tabView;
 
     internal DiffView? Overlay => overlay;
@@ -81,6 +87,7 @@ sealed class DiffHost : IDisposable
             view.Show(source);
             page!.Text = $"Diff: {Path.GetFileName(source.File.Path)}";
             page.ToolTipText = source.File.Path;
+            TabRetitled?.Invoke();
             return;
         }
 

@@ -50,6 +50,39 @@ public class DiffPlacementTests
         await Assert.That(host.TabShowing).IsTrue();
     }
 
+    // The Diff tab has no folder: the address says what the tab is, the file's name with it, in
+    // place of the folder the tab before it showed, and follows the file picked while it shows.
+    // The folder's tab, showing again, has its folder back.
+    [Test]
+    public async Task TheAddressSaysDiffAndTheFile()
+    {
+        using var stubs = new PaneStubs();
+        using var diff = DiffSample.Stub();
+        using var fixture = Fixture.Create();
+        var settings = PaneStubs.InRepository(fixture);
+        settings.DiffPlacement = DiffPlacement.Tab;
+        using var form = await Show(fixture.Root, settings);
+        var breadcrumb = (Breadcrumb) form.Controls.Find("address", true)[0].Parent!;
+        var folder = breadcrumb.Reads;
+        var host = form.DiffHost;
+
+        await Pick(form, 0);
+        await Pump.Until(() => host.TabView?.Source != null);
+        var first = breadcrumb.Reads;
+        await Pick(form, 5);
+        await Pump.Until(() => host.TabView?.Source?.File == PaneStubs.Files[5]);
+        var second = breadcrumb.Reads;
+        form.Tabs.SelectedIndex = 0;
+        var backOnTheFolder = breadcrumb.Reads;
+        form.Tabs.SelectedTab = host.Page;
+
+        await Assert.That(folder).EndsWith(" › Projects");
+        await Assert.That(first).IsEqualTo("Diff: guide.aleph");
+        await Assert.That(second).IsEqualTo("Diff: main.aleph");
+        await Assert.That(backOnTheFolder).IsEqualTo(folder);
+        await Assert.That(breadcrumb.Reads).IsEqualTo("Diff: main.aleph");
+    }
+
     // A folder picked in the tree while the Diff tab shows, which has no folder: the folder's tab
     // that showed before it goes there, and shows in its place, the Diff tab staying open behind.
     [Test]

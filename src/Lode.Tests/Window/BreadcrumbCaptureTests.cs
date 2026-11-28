@@ -29,6 +29,18 @@ public class BreadcrumbCaptureTests
                 NativeMethods.SendMessage(breadcrumb.Handle, leftButtonUp, 0, point);
             });
 
+    // A tab with no folder, Find Results here: the bar says what the tab is, in place of the
+    // folder it showed last, grey, as clicking it does nothing.
+    [Test]
+    public Task Caption() =>
+        Capture(
+            @"D:\Projects\Lode\src",
+            breadcrumb =>
+            {
+                breadcrumb.Enabled = false;
+                breadcrumb.Caption = (Icons.Search, "Find Results");
+            });
+
     static async Task Capture(string location, Action<Breadcrumb>? before = null)
     {
         using var form = new Form

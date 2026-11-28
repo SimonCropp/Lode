@@ -181,6 +181,9 @@ class MainForm : Form
         // way to a folder inside it opens inside it, as the list's Open in new tab opens one: in
         // the address it is somewhere gone through, rather than a file.
         AddressBar = new(this, settings, () => ActiveView, Reload, NewTab, _ => AddTab(_, false, intoZip: true), Commands.Menu);
+
+        // Another file picked while the Diff tab shows: the address says which.
+        DiffHost.TabRetitled += () => AddressBar.Update(ActiveView, TabCaption());
         ActionsBar = new(this, settings, () => ActiveView, ShowOptions, ApplySettingsToAllWindows);
         StatusBar = new(this, settings, updates, () => ActiveView, ShowOptions, url => OpenSite(url), folder => AddTab(folder, true));
         FindHost.ProgressChanged += () => StatusBar.ShowProgress(FindHost.Progress);
@@ -1096,7 +1099,7 @@ class MainForm : Form
         // is asked for.
         UpdateShowing();
         var view = ActiveView;
-        AddressBar.Update(view);
+        AddressBar.Update(view, TabCaption());
         if (view == null)
         {
             // The Diff tab keeps the panes on the repository its diff is of, so the files listed
@@ -1132,6 +1135,23 @@ class MainForm : Form
         Retitle();
         Tree.SelectPath(view.CurrentPath);
         UpdateStatus(view);
+    }
+
+    // What the address bar says for the tab showing when it has no folder: what the tab is, as
+    // the tab itself says, the Diff tab with its file's name, which the tab may cut short.
+    (char? Glyph, string Text)? TabCaption()
+    {
+        if (DiffHost is { TabShowing: true, Page: { } page })
+        {
+            return (Icons.Document, page.Text);
+        }
+
+        if (FindHost.ResultsShowing)
+        {
+            return (Icons.Search, "Find Results");
+        }
+
+        return null;
     }
 
     // Only ever the active view. Its selection is read from the list once, for the buttons and

@@ -119,21 +119,25 @@ sealed class AddressBar : IDisposable
     /// <summary>
     /// Brings the bar in line with the tab showing: its folder in the address, its filter in the
     /// search box, and whether it can go back, forward and up. Find Results and the Diff tab,
-    /// <paramref name="view"/> null, have no folder: going back, forward and up, the address and
-    /// the search box are for the folders' tabs.
+    /// <paramref name="view"/> null, have no folder: the address says what the tab is,
+    /// <paramref name="tab"/>, rather than go on showing the last folder's tab's folder, and going
+    /// back, forward and up, the address and the search box are for the folders' tabs.
     /// </summary>
-    public void Update(FolderView? view)
+    /// <param name="tab">What the address says for a tab with no folder, after an icon for it.</param>
+    public void Update(FolderView? view, (char? Glyph, string Text)? tab)
     {
         breadcrumb.Enabled = view != null;
         filterFrame.Enabled = view != null;
         if (view == null)
         {
+            breadcrumb.Caption = tab ?? (null, "");
             backButton.Enabled = false;
             forwardButton.Enabled = false;
             upButton.Enabled = false;
             return;
         }
 
+        breadcrumb.Caption = null;
         breadcrumb.Path = view.CurrentPath;
         updatingFilter = true;
         filterBox.Text = view.Filter;

@@ -77,6 +77,29 @@ public class FindInFilesWindowTests
                 """);
     }
 
+    // Find Results has no folder: the address says what the tab is, in place of the folder the
+    // tab before it showed, and Ctrl+L has no folder's path to type over. The folder's tab,
+    // showing again, has its folder back.
+    [Test]
+    public async Task TheAddressSaysFindResultsInPlaceOfTheFolder()
+    {
+        using var fixture = Fixture.Create();
+        using var form = await Show(fixture, new(), fixture.At("Docs"));
+        var breadcrumb = (Breadcrumb) form.Controls.Find("address", true)[0].Parent!;
+        var folder = breadcrumb.Reads;
+
+        await Find(form);
+        var overResults = breadcrumb.Reads;
+        form.AddressBar.FocusAddress();
+        var editing = breadcrumb.Editing;
+        await Pick(form, form.Views.Single());
+
+        await Assert.That(folder).EndsWith(" › Projects › Docs");
+        await Assert.That(overResults).IsEqualTo("Find Results");
+        await Assert.That(editing).IsFalse();
+        await Assert.That(breadcrumb.Reads).IsEqualTo(folder);
+    }
+
     // Replace replaces in what was found, asking first, and the results then show each line as
     // it now is.
     [Test]

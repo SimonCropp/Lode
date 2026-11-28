@@ -5,7 +5,8 @@
 /// chevron drops down the folders in the folder before it, and clicking the ellipsis, which
 /// stands for the folders nearest the top when the bar has no room for them, drops those down;
 /// picking one goes there. Clicking anywhere else in the bar, or Ctrl+L, swaps in a text box for
-/// typing a path; Enter goes there, Escape or leaving the box swaps the folders back. Drawn
+/// typing a path; Enter goes there, Escape or leaving the box swaps the folders back. A tab
+/// with no folder, Find Results or the Diff tab, has the bar say what it is instead. Drawn
 /// rather than built from buttons, so it looks like the text box it turns into, with the
 /// folders on its text line.
 /// </summary>
@@ -21,6 +22,7 @@ sealed class Breadcrumb : Control
     Font chevronFont = ChevronFontFor(DefaultFont);
     ToolTip toolTip = new();
     string path = Locations.ThisPC;
+    (char? Glyph, string Text)? caption;
     List<(string Path, string Name)> segments = [];
 
     // Where each shown folder is drawn, and the chevron after it, with the folder whose folders
@@ -118,6 +120,35 @@ sealed class Breadcrumb : Control
             if (!Editing)
             {
                 Box.Text = value;
+            }
+
+            Rebuild();
+        }
+    }
+
+    /// <summary>
+    /// What the bar says in place of the folders while the tab showing has none, after an icon
+    /// for it: Find Results, or the Diff tab with its file. Null shows <see cref="Path"/>'s
+    /// folders. Shown, a menu of the folders closes, and typing a path ends: there is nothing of
+    /// a folder's to go to.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public (char? Glyph, string Text)? Caption
+    {
+        get => caption;
+        set
+        {
+            if (caption == value)
+            {
+                return;
+            }
+
+            caption = value;
+            if (value != null)
+            {
+                menu?.Close();
+                open = Part.None;
+                EndEdit();
             }
 
             Rebuild();
@@ -251,6 +282,13 @@ sealed class Breadcrumb : Control
 
     public void BeginEdit()
     {
+        // A tab with no folder has no path to type over: the box would show the last folder's,
+        // and, the bar disabled, couldn't take the focus to be typed in or left.
+        if (caption != null)
+        {
+            return;
+        }
+
         Box.Text = path;
         PlaceBox();
         Box.Visible = true;
@@ -343,9 +381,18 @@ sealed class Breadcrumb : Control
     Rectangle Inner => Rectangle.Inflate(ClientRectangle, -LogicalToDeviceUnits(2), -LogicalToDeviceUnits(2));
 
     // Lays the folders out from the left. When they do not fit, the ones nearest the top are
-    // dropped, so the current folder always shows.
+    // dropped, so the current folder always shows. With a caption, there are none.
     void Arrange()
     {
+        layout = [];
+        chevrons = [];
+        ellipsisBounds = Rectangle.Empty;
+        if (caption != null)
+        {
+            Invalidate();
+            return;
+        }
+
         var inner = Inner;
         var widths = segments.Select(_ => ContentWidth(_.Path, _.Name) + ItemPadding * 2).ToList();
         var first = 0;
@@ -356,10 +403,7 @@ sealed class Breadcrumb : Control
             first++;
         }
 
-        layout = [];
-        chevrons = [];
         var x = inner.Left;
-        ellipsisBounds = Rectangle.Empty;
         if (first > 0)
         {
             ellipsisBounds = new(x, inner.Top, ellipsisWidth - ChevronWidth, inner.Height);
@@ -436,6 +480,29 @@ sealed class Breadcrumb : Control
     internal Rectangle EllipsisBounds => ellipsisBounds;
 
     /// <summary>
+    /// What the bar reads as, for tests: its caption, or the names of the folders it shows,
+    /// between chevrons, "…" first for those it has no room for.
+    /// </summary>
+    internal string Reads
+    {
+        get
+        {
+            if (caption is { } shown)
+            {
+                return shown.Text;
+            }
+
+            var names = layout.Select(_ => segments[_.Index].Name);
+            if (!ellipsisBounds.IsEmpty)
+            {
+                names = names.Prepend(ellipsis);
+            }
+
+            return string.Join(" › ", names);
+        }
+    }
+
+    /// <summary>
     /// The chevron, or the ellipsis, whose menu is open, by the folder whose folders it lists,
     /// the ellipsis' as "…"; null with none open. For tests.
     /// </summary>
@@ -461,6 +528,21 @@ sealed class Breadcrumb : Control
                                       TextFormatFlags.VerticalCenter |
                                       TextFormatFlags.HorizontalCenter |
                                       TextFormatFlags.EndEllipsis;
+
+        // Disabled, as the bar is while the tab showing has no folder, it is drawn grey, as a
+        // disabled text box's text is: clicking it does nothing.
+        var ink = SystemColors.WindowText;
+        if (!Enabled)
+        {
+            ink = SystemColors.GrayText;
+        }
+
+        if (caption is { } shown)
+        {
+            DrawCaption(graphics, shown.Glyph, shown.Text, ink, (flags & ~TextFormatFlags.HorizontalCenter) | TextFormatFlags.NoPadding);
+            return;
+        }
+
         if (!ellipsisBounds.IsEmpty)
         {
             Shade(graphics, Part.Ellipsis, ellipsisBounds);
@@ -472,7 +554,7 @@ sealed class Breadcrumb : Control
             Shade(graphics, new(PartKind.Folder, index), bounds);
             if (Locations.IsThisPC(segments[index].Path))
             {
-                var image = Icons.Bitmap(Icons.ThisPC, IconSize, SystemColors.WindowText);
+                var image = Icons.Bitmap(Icons.ThisPC, IconSize, ink);
                 graphics.DrawImage(
                     image,
                     bounds.Left + (bounds.Width - IconSize) / 2,
@@ -483,7 +565,7 @@ sealed class Breadcrumb : Control
             else if (Locations.IsServer(segments[index].Path))
             {
                 var left = bounds.Left + ItemPadding;
-                var image = Icons.Bitmap(Icons.Network, IconSize, SystemColors.WindowText);
+                var image = Icons.Bitmap(Icons.Network, IconSize, ink);
                 graphics.DrawImage(image, left, bounds.Top + (bounds.Height - IconSize) / 2, IconSize, IconSize);
                 var text = Rectangle.FromLTRB(left + IconSize + IconGap, bounds.Top, bounds.Right - ItemPadding, bounds.Bottom);
                 TextRenderer.DrawText(
@@ -491,12 +573,12 @@ sealed class Breadcrumb : Control
                     segments[index].Name,
                     Font,
                     text,
-                    SystemColors.WindowText,
+                    ink,
                     (flags & ~TextFormatFlags.HorizontalCenter) | TextFormatFlags.NoPadding);
             }
             else
             {
-                TextRenderer.DrawText(graphics, segments[index].Name, Font, bounds, SystemColors.WindowText, flags);
+                TextRenderer.DrawText(graphics, segments[index].Name, Font, bounds, ink, flags);
             }
         }
 
@@ -518,6 +600,24 @@ sealed class Breadcrumb : Control
                 SystemColors.GrayText,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
+    }
+
+    // Where the first folder would be: the icon where This PC's is, and the text after it, as a
+    // machine on the network has its name after the network's icon, cut short with an ellipsis
+    // at the bar's edge.
+    void DrawCaption(Graphics graphics, char? glyph, string text, Color ink, TextFormatFlags flags)
+    {
+        var inner = Inner;
+        var left = inner.Left + ItemPadding;
+        if (glyph is { } icon)
+        {
+            var image = Icons.Bitmap(icon, IconSize, ink);
+            graphics.DrawImage(image, left, inner.Top + (inner.Height - IconSize) / 2, IconSize, IconSize);
+            left += IconSize + IconGap;
+        }
+
+        var bounds = Rectangle.FromLTRB(left, inner.Top, Math.Max(left, inner.Right - ItemPadding), inner.Bottom);
+        TextRenderer.DrawText(graphics, text, Font, bounds, ink, flags);
     }
 
     // Windows 11's shades of gray, its corners rounded, in place of Windows 10's blue: a shade
