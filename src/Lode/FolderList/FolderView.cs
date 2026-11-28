@@ -1778,10 +1778,18 @@ sealed class FolderView : UserControl
         return -1;
     }
 
+    // The filter, and the search, by its merge generation, the rows were last given for.
+    string rowsFilter = "";
+    int rowsSearch;
+
     // Selects the rows for these paths again, and gives one the focus. Given the entries they
     // were, the rows are found by the order they are in, rather than by going through all of
     // them, which is what a search that has found a hundred thousand would do for every batch.
-    void Restore(HashSet<string> selected, string? focused, IReadOnlyList<FileEntry>? probes = null)
+    // The item focused gone, deleted or moved away, by Lode or anything else, the row where it
+    // was, focusedWas, has the focus instead, within the list, as in Explorer, so Down or Delete
+    // go on from there rather than from the top: selected too, when it was and nothing else
+    // selected is left, rather than added to what is.
+    void Restore(HashSet<string> selected, string? focused, IReadOnlyList<FileEntry>? probes = null, int focusedWas = -1, bool focusedSelected = false)
     {
         if (selected.Count == 0 &&
             focused == null)
@@ -1810,6 +1818,18 @@ sealed class FolderView : UserControl
                 {
                     focus = index;
                 }
+            }
+        }
+
+        if (focus < 0 &&
+            focusedWas >= 0 &&
+            displayed.Count > 0)
+        {
+            focus = Math.Min(focusedWas, displayed.Count - 1);
+            if (focusedSelected &&
+                indexes.Count == 0)
+            {
+                indexes.Add(focus);
             }
         }
 
@@ -3414,6 +3434,12 @@ sealed class FolderView : UserControl
             visible = ApplyFilter();
         }
 
+        // Whatever is shown now is for the filter and the search as they are.
+        var sameFilterAndSearch = filter == rowsFilter &&
+                                  mergeGeneration == rowsSearch;
+        rowsFilter = filter;
+        rowsSearch = mergeGeneration;
+
         if (preserveState &&
             pendingRename == null &&
             pendingSelection == null &&
@@ -3437,6 +3463,10 @@ sealed class FolderView : UserControl
         string? focused = null;
         var topIndex = -1;
 
+        // Where the item focused was, should it have gone, and whether it was selected.
+        var focusedWas = -1;
+        var focusedSelected = false;
+
         // The entries selected and focused, to find in the new rows by their order.
         List<FileEntry>? probes = null;
         if (preserveState)
@@ -3447,12 +3477,21 @@ sealed class FolderView : UserControl
                 selected.Add(entry.FullPath);
             }
 
-            if (list.FocusedItem?.Tag is FileEntry focusedEntry)
+            if (list.FocusedItem is {Tag: FileEntry focusedEntry} focusedItem)
             {
                 focused = focusedEntry.FullPath;
-                if (!selected.Contains(focused))
+                focusedSelected = selected.Contains(focused);
+                if (!focusedSelected)
                 {
                     probes.Add(focusedEntry);
+                }
+
+                // Missing from rows made again for another filter, or for a search started
+                // again, as Refresh starts it, the item may well be there, left out or not
+                // found again yet: then nothing takes its place.
+                if (sameFilterAndSearch)
+                {
+                    focusedWas = focusedItem.Index;
                 }
             }
 
@@ -3476,6 +3515,7 @@ sealed class FolderView : UserControl
             focused = reveal[0];
             topIndex = -1;
             probes = null;
+            focusedWas = -1;
         }
 
         pendingSelection = null;
@@ -3485,7 +3525,7 @@ sealed class FolderView : UserControl
             SetColumnText(dateColumn, IsThisPC ? "Free space" : "Date modified");
             SetColumnText(sizeColumn, IsThisPC ? "Total size" : "Size");
             ShowRows(visible);
-            Restore(selected, focused, probes);
+            Restore(selected, focused, probes, focusedWas, focusedSelected);
 
             if (topIndex > 0 &&
                 visible.Count > 0)

@@ -1378,6 +1378,142 @@ public class FolderViewTests
         await Assert.That(File.Exists(fixture.At("notes - Shortcut.lnk"))).IsTrue();
     }
 
+    // A folder of 500 files, item000.txt to item499.txt, each as many bytes as its number.
+    static string FiveHundred(Fixture fixture)
+    {
+        var folder = Directory.CreateDirectory(fixture.At("Many")).FullName;
+        for (var index = 0; index < 500; index++)
+        {
+            File.WriteAllBytes(Path.Combine(folder, $"item{index:D3}.txt"), new byte[index]);
+        }
+
+        return folder;
+    }
+
+    // Read again as soon as something in it changes, however long the first read took on a busy
+    // machine, which would otherwise leave it ten times as long.
+    static async Task<FolderView> OpenReadingAgainAtOnce(Form form, string folder)
+    {
+        var view = await OpenIn(form, folder);
+        view.ReadTook(TimeSpan.Zero);
+        return view;
+    }
+
+    // The row with the focus: its name, and where it is.
+    static (string? Name, int Index) Focus(FolderView view) =>
+        ((view.List.FocusedItem?.Tag as FileEntry)?.Name, view.List.FocusedItem?.Index ?? -1);
+
+    static void FocusRow(FolderView view, int index, bool select)
+    {
+        if (select)
+        {
+            view.List.SelectedIndices.Add(index);
+        }
+
+        view.List.Items[index].Focused = true;
+    }
+
+    // Deleted, the item focused is gone from the list, and the one that took its place has the
+    // focus, selected as it was, as in Explorer, so Down or Delete go on from there rather than
+    // from the top.
+    [Test]
+    public async Task DeletingTheFocusedItemFocusesTheOneInItsPlace()
+    {
+        using var fixture = Fixture.Create();
+        var folder = FiveHundred(fixture);
+        using var form = Host();
+        var view = await OpenReadingAgainAtOnce(form, folder);
+        view.DeleteItems = (_, paths, _) =>
+        {
+            foreach (var path in paths)
+            {
+                File.Delete(path);
+            }
+
+            return Task.FromResult(true);
+        };
+        FocusRow(view, 300, select: true);
+
+        view.Delete(false);
+        await Pump.Until(() => view.Entries.Count == 499);
+
+        await Assert.That(Focus(view)).IsEqualTo(("item301.txt", 300));
+        await Assert.That(Selected(view)).IsEquivalentTo(["item301.txt"]);
+    }
+
+    // The last deleted, the new last has the focus.
+    [Test]
+    public async Task DeletingTheLastFocusesTheNewLast()
+    {
+        using var fixture = Fixture.Create();
+        var folder = FiveHundred(fixture);
+        using var form = Host();
+        var view = await OpenReadingAgainAtOnce(form, folder);
+        FocusRow(view, 499, select: true);
+
+        File.Delete(Path.Combine(folder, "item499.txt"));
+        await Pump.Until(() => view.Entries.Count == 499);
+
+        await Assert.That(Focus(view)).IsEqualTo(("item498.txt", 498));
+        await Assert.That(Selected(view)).IsEquivalentTo(["item498.txt"]);
+    }
+
+    // Deleted by something else, or moved away, the item focused has the one in its place
+    // focused too, selected only if it was.
+    [Test]
+    public async Task AFocusedItemGoneFromDiskHasTheOneInItsPlaceFocused()
+    {
+        using var fixture = Fixture.Create();
+        var folder = FiveHundred(fixture);
+        using var form = Host();
+        var view = await OpenReadingAgainAtOnce(form, folder);
+        FocusRow(view, 200, select: false);
+
+        File.Move(Path.Combine(folder, "item200.txt"), fixture.At("item200.txt"));
+        await Pump.Until(() => view.Entries.Count == 499);
+
+        await Assert.That(Focus(view)).IsEqualTo(("item201.txt", 200));
+        await Assert.That(Selected(view)).IsEmpty();
+    }
+
+    // An item focused that is still there keeps the focus wherever it now is: another deleted
+    // before it, the list sorted another way, or the item renamed. Left out by the filter, it is
+    // not gone, so no other takes its place.
+    [Test]
+    public async Task AFocusedItemStillThereKeepsTheFocus()
+    {
+        using var fixture = Fixture.Create();
+        var folder = FiveHundred(fixture);
+        using var form = Host();
+        var view = await OpenReadingAgainAtOnce(form, folder);
+        FocusRow(view, 300, select: true);
+
+        File.Delete(Path.Combine(folder, "item100.txt"));
+        await Pump.Until(() => view.Entries.Count == 499);
+        var anotherDeleted = Focus(view);
+        view.SortBy(sizeColumn);
+        view.SortBy(sizeColumn);
+        var sorted = Focus(view);
+        var renaming = new LabelEditEventArgs(sorted.Index, "renamed.txt");
+        view.OnBeforeLabelEdit(null, renaming);
+        view.OnAfterLabelEdit(null, renaming);
+        await Pump.Until(() => File.Exists(Path.Combine(folder, "renamed.txt")));
+        await Pump.Until(() => view.Entries.Any(_ => _.Name == "renamed.txt") && !view.Entries.Any(_ => _.Name == "item300.txt"));
+        await Pump.For(TimeSpan.FromMilliseconds(600));
+        var renamed = Focus(view).Name;
+        var selectedRenamed = Selected(view);
+        view.Filter = "item1";
+        var filtered = Focus(view).Name;
+        var selectedFiltered = Selected(view);
+
+        await Assert.That(anotherDeleted).IsEqualTo(("item300.txt", 299));
+        await Assert.That(sorted).IsEqualTo(("item300.txt", 498 - 299));
+        await Assert.That(renamed).IsEqualTo("renamed.txt");
+        await Assert.That(selectedRenamed).IsEquivalentTo(["renamed.txt"]);
+        await Assert.That(filtered).IsNull();
+        await Assert.That(selectedFiltered).IsEmpty();
+    }
+
     // New's entries chosen from Show more options are done by Lode, as from its own New, so
     // Ctrl+Z hears of them: by the shell's verbs, NewFolder and a type's extension. A type Lode
     // doesn't know, and Shortcut, a wizard, are left to the shell.
