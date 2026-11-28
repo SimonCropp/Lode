@@ -342,6 +342,113 @@ public class FolderViewTests
         await Assert.That(view.List.ClientRectangle.Contains(row)).IsTrue();
     }
 
+    // Clicked twice in a row, a large folder is sorted off the UI thread both times: the first
+    // sort, overtaken by the second before it is done, gives the list nothing, rather than its
+    // rows sorted the second way where they are, and the list ends sorted the second way.
+    [Test]
+    public async Task ALargeFolderSortedTwiceInARowIsNotSortedOnTheUIThread()
+    {
+        using var fixture = Fixture.Create();
+        using var here = await Open(fixture.Root);
+        here.SortBy(sizeColumn);
+        here.SortBy(sizeColumn);
+        var descending = Names(here);
+        using var view = await Open(fixture.Root);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var sortedHere = 0;
+        using var second = new ManualResetEventSlim();
+        var from = FolderView.SortOffThreadFrom;
+        FolderView.SortOffThreadFrom = 0;
+        FolderView.Sorting = (_, ascending) =>
+        {
+            if (Environment.CurrentManagedThreadId == uiThread)
+            {
+                sortedHere++;
+                return;
+            }
+
+            // The second sort is held until the first is done, as it is when the second's
+            // thread is slower to start.
+            if (!ascending)
+            {
+                second.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+        try
+        {
+            view.SortBy(sizeColumn);
+            view.SortBy(sizeColumn);
+            await Pump.For(TimeSpan.FromMilliseconds(300));
+            second.Set();
+            await Pump.Until(() => Names(view).SequenceEqual(descending));
+
+            await Assert.That(sortedHere).IsEqualTo(0);
+            await Assert.That(view.Sort).IsEqualTo((sizeColumn, false));
+        }
+        finally
+        {
+            second.Set();
+            FolderView.Sorting = null;
+            FolderView.SortOffThreadFrom = from;
+        }
+    }
+
+    // While a large folder is sorted off the UI thread, what gives the list its rows meanwhile,
+    // more typed in the filter say, gives them in the order they are in until the sort is done,
+    // rather than sorting them there as well.
+    [Test]
+    public async Task WhileALargeFolderIsSortedOffTheUIThreadItIsNotSortedOnIt()
+    {
+        using var fixture = Fixture.Create();
+        using var here = await Open(fixture.Root);
+        here.Filter = "a";
+        await Pump.Loaded(here);
+        here.SortBy(sizeColumn);
+        here.Filter = "al";
+        await Pump.Loaded(here);
+        var sortedHere = Names(here);
+        using var view = await Open(fixture.Root);
+        view.Filter = "a";
+        await Pump.Loaded(view);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var sortedOnUIThread = 0;
+        using var release = new ManualResetEventSlim();
+        var from = FolderView.SortOffThreadFrom;
+        FolderView.SortOffThreadFrom = 0;
+        FolderView.Sorting = (column, _) =>
+        {
+            if (Environment.CurrentManagedThreadId == uiThread)
+            {
+                sortedOnUIThread++;
+                return;
+            }
+
+            if (column == sizeColumn)
+            {
+                release.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+        try
+        {
+            view.SortBy(sizeColumn);
+            view.Filter = "al";
+            await Pump.For(TimeSpan.FromMilliseconds(500));
+            var whileSorting = sortedOnUIThread;
+            release.Set();
+            await Pump.Loaded(view);
+            await Pump.Until(() => Names(view).SequenceEqual(sortedHere));
+
+            await Assert.That(whileSorting).IsEqualTo(0);
+            await Assert.That(sortedOnUIThread).IsEqualTo(0);
+        }
+        finally
+        {
+            release.Set();
+            FolderView.Sorting = null;
+            FolderView.SortOffThreadFrom = from;
+        }
+    }
+
     [Test]
     public async Task SortByType()
     {
@@ -3905,6 +4012,82 @@ public class FolderViewTests
 
         await Assert.That(view.Entries.Select(_ => _.Name))
             .IsEquivalentTo(["origins", "Plain", "Clean", "Changed"], CollectionOrdering.Matching);
+    }
+
+    // Sorted by what the Git column says, what it says of each is worked out once for the sort,
+    // rather than for both items of every comparison.
+    [Test]
+    public async Task SortedByGitWhatEachSaysIsWorkedOutOnce()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+        var made = new List<string>();
+        FolderView.MakingSortKey = _ =>
+        {
+            lock (made)
+            {
+                made.Add(_.Name);
+            }
+        };
+        try
+        {
+            view.SortBy(FolderView.gitColumn);
+
+            await Assert.That(made.Order(StringComparer.Ordinal))
+                .IsEquivalentTo(["Changed", "Clean", "Plain", "origins"], CollectionOrdering.Matching);
+            await Assert.That(view.Entries.Select(_ => _.Name))
+                .IsEquivalentTo(["origins", "Plain", "Clean", "Changed"], CollectionOrdering.Matching);
+        }
+        finally
+        {
+            FolderView.MakingSortKey = null;
+        }
+    }
+
+    // Sorted by Git, a large folder is sorted again off the UI thread when a state changes, as
+    // it is when the column is clicked, rather than on it each time.
+    [Test]
+    public async Task SortedByGitALargeFolderIsSortedAgainOffTheUIThread()
+    {
+        using var code = Repositories();
+        using var view = await Open(code.Root, InCode(code));
+        await GitRead(view);
+        var uiThread = Environment.CurrentManagedThreadId;
+        var sortedHere = 0;
+        var sortedElsewhere = 0;
+        var from = FolderView.SortOffThreadFrom;
+        FolderView.SortOffThreadFrom = 0;
+        FolderView.Sorting = (_, _) =>
+        {
+            if (Environment.CurrentManagedThreadId == uiThread)
+            {
+                sortedHere++;
+                return;
+            }
+
+            Interlocked.Increment(ref sortedElsewhere);
+        };
+        try
+        {
+            view.SortBy(FolderView.gitColumn);
+            await Pump.Until(() => Names(view).SequenceEqual(["origins", "Plain", "Clean", "Changed"]));
+            var beforeTheChange = Volatile.Read(ref sortedElsewhere);
+
+            // Clean then has a change, as Changed has, which leaves them by name.
+            await File.WriteAllTextAsync(code.At("Clean", "tracked.txt"), "changed");
+            await Pump.Until(() => Names(view).SequenceEqual(["origins", "Plain", "Changed", "Clean"]));
+            await GitRead(view);
+
+            await Assert.That(sortedHere).IsEqualTo(0);
+            await Assert.That(Volatile.Read(ref sortedElsewhere)).IsGreaterThan(beforeTheChange);
+            await Assert.That(GitCells(view)).Contains("Clean: main · 1 change");
+        }
+        finally
+        {
+            FolderView.Sorting = null;
+            FolderView.SortOffThreadFrom = from;
+        }
     }
 
     // The column only shows once the folder has been read and its repositories found, so the

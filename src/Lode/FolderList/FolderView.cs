@@ -2149,7 +2149,7 @@ sealed class FolderView : UserControl
                     found.AddRange(promoted.Find(found, showHidden, hiddenSystem));
                 }
 
-                found.Sort((first, second) => Compare(first, second, column, ascending, cells));
+                SortEntries(found, column, ascending, cells);
                 var (foundRepos, containing) = FindRepos(found, path, codeFolder);
                 return (found, late, space, null, null, foundRepos, containing, promotes);
             }
@@ -2593,14 +2593,22 @@ sealed class FolderView : UserControl
         }
 
         gitCells = new(gitStates, containingRepo, containing);
+        rowsStale = true;
         if (sortColumn is gitColumn or tagColumn &&
             !editing)
         {
             entriesSort = (-1, false);
             foundSort = (-1, false);
+
+            // A large folder is sorted again off the UI thread, as it is when the column is
+            // clicked, the rows showing what the column now says meanwhile, in the order they
+            // were in. Sorted on it, every state that changed was a wait of seconds.
+            if (entries.Count + found.Count >= SortOffThreadFrom)
+            {
+                _ = SortThenPopulate();
+            }
         }
 
-        rowsStale = true;
         Populate(true);
     }
 
@@ -3044,7 +3052,7 @@ sealed class FolderView : UserControl
         if (!foundSorted)
         {
             all = [.. all];
-            all.Sort(compare);
+            SortEntries(all, column, ascending, cells);
         }
 
         var batch = batches[0].Entries;
@@ -3052,13 +3060,13 @@ sealed class FolderView : UserControl
             batches[0].Sort != (column, ascending))
         {
             batch = [.. batches.SelectMany(_ => _.Entries)];
-            batch.Sort(compare);
+            SortEntries(batch, column, ascending, cells);
         }
 
         all = Merge(all, batch, compare);
         if (!ownSorted)
         {
-            own.Sort(compare);
+            SortEntries(own, column, ascending, cells);
         }
 
         return new(all, Merge(own, all, compare));
@@ -3102,14 +3110,13 @@ sealed class FolderView : UserControl
             IgnoreInaccessible = true,
             AttributesToSkip = showHidden ? default : FileAttributes.Hidden
         };
-        var compare = Order(sort.Column, sort.Ascending, cells);
         var batch = new List<FileEntry>();
         var sent = Stopwatch.GetTimestamp();
         var count = 0;
 
         void Send()
         {
-            batch.Sort(compare);
+            SortEntries(batch, sort.Column, sort.Ascending, cells);
             progress.Report(new(batch, sort));
             batch = [];
             sent = Stopwatch.GetTimestamp();
@@ -3345,18 +3352,23 @@ sealed class FolderView : UserControl
     {
         // Before sorting: hiding the column the list is sorted by sorts it by name.
         var columnsChanged = UpdateColumns();
+
+        // Being sorted this way off the UI thread, the rows are given in the order they are in
+        // until that is done, rather than sorted here too: more typed in the filter, or git
+        // states arriving, would otherwise sort a folder of a hundred thousand on the UI thread,
+        // which sorting off it is there to spare it.
+        var sortedElsewhere = sortingTo == (sortColumn, sortAscending);
         if (entriesSort == (sortColumn, !sortAscending) &&
             sortColumn != folderColumn)
         {
             TurnRound(entries);
             entriesSort = (sortColumn, sortAscending);
         }
-        else if (entriesSort != (sortColumn, sortAscending))
+        else if (entriesSort != (sortColumn, sortAscending) &&
+                 !sortedElsewhere)
         {
-            var column = sortColumn;
-            var ascending = sortAscending;
-            entries.Sort((first, second) => Compare(first, second, column, ascending, gitCells));
-            entriesSort = (column, ascending);
+            SortEntries(entries, sortColumn, sortAscending, gitCells);
+            entriesSort = (sortColumn, sortAscending);
         }
 
         // By Folder, the levels stay in order the other way round, so it is sorted again.
@@ -3368,10 +3380,11 @@ sealed class FolderView : UserControl
             TurnRound(found);
             foundSort = (sortColumn, sortAscending);
         }
-        else if (foundSort != (sortColumn, sortAscending))
+        else if (foundSort != (sortColumn, sortAscending) &&
+                 !sortedElsewhere)
         {
             found = [.. found];
-            found.Sort(Order(sortColumn, sortAscending, gitCells));
+            SortEntries(found, sortColumn, sortAscending, gitCells);
             foundSort = (sortColumn, sortAscending);
         }
 
@@ -4261,10 +4274,65 @@ sealed class FolderView : UserControl
     internal static Comparison<FileEntry> Order(int column, bool ascending, GitCells? cells = null) =>
         (first, second) => Compare(first, second, column, ascending, cells);
 
+    /// <summary>
+    /// Told of each sort of the entries, or of what was found, by which column and which way, on
+    /// the thread it is done on. For tests.
+    /// </summary>
+    internal static Action<int, bool>? Sorting;
+
+    /// <summary>
+    /// Told of each item what the Git or Tag column says of it is worked out for, to sort it by.
+    /// For tests.
+    /// </summary>
+    internal static Action<FileEntry>? MakingSortKey;
+
+    // Sorts the entries as Order has them. By Git or Tag, what the column says of each is worked
+    // out once, before, rather than for both items of every comparison: for a hundred thousand,
+    // two million strings made, and as many lookups, where a hundred thousand do.
+    static void SortEntries(List<FileEntry> entries, int column, bool ascending, GitCells cells)
+    {
+        Sorting?.Invoke(column, ascending);
+        if (column is not (gitColumn or tagColumn))
+        {
+            entries.Sort(Order(column, ascending, cells));
+            return;
+        }
+
+        var keyed = new (FileEntry Entry, string Key)[entries.Count];
+        for (var index = 0; index < keyed.Length; index++)
+        {
+            keyed[index] = (entries[index], SortKey(entries[index], column, cells));
+        }
+
+        Array.Sort(keyed, (first, second) => CompareByKey(first.Entry, first.Key, second.Entry, second.Key, ascending));
+        for (var index = 0; index < keyed.Length; index++)
+        {
+            entries[index] = keyed[index].Entry;
+        }
+    }
+
+    // What an item is sorted by, by Git or Tag: what the column says of it.
+    static string SortKey(FileEntry entry, int column, GitCells cells)
+    {
+        MakingSortKey?.Invoke(entry);
+        if (column == gitColumn)
+        {
+            return cells.Text(entry);
+        }
+
+        return cells.Tag(entry);
+    }
+
     // Static, with the column and direction handed in, so a folder can be sorted off the UI
     // thread as it is read. By Git or Tag, by what the column says, which is handed in too.
     static int Compare(FileEntry first, FileEntry second, int column, bool ascending, GitCells? cells = null)
     {
+        if (column is gitColumn or tagColumn)
+        {
+            var known = cells ?? GitCells.None;
+            return CompareByKey(first, SortKey(first, column, known), second, SortKey(second, column, known), ascending);
+        }
+
         // By Folder, by how many levels down each is, what the folder holds itself first, then
         // the folders, files and names of each level.
         if (column == folderColumn &&
@@ -4302,11 +4370,6 @@ sealed class FolderView : UserControl
                 ShellIcons.GetTypeName(second.FullPath, second.IsDirectory),
                 StringComparison.CurrentCultureIgnoreCase),
             sizeColumn => first.Size.CompareTo(second.Size),
-            // By what the column says: repositories by branch, so those on a branch other than
-            // the one most are on stand together; files by what has become of them.
-            gitColumn => StrCmpLogicalW((cells ?? GitCells.None).Text(first), (cells ?? GitCells.None).Text(second)),
-            // Numbers as numbers, so v1.10 comes after v1.9.
-            tagColumn => StrCmpLogicalW((cells ?? GitCells.None).Tag(first), (cells ?? GitCells.None).Tag(second)),
             _ => 0
         };
 
@@ -4319,6 +4382,36 @@ sealed class FolderView : UserControl
             column == folderColumn)
         {
             result = StrCmpLogicalW(first.Folder, second.Folder);
+        }
+
+        if (ascending)
+        {
+            return result;
+        }
+
+        return -result;
+    }
+
+    // By Git or Tag, given what the column says of each: folders above files whichever way, then
+    // by what it says, then by name. Repositories by branch, so those on a branch other than the
+    // one most are on stand together; files by what has become of them; tags with their numbers
+    // as numbers, so v1.10 comes after v1.9.
+    static int CompareByKey(FileEntry first, string firstKey, FileEntry second, string secondKey, bool ascending)
+    {
+        if (first.IsDirectory != second.IsDirectory)
+        {
+            if (first.IsDirectory)
+            {
+                return -1;
+            }
+
+            return 1;
+        }
+
+        var result = StrCmpLogicalW(firstKey, secondKey);
+        if (result == 0)
+        {
+            result = StrCmpLogicalW(first.Name, second.Name);
         }
 
         if (ascending)
@@ -4480,10 +4573,15 @@ sealed class FolderView : UserControl
         if (entries.Count + found.Count >= SortOffThreadFrom &&
             entriesSort != (sortColumn, !sortAscending))
         {
+            scrollWhenSorted = true;
             _ = SortThenPopulate();
             return;
         }
 
+        // Sorted here, a sort under way off the UI thread is no longer wanted.
+        sortGeneration++;
+        sortingTo = (-1, false);
+        scrollWhenSorted = false;
         Populate(true);
         ScrollToSelection();
     }
@@ -4560,51 +4658,108 @@ sealed class FolderView : UserControl
         column != dateColumn ||
         IsThisPC;
 
-    // From this many items a sort by another column is done off the UI thread: of a hundred
-    // thousand it is over a million comparisons, each a call into Windows, and by Type two
-    // lookups besides, with the window not answering for all of it. Fewer are sorted before
-    // anyone could tell, and the other way by the same column is only turned round.
+    // From this many items a sort by another column is done off the UI thread, as is sorting
+    // again by Git or Tag as the states change: of a hundred thousand it is over a million
+    // comparisons, each a call into Windows, and by Type two lookups besides, with the window
+    // not answering for all of it. Fewer are sorted before anyone could tell, and the other way
+    // by the same column is only turned round.
     internal static int SortOffThreadFrom { get; set; } = 20_000;
 
+    // The order the list is being sorted to off the UI thread, by the sort asked for last, which
+    // sortGeneration counts, or (-1, false) for none. Until it is done, the list is given its
+    // rows in the order they are in.
+    (int Column, bool Ascending) sortingTo = (-1, false);
+    int sortGeneration;
+
+    // That sort was asked for by a click, so the list scrolls to the selection once it is done,
+    // as it does sorted at once. Not for git states, which sort it again without one.
+    bool scrollWhenSorted;
+
     // Sorts copies of the entries and of what was found, by what the list is now to be sorted
-    // by, and gives the list its rows once they are. Should anything of them have changed
-    // meanwhile, the folder read again, another column clicked, the rows are given as they
-    // then are, sorted here as before.
+    // by, and gives the list its rows once they are. Overtaken meanwhile by another sort, it
+    // gives them nothing: that one will, sorted as it now is to be, where sorting here first
+    // would sort on the UI thread what is about to be sorted off it. Should either list have
+    // changed meanwhile, the folder read again or something found, that one is sorted again,
+    // off the UI thread too.
     async Task SortThenPopulate()
     {
-        var column = sortColumn;
-        var ascending = sortAscending;
-        var cells = gitCells;
-        var beforeEntries = entries;
-        var beforeFound = found;
-        var beforeEdits = entryEdits;
-        List<FileEntry> sortedEntries = [.. entries];
-        List<FileEntry> sortedFound = [.. found];
-        await Task.Run(() =>
+        var generation = ++sortGeneration;
+        try
         {
-            var compare = Order(column, ascending, cells);
-            sortedEntries.Sort(compare);
-            sortedFound.Sort(compare);
-        });
-        if (IsDisposed)
+            while (true)
+            {
+                var column = sortColumn;
+                var ascending = sortAscending;
+                sortingTo = (column, ascending);
+                var sortEntries = entriesSort != (column, ascending);
+                var sortFound = foundSort != (column, ascending);
+                if (!sortEntries &&
+                    !sortFound)
+                {
+                    break;
+                }
+
+                var cells = gitCells;
+                var beforeEntries = entries;
+                var beforeFound = found;
+                var beforeEdits = entryEdits;
+                var sortedEntries = sortEntries ? new List<FileEntry>(entries) : entries;
+                var sortedFound = sortFound ? new List<FileEntry>(found) : found;
+                await Task.Run(() =>
+                {
+                    if (sortEntries)
+                    {
+                        SortEntries(sortedEntries, column, ascending, cells);
+                    }
+
+                    if (sortFound)
+                    {
+                        SortEntries(sortedFound, column, ascending, cells);
+                    }
+                });
+                if (IsDisposed ||
+                    generation != sortGeneration)
+                {
+                    return;
+                }
+
+                var sameOrder = (sortColumn, sortAscending) == (column, ascending) &&
+                                (column is not (gitColumn or tagColumn) ||
+                                 ReferenceEquals(gitCells, cells));
+                if (sameOrder &&
+                    sortEntries &&
+                    ReferenceEquals(entries, beforeEntries) &&
+                    entryEdits == beforeEdits)
+                {
+                    entries = sortedEntries;
+                    entriesSort = (column, ascending);
+                }
+
+                if (sameOrder &&
+                    sortFound &&
+                    ReferenceEquals(found, beforeFound))
+                {
+                    found = sortedFound;
+                    foundSort = (column, ascending);
+                }
+            }
+        }
+        finally
         {
-            return;
+            if (generation == sortGeneration)
+            {
+                sortingTo = (-1, false);
+            }
         }
 
-        if (ReferenceEquals(entries, beforeEntries) &&
-            ReferenceEquals(found, beforeFound) &&
-            ReferenceEquals(gitCells, cells) &&
-            entryEdits == beforeEdits &&
-            (sortColumn, sortAscending) == (column, ascending))
-        {
-            entries = sortedEntries;
-            entriesSort = (column, ascending);
-            found = sortedFound;
-            foundSort = (column, ascending);
-        }
-
+        // What the filter made of them is of the order they were in before.
+        filtered = null;
         Populate(true);
-        ScrollToSelection();
+        if (scrollWhenSorted)
+        {
+            scrollWhenSorted = false;
+            ScrollToSelection();
+        }
     }
 
     void OnListKeyDown(object? sender, KeyEventArgs args)
